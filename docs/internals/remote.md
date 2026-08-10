@@ -54,10 +54,9 @@ control plane or a copy of session state.
 | ------------------------- | ------------------------------------------------------------------------ |
 | `PrimaryConnectionTarget` | The platform-managed local server (desktop backend, CLI-served web app). |
 | `BearerConnectionTarget`  | Any manually paired endpoint reached over direct HTTP/WebSocket.         |
-| `RelayConnectionTarget`   | Managed T3 Connect relay tunnels.                                        |
 | `SshConnectionTarget`     | Desktop-managed SSH environments.                                        |
 
-Bearer, relay, and SSH are persisted; primary is platform-managed. Note that Tailscale is not a
+Bearer and SSH are persisted; primary is platform-managed. Note that Tailscale is not a
 separate target kind. A Tailscale URL is paired through the ordinary bearer path in
 [`onboarding.ts`][onboarding] (`preparePairingRegistration`), which accepts either a pairing URL or a
 host plus pairing code. Tailscale is an endpoint provider and transport, not a distinct runtime
@@ -140,15 +139,6 @@ how the server got started or who manages the process.
 It works for desktop, mobile, and web with no client-side process management. Browser security rules
 are part of it: a hosted HTTPS client cannot connect to plain `ws://` or `http://` LAN backends.
 
-### Relay-tunneled access
-
-Managed T3 Connect relay tunnels use `RelayConnectionTarget` and are the answer when the host is
-behind NAT, inbound ports are unavailable, or mobile must reach a desktop-hosted environment. From
-the client's perspective this is still an ordinary WebSocket connection; the route is mediated. The
-relay Worker only brokers credentials and a managed endpoint; application traffic then flows over
-the provisioned Cloudflare tunnel hostname for the life of the connection, not through the relay
-Worker itself. See [t3-connect.md](./t3-connect.md).
-
 ### Tailscale access
 
 A T3-managed `tailscale serve` mapping exposes the server on the tailnet over HTTPS, and the
@@ -181,14 +171,11 @@ Launch answers a different question: how does a T3 server come to exist on the t
 it separate from access.
 
 - **Pre-existing server.** The operator already runs T3 and the client connects directly or through a
-  tunnel.
+  private network.
 - **Desktop-managed remote launch over SSH.** Desktop probes the machine, launches or reuses a remote
   server, forwards a port, and the renderer connects normally. The saved environment records that it
   came from SSH launch for reconnect and lifecycle UX only; that metadata never changes the protocol
   or the identity model.
-- **Client-managed local publish.** A local server is published through the relay with
-  `t3 connect link`, exposing a desktop-hosted environment to mobile without router or firewall
-  changes.
 
 The same `ExecutionEnvironment` can be reached several of these ways. Only the launch and access
 paths differ.
@@ -200,7 +187,7 @@ explicit authentication, tunnel exposure never relies on obscurity, and saved en
 auth metadata to reconnect safely.
 
 WebSocket authentication is a dedicated short-lived ticket, not a token in a query string. The client
-presents its long-lived bearer or DPoP credential in HTTP headers to
+presents its long-lived bearer credential in HTTP headers to
 `POST /api/auth/websocket-ticket` ([authorization/remote.ts][authremote]), and appends only the
 returned ticket as `wsTicket` on the socket URL. The server issues it through
 `EnvironmentAuth.issueWebSocketTicket`; tickets are tagged `kind: "websocket"` and default to a
@@ -225,7 +212,6 @@ supervisor owns the resulting disconnect and reconnect like any other involuntar
 These remain unbuilt and are listed to keep the model honest:
 
 - third-party tunnel products as additional endpoint providers;
-- a relay-hosted OAuth callback broker (see [t3-connect.md](./t3-connect.md));
 - richer multi-environment UI beyond the current connections list.
 
 [model]: ../../packages/client-runtime/src/connection/model.ts

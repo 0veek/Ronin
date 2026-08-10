@@ -1,6 +1,7 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
-import { CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCanGoBack, useNavigate } from "@tanstack/react-router";
+import { ArrowLeftIcon, CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { isElectron } from "../../env";
 import { cn } from "../../lib/utils";
@@ -14,6 +15,7 @@ import {
   formatUsd,
   makeWindow,
 } from "@t3tools/shared/usageFormat";
+import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
@@ -27,15 +29,55 @@ const WINDOW_OPTIONS = [
   { days: 90, label: "90 days" },
 ] as const;
 
+function UsagePageHeader({ onBack }: { readonly onBack: () => void }) {
+  return (
+    <div className="flex w-full min-w-0 items-center gap-2">
+      <Button type="button" size="xs" variant="ghost" onClick={onBack} className="shrink-0 gap-1.5">
+        <ArrowLeftIcon className="size-3.5" />
+        Back to editor
+      </Button>
+      <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
+        <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
+      </WorkspaceBreadcrumb>
+    </div>
+  );
+}
+
 export function UsagePage() {
+  const navigate = useNavigate();
+  const canGoBack = useCanGoBack();
   const [windowDays, setWindowDays] = useState<number>(30);
   const [metric, setMetric] = useState<UsageChartMetric>("cost");
   const [breakdown, setBreakdown] = useState<"model" | "day">("model");
 
+  const navigateBackWithinApp = useCallback(() => {
+    if (canGoBack) {
+      window.history.back();
+      return;
+    }
+    void navigate({ to: "/" });
+  }, [canGoBack, navigate]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key !== "Escape") return;
+
+      event.preventDefault();
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement) {
+        activeElement.blur();
+      }
+      navigateBackWithinApp();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [navigateBackWithinApp]);
+
   // Recomputed only when the window length changes, so a re-render does not
   // shift the range and refetch every environment.
-  const window = useMemo(() => makeWindow(windowDays), [windowDays]);
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const usageWindow = useMemo(() => makeWindow(windowDays), [windowDays]);
+  const { merged, environments, isPending, isPartial, refresh } = useUsage(usageWindow);
 
   // Hold the content until every environment is terminal. Rendering merged
   // totals while devices are still answering makes every number on the page
@@ -43,8 +85,8 @@ export function UsagePage() {
   const settling = isPending || isPartial;
 
   const days = useMemo(
-    () => enumerateDays(window.sinceDay, window.untilDay),
-    [window.sinceDay, window.untilDay],
+    () => enumerateDays(usageWindow.sinceDay, usageWindow.untilDay),
+    [usageWindow.sinceDay, usageWindow.untilDay],
   );
   const recentDays = useMemo(() => merged.daily.toReversed().slice(0, 8), [merged.daily]);
 
@@ -72,9 +114,7 @@ export function UsagePage() {
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb">
-              <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
-            </WorkspaceBreadcrumb>
+            <UsagePageHeader onBack={navigateBackWithinApp} />
           </header>
         )}
 
@@ -85,9 +125,7 @@ export function UsagePage() {
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb">
-              <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
-            </WorkspaceBreadcrumb>
+            <UsagePageHeader onBack={navigateBackWithinApp} />
           </div>
         )}
 
@@ -95,7 +133,7 @@ export function UsagePage() {
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-6 py-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <p className="text-sm text-muted-foreground">
-                {formatDayShort(window.sinceDay)} to {formatDayShort(window.untilDay)}
+                {formatDayShort(usageWindow.sinceDay)} to {formatDayShort(usageWindow.untilDay)}
               </p>
               <div className="flex items-center gap-2">
                 <div className="flex overflow-hidden rounded-md border border-border">

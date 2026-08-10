@@ -78,53 +78,90 @@ describe("DesktopPreReadyPlatform", () => {
     assert.isNull(value);
   });
 
-  it.effect(
-    "acquires a synchronous pre-ready layer before an asynchronous Clerk-shaped layer",
-    () =>
-      Effect.gen(function* () {
-        class ClerkShaped extends Context.Service<ClerkShaped, { readonly ready: true }>()(
-          "@t3tools/desktop/app/DesktopPreReadyPlatform.test/ClerkShaped",
-        ) {}
+  it.effect("acquires a synchronous pre-ready layer before an asynchronous deferred layer", () =>
+    Effect.gen(function* () {
+      class DeferredShaped extends Context.Service<DeferredShaped, { readonly ready: true }>()(
+        "@t3tools/desktop/app/DesktopPreReadyPlatform.test/DeferredShaped",
+      ) {}
 
-        const events: Array<string> = [];
-        registerSchemesMock.mockImplementation(() => {
-          events.push("pre-ready");
-        });
+      const events: Array<string> = [];
+      registerSchemesMock.mockImplementation(() => {
+        events.push("pre-ready");
+      });
 
-        const preReadyLayer = DesktopPreReadyPlatform.layer.pipe(
-          Layer.provide(Layer.succeed(HostProcessPlatform, "darwin")),
-        );
+      const preReadyLayer = DesktopPreReadyPlatform.layer.pipe(
+        Layer.provide(Layer.succeed(HostProcessPlatform, "darwin")),
+      );
 
-        const clerkShapedLayer = Layer.effect(
-          ClerkShaped,
-          Effect.promise(() => Promise.resolve()).pipe(
-            Effect.map(() => {
-              events.push("clerk");
-              return { ready: true as const };
-            }),
-          ),
-        );
+      const deferredShapedLayer = Layer.effect(
+        DeferredShaped,
+        Effect.promise(() => Promise.resolve()).pipe(
+          Effect.map(() => {
+            events.push("deferred");
+            return { ready: true as const };
+          }),
+        ),
+      );
 
-        const runtimeLayer = clerkShapedLayer.pipe(
-          Layer.flatMap((clerkContext) => Layer.succeedContext(clerkContext)),
-          Layer.provideMerge(preReadyLayer),
-        );
+      const runtimeLayer = deferredShapedLayer.pipe(
+        Layer.flatMap((deferredContext) => Layer.succeedContext(deferredContext)),
+        Layer.provideMerge(preReadyLayer),
+      );
 
-        const result = yield* Effect.all({
-          clerk: ClerkShaped,
-          preReady: DesktopPreReadyPlatform.DesktopPreReadyElectronOptions,
-        }).pipe(Effect.provide(runtimeLayer));
+      const result = yield* Effect.all({
+        deferred: DeferredShaped,
+        preReady: DesktopPreReadyPlatform.DesktopPreReadyElectronOptions,
+      }).pipe(Effect.provide(runtimeLayer));
 
-        assert.deepEqual(result, {
-          clerk: { ready: true },
-          preReady: {
-            linux: null,
-            linuxPasswordStoreCommandLine: null,
-          },
-        });
-        assert.deepEqual(events, ["pre-ready", "clerk"]);
-        assert.equal(registerSchemesMock.mock.calls.length, 1);
-        assert.equal(appendSwitchMock.mock.calls.length, 0);
-      }),
+      assert.deepEqual(result, {
+        deferred: { ready: true },
+        preReady: {
+          linux: null,
+          linuxPasswordStoreCommandLine: null,
+          linuxGlassVulkanDisabled: false,
+        },
+      });
+      assert.deepEqual(events, ["pre-ready", "deferred"]);
+      assert.equal(registerSchemesMock.mock.calls.length, 1);
+      assert.equal(appendSwitchMock.mock.calls.length, 0);
+    }),
   );
+
+  it("detects Wayland sessions that need Vulkan disabled for glass", () => {
+    assert.isTrue(
+      DesktopPreReadyPlatform.shouldDisableVulkanForLinuxGlass({
+        XDG_SESSION_TYPE: "wayland",
+      }),
+    );
+    assert.isTrue(
+      DesktopPreReadyPlatform.shouldDisableVulkanForLinuxGlass({
+        WAYLAND_DISPLAY: "wayland-1",
+      }),
+    );
+    assert.isFalse(
+      DesktopPreReadyPlatform.shouldDisableVulkanForLinuxGlass({
+        XDG_SESSION_TYPE: "x11",
+      }),
+    );
+  });
+
+  it("merges disable-features lists when enabling the glass compositor workaround", () => {
+    assert.equal(
+      DesktopPreReadyPlatform.mergeCommandLineFeatureList("Foo, Bar", ["Vulkan", "Foo"]),
+      "Foo,Bar,Vulkan",
+    );
+
+    const appendSwitch = vi.fn();
+    const applied = DesktopPreReadyPlatform.applyLinuxGlassCompositorSwitches(
+      {
+        hasSwitch: (name) => name === "disable-features",
+        getSwitchValue: () => "ExistingFeature",
+        appendSwitch,
+      },
+      { XDG_SESSION_TYPE: "wayland" },
+    );
+
+    assert.isTrue(applied);
+    assert.deepEqual(appendSwitch.mock.calls, [["disable-features", "ExistingFeature,Vulkan"]]);
+  });
 });

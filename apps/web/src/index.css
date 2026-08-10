@@ -493,6 +493,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     /*
      * One continuous glass layer: a 22px composer joined to a 16px strip,
      * whose visible sides align with the composer's bottom tangents.
+     *
+     * Side inset of the strip is rem-based (`1.375rem` = 22px at default
+     * interface font size) so the glass tracks Settings → Typography size.
+     * Top corner radii stay in px to match the composer's fixed 22px radius.
+     * Bottom strip radii stay in px to match the strip's 16px border-radius.
      */
     clip-path: shape(
       from 0 22px,
@@ -503,12 +508,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       curve to calc(100% - 22px) calc(100% - var(--chat-composer-context-extension)) with 100%
         calc(100% - var(--chat-composer-context-extension) - 9.85px) / calc(100% - 9.85px)
         calc(100% - var(--chat-composer-context-extension)),
-      line to calc(100% - 22px) calc(100% - 16px),
-      curve to calc(100% - 38px) 100% with calc(100% - 22px) calc(100% - 7.16px) /
-        calc(100% - 29.16px) 100%,
-      line to 38px 100%,
-      curve to 22px calc(100% - 16px) with 29.16px 100% / 22px calc(100% - 7.16px),
-      line to 22px calc(100% - var(--chat-composer-context-extension)),
+      line to calc(100% - 1.375rem) calc(100% - 16px),
+      curve to calc(100% - 1.375rem - 16px) 100% with calc(100% - 1.375rem) calc(100% - 7.16px) /
+        calc(100% - 1.375rem - 7.16px) 100%,
+      line to calc(1.375rem + 16px) 100%,
+      curve to 1.375rem calc(100% - 16px) with calc(1.375rem + 7.16px) 100% / 1.375rem
+        calc(100% - 7.16px),
+      line to 1.375rem calc(100% - var(--chat-composer-context-extension)),
       curve to 0 calc(100% - var(--chat-composer-context-extension) - 22px) with 9.85px
         calc(100% - var(--chat-composer-context-extension)) / 0
         calc(100% - var(--chat-composer-context-extension) - 9.85px),
@@ -1440,6 +1446,26 @@ body {
 
 .electron-windows {
   --desktop-window-right-resize-inset: 6px;
+}
+
+/*
+ * Linux Electron reports unprefixed backdrop-filter support but not
+ * -webkit-backdrop-filter. Prefer the unprefixed property first so the
+ * compositor path that actually works is primary; keep the webkit line as a
+ * no-op fallback on engines that still need it.
+ */
+.electron-linux {
+  --glass-blur: 14px;
+}
+
+.electron-linux .chat-composer-glass,
+.electron-linux .chat-composer-glass-shell::before,
+.electron-linux .chat-composer-context-strip::before,
+.electron-linux .alert-glass,
+.electron-linux .dialog-glass,
+.electron-linux .dropdown-glass,
+.electron-linux .dialog-backdrop {
+  -webkit-backdrop-filter: none;
 }
 
 /* App-chrome grain. Baked into each surface's own background (behind

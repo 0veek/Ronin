@@ -1,7 +1,6 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 
 import { PrimaryConnectionTarget, type PreparedConnection } from "../connection/model.ts";
 import { remoteHttpClientLayer } from "../rpc/http.ts";
@@ -40,7 +39,6 @@ describe("fetchEnvironmentPullRequestDiff", () => {
 
       const result = yield* fetchEnvironmentPullRequestDiff({
         prepared: PREPARED,
-        signer: Option.none(),
         diff: {
           projectId: ProjectId.make("project-1"),
           repository: "owner/repository",

@@ -10,6 +10,22 @@ export const EMBER_THEME_ID = "ember" as const;
 export const EMBER_THEME_LABEL = "Ember";
 export const IRIS_THEME_ID = "iris" as const;
 export const IRIS_THEME_LABEL = "Iris";
+export const OBSIDIAN_THEME_ID = "obsidian" as const;
+export const OBSIDIAN_THEME_LABEL = "Obsidian";
+export const MIDNIGHT_THEME_ID = "midnight" as const;
+export const MIDNIGHT_THEME_LABEL = "Midnight";
+export const CARBON_THEME_ID = "carbon" as const;
+export const CARBON_THEME_LABEL = "Carbon";
+export const NEBULA_THEME_ID = "nebula" as const;
+export const NEBULA_THEME_LABEL = "Nebula";
+export const OLED_VOID_THEME_ID = "oled-void" as const;
+export const OLED_VOID_THEME_LABEL = "OLED Void";
+export const OLED_AZURE_THEME_ID = "oled-azure" as const;
+export const OLED_AZURE_THEME_LABEL = "OLED Azure";
+export const OLED_PHOSPHOR_THEME_ID = "oled-phosphor" as const;
+export const OLED_PHOSPHOR_THEME_LABEL = "OLED Phosphor";
+export const OLED_PLASMA_THEME_ID = "oled-plasma" as const;
+export const OLED_PLASMA_THEME_LABEL = "OLED Plasma";
 export const THEME_FILE_VERSION = 1 as const;
 export const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
 export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
@@ -122,11 +138,27 @@ const RESERVED_THEME_IDS = new Set([
   OCEAN_THEME_ID,
   EMBER_THEME_ID,
   IRIS_THEME_ID,
+  OBSIDIAN_THEME_ID,
+  MIDNIGHT_THEME_ID,
+  CARBON_THEME_ID,
+  NEBULA_THEME_ID,
+  OLED_VOID_THEME_ID,
+  OLED_AZURE_THEME_ID,
+  OLED_PHOSPHOR_THEME_ID,
+  OLED_PLASMA_THEME_ID,
   LEGACY_T3_CHAT_DARK_THEME_ID,
   "t3-grove",
   "t3-ocean",
   "t3-ember",
   "t3-iris",
+  "t3-obsidian",
+  "t3-midnight",
+  "t3-carbon",
+  "t3-nebula",
+  "t3-oled-void",
+  "t3-oled-azure",
+  "t3-oled-phosphor",
+  "t3-oled-plasma",
 ]);
 
 const customThemeListeners = new Set<() => void>();
@@ -1391,12 +1423,168 @@ export const IRIS_THEME: ThemeDefinition = {
   },
 };
 
+/** Void-black graphite with electric teal — dark-first proprietary set. */
+export const OBSIDIAN_THEME: ThemeDefinition = {
+  id: OBSIDIAN_THEME_ID,
+  label: OBSIDIAN_THEME_LABEL,
+  appearance: "dark",
+  colors: {
+    ...createManagedThemeColors("dark", "#0a0c10", "#2dd4bf"),
+    ...themeActionColors("#38bdf8"),
+  },
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#f2f7f7", "#0f766e"),
+      ...themeActionColors("#0369a1"),
+    },
+  },
+};
+
+/** Deep navy night sky with ice-blue accent. */
+export const MIDNIGHT_THEME: ThemeDefinition = {
+  id: MIDNIGHT_THEME_ID,
+  label: MIDNIGHT_THEME_LABEL,
+  appearance: "dark",
+  colors: {
+    ...createManagedThemeColors("dark", "#0a0f1c", "#7c9cff"),
+    ...themeActionColors("#a5b4fc"),
+  },
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#f3f6fc", "#3b5bdb"),
+      ...themeActionColors("#5b5bd6"),
+    },
+  },
+};
+
+/** Industrial charcoal with amber signal accents. */
+export const CARBON_THEME: ThemeDefinition = {
+  id: CARBON_THEME_ID,
+  label: CARBON_THEME_LABEL,
+  appearance: "dark",
+  colors: {
+    ...createManagedThemeColors("dark", "#111113", "#f59e0b"),
+    ...themeActionColors("#fb923c"),
+  },
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#f7f5f2", "#b45309"),
+      ...themeActionColors("#c2410c"),
+    },
+  },
+};
+
+/** Deep-space purple with hot magenta / cyan dual voice. */
+export const NEBULA_THEME: ThemeDefinition = {
+  id: NEBULA_THEME_ID,
+  label: NEBULA_THEME_LABEL,
+  appearance: "dark",
+  colors: {
+    ...createManagedThemeColors("dark", "#100e1a", "#e879f9"),
+    ...themeActionColors("#22d3ee"),
+  },
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#f7f4fb", "#a21caf"),
+      ...themeActionColors("#0e7490"),
+    },
+  },
+};
+
+/**
+ * OLED-first dark palette: keep large pixel areas at pure black so panels can
+ * turn pixels off, while accents stay vivid against a true-black canvas.
+ * `exactSeeds` is required — without it the managed generator lifts dark
+ * backgrounds into charcoal and defeats the OLED power savings.
+ */
+function createOledThemeColors(accent: string, action: string): ThemeColors {
+  const colors = {
+    ...createManagedThemeColors("dark", "#000000", accent, { exactSeeds: true }),
+    ...themeActionColors(action),
+  };
+  return {
+    ...colors,
+    // Full-viewport and large chrome surfaces stay pixel-off black.
+    canvas: "#000000",
+    chrome: "#000000",
+    toolbar: "#000000",
+    sidebar: "#000000",
+    codeBackground: "#000000",
+    terminalBackground: "#000000",
+    surfaceOverlay: "#000000",
+  };
+}
+
+/** Pure black + cool white/silver — minimal AMOLED ink. */
+export const OLED_VOID_THEME: ThemeDefinition = {
+  id: OLED_VOID_THEME_ID,
+  label: OLED_VOID_THEME_LABEL,
+  appearance: "dark",
+  colors: createOledThemeColors("#e4e4e7", "#a1a1aa"),
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#fafafa", "#3f3f46"),
+      ...themeActionColors("#52525b"),
+    },
+  },
+};
+
+/** Pure black + electric azure for high-contrast night coding. */
+export const OLED_AZURE_THEME: ThemeDefinition = {
+  id: OLED_AZURE_THEME_ID,
+  label: OLED_AZURE_THEME_LABEL,
+  appearance: "dark",
+  colors: createOledThemeColors("#38bdf8", "#818cf8"),
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#f8fafc", "#0284c7"),
+      ...themeActionColors("#4f46e5"),
+    },
+  },
+};
+
+/** Pure black + phosphor green terminal energy. */
+export const OLED_PHOSPHOR_THEME: ThemeDefinition = {
+  id: OLED_PHOSPHOR_THEME_ID,
+  label: OLED_PHOSPHOR_THEME_LABEL,
+  appearance: "dark",
+  colors: createOledThemeColors("#4ade80", "#22d3ee"),
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#f4faf6", "#15803d"),
+      ...themeActionColors("#0e7490"),
+    },
+  },
+};
+
+/** Pure black + neon magenta / violet. */
+export const OLED_PLASMA_THEME: ThemeDefinition = {
+  id: OLED_PLASMA_THEME_ID,
+  label: OLED_PLASMA_THEME_LABEL,
+  appearance: "dark",
+  colors: createOledThemeColors("#f472b6", "#c084fc"),
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#fdf4f8", "#be185d"),
+      ...themeActionColors("#7e22ce"),
+    },
+  },
+};
+
 const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = [
   T3_CHAT_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
+  OBSIDIAN_THEME,
+  MIDNIGHT_THEME,
+  CARBON_THEME,
+  NEBULA_THEME,
+  OLED_VOID_THEME,
+  OLED_AZURE_THEME,
+  OLED_PHOSPHOR_THEME,
+  OLED_PLASMA_THEME,
 ];
 
 export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | null {

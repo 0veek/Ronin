@@ -17,10 +17,18 @@ import {
   type ThemeDefinition,
   type ThemeHalves,
   T3_CHAT_THEME,
+  CARBON_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
+  MIDNIGHT_THEME,
+  NEBULA_THEME,
+  OBSIDIAN_THEME,
   OCEAN_THEME,
+  OLED_AZURE_THEME,
+  OLED_PHOSPHOR_THEME,
+  OLED_PLASMA_THEME,
+  OLED_VOID_THEME,
 } from "../../themePalette";
 import {
   AlertDialog,
@@ -52,6 +60,14 @@ const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
   OCEAN_THEME,
   EMBER_THEME,
   IRIS_THEME,
+  OBSIDIAN_THEME,
+  MIDNIGHT_THEME,
+  CARBON_THEME,
+  NEBULA_THEME,
+  OLED_VOID_THEME,
+  OLED_AZURE_THEME,
+  OLED_PHOSPHOR_THEME,
+  OLED_PLASMA_THEME,
 ];
 
 function downloadThemeFile(filename: string, contents: string): void {

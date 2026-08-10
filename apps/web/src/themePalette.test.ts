@@ -21,10 +21,18 @@ import {
   subscribeToThemePreview,
   subscribeToCustomThemes,
   T3_CHAT_THEME,
+  CARBON_THEME,
   EMBER_THEME,
   GROVE_THEME,
   IRIS_THEME,
+  MIDNIGHT_THEME,
+  NEBULA_THEME,
+  OBSIDIAN_THEME,
   OCEAN_THEME,
+  OLED_AZURE_THEME,
+  OLED_PHOSPHOR_THEME,
+  OLED_PLASMA_THEME,
+  OLED_VOID_THEME,
   updateCustomTheme,
   CUSTOM_THEMES_STORAGE_KEY,
   createManagedThemeColors,
@@ -322,11 +330,33 @@ describe("theme files", () => {
   });
 
   it("includes the dual-mode maintainer themes", () => {
-    for (const theme of [T3_CHAT_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
+    const maintainerThemes = [
+      T3_CHAT_THEME,
+      GROVE_THEME,
+      OCEAN_THEME,
+      EMBER_THEME,
+      IRIS_THEME,
+      OBSIDIAN_THEME,
+      MIDNIGHT_THEME,
+      CARBON_THEME,
+      NEBULA_THEME,
+      OLED_VOID_THEME,
+      OLED_AZURE_THEME,
+      OLED_PHOSPHOR_THEME,
+      OLED_PLASMA_THEME,
+    ];
+    const oledThemes = new Set([
+      OLED_VOID_THEME.id,
+      OLED_AZURE_THEME.id,
+      OLED_PHOSPHOR_THEME.id,
+      OLED_PLASMA_THEME.id,
+    ]);
+    for (const theme of maintainerThemes) {
       expect(getThemeDefinition(theme.id)).toBe(theme);
       expect(getThemeModes(theme)).toEqual(["light", "dark"]);
       expect(theme.colors.accent).toMatch(/^#[0-9a-f]{6}$/i);
-      expect(theme.variants?.dark?.accent).toMatch(/^#[0-9a-f]{6}$/i);
+      const oppositeAppearance = theme.appearance === "light" ? "dark" : "light";
+      expect(theme.variants?.[oppositeAppearance]?.accent).toMatch(/^#[0-9a-f]{6}$/i);
 
       for (const mode of ["light", "dark"] as const) {
         const colors = getThemeColorsForMode(theme, mode);
@@ -334,11 +364,22 @@ describe("theme files", () => {
         expect(contrastRatio(colors!.text, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
         expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
         if (theme !== T3_CHAT_THEME) {
-          expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeLessThan(5.5);
-          expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeCloseTo(
-            mode === "dark" ? 5.082 : 4.705,
-            1,
-          );
+          // OLED dark uses exact pure-black seeds, so muted text contrast lands
+          // higher than the managed charcoal envelope used by other presets.
+          if (!(oledThemes.has(theme.id) && mode === "dark")) {
+            expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeLessThan(5.5);
+            expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeCloseTo(
+              mode === "dark" ? 5.082 : 4.705,
+              1,
+            );
+          }
+        }
+        if (oledThemes.has(theme.id) && mode === "dark") {
+          expect(colors!.canvas).toBe("#000000");
+          expect(colors!.chrome).toBe("#000000");
+          expect(colors!.sidebar).toBe("#000000");
+          expect(colors!.codeBackground).toBe("#000000");
+          expect(colors!.terminalBackground).toBe("#000000");
         }
         expect(contrastRatio(colors!.accentForeground, colors!.accent)).toBeGreaterThanOrEqual(4.5);
         expect(

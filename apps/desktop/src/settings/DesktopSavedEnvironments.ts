@@ -24,6 +24,8 @@ interface PersistedSavedEnvironmentStorageRecord extends Omit<
 > {
   readonly desktopSsh?: PersistedSavedEnvironmentDesktopSsh;
   readonly encryptedBearerToken?: string;
+  /** Legacy T3 Connect field; accepted on decode and dropped on read. */
+  readonly relayManaged?: { readonly relayUrl: string };
 }
 
 interface SavedEnvironmentRegistryDocument {
@@ -51,6 +53,8 @@ const PersistedSavedEnvironmentStorageRecordSchema = Schema.Struct({
   createdAt: Schema.String,
   lastConnectedAt: Schema.NullOr(Schema.String),
   desktopSsh: Schema.optionalKey(DesktopSshTargetSchema),
+  // Accept legacy Connect rows on read so old registries still decode; they
+  // are dropped when projecting into the current contract shape.
   relayManaged: Schema.optionalKey(Schema.Struct({ relayUrl: Schema.String })),
   encryptedBearerToken: Schema.optionalKey(Schema.String),
 });
@@ -206,7 +210,6 @@ function toPersistedSavedEnvironmentRecord(
   return {
     ...nextRecord,
     ...(record.desktopSsh ? { desktopSsh: record.desktopSsh } : {}),
-    ...(record.relayManaged ? { relayManaged: record.relayManaged } : {}),
   };
 }
 
@@ -224,7 +227,6 @@ function toSavedEnvironmentStorageRecord(
   };
   const metadata = {
     ...(record.desktopSsh ? { desktopSsh: record.desktopSsh } : {}),
-    ...(record.relayManaged ? { relayManaged: record.relayManaged } : {}),
   };
   return Option.match(encryptedBearerToken, {
     onNone: () => ({ ...nextRecord, ...metadata }),
@@ -397,7 +399,10 @@ export const make = Effect.gen(function* () {
   return DesktopSavedEnvironments.of({
     getRegistry: readRegistryDocument(fileSystem, environment.savedEnvironmentRegistryPath).pipe(
       Effect.map((document) =>
-        document.records.map((record) => toPersistedSavedEnvironmentRecord(record)),
+        document.records
+          // Drop legacy T3 Connect / managed-relay rows; Connect is gone.
+          .filter((record) => record.relayManaged === undefined)
+          .map((record) => toPersistedSavedEnvironmentRecord(record)),
       ),
       Effect.withSpan("desktop.savedEnvironments.getRegistry"),
     ),

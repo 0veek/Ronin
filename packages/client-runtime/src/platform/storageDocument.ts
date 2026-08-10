@@ -6,7 +6,6 @@ import {
   ConnectionProfile,
 } from "../connection/catalog.ts";
 import { type ConnectionTarget, PersistedConnectionTarget } from "../connection/model.ts";
-import * as TokenStore from "../authorization/tokenStore.ts";
 
 export const StoredConnectionCredential = Schema.Struct({
   connectionId: Schema.String,
@@ -19,7 +18,6 @@ export const ConnectionCatalogDocument = Schema.Struct({
   targets: Schema.Array(PersistedConnectionTarget),
   profiles: Schema.Array(ConnectionProfile),
   credentials: Schema.Array(StoredConnectionCredential),
-  remoteDpopTokens: Schema.Array(TokenStore.RemoteDpopAccessToken),
 });
 export type ConnectionCatalogDocument = typeof ConnectionCatalogDocument.Type;
 
@@ -28,8 +26,40 @@ export const EMPTY_CONNECTION_CATALOG_DOCUMENT: ConnectionCatalogDocument = Obje
   targets: [],
   profiles: [],
   credentials: [],
-  remoteDpopTokens: [],
 });
+
+/**
+ * Drop managed-relay leftovers from older catalog documents before decode.
+ * Relay targets and DPoP token bags are no longer part of the schema.
+ */
+export function sanitizeConnectionCatalogDocument(input: unknown): unknown {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return input;
+  }
+  const document = input as Record<string, unknown>;
+  const targets = Array.isArray(document.targets)
+    ? document.targets.filter(
+        (target) =>
+          !(
+            typeof target === "object" &&
+            target !== null &&
+            (target as { _tag?: unknown })._tag === "RelayConnectionTarget"
+          ),
+      )
+    : document.targets;
+  const { remoteDpopTokens: _remoteDpopTokens, ...rest } = document;
+  return {
+    ...rest,
+    targets,
+  };
+}
+
+export const decodeConnectionCatalogDocument =
+  Schema.decodeUnknownEffect(ConnectionCatalogDocument);
+
+export function parseConnectionCatalogDocument(input: unknown) {
+  return decodeConnectionCatalogDocument(sanitizeConnectionCatalogDocument(input));
+}
 
 export function replaceCatalogValue<A>(
   values: ReadonlyArray<A>,
@@ -51,7 +81,6 @@ export function removeCatalogValue<A>(
 function connectionIdOf(target: ConnectionTarget): string | null {
   switch (target._tag) {
     case "PrimaryConnectionTarget":
-    case "RelayConnectionTarget":
       return null;
     case "BearerConnectionTarget":
     case "SshConnectionTarget":
@@ -62,7 +91,6 @@ function connectionIdOf(target: ConnectionTarget): string | null {
 function removeConnectionMetadata(
   document: ConnectionCatalogDocument,
   target: ConnectionTarget,
-  removeRemoteToken: boolean,
 ): ConnectionCatalogDocument {
   const connectionId = connectionIdOf(target);
   return {
@@ -80,13 +108,6 @@ function removeConnectionMetadata(
       connectionId === null
         ? document.credentials
         : removeCatalogValue(document.credentials, (value) => value.connectionId, connectionId),
-    remoteDpopTokens: removeRemoteToken
-      ? removeCatalogValue(
-          document.remoteDpopTokens,
-          (value) => value.environmentId,
-          target.environmentId,
-        )
-      : document.remoteDpopTokens,
   };
 }
 
@@ -98,16 +119,13 @@ export function registerConnectionInCatalog(
   const previous = document.targets.find(
     (candidate) => candidate.environmentId === target.environmentId,
   );
-  const cleaned =
-    previous === undefined ? document : removeConnectionMetadata(document, previous, false);
+  const cleaned = previous === undefined ? document : removeConnectionMetadata(document, previous);
   const next: ConnectionCatalogDocument = {
     ...cleaned,
     targets: replaceCatalogValue(cleaned.targets, (value) => value.environmentId, target),
   };
 
   switch (registration._tag) {
-    case "RelayConnectionRegistration":
-      return next;
     case "BearerConnectionRegistration":
       return {
         ...next,
@@ -137,5 +155,5 @@ export function removeConnectionFromCatalog(
   document: ConnectionCatalogDocument,
   target: ConnectionTarget,
 ): ConnectionCatalogDocument {
-  return removeConnectionMetadata(document, target, true);
+  return removeConnectionMetadata(document, target);
 }
