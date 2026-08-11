@@ -68,26 +68,23 @@ describe("ClientSettings environment identification", () => {
 });
 
 describe("ClientSettings sidebar", () => {
-  it("defaults to the current sidebar with a three-day auto-settle threshold", () => {
+  it("defaults to a three-day auto-settle threshold", () => {
     const settings = decodeClientSettings({});
-    expect(settings.legacySidebarEnabled).toBe(false);
     expect(settings.sidebarAutoSettleAfterDays).toBe(3);
   });
 
-  it("drops the retired sidebar v2 beta keys, resetting everyone to the default", () => {
+  it("drops the retired sidebar beta and legacy keys, resetting everyone to the default", () => {
     const decoded = decodeClientSettings({
       sidebarV2Enabled: false,
       sidebarV2ConfiguredByUser: true,
+      legacySidebarEnabled: true,
     });
-    expect(decoded.legacySidebarEnabled).toBe(false);
     expect(decoded).not.toHaveProperty("sidebarV2Enabled");
     expect(decoded).not.toHaveProperty("sidebarV2ConfiguredByUser");
-  });
-
-  it("preserves an explicit legacy sidebar opt-in", () => {
-    expect(decodeClientSettings({ legacySidebarEnabled: true }).legacySidebarEnabled).toBe(true);
-    expect(decodeClientSettingsPatch({ legacySidebarEnabled: true }).legacySidebarEnabled).toBe(
-      true,
+    // The legacy sidebar is gone; a stored opt-in must not resurrect it.
+    expect(decoded).not.toHaveProperty("legacySidebarEnabled");
+    expect(decodeClientSettingsPatch({ legacySidebarEnabled: true })).not.toHaveProperty(
+      "legacySidebarEnabled",
     );
   });
 
