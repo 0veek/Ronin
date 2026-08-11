@@ -247,12 +247,6 @@ const startup = Effect.gen(function* () {
       xdgCurrentDesktop: process.env.XDG_CURRENT_DESKTOP ?? null,
       xdgSessionDesktop: process.env.XDG_SESSION_DESKTOP ?? null,
     });
-    if (preReadyElectronOptions.linuxGlassVulkanDisabled) {
-      yield* logStartupInfo("linux glass compositor workaround enabled", {
-        reason: "wayland-vulkan-incompatible",
-        disableFeatures: "Vulkan",
-      });
-    }
   }
 
   yield* appIdentity.configure;

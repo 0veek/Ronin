@@ -1,114 +1,180 @@
 <p align="center">
-  <img src="assets/prod/logo.svg" width="96" height="96" alt="Ronin" />
+  <img src="assets/prod/logo.svg" width="112" height="112" alt="Ronin" />
 </p>
 
 <h1 align="center">Ronin</h1>
 
-<p align="center"><strong>浪人</strong> — a masterless samurai. Your agents, no master but you.</p>
+<p align="center">
+  <strong>浪人</strong> · a masterless samurai<br/>
+  <em>Your agents. Your machine. No master but you.</em>
+</p>
 
-Ronin is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class [Electron-based desktop app](https://t3.codes), with an optional local web UI via `npx t3`.
+<p align="center">
+  <a href="#how-ronin-differs-from-t3-code">Why Ronin</a> ·
+  <a href="#what-you-get">What you get</a> ·
+  <a href="#run-it">Run it</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, Ronin can control them.
+---
 
-## "Wait, what are you selling me?"
+Ronin is a **lean desktop harness** for coding agents.
 
-Nothing. We built Ronin because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+It wraps the CLIs you already pay for — Codex, Claude Code, Cursor, Grok Build, OpenCode — in a fast Electron shell with a real chat UI, terminal, preview, and **source control**. Bring your own subscription. Nothing is sold here.
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+This tree is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** — same event-sourced server, same multi-provider adapters, same remote-ready websocket core — re-cut for people who want the blade without the scabbard.
 
-## Installation
+---
 
-> [!WARNING]
-> Ronin currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
+## How Ronin differs from T3 Code
+
+T3 Code is an excellent open product with a wide surface. Ronin is that product after a deliberate **cut**.
+
+|                     | **T3 Code**                                       | **Ronin**                                                              |
+| ------------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| **Identity**        | Broad agent control surface                       | Desktop-first, fork with a sharper edge                                |
+| **Product surface** | Desktop + local web + cloud/Connect paths         | Desktop + local server/renderer — no hosted Connect                    |
+| **Windows / WSL**   | Dual backend, WSL distro orchestration            | Native backends only — **no WSL dual-mode**                            |
+| **Preview**         | Element pick, PiP, Playwright automation          | Tabs, navigate, screenshot, recording — **no pick/PiP/Playwright fat** |
+| **Themes**          | Managed palettes                                  | Managed + **deep OLED** (Void, Azure, Phosphor, Plasma…)               |
+| **Git**             | Full source control                               | **Kept** — checkpoints, diffs, branches, PR flows                      |
+| **Packaging**       | Multi-platform release matrix incl. WSL prebuilds | **Linux-first**, Mac supported; Windows shell without WSL cargo        |
+| **Philosophy**      | Feature-rich open default                         | _Measure twice, cut once_ — keep what earns its weight                 |
+
+### What we cut
+
+- **T3 Connect / hosted relay** — no cloud pairing product surface, no Clerk-shaped hosted path
+- **WSL as a second OS inside the app** — no `wsl.exe` orchestrator, no distro picker, no dual Windows+Linux backend
+- **Playwright preview automation** — no injected browser automation, no element-pick preload, no picture-in-picture guest window
+- **Surface area that only existed to serve the above** — packaging prebuilds, settings toggles, splash states, dead IPC
+
+### What we keep (on purpose)
+
+- **Git features** — checkpoints, restore, diffs, worktrees, source control UI
+- **Multi-provider agents** — Codex · Claude · Cursor · Grok · OpenCode
+- **Remote-ready architecture** — local, LAN, Tailscale/SSH environments
+- **Performance posture** — no continuous GPU-burning chrome; careful about websocket payload and render cost
+- **Open source** — forkable, inspectable, yours
+
+> Ronin is not “T3 Code but worse.” It is **T3 Code with the masterless cut**: fewer doors, same forge.
+
+---
+
+## What you get
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Ronin (Electron)                                       │
+│  ┌─────────────────┐  ┌──────────────────────────────┐  │
+│  │ Chat · Terminal │  │ Preview · Diffs · Settings   │  │
+│  │ Threads · Git   │  │ OLED themes · Keybindings    │  │
+│  └────────┬────────┘  └──────────────▲───────────────┘  │
+│           │  typed WS / IPC          │                  │
+│  ┌────────▼──────────────────────────┴───────────────┐  │
+│  │  Server  ·  event-sourced  ·  provider adapters   │  │
+│  │  checkpoints  ·  reactors  ·  receipts            │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+- **Desktop app** — primary surface (Electron embeds the web renderer)
+- **Local server** — `t3` CLI / Node backend on your machine
+- **Your providers** — if the CLI works in a terminal, Ronin can drive it
+- **Source control** — first-class git, not an afterthought
+
+---
+
+## Run it
+
+> [!IMPORTANT]
+> Install and authenticate at least one provider first:
 >
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+> | Provider   | Install                                               | Auth                  |
+> | ---------- | ----------------------------------------------------- | --------------------- |
+> | Codex      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex login`         |
+> | Claude     | [Claude Code](https://claude.com/product/claude-code) | `claude auth login`   |
+> | Cursor     | [Cursor CLI](https://cursor.com/cli)                  | `agent login`         |
+> | Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok login`          |
+> | OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode auth login` |
 
-### Try it out (install-free)
+### From this fork (recommended)
 
-The easiest way to test Ronin is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+```bash
+# Node 22.16+ / 23.11+ / 24.10+
+curl -fsSL https://vite.plus | bash   # install vp (macOS/Linux)
+
+vp i
+vp run dev            # server + web
+# or
+vp run dev:desktop    # Electron shell
+```
+
+Ports are worktree-stable; read the `[dev-runner]` line for the real URL. The web UI needs a **pairing URL** (token included) from the server output — bare origin is not enough.
+
+### Local web without a full clone
+
+Upstream’s one-liner still boots the shared stack:
 
 ```bash
 npx t3@latest
 ```
 
-This will launch Ronin's backend on your machine as well as the local web app to control your agents.
+Use that for a quick feel of the harness; **Ronin-specific cuts and branding live in this repo**.
 
-Tip: Use `npx t3@latest --help` for the full CLI reference.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
+### Desktop artifact (packaged)
 
 ```bash
-winget install T3Tools.T3Code
+vp run build:desktop
+# Linux AppImage (primary packaging path)
+vp run dist:desktop:linux
+# macOS
+vp run dist:desktop:dmg:arm64
 ```
 
-#### macOS (Homebrew)
+---
 
-```bash
-brew install --cask t3-code
-```
+## Themes
 
-#### Arch Linux (AUR)
+Ronin ships dark-first palettes and **OLED pure-black** options — Void, Azure, Phosphor, Plasma — for late nights and true-black panels. Glass works best when the compositor cooperates; on Wayland+Vulkan, desktop softens the path so backdrop blur does not fall over.
 
-```bash
-yay -S t3code-bin
-```
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
+---
 
 ## Documentation
 
-Full docs live in [docs/](./docs). There's no docs site yet.
+| Audience           | Start here                                                   |
+| ------------------ | ------------------------------------------------------------ |
+| Using Ronin        | [docs/user/install.md](./docs/user/install.md)               |
+| Keybindings        | [docs/user/keybindings.md](./docs/user/keybindings.md)       |
+| Source control     | [docs/user/source-control.md](./docs/user/source-control.md) |
+| Remote / Tailscale | [docs/user/remote-access.md](./docs/user/remote-access.md)   |
+| Architecture       | [docs/internals/overview.md](./docs/internals/overview.md)   |
+| Glossary           | [docs/internals/glossary.md](./docs/internals/glossary.md)   |
 
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Customize a project icon](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run Ronin as a background service](./docs/user/background-service.md)
+Full tree: [docs/](./docs).
 
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
+---
 
-## If you REALLY want to contribute still.... read this first
+## Status
 
-### Install `vp`
-
-Ronin uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
-vp i
-```
+Early. Expect bugs. Prefer small fixes over grand PRs unless we ask.
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+---
+
+## Lineage
+
+Ronin stands on **[T3 Code](https://github.com/pingdotgg/t3code)** by Theo and the T3 tools team — open architecture, provider adapters, and a desktop product that already refused to ship slop.
+
+We keep that soul. We discard the weight that does not serve a **masterless desktop**.
+
+```
+upstream  →  pingdotgg/t3code
+this fork →  0veek/t3code  (Ronin)
+```
+
+---
+
+<p align="center">
+  <sub>浪人 — cut free. Keep the blade sharp.</sub>
+</p>

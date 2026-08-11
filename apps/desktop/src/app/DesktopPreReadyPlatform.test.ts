@@ -118,7 +118,6 @@ describe("DesktopPreReadyPlatform", () => {
         preReady: {
           linux: null,
           linuxPasswordStoreCommandLine: null,
-          linuxGlassVulkanDisabled: false,
         },
       });
       assert.deepEqual(events, ["pre-ready", "deferred"]);
@@ -126,42 +125,4 @@ describe("DesktopPreReadyPlatform", () => {
       assert.equal(appendSwitchMock.mock.calls.length, 0);
     }),
   );
-
-  it("detects Wayland sessions that need Vulkan disabled for glass", () => {
-    assert.isTrue(
-      DesktopPreReadyPlatform.shouldDisableVulkanForLinuxGlass({
-        XDG_SESSION_TYPE: "wayland",
-      }),
-    );
-    assert.isTrue(
-      DesktopPreReadyPlatform.shouldDisableVulkanForLinuxGlass({
-        WAYLAND_DISPLAY: "wayland-1",
-      }),
-    );
-    assert.isFalse(
-      DesktopPreReadyPlatform.shouldDisableVulkanForLinuxGlass({
-        XDG_SESSION_TYPE: "x11",
-      }),
-    );
-  });
-
-  it("merges disable-features lists when enabling the glass compositor workaround", () => {
-    assert.equal(
-      DesktopPreReadyPlatform.mergeCommandLineFeatureList("Foo, Bar", ["Vulkan", "Foo"]),
-      "Foo,Bar,Vulkan",
-    );
-
-    const appendSwitch = vi.fn();
-    const applied = DesktopPreReadyPlatform.applyLinuxGlassCompositorSwitches(
-      {
-        hasSwitch: (name) => name === "disable-features",
-        getSwitchValue: () => "ExistingFeature",
-        appendSwitch,
-      },
-      { XDG_SESSION_TYPE: "wayland" },
-    );
-
-    assert.isTrue(applied);
-    assert.deepEqual(appendSwitch.mock.calls, [["disable-features", "ExistingFeature,Vulkan"]]);
-  });
 });

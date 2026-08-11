@@ -1,5 +1,5 @@
 import { ChartNoAxesColumnIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
-import { memo, useCallback, useId } from "react";
+import { memo, useCallback } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -80,7 +80,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <RoninMark />
+      <RoninAppIcon />
       <span
         className={cn(
           "truncate text-sm font-medium tracking-tight",
@@ -94,33 +94,16 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 }
 
 /**
- * The Ronin kasa, in one colour so it reads against both the sidebar surface
- * and the stage backdrop. Geometry is assets/brand/ronin-mark-mono.svg; the
- * blade is clipped against an inflated copy of the hat so the two shapes stay
- * separate at this size instead of merging into a blob.
+ * The generated app icon rather than a tinted mark, so the sidebar badge is the
+ * same artwork as the dock and the browser tab. The build copies the icons for
+ * the active channel into the web root, so this one file is the blue dev icon,
+ * the night-sky nightly icon, or the black release icon without any branching
+ * here. Corners are already rounded in the export.
+ *
+ * Decorative: the adjacent "Ronin" text already names the link.
  */
-function RoninMark() {
-  const maskId = useId();
-  const hat = "M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z";
-  return (
-    <svg
-      aria-label="Ronin"
-      className="size-4 shrink-0"
-      viewBox="6 6 116 116"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <mask height="128" id={maskId} maskUnits="userSpaceOnUse" width="128" x="0" y="0">
-        <rect fill="white" height="128" width="128" />
-        <path d={hat} fill="black" stroke="black" strokeLinejoin="round" strokeWidth="7" />
-      </mask>
-      <path
-        d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z"
-        fill="currentColor"
-        mask={`url(#${maskId})`}
-      />
-      <path d={hat} fill="currentColor" />
-    </svg>
-  );
+function RoninAppIcon() {
+  return <img alt="" className="size-5 shrink-0" src="/apple-touch-icon.png" />;
 }
 
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {

@@ -29,56 +29,6 @@ export function readCommandLineSwitchValue(
   return value.length > 0 ? value : null;
 }
 
-/**
- * Chromium's Wayland Ozone path is not compatible with Vulkan. When both are
- * active, GPU compositing for effects such as CSS `backdrop-filter` (glass
- * surfaces) fails silently while `CSS.supports('backdrop-filter', …)` still
- * returns true. Prefer OpenGL on Wayland so glass menus/composer actually blur.
- */
-export function shouldDisableVulkanForLinuxGlass(env: NodeJS.ProcessEnv): boolean {
-  const sessionType = env.XDG_SESSION_TYPE?.trim().toLowerCase();
-  if (sessionType === "wayland") {
-    return true;
-  }
-  return Boolean(env.WAYLAND_DISPLAY?.trim());
-}
-
-export function mergeCommandLineFeatureList(
-  existing: string | null | undefined,
-  features: readonly string[],
-): string {
-  const values = new Set<string>();
-  for (const entry of existing?.split(",") ?? []) {
-    const trimmed = entry.trim();
-    if (trimmed.length > 0) {
-      values.add(trimmed);
-    }
-  }
-  for (const feature of features) {
-    const trimmed = feature.trim();
-    if (trimmed.length > 0) {
-      values.add(trimmed);
-    }
-  }
-  return [...values].join(",");
-}
-
-export function applyLinuxGlassCompositorSwitches(
-  commandLine: DesktopPreReadyCommandLineReader & {
-    readonly appendSwitch: (switchName: string, value?: string) => void;
-  },
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
-  if (!shouldDisableVulkanForLinuxGlass(env)) {
-    return false;
-  }
-
-  const existing = readCommandLineSwitchValue(commandLine, "disable-features");
-  const merged = mergeCommandLineFeatureList(existing, ["Vulkan"]);
-  commandLine.appendSwitch("disable-features", merged);
-  return true;
-}
-
 export const resolveEarlyLinuxElectronOptionsFromProcess =
   (): DesktopEarlyElectronStartup.EarlyLinuxElectronOptions =>
     DesktopEarlyElectronStartup.resolveEarlyLinuxElectronOptions({
@@ -93,7 +43,6 @@ export class DesktopPreReadyElectronOptions extends Context.Service<
   {
     readonly linux: DesktopEarlyElectronStartup.EarlyLinuxElectronOptions | null;
     readonly linuxPasswordStoreCommandLine: string | null;
-    readonly linuxGlassVulkanDisabled: boolean;
   }
 >()("@t3tools/desktop/app/DesktopPreReadyPlatform/DesktopPreReadyElectronOptions") {}
 
@@ -105,19 +54,15 @@ export const make = Effect.gen(function* () {
         ? readCommandLineSwitchValue(Electron.app.commandLine, "password-store")
         : null;
     const linux = platform === "linux" ? resolveEarlyLinuxElectronOptionsFromProcess() : null;
-    let linuxGlassVulkanDisabled = false;
 
     if (linux !== null) {
       Electron.app.commandLine.appendSwitch("class", linux.linuxWmClass);
       if (linux.passwordStore !== null && linuxPasswordStoreCommandLine === null) {
         Electron.app.commandLine.appendSwitch("password-store", linux.passwordStore);
       }
-      // Must run before app ready so the compositor picks OpenGL instead of the
-      // broken Wayland+Vulkan path that drops backdrop-filter blur.
-      linuxGlassVulkanDisabled = applyLinuxGlassCompositorSwitches(Electron.app.commandLine);
     }
 
-    return { linux, linuxPasswordStoreCommandLine, linuxGlassVulkanDisabled };
+    return { linux, linuxPasswordStoreCommandLine };
   });
 }).pipe(Effect.withSpan("desktop.electron.configureBeforeReady"));
 
