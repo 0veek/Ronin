@@ -1,0 +1,205 @@
+/* Document-level rules, shared utilities, and the scrollbar treatment. */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus,
+  :where(
+    [data-slot="menu-popup"],
+    [data-slot="select-popup"],
+    [data-slot="popover-popup"]
+  ):focus-visible {
+    @apply outline-none ring-0;
+  }
+  html {
+    background-color: var(--app-chrome-background);
+  }
+  body {
+    @apply text-foreground relative;
+    background-color: var(--app-chrome-background);
+  }
+}
+
+/* Safe-area inset utilities for surfaces that opt into edge-to-edge rendering.
+   Insets resolve to 0 when the browser already constrains the layout viewport
+   to the safe area. */
+@utility pt-safe {
+  padding-top: max(env(safe-area-inset-top), 0px);
+}
+@utility pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+@utility pl-safe {
+  padding-left: max(env(safe-area-inset-left), 0px);
+}
+@utility pr-safe {
+  padding-right: max(env(safe-area-inset-right), 0px);
+}
+
+/* Grain texture for chrome surfaces that float above the body (see the
+   --surface-grain note). Layered over the element's background-color, so it
+   composes with bg-* utilities. */
+@utility surface-grain {
+  background-image: var(--surface-grain);
+  background-repeat: repeat;
+  background-size: var(--surface-grain-size);
+}
+
+/* Small-caps metadata label: sidebar section headers, panel subheaders, any
+   place a word is acting as a rule rather than as prose. Mono, because the
+   editorial contrast between a mono label and sans content is what carries the
+   hierarchy now that filled pills are gone. */
+@utility label-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Suppress all transitions during theme changes */
+.no-transitions,
+.no-transitions *,
+.no-transitions *::before,
+.no-transitions *::after {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+}
+
+body {
+  /* Reference the theme token (not a literal stack) so the Settings ->
+     Appearance runtime override of --font-sans reaches all interface text. */
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  background-image: var(--surface-grain);
+  background-repeat: repeat;
+  background-size: var(--surface-grain-size);
+  /* Variable fonts render noticeably crisper with grayscale smoothing on the
+     dark surfaces this app spends most of its life on. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html,
+body {
+  min-height: calc(100svh + env(safe-area-inset-top));
+  overscroll-behavior: none;
+}
+
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: hidden;
+  overscroll-behavior-y: none;
+  padding-top: max(env(safe-area-inset-top), 0px);
+  padding-right: var(--desktop-window-right-resize-inset);
+}
+
+.electron-windows {
+  --desktop-window-right-resize-inset: 6px;
+}
+
+/* Every mono surface in this app is showing something measured — code, paths,
+   counts, line numbers, durations — so the mono face defaults to a fixed digit
+   advance. Individual surfaces that already opt in with `tabular-nums` are
+   unaffected; this only catches the ones that never thought about it. */
+pre,
+code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Code blocks in chat carry the size preference. Scoped to chat markdown
+   rather than every pre: a global rule would beat text-size utilities and
+   inherited sizes on unrelated pre surfaces (terminal previews, approvals).
+   Inline code stays relative to its sentence so it never towers over prose;
+   diffs and file previews take the size through --diffs-font-size. */
+.chat-markdown .chat-markdown-shiki .shiki,
+.chat-markdown pre code {
+  font-size: var(--font-size-code, inherit);
+}
+
+/* Window drag region (frameless titlebar) */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.drag-region button,
+.drag-region input,
+.drag-region textarea,
+.drag-region select,
+.drag-region a {
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: var(--app-scrollbar-width);
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+}
+
+/* Settings -> Appearance can point the composer at its own face (for example a
+   mono font); default follows the sans stack. Applied on the surface wrapper so
+   the editor and its placeholder inherit together. */
+.composer-editor-surface {
+  font-family: var(--font-composer, var(--font-sans));
+  font-size: var(--font-size-prompt, 0.875rem);
+}
+
+/* Touch browsers zoom the page when a focused field is under 16px, so keep
+   the floor there regardless of the preference. Gated on a coarse pointer:
+   the zoom quirk does not exist on desktop, where a narrow window must not
+   silently override a smaller chosen prompt size. */
+@media (max-width: 39.999rem) and (pointer: coarse) {
+  .composer-editor-surface {
+    font-size: max(var(--font-size-prompt, 1rem), 16px);
+  }
+}
+
+.turn-chip-strip {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overscroll-behavior-x: contain;
+}
+
+.turn-chip-strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* Reasoning select -- clickable label surface */
+label:has(> select#reasoning-effort) {
+  position: relative;
+}
+label:has(> select#reasoning-effort) select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}

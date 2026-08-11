@@ -17,7 +17,7 @@ describe("DiffCommentAnnotation", () => {
     );
 
     expect(markup).toContain("font-sans");
-    expect(markup).not.toContain("chat-composer-glass");
+    expect(markup).not.toContain("composer-surface");
     expect(markup).not.toContain("font-mono");
     expect(markup).not.toContain("Local comment");
     expect(markup).not.toContain("on +78");
@@ -68,7 +68,7 @@ describe("DiffCommentAnnotation", () => {
     );
 
     expect(markup).toContain("font-sans");
-    expect(markup).not.toContain("chat-composer-glass");
+    expect(markup).not.toContain("composer-surface");
     expect(markup).not.toContain("on +78");
     expect(markup).toContain("Please keep this branch explicit.");
     expect(markup).toContain('aria-label="Delete comment"');

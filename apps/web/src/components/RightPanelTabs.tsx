@@ -19,8 +19,10 @@ import {
   useRef,
   useState,
 } from "react";
+import { flushSync } from "react-dom";
 
 import { isElectron } from "~/env";
+import { runPanelSurfaceTransition } from "~/lib/viewTransition";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
@@ -447,8 +449,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     >
       <div
         className={cn(
-          "workspace-topbar gap-1 pl-2",
-          props.mode !== "inline" && "[--workspace-topbar-height:--spacing(11)]",
+          "workspace-topbar gap-1 border-b border-border pl-2",
           props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
           ownsDesktopTitleBar && "wco:pr-[calc(var(--workspace-native-controls-inset)+6rem)]",
           props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
@@ -462,7 +463,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           className={cn("min-w-0 flex-1 rounded-none", ownsDesktopTitleBar && "drag-region")}
           data-right-panel-tab-list
         >
-          <div className="flex h-full w-max min-w-full items-center gap-1">
+          <div className="flex h-full w-max min-w-full items-center">
             {props.surfaces.map((surface) => {
               const active = surface.id === props.activeSurfaceId;
               const pending = props.pendingSurfaceIds.has(surface.id);
@@ -475,15 +476,13 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   onAuxClick={(event) => handleTabAuxClick(event, surface)}
                   onContextMenu={(event) => void handleTabContextMenu(event, surface)}
                   className={cn(
-                    "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
-                    active
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                    "panel-tab cursor-pointer group/tab flex h-full max-w-44 shrink-0 items-center gap-1.5 pr-2.5 pl-2",
+                    active ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <button
                     type="button"
-                    className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+                    className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-(--control-radius) hover:bg-accent"
                     aria-label={`Close ${title}`}
                     onClick={() => props.onCloseSurface(surface)}
                   >
@@ -508,10 +507,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                       render={
                         <button
                           type="button"
-                          className="cursor-pointer flex min-w-0 items-center"
-                          onClick={() => props.onActivate(surface)}
+                          className="cursor-pointer flex h-full min-w-0 items-center"
+                          onClick={() => {
+                            // flushSync so the swapped surface is in the DOM
+                            // before the browser captures the "new" snapshot.
+                            void runPanelSurfaceTransition(() => {
+                              flushSync(() => props.onActivate(surface));
+                            });
+                          }}
                         >
-                          <span className="truncate">{title}</span>
+                          {/* Tab titles are paths, terminal labels and PR refs
+                              -- addresses, not prose. Mono keeps them aligned
+                              and legible when truncated. */}
+                          <span className="truncate font-mono text-xs">{title}</span>
                         </button>
                       }
                     />
@@ -523,7 +531,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             {props.surfaces.length > 0 ? (
               <Menu>
                 <MenuTrigger
-                  className="cursor-pointer relative inline-flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+                  className="cursor-pointer relative ml-1 inline-flex size-6 shrink-0 items-center justify-center rounded-(--control-radius) text-muted-foreground hover:bg-accent hover:text-foreground"
                   aria-label="Add panel surface"
                 >
                   <Plus className="size-3.5" />

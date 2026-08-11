@@ -91,7 +91,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
 
   return (
     <Command autoHighlight={false} mode="none">
-      <div className="dropdown-glass relative w-full overflow-hidden rounded-[20px]">
+      <div className="surface-menu relative w-full overflow-hidden rounded-[var(--radius-lg)]">
         <CommandList className="max-h-72">
           <CommandGroup>
             <CommandGroupLabel className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-secondary-label">

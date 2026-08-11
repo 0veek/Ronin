@@ -743,8 +743,8 @@ export function PullRequestDetailPanel({
               // Sequenced, not simultaneous: the leaving layer clears quickly before the
               // arriving one lands, so no frame shows both texts superimposed at half opacity.
               condensed
-                ? "pointer-events-none opacity-0 duration-100"
-                : "opacity-100 delay-75 duration-150",
+                ? "pointer-events-none opacity-0 duration-(--duration-instant)"
+                : "opacity-100 delay-75 duration-(--duration-fast)",
             )}
           >
             {detail && statePresentation ? (
@@ -773,8 +773,8 @@ export function PullRequestDetailPanel({
             className={cn(
               "col-start-1 row-start-1 flex min-w-0 items-center gap-1.5 text-sm transition-opacity sm:text-xs motion-reduce:transition-none",
               condensed
-                ? "opacity-100 delay-75 duration-150"
-                : "pointer-events-none opacity-0 duration-100",
+                ? "opacity-100 delay-75 duration-(--duration-fast)"
+                : "pointer-events-none opacity-0 duration-(--duration-instant)",
             )}
           >
             {detail && statePresentation ? (
@@ -1021,7 +1021,7 @@ export function PullRequestDetailPanel({
             className={cn(
               "min-h-0 overflow-hidden",
               condensed
-                ? "opacity-100 transition-opacity duration-200 ease-out motion-reduce:transition-none"
+                ? "opacity-100 transition-opacity duration-(--duration-base) ease-out motion-reduce:transition-none"
                 : "opacity-0",
             )}
             inert={!condensed}
@@ -1092,7 +1092,7 @@ export function PullRequestDetailPanel({
               "min-h-0 overflow-hidden",
               condensed
                 ? "opacity-0"
-                : "opacity-100 transition-opacity duration-200 ease-out motion-reduce:transition-none",
+                : "opacity-100 transition-opacity duration-(--duration-base) ease-out motion-reduce:transition-none",
             )}
             inert={condensed}
           >
@@ -1121,7 +1121,7 @@ export function PullRequestDetailPanel({
                   >
                     <code
                       className={cn(
-                        "col-start-1 row-start-1 min-w-0 truncate transition-opacity duration-150 motion-reduce:transition-none",
+                        "col-start-1 row-start-1 min-w-0 truncate transition-opacity duration-(--duration-fast) motion-reduce:transition-none",
                         isBranchCopied ? "opacity-0" : "opacity-100",
                       )}
                       title={detail.headBranch}
@@ -1131,7 +1131,7 @@ export function PullRequestDetailPanel({
                     <span
                       aria-hidden="true"
                       className={cn(
-                        "col-start-1 row-start-1 truncate text-center transition-opacity duration-150 motion-reduce:transition-none",
+                        "col-start-1 row-start-1 truncate text-center transition-opacity duration-(--duration-fast) motion-reduce:transition-none",
                         isBranchCopied ? "opacity-100" : "opacity-0",
                       )}
                     >

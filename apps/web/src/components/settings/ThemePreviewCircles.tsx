@@ -1,5 +1,4 @@
 import { MoonIcon, SunIcon } from "lucide-react";
-import type { CSSProperties } from "react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -95,66 +94,57 @@ export function getThemeCardDefinition(theme: ThemeDefinition): ThemeCardDefinit
   };
 }
 
-// Interpolating in oklab keeps the glow falloff perceptually even (no gray
-// mid-tones or banding rings), and premultiplied alpha keeps the fade to
-// transparent clean.
-function getThemePreviewStyle(
-  colors: ThemeCardPreviewColors,
-  mode: ThemeAppearance,
-): CSSProperties {
-  const isDark = mode === "dark";
-  // The canvas carries the ball's light/dark identity, so it stays dominant:
-  // a near-true base with a contained accent glow, instead of an accent wash
-  // that makes both modes read alike.
-  const modeBase = isDark
-    ? `color-mix(in oklab, ${colors.canvas} 80%, #09090b)`
-    : `color-mix(in oklab, ${colors.canvas} 80%, #ffffff)`;
-  const accentPosition = isDark ? "28% 78%" : "72% 22%";
-  const actionPosition = isDark ? "82% 18%" : "18% 82%";
-  const accentFade = isDark ? 62 : 72;
-  return {
-    backgroundColor: modeBase,
-    backgroundImage: [
-      `radial-gradient(circle at ${accentPosition} in oklab, ${colors.accent} 0%, color-mix(in oklab, ${colors.accent} ${accentFade}%, transparent) 28%, transparent 58%)`,
-      // The action color is a soft tint from the opposite corner, not a second
-      // light source — two bright hotspots read as headlights.
-      `radial-gradient(circle at ${actionPosition} in oklab, color-mix(in oklab, ${colors.messageAction} 45%, transparent) 0%, transparent 55%)`,
-    ].join(", "),
-  };
+/**
+ * The swatch was a blurred two-hotspot radial gradient in an inset-ringed
+ * circle -- a lit glass ball. It read as a lozenge of mood rather than a
+ * palette, and at 56px the blur cost a composited layer per theme card.
+ *
+ * A flat swatch can be literal instead: it is the shell in miniature, the same
+ * regions the wireframe draws, so a glance at the ball answers "what will the
+ * sidebar look like next to the canvas" rather than "is this one warm".
+ */
+function themePreviewLine(mode: ThemeAppearance): string {
+  return mode === "dark" ? "rgb(255 255 255 / 0.16)" : "rgb(0 0 0 / 0.12)";
 }
 
-// The gradient halves of each ball can match the card surface, so every ball
-// carries a faint mode-appropriate inner ring to keep its silhouette legible.
-function themePreviewEdgeShadow(mode: ThemeAppearance): string {
-  return mode === "dark"
-    ? "inset 0 0 0 1px rgb(255 255 255 / 0.14), 0 1px 2px rgb(0 0 0 / 0.18)"
-    : "inset 0 0 0 1px rgb(0 0 0 / 0.10), 0 1px 2px rgb(0 0 0 / 0.08)";
-}
-
-export function ThemePreviewCircle({
+function ThemePreviewSwatch({
   colors,
   mode,
 }: {
   colors: ThemeCardPreviewColors;
   mode: ThemeAppearance;
 }) {
+  const line = themePreviewLine(mode);
   return (
     <span
       aria-hidden
-      className="relative block size-14 shrink-0 overflow-hidden rounded-full border-2 border-background"
-      style={{ boxShadow: themePreviewEdgeShadow(mode) }}
+      className="relative block size-14 shrink-0 overflow-hidden rounded-(--radius)"
+      style={{ backgroundColor: colors.canvas, boxShadow: `inset 0 0 0 1px ${line}` }}
     >
       <span
-        className="absolute inset-0 scale-110 rounded-full blur-[3px]"
-        style={getThemePreviewStyle(colors, mode)}
+        className="absolute inset-y-0 left-0 w-[32%]"
+        style={{ backgroundColor: colors.sidebar, boxShadow: `inset -1px 0 0 ${line}` }}
+      />
+      {/* The accent marks the active sidebar row, exactly as the shell does. */}
+      <span
+        className="absolute left-0 top-[26%] h-[16%] w-[6%]"
+        style={{ backgroundColor: colors.messageAction }}
+      />
+      <span
+        className="absolute right-[14%] top-[22%] h-[24%] w-[38%]"
+        style={{ backgroundColor: colors.messageSurface }}
+      />
+      <span
+        className="absolute bottom-[20%] left-[42%] right-[14%] h-[14%]"
+        style={{ backgroundColor: colors.accent }}
       />
     </span>
   );
 }
 
 /**
- * A theme card's light and dark balls. Clicking a ball assigns that theme to
- * that half of the appearance mix; assigned balls carry a ring and a sun or
+ * A theme card's light and dark swatches. Clicking one assigns that theme to
+ * that half of the appearance mix; assigned swatches carry a ring and a sun or
  * moon badge.
  */
 export function ThemePreviewCircles({
@@ -181,7 +171,7 @@ export function ThemePreviewCircles({
                   aria-label={`Use ${label} ${mode} mode`}
                   aria-pressed={isPicked}
                   className={cn(
-                    "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-full p-1 outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                    "relative flex size-[68px] shrink-0 transform-gpu cursor-pointer items-center justify-center rounded-(--radius) p-1.5 outline-none transition-transform duration-(--duration-fast) ease-out hover:scale-105 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
                     isPicked && "hover:scale-100",
                   )}
                   onClick={(event) => {
@@ -190,17 +180,17 @@ export function ThemePreviewCircles({
                   }}
                   type="button"
                 >
-                  <ThemePreviewCircle colors={preview.colors} mode={mode} />
+                  <ThemePreviewSwatch colors={preview.colors} mode={mode} />
                   {isPicked ? (
                     <>
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute inset-0 rounded-full"
+                        className="pointer-events-none absolute inset-0 rounded-(--radius)"
                         style={{ boxShadow: "inset 0 0 0 2px var(--ring)" }}
                       />
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute bottom-0.5 right-0.5 flex size-5 items-center justify-center rounded-full border border-border/70 bg-background text-foreground shadow-sm"
+                        className="pointer-events-none absolute bottom-0 right-0 flex size-5 items-center justify-center rounded-(--control-radius) border border-border bg-background text-foreground"
                       >
                         {mode === "light" ? (
                           <SunIcon className="size-3" />

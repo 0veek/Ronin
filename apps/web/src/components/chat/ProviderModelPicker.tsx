@@ -188,7 +188,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       </PopoverTrigger>
       <PopoverPopup
         align="start"
-        className="border-0 bg-transparent p-0 shadow-none before:hidden [-webkit-backdrop-filter:none]! [--viewport-inline-padding:0] [backdrop-filter:none]!"
+        // ModelPickerContent draws its own frame, so the popover's
+        // `surface-menu` fill, hairline and shadow all have to be stripped or
+        // they double up behind it.
+        className="border-0 bg-transparent p-0 shadow-none [--viewport-inline-padding:0]"
         viewportClassName="rounded-lg !overflow-hidden p-0"
       >
         <ModelPickerContent

@@ -20,7 +20,10 @@ import { MENU_ACTION_CHANNEL, WINDOW_FULLSCREEN_STATE_CHANNEL } from "../ipc/cha
 import * as PreviewManager from "../preview/Manager.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 
-const TITLEBAR_HEIGHT = 40;
+// Matches --workspace-topbar-height in apps/web/src/styles/tokens.css. The
+// renderer reads this back through env(titlebar-area-height), so the two must
+// move together or the workspace topbar and the window controls disagree.
+const TITLEBAR_HEIGHT = 44;
 const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linux
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
@@ -187,7 +190,9 @@ function getWindowTitleBarOptions(
   if (platform === "darwin") {
     return {
       titleBarStyle: "hiddenInset",
-      trafficLightPosition: { x: 16, y: 18 },
+      // y centres the ~16px button cluster in the TITLEBAR_HEIGHT bar; macOS
+      // has no env() equivalent to read it from, so it is computed here.
+      trafficLightPosition: { x: 16, y: Math.round((TITLEBAR_HEIGHT - 16) / 2) },
     };
   }
 

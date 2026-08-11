@@ -17,7 +17,7 @@ export function AuthSurfaceShell({ children }: { readonly children: ReactNode })
         <div className="absolute inset-0 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--background)_94%,var(--color-black))_0%,var(--background)_62%)]" />
       </div>
 
-      <section className="relative w-full max-w-xl overflow-hidden rounded-2xl border border-border/80 bg-card/94 shadow-2xl shadow-black/20 backdrop-blur-md">
+      <section className="relative w-full max-w-xl overflow-hidden rounded-(--radius-lg) border border-border bg-card">
         <header className="relative h-24 overflow-hidden bg-[linear-gradient(135deg,#1e61de,#17348e)] text-white">
           {stageVariant ? (
             <div className="absolute inset-0" aria-hidden>

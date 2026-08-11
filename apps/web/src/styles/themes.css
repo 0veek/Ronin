@@ -1,0 +1,332 @@
+/*
+ * Theme bridge. Theme files are expressed in app color roles (themePalette.ts
+ * writes them as --app-theme-*); this file maps those roles onto the semantic
+ * surface tokens the rest of the app reads. Success, info, provider, and
+ * channel identity colors remain independent; error, warning, and update roles
+ * are themeable.
+ */
+
+/* Keep every sidebar primitive on the same quiet zinc hierarchy when no theme
+   is applied: zinc-50 navigation, zinc-25 hover, white selected/raised. */
+[data-app-sidebar] {
+  --background: var(--color-zinc-25);
+  --foreground: var(--color-zinc-800);
+  --card: var(--color-white);
+  --card-foreground: var(--color-zinc-800);
+  --accent: var(--color-zinc-100);
+  --accent-foreground: var(--color-zinc-900);
+  --muted: var(--color-zinc-50);
+  --muted-foreground: var(--color-zinc-500);
+  --border: var(--color-zinc-200);
+  --input: var(--color-zinc-300);
+  --sidebar: var(--color-zinc-50);
+  --sidebar-foreground: var(--color-zinc-800);
+  --sidebar-muted-foreground: var(--color-zinc-500);
+  --sidebar-control-surface: var(--color-zinc-100);
+  --sidebar-row-hover: var(--color-zinc-25);
+  --sidebar-row-active: var(--color-white);
+  --sidebar-row-selected: var(--color-white);
+  --sidebar-border: var(--color-zinc-200);
+  --sidebar-stage-fade: var(--sidebar);
+  background-color: var(--sidebar);
+}
+
+.dark [data-app-sidebar] {
+  --background: #000;
+  --foreground: #f1f3f7;
+  --card: #000;
+  --card-foreground: var(--foreground);
+  --accent: #191a1d;
+  --accent-foreground: #f7f9ff;
+  --muted: #0a0a0a;
+  --muted-foreground: #a3a3a3;
+  --border: rgb(255 255 255 / 8%);
+  --input: rgb(255 255 255 / 18%);
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
+  --sidebar-control-surface: var(--muted);
+  --sidebar-row-hover: color-mix(in srgb, var(--foreground) 8%, transparent);
+  --sidebar-row-active: color-mix(in srgb, var(--foreground) 11%, transparent);
+  --sidebar-row-selected: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --sidebar-border: var(--border);
+  /* The stage-channel header art must ramp to THIS panel's surface, not the
+     global chrome background, or the fade shows a seam. */
+  --sidebar-stage-fade: var(--card);
+}
+
+/* Keep this block after the sidebar compatibility overrides so navigation
+   receives the same palette. */
+html[data-theme-id],
+html.dark[data-theme-id] {
+  --background: var(--app-theme-canvas);
+  --app-chrome-background: var(--app-theme-chrome);
+  --toolbar-background: var(--app-theme-toolbar);
+  --toolbar-foreground: var(--app-theme-toolbar-foreground);
+  --toolbar-border: var(--app-theme-toolbar-border);
+  --toolbar-control: var(--app-theme-toolbar-control);
+  --toolbar-control-foreground: var(--app-theme-toolbar-control-foreground);
+  --toolbar-control-hover: var(--app-theme-toolbar-control-hover);
+  --surface-raised: var(--app-theme-surface-raised);
+  --foreground: var(--app-theme-text);
+  --card: var(--app-theme-surface);
+  --card-foreground: var(--app-theme-text);
+  --popover: var(--app-theme-surface-overlay);
+  --popover-foreground: var(--app-theme-text);
+  /* Solid controls (CTAs, switches, sliders, the send button) all share the
+     theme's action color so every "act now" affordance reads consistently;
+     the accent keeps driving surfaces, selection, and focus. Palettes without
+     a distinct action color make these identical. */
+  --primary: var(--app-theme-message-action);
+  --primary-foreground: var(--app-theme-message-action-foreground);
+  --secondary: var(--app-theme-secondary);
+  --secondary-foreground: var(--app-theme-secondary-foreground);
+  --muted: var(--app-theme-muted);
+  --muted-foreground: var(--app-theme-muted-foreground);
+  --placeholder: var(--app-theme-placeholder);
+  --secondary-label: var(--app-theme-secondary-label);
+  --icon-muted: var(--app-theme-icon-muted);
+  --accent: var(--app-theme-accent-surface);
+  --accent-foreground: var(--app-theme-accent-surface-foreground);
+  --message-surface: var(--app-theme-message-surface);
+  --message-foreground: var(--app-theme-message-foreground);
+  --message-action: var(--app-theme-message-action);
+  --message-action-foreground: var(--app-theme-message-action-foreground);
+  --message-action-hover: var(--app-theme-message-action-hover);
+  --error: var(--app-theme-error);
+  --error-foreground: var(--app-theme-error-foreground);
+  --error-surface: var(--app-theme-error-surface);
+  --destructive: var(--error);
+  --destructive-foreground: var(--error-foreground);
+  --warning: var(--app-theme-warning);
+  --warning-foreground: var(--app-theme-warning-foreground);
+  --warning-surface: var(--app-theme-warning-surface);
+  --update: var(--app-theme-update);
+  --update-foreground: var(--app-theme-update-foreground);
+  --update-surface: var(--app-theme-update-surface);
+  --border: var(--app-theme-border);
+  --input: var(--app-theme-input);
+  --ring: var(--app-theme-focus);
+  --sidebar: var(--app-theme-sidebar);
+  --sidebar-foreground: var(--app-theme-sidebar-foreground);
+  --sidebar-muted-foreground: var(--app-theme-sidebar-muted-foreground);
+  --sidebar-control-surface: var(--app-theme-sidebar-control-surface);
+  --sidebar-row-hover: var(--app-theme-sidebar-row-hover);
+  --sidebar-row-active: var(--app-theme-sidebar-row-active);
+  --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
+  --sidebar-border: var(--app-theme-sidebar-border);
+  --sidebar-stage-fade: var(--app-theme-sidebar);
+  --code-background: var(--app-theme-code-background);
+  --code-foreground: var(--app-theme-code-foreground);
+  --terminal-background: var(--app-theme-terminal-background);
+  --terminal-foreground: var(--app-theme-terminal-foreground);
+  --terminal-cursor: var(--app-theme-terminal-cursor);
+  --terminal-selection-background: var(--app-theme-terminal-selection-background);
+  --terminal-scrollbar: var(--app-theme-terminal-scrollbar);
+  --terminal-scrollbar-hover: var(--app-theme-terminal-scrollbar-hover);
+}
+
+html[data-theme-id]:not(.dark) {
+  color-scheme: light;
+}
+
+html.dark[data-theme-id] {
+  color-scheme: dark;
+}
+
+html[data-theme-id] body {
+  background-color: var(--app-chrome-background);
+  color: var(--foreground);
+}
+
+/* Theme-token dependency probes are restored synchronously, before paint. Keep
+   transitions from observing the temporary sentinel color in between. */
+html[data-theme-token-probe],
+html[data-theme-token-probe] *,
+html[data-theme-token-probe] *::before,
+html[data-theme-token-probe] *::after {
+  transition: none !important;
+}
+
+/* Workspace actions use a small, separate chrome hierarchy. Keeping these
+   roles explicit prevents the thread toolbar from falling back to the default
+   dark-mode whites while preserving the same theme file across clients. */
+html[data-theme-id] [data-chat-header] {
+  background-color: var(--toolbar-background);
+  color: var(--toolbar-foreground);
+}
+
+html[data-theme-id] [data-chat-header] [data-slot="button"],
+html[data-theme-id] [data-chat-header] [data-slot="menu-trigger"],
+html[data-theme-id] [data-chat-header] [data-toolbar-control] {
+  --control-icon-color: var(--toolbar-control-foreground);
+  border-color: var(--toolbar-border);
+  color: var(--toolbar-control-foreground);
+}
+
+/* The panel layout toggles stay ghost: they render both inside the header and
+   in the titlebar strip, so filling them would make them change appearance as
+   the panel opens. They only take the themed foreground; hover and pressed
+   keep the base ghost accent. The tooltip trigger's data-slot wins over the
+   toggle's when the trigger renders the toggle, so match both. */
+html[data-theme-id] [data-panel-layout-controls] [data-slot="toggle"],
+html[data-theme-id] [data-panel-layout-controls] [data-slot="tooltip-trigger"],
+html[data-theme-id] .workspace-titlebar-controls [data-slot="toggle"],
+html[data-theme-id] .workspace-titlebar-controls [data-slot="tooltip-trigger"] {
+  --control-icon-color: var(--toolbar-foreground);
+  color: var(--toolbar-foreground);
+}
+
+html[data-theme-id] [data-chat-header] [data-slot="button"]:hover,
+html[data-theme-id] [data-chat-header] [data-slot="button"][data-pressed],
+html[data-theme-id] [data-chat-header] [data-slot="menu-trigger"]:hover,
+html[data-theme-id] [data-chat-header] [data-slot="menu-trigger"][data-pressed],
+html[data-theme-id] [data-chat-header] [data-toolbar-control]:hover,
+html[data-theme-id] [data-chat-header] [data-toolbar-control][data-pressed] {
+  background-color: var(--toolbar-control-hover);
+}
+
+html[data-theme-id] [data-chat-header] [data-slot="separator"] {
+  background-color: var(--toolbar-border);
+}
+
+/* Chat code blocks join the other code surfaces on the code tokens. The
+   default look keeps its secondary/input tints; themed palettes tint those
+   surfaces with the accent, which fights syntax highlighting. */
+html[data-theme-id] .chat-markdown .chat-markdown-codeblock {
+  background-color: var(--code-background);
+  border-color: var(--border);
+  color: var(--code-foreground);
+}
+
+html[data-theme-id] .chat-markdown pre {
+  background-color: var(--code-background);
+  color: var(--code-foreground);
+}
+
+html[data-theme-id] .chat-markdown .chat-markdown-codeblock pre {
+  background-color: transparent;
+}
+
+html[data-theme-id] .chat-markdown .chat-markdown-codeblock-header,
+html[data-theme-id] .chat-markdown .chat-markdown-chrome-action {
+  color: color-mix(in srgb, var(--code-foreground) 72%, transparent);
+}
+
+html[data-theme-id] .chat-markdown .chat-markdown-chrome-action:hover,
+html[data-theme-id] .chat-markdown .chat-markdown-chrome-action[aria-pressed="true"] {
+  color: var(--code-foreground);
+}
+
+html[data-theme-id] [data-app-sidebar] {
+  --background: var(--app-theme-canvas);
+  --foreground: var(--app-theme-text);
+  --card: var(--app-theme-surface);
+  --card-foreground: var(--app-theme-text);
+  --accent: var(--app-theme-accent-surface);
+  --accent-foreground: var(--app-theme-accent-surface-foreground);
+  --muted: var(--app-theme-muted);
+  --muted-foreground: var(--app-theme-muted-foreground);
+  --border: var(--app-theme-border);
+  --input: var(--app-theme-input);
+  --sidebar: var(--app-theme-sidebar);
+  --sidebar-foreground: var(--app-theme-sidebar-foreground);
+  --sidebar-muted-foreground: var(--app-theme-sidebar-muted-foreground);
+  --sidebar-control-surface: var(--app-theme-sidebar-control-surface);
+  --sidebar-row-hover: var(--app-theme-sidebar-row-hover);
+  --sidebar-row-active: var(--app-theme-sidebar-row-active);
+  --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
+  --sidebar-border: var(--app-theme-sidebar-border);
+  --sidebar-stage-fade: var(--app-theme-sidebar);
+  background-color: var(--sidebar);
+}
+
+/* Keep the navigation edge as quiet as the standard palettes. Theme files may
+   still use sidebarBorder for controls and internal separators, but the outer
+   divider should not become more prominent just because a palette is vivid. */
+html[data-theme-id] [data-app-sidebar] {
+  border-color: color-mix(in srgb, var(--sidebar-foreground) 10%, transparent);
+}
+
+html.dark[data-theme-id] [data-app-sidebar] {
+  border-color: color-mix(in srgb, var(--sidebar-foreground) 8%, transparent);
+}
+
+/* Theme editor inspector overlay */
+#theme-inspector-spotlight {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  overflow: visible;
+  pointer-events: none;
+}
+
+[data-slot="popover-positioner"]:has([data-theme-editor-panel]),
+[data-slot="tooltip-positioner"]:has([data-theme-editor-panel]) {
+  z-index: 120;
+}
+
+.theme-inspector-spotlight-dimmer {
+  fill: rgb(2 3 8 / 54%);
+}
+
+.theme-inspector-spotlight-glow {
+  fill: color-mix(in oklab, var(--ring) 9%, transparent);
+  stroke: var(--ring);
+  stroke-width: 1px;
+  opacity: 0.92;
+  vector-effect: non-scaling-stroke;
+}
+
+#theme-inspector-hover {
+  position: fixed;
+  z-index: 101;
+  pointer-events: none;
+  background: color-mix(in oklab, var(--ring) 7%, transparent);
+  border: 1px solid var(--ring);
+}
+
+#theme-inspector-hover [data-theme-inspector-hover-label] {
+  position: absolute;
+  left: 0;
+  max-width: 12rem;
+  overflow: hidden;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
+  color: var(--popover-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  line-height: 1rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#theme-inspector-hover[data-placement="above"] [data-theme-inspector-hover-label] {
+  bottom: calc(100% + 0.35rem);
+}
+
+#theme-inspector-hover[data-placement="below"] [data-theme-inspector-hover-label] {
+  top: calc(100% + 0.35rem);
+}
+
+.theme-json-key {
+  color: var(--app-theme-accent, var(--color-blue-600));
+}
+
+.theme-json-string {
+  color: var(--app-theme-message-action, var(--color-emerald-600));
+}
+
+.theme-json-number {
+  color: var(--app-theme-secondary-foreground, var(--color-amber-600));
+}
+
+.theme-json-constant {
+  color: var(--app-theme-accent-surface-foreground, var(--color-violet-600));
+}

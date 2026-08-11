@@ -51,12 +51,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "appearance",
   },
   {
-    // Prefixed because the slider control already owns the `glass-opacity` id.
-    id: "setting-glass-opacity",
-    title: "Glass opacity",
-    to: "/settings/appearance",
-  },
-  {
     id: "environment-identification",
     title: "Environment identification",
     to: "/settings/appearance",

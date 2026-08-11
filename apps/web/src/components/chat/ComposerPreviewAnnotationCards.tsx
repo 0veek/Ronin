@@ -59,7 +59,7 @@ export function ComposerPreviewAnnotationCards({
                 <img
                   src={image.previewUrl}
                   alt="Annotated preview crop"
-                  className="size-full object-cover transition duration-200 group-hover/preview-annotation:scale-[1.03]"
+                  className="size-full object-cover transition duration-(--duration-base) group-hover/preview-annotation:scale-[1.03]"
                 />
               </button>
             ) : (

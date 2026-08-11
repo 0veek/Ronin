@@ -2,17 +2,17 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import indexHtml from "../index.html?raw";
 import {
+  CARBON_THEME,
   CUSTOM_THEMES_STORAGE_KEY,
   getDefaultThemeColors,
   getThemeColorsForMode,
+  GRAPHITE_THEME,
   invalidateCustomThemes,
   isKnownThemePreference,
+  OBSIDIAN_THEME,
+  OLED_VOID_THEME,
+  PAPER_THEME,
   resolveThemeAppearance,
-  SAKURA_THEME,
-  EMBER_THEME,
-  GROVE_THEME,
-  IRIS_THEME,
-  OCEAN_THEME,
   THEME_APPEARANCE_MODE_STORAGE_KEY,
   THEME_FOLLOW_SYSTEM_STORAGE_KEY,
 } from "./themePalette";
@@ -128,6 +128,14 @@ function runtimeResolvedAppearance(
   }
 }
 
+// Named for a stock that is not in the curated set: "paper" is a built-in id
+// now, and a custom theme is never allowed to claim a reserved one.
+const VELLUM_LIGHT_ONLY = {
+  id: "vellum",
+  label: "Vellum",
+  appearance: "light",
+  colors: { canvas: "#f8fbff", text: "#10243d", accent: "#5b6cff" },
+};
 const AURORA_DUAL = {
   id: "aurora",
   label: "Aurora",
@@ -150,46 +158,53 @@ describe("index.html boot script", () => {
   }> = [
     { name: "no stored preference on a dark OS", storage: {}, prefersDark: true },
     {
-      name: "Sakura follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "t3-chat", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      name: "Paper follows a dark OS",
+      storage: { [THEME_STORAGE_KEY]: "paper", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
     },
     {
-      name: "an explicit global dark mode applies to Sakura",
+      name: "an explicit global dark mode applies to Paper",
       storage: {
-        [THEME_STORAGE_KEY]: "t3-chat",
+        [THEME_STORAGE_KEY]: "paper",
         [THEME_APPEARANCE_MODE_STORAGE_KEY]: "dark",
         [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "false",
       },
       prefersDark: false,
     },
     {
-      name: "Grove follows a dark OS",
+      name: "Graphite follows a light OS",
+      storage: { [THEME_STORAGE_KEY]: "graphite", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      prefersDark: false,
+    },
+    {
+      name: "a dark-first Obsidian ignores a light OS when not following it",
+      storage: { [THEME_STORAGE_KEY]: "obsidian", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "false" },
+      prefersDark: false,
+    },
+    {
+      name: "Carbon follows a dark OS",
+      storage: { [THEME_STORAGE_KEY]: "carbon", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      prefersDark: true,
+    },
+    {
+      name: "OLED Void follows a light OS",
+      storage: { [THEME_STORAGE_KEY]: "oled-void", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      prefersDark: false,
+    },
+    // The retired palettes: their ids stay reserved but no longer resolve, so
+    // both the boot script and the runtime have to land on the same fallback.
+    {
+      name: "a retired grove preference falls back to system",
       storage: { [THEME_STORAGE_KEY]: "grove", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
     },
     {
-      name: "Ocean follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "ocean", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
-    },
-    {
-      name: "Ember follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "ember", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
-    },
-    {
-      name: "Iris follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "iris", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
-    },
-    {
-      name: "a legacy t3-grove preference resolves through the alias",
+      name: "a legacy t3-grove preference falls back to system through the alias",
       storage: { [THEME_STORAGE_KEY]: "t3-grove", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
     },
     {
-      name: "legacy t3-chat-dark resolves to dark Sakura",
+      name: "legacy t3-chat-dark falls back to system",
       storage: { [THEME_STORAGE_KEY]: "t3-chat-dark" },
       prefersDark: true,
     },
@@ -252,13 +267,13 @@ describe("index.html boot script", () => {
   });
 
   it("marks built-in and custom themes on the document element", () => {
-    const chat = runBootScript({
-      storage: { [THEME_STORAGE_KEY]: "t3-chat", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+    const paper = runBootScript({
+      storage: { [THEME_STORAGE_KEY]: "paper", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
       prefersDark: true,
     });
-    expect(chat.themeId).toBe("t3-chat");
-    expect(chat.themeSelected).toBe("true");
-    expect(chat.isDark).toBe(true);
+    expect(paper.themeId).toBe("paper");
+    expect(paper.themeSelected).toBe("true");
+    expect(paper.isDark).toBe(true);
 
     const aurora = runBootScript({
       storage: {
@@ -279,9 +294,13 @@ describe("index.html boot script", () => {
   // boot script's hand-maintained copy into a CI-enforced contract: any
   // palette change breaks this test until the copy in index.html is updated.
   it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [SAKURA_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
-      // The boot script resolves every built-in from a light base appearance.
-      expect(theme.appearance).toBe("light");
+    for (const theme of [
+      PAPER_THEME,
+      GRAPHITE_THEME,
+      OBSIDIAN_THEME,
+      CARBON_THEME,
+      OLED_VOID_THEME,
+    ]) {
       for (const mode of ["light", "dark"] as const) {
         const colors = getThemeColorsForMode(theme, mode);
         expect(colors).not.toBeNull();
@@ -300,50 +319,56 @@ describe("index.html boot script", () => {
         expect(boot.backgroundColor).toBe(colors!.chrome);
         expect(boot.metaContent).toBe(colors!.chrome);
       }
+
+      // Only Paper is light-first, so the boot script can no longer assume a
+      // base appearance. With follow-system off and no explicit mode stored,
+      // the splash has to land on the definition's own appearance -- this is
+      // what pins the BUILT_IN_THEME_APPEARANCES copy to the real palettes.
+      const base = runBootScript({
+        storage: {
+          [THEME_STORAGE_KEY]: theme.id,
+          [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "false",
+        },
+        prefersDark: theme.appearance === "light",
+      });
+      expect(base.isDark).toBe(theme.appearance === "dark");
     }
   });
 
   it("applies the matching half of an automatic mix to the splash", () => {
     const storage = {
-      [THEME_STORAGE_KEY]: "t3-chat",
+      [THEME_STORAGE_KEY]: "paper",
       [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system",
-      "t3code:theme-halves:v1": JSON.stringify({ dark: GROVE_THEME.id }),
+      "t3code:theme-halves:v1": JSON.stringify({ dark: GRAPHITE_THEME.id }),
     };
 
     const dark = runBootScript({ storage, prefersDark: true });
     expect(dark.isDark).toBe(true);
-    expect(dark.themeId).toBe(GROVE_THEME.id);
+    expect(dark.themeId).toBe(GRAPHITE_THEME.id);
     expect(dark.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(GROVE_THEME, "dark")!.canvas,
+      getThemeColorsForMode(GRAPHITE_THEME, "dark")!.canvas,
     );
 
     const light = runBootScript({ storage, prefersDark: false });
     expect(light.isDark).toBe(false);
-    expect(light.themeId).toBe("t3-chat");
+    expect(light.themeId).toBe("paper");
     expect(light.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(SAKURA_THEME, "light")!.canvas,
+      getThemeColorsForMode(PAPER_THEME, "light")!.canvas,
     );
   });
 
   it("lets a dark half go dark when the light-only base cannot", () => {
     const boot = runBootScript({
       storage: {
-        [THEME_STORAGE_KEY]: "paper",
+        [THEME_STORAGE_KEY]: VELLUM_LIGHT_ONLY.id,
         [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system",
-        [CUSTOM_THEMES_STORAGE_KEY]: JSON.stringify([
-          {
-            id: "paper",
-            label: "Paper",
-            appearance: "light",
-            colors: { canvas: "#f8fbff", text: "#10243d", accent: "#5b6cff" },
-          },
-        ]),
-        "t3code:theme-halves:v1": JSON.stringify({ dark: GROVE_THEME.id }),
+        [CUSTOM_THEMES_STORAGE_KEY]: JSON.stringify([VELLUM_LIGHT_ONLY]),
+        "t3code:theme-halves:v1": JSON.stringify({ dark: GRAPHITE_THEME.id }),
       },
       prefersDark: true,
     });
     expect(boot.isDark).toBe(true);
-    expect(boot.themeId).toBe(GROVE_THEME.id);
+    expect(boot.themeId).toBe(GRAPHITE_THEME.id);
   });
 
   it("paints the half's splash when the base theme no longer exists", () => {
@@ -351,44 +376,46 @@ describe("index.html boot script", () => {
       storage: {
         [THEME_STORAGE_KEY]: "gone-theme",
         [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system",
-        "t3code:theme-halves:v1": JSON.stringify({ dark: GROVE_THEME.id }),
+        "t3code:theme-halves:v1": JSON.stringify({ dark: GRAPHITE_THEME.id }),
       },
       prefersDark: true,
     });
     expect(boot.isDark).toBe(true);
-    expect(boot.themeId).toBe(GROVE_THEME.id);
+    expect(boot.themeId).toBe(GRAPHITE_THEME.id);
     expect(boot.themeSelected).toBe("true");
     expect(boot.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(GROVE_THEME, "dark")!.canvas,
+      getThemeColorsForMode(GRAPHITE_THEME, "dark")!.canvas,
     );
   });
 
-  it("resolves a legacy-prefixed mix half onto the renamed theme", () => {
+  // The alias table still resolves t3-grove onto grove; grove is simply not a
+  // theme any more, so the half has to be dropped rather than half-applied.
+  it("ignores a legacy-prefixed mix half naming a retired theme", () => {
     const boot = runBootScript({
       storage: {
-        [THEME_STORAGE_KEY]: "t3-chat",
+        [THEME_STORAGE_KEY]: "paper",
         [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system",
         "t3code:theme-halves:v1": JSON.stringify({ dark: "t3-grove" }),
       },
       prefersDark: true,
     });
+    expect(boot.themeId).toBe("paper");
     expect(boot.isDark).toBe(true);
-    expect(boot.themeId).toBe(GROVE_THEME.id);
     expect(boot.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(GROVE_THEME, "dark")!.canvas,
+      getThemeColorsForMode(PAPER_THEME, "dark")!.canvas,
     );
   });
 
   it("ignores a mix half that names an unknown theme", () => {
     const boot = runBootScript({
       storage: {
-        [THEME_STORAGE_KEY]: "t3-chat",
+        [THEME_STORAGE_KEY]: "paper",
         [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system",
         "t3code:theme-halves:v1": JSON.stringify({ dark: "gone-theme" }),
       },
       prefersDark: true,
     });
-    expect(boot.themeId).toBe("t3-chat");
+    expect(boot.themeId).toBe("paper");
     expect(boot.isDark).toBe(true);
   });
 

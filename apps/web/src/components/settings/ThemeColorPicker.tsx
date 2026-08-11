@@ -314,13 +314,13 @@ function ThemeColorPickerPanel({
 
   return (
     <div className="w-72 bg-popover">
-      <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-xs font-semibold text-foreground">{label}</p>
           <p className="text-[11px] text-muted-foreground">Choose a color</p>
         </div>
         <span
-          className="size-7 shrink-0 rounded-full shadow-sm"
+          className="size-7 shrink-0 rounded-(--control-radius) border border-border"
           style={{ backgroundColor: currentColor }}
         />
       </div>
@@ -328,7 +328,7 @@ function ThemeColorPickerPanel({
         <div
           aria-label={`${label} saturation and brightness`}
           aria-valuetext={`saturation ${Math.round(hsv.s * 100)}%, brightness ${Math.round(hsv.v * 100)}%`}
-          className="relative h-32 cursor-crosshair touch-none overflow-hidden rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
+          className="relative h-32 cursor-crosshair touch-none overflow-hidden rounded-(--radius) outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
           role="slider"
           style={{
             backgroundColor: `hsl(${hsv.h} 100% 50%)`,
@@ -392,7 +392,7 @@ function ThemeColorPickerPanel({
             <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               HEX
             </span>
-            <span className="flex min-w-0 items-center gap-2 rounded-lg border border-input bg-background px-2 focus-within:border-ring">
+            <span className="flex min-w-0 items-center gap-2 rounded-(--control-radius) border border-input bg-transparent px-2 focus-within:border-ring">
               <span
                 className="size-3.5 shrink-0 rounded-full"
                 style={{ backgroundColor: currentColor }}
@@ -418,7 +418,7 @@ function ThemeColorPickerPanel({
             <span className="px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
               RGB
             </span>
-            <span className="flex min-w-0 items-center rounded-lg border border-input bg-background px-2 focus-within:border-ring">
+            <span className="flex min-w-0 items-center rounded-(--control-radius) border border-input bg-transparent px-2 focus-within:border-ring">
               <input
                 aria-label={`${label} picker RGB value`}
                 className="h-8 min-w-0 flex-1 bg-transparent font-mono text-xs text-foreground outline-none"
@@ -465,16 +465,13 @@ function ThemeColorPicker({
             title={`Choose ${label} color`}
             type="button"
           >
-            <span
-              className="absolute inset-0 rounded-full shadow-sm"
-              style={{ backgroundColor: value }}
-            />
+            <span className="absolute inset-0 rounded-full" style={{ backgroundColor: value }} />
           </button>
         }
       />
       <PopoverPopup
         align="end"
-        className="overflow-hidden rounded-2xl border border-border/70 p-0 shadow-2xl [--viewport-inline-padding:0px] [&_[data-slot=popover-viewport]]:p-0"
+        className="overflow-hidden p-0 [--viewport-inline-padding:0px] [&_[data-slot=popover-viewport]]:p-0"
         data-theme-editor-panel=""
         side="bottom"
         sideOffset={10}
@@ -509,15 +506,17 @@ export const ThemeColorField = memo(function ThemeColorField({
   return (
     <div
       className={cn(
-        "flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 transition-[background-color,box-shadow]",
-        selected && "bg-accent/60 shadow-[inset_0_0_0_1px_var(--ring)]",
+        "flex min-h-11 min-w-0 items-center gap-2 rounded-(--control-radius) px-2 py-1.5 transition-colors duration-(--duration-fast) ease-out",
+        // The ring is the selection marker, not decoration: it is the only
+        // thing distinguishing the row being edited from its neighbours.
+        selected && "bg-accent shadow-[inset_0_0_0_1px_var(--ring)]",
       )}
       data-theme-color-role={role}
     >
       <button
         aria-label={`${selected ? "Hide" : "Show"} ${label} usage`}
         aria-pressed={selected}
-        className="flex min-w-0 flex-1 cursor-pointer items-center rounded-md text-left text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-w-0 flex-1 cursor-pointer items-center rounded-(--control-radius) text-left text-sm text-muted-foreground outline-none transition-colors duration-(--duration-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => onToggleSelected?.(role)}
         title={`${selected ? "Hide" : "Show"} where ${label} is used`}
         type="button"
@@ -534,7 +533,7 @@ export const ThemeColorField = memo(function ThemeColorField({
         <Input
           aria-invalid={!isColorValue}
           aria-label={`${label} hex value`}
-          className="w-28 shrink-0 rounded-md border-0 bg-black/10 font-mono text-xs text-foreground shadow-none focus-within:bg-black/15 focus-within:ring-0 dark:bg-black/20 dark:focus-within:bg-black/25 [&_[data-slot=input]]:text-right"
+          className="w-28 shrink-0 rounded-(--control-radius) border-input bg-transparent font-mono text-xs text-foreground [&_[data-slot=input]]:text-right"
           id={`${role}-hex`}
           nativeInput
           onChange={(event) => onChange(role, event.currentTarget.value)}

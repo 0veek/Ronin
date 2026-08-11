@@ -20,19 +20,11 @@ import {
   serializeThemeFile,
   subscribeToThemePreview,
   subscribeToCustomThemes,
-  SAKURA_THEME,
   CARBON_THEME,
-  EMBER_THEME,
-  GROVE_THEME,
-  IRIS_THEME,
-  MIDNIGHT_THEME,
-  NEBULA_THEME,
+  GRAPHITE_THEME,
   OBSIDIAN_THEME,
-  OCEAN_THEME,
-  OLED_AZURE_THEME,
-  OLED_PHOSPHOR_THEME,
-  OLED_PLASMA_THEME,
   OLED_VOID_THEME,
+  PAPER_THEME,
   updateCustomTheme,
   CUSTOM_THEMES_STORAGE_KEY,
   createManagedThemeColors,
@@ -205,11 +197,11 @@ describe("theme files", () => {
   });
 
   it("serializes a theme back into the importable file shape", () => {
-    const serialized = serializeThemeFile(SAKURA_THEME);
+    const serialized = serializeThemeFile(PAPER_THEME);
     expect(JSON.parse(serialized)).toMatchObject({
       version: THEME_FILE_VERSION,
-      id: SAKURA_THEME.id,
-      name: SAKURA_THEME.label,
+      id: PAPER_THEME.id,
+      name: PAPER_THEME.label,
       appearance: "light",
     });
   });
@@ -245,7 +237,7 @@ describe("theme files", () => {
       },
     });
 
-    applyThemeColorPreview(SAKURA_THEME.colors, "light", true);
+    applyThemeColorPreview(PAPER_THEME.colors, "light", true);
     expect(getThemePreviewSidebarArtwork()).toBe(true);
     expect(listener).toHaveBeenCalledTimes(1);
 
@@ -274,19 +266,23 @@ describe("theme files", () => {
       canvas: "#101827",
       text: "#eef5ff",
     });
-    expect(getThemeModes(SAKURA_THEME)).toEqual(["light", "dark"]);
-    expect(resolveThemeAppearance(SAKURA_THEME.id, true, true)).toBe("dark");
-    expect(resolveDesktopTheme(SAKURA_THEME.id, true)).toBe("system");
-    expect(resolveThemeAppearance(SAKURA_THEME.id, false, false, "dark")).toBe("dark");
-    expect(resolveDesktopTheme(SAKURA_THEME.id, false, "dark")).toBe("dark");
+    expect(getThemeModes(PAPER_THEME)).toEqual(["light", "dark"]);
+    expect(resolveThemeAppearance(PAPER_THEME.id, true, true)).toBe("dark");
+    expect(resolveDesktopTheme(PAPER_THEME.id, true)).toBe("system");
+    expect(resolveThemeAppearance(PAPER_THEME.id, false, false, "dark")).toBe("dark");
+    expect(resolveDesktopTheme(PAPER_THEME.id, false, "dark")).toBe("dark");
     expect(JSON.parse(serializeThemeFile(theme)).variants.dark).toMatchObject({
       canvas: "#101827",
       text: "#eef5ff",
     });
   });
 
-  it("keeps the Sakura palette faithful and readable", () => {
-    expect(SAKURA_THEME.colors).toMatchObject({
+  // The Sakura preset was retired, but its two colour tables stayed on as the
+  // structural role base every managed theme spreads over -- so the roles a
+  // generated palette never sets (error, warning) still resolve to something
+  // readable. Pinning them here keeps that base from drifting unnoticed.
+  it("keeps the default role base faithful and readable", () => {
+    expect(getDefaultThemeColors("light")).toMatchObject({
       canvas: "#fdf7fd",
       chrome: "#fdf7fd",
       toolbarBorder: "#efbdeb",
@@ -301,7 +297,7 @@ describe("theme files", () => {
       accentSurface: "#f3e6f5",
       sidebar: "#f2e1f4",
     });
-    expect(SAKURA_THEME.variants?.dark).toMatchObject({
+    expect(getDefaultThemeColors("dark")).toMatchObject({
       canvas: "#1f1a24",
       chrome: "#1f1a24",
       surface: "#29232d",
@@ -315,7 +311,7 @@ describe("theme files", () => {
     });
 
     for (const mode of ["light", "dark"] as const) {
-      const colors = getThemeColorsForMode(SAKURA_THEME, mode)!;
+      const colors = getDefaultThemeColors(mode);
       expect(contrastRatio(colors.text, colors.canvas)).toBeGreaterThanOrEqual(7);
       expect(contrastRatio(colors.textMuted, colors.canvas)).toBeGreaterThanOrEqual(4.5);
       expect(contrastRatio(colors.messageForeground, colors.messageSurface)).toBeGreaterThanOrEqual(
@@ -331,26 +327,13 @@ describe("theme files", () => {
 
   it("includes the dual-mode maintainer themes", () => {
     const maintainerThemes = [
-      SAKURA_THEME,
-      GROVE_THEME,
-      OCEAN_THEME,
-      EMBER_THEME,
-      IRIS_THEME,
+      PAPER_THEME,
+      GRAPHITE_THEME,
       OBSIDIAN_THEME,
-      MIDNIGHT_THEME,
       CARBON_THEME,
-      NEBULA_THEME,
       OLED_VOID_THEME,
-      OLED_AZURE_THEME,
-      OLED_PHOSPHOR_THEME,
-      OLED_PLASMA_THEME,
     ];
-    const oledThemes = new Set([
-      OLED_VOID_THEME.id,
-      OLED_AZURE_THEME.id,
-      OLED_PHOSPHOR_THEME.id,
-      OLED_PLASMA_THEME.id,
-    ]);
+    const oledThemes = new Set([OLED_VOID_THEME.id]);
     for (const theme of maintainerThemes) {
       expect(getThemeDefinition(theme.id)).toBe(theme);
       expect(getThemeModes(theme)).toEqual(["light", "dark"]);
@@ -363,16 +346,14 @@ describe("theme files", () => {
         expect(colors).not.toBeNull();
         expect(contrastRatio(colors!.text, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
         expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeGreaterThanOrEqual(4.5);
-        if (theme !== SAKURA_THEME) {
-          // OLED dark uses exact pure-black seeds, so muted text contrast lands
-          // higher than the managed charcoal envelope used by other presets.
-          if (!(oledThemes.has(theme.id) && mode === "dark")) {
-            expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeLessThan(5.5);
-            expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeCloseTo(
-              mode === "dark" ? 5.082 : 4.705,
-              1,
-            );
-          }
+        // OLED dark uses exact pure-black seeds, so muted text contrast lands
+        // higher than the managed charcoal envelope used by other presets.
+        if (!(oledThemes.has(theme.id) && mode === "dark")) {
+          expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeLessThan(5.5);
+          expect(contrastRatio(colors!.textMuted, colors!.canvas)).toBeCloseTo(
+            mode === "dark" ? 5.082 : 4.705,
+            1,
+          );
         }
         if (oledThemes.has(theme.id) && mode === "dark") {
           expect(colors!.canvas).toBe("#000000");
@@ -510,10 +491,11 @@ describe("theme files", () => {
 describe("stored theme preferences", () => {
   it("lets a configured half unlock an appearance the base theme lacks", () => {
     // Light-only base: without halves, dark requests fall back to light.
+    // "paper" is a built-in id now, so the custom fixture needs its own stock.
     const lightOnly = parseThemeFile({
       version: THEME_FILE_VERSION,
-      id: "paper",
-      name: "Paper",
+      id: "vellum",
+      name: "Vellum",
       appearance: "light",
       colors: { canvas: "#f8fbff" },
     });
@@ -525,50 +507,39 @@ describe("stored theme preferences", () => {
     });
     invalidateCustomThemes();
     try {
-      expect(resolveThemeAppearance("paper", true, true)).toBe("light");
-      const halves = { dark: GROVE_THEME.id };
-      expect(resolveThemeAppearance("paper", true, true, undefined, halves)).toBe("dark");
-      expect(resolveThemeAppearance("paper", false, false, "dark", halves)).toBe("dark");
-      expect(resolveDesktopTheme("paper", true, undefined, halves)).toBe("system");
+      expect(resolveThemeAppearance("vellum", true, true)).toBe("light");
+      const halves = { dark: GRAPHITE_THEME.id };
+      expect(resolveThemeAppearance("vellum", true, true, undefined, halves)).toBe("dark");
+      expect(resolveThemeAppearance("vellum", false, false, "dark", halves)).toBe("dark");
+      expect(resolveDesktopTheme("vellum", true, undefined, halves)).toBe("system");
     } finally {
       vi.unstubAllGlobals();
       invalidateCustomThemes();
     }
   });
 
-  it("resolves the legacy t3-chat-dark preference to dark Sakura", () => {
-    expect(getThemeDefinition("t3-chat-dark")).toBe(SAKURA_THEME);
-    expect(getThemePreferenceMode("t3-chat-dark")).toBe("dark");
-    expect(resolveThemeAppearance("t3-chat-dark", true, false)).toBe("dark");
-    expect(resolveDesktopTheme("t3-chat-dark", false)).toBe("dark");
-    expect(isKnownThemePreference("t3-chat-dark")).toBe(true);
-  });
-
-  it("resolves legacy t3-prefixed ids onto the renamed themes", () => {
-    for (const [legacy, theme] of [
-      ["t3-grove", GROVE_THEME],
-      ["t3-ocean", OCEAN_THEME],
-      ["t3-ember", EMBER_THEME],
-      ["t3-iris", IRIS_THEME],
-    ] as const) {
-      expect(getThemeDefinition(legacy)).toBe(theme);
-      expect(isKnownThemePreference(legacy)).toBe(true);
-      expect(canonicalThemePreference(legacy)).toBe(theme.id);
+  // The retired presets are the interesting case now: an install pinned to one
+  // must fall through to the runtime default rather than throw or render bare.
+  it("drops a preference pinned to a retired preset", () => {
+    for (const retired of ["t3-chat", "t3-chat-dark", "grove", "ocean", "ember", "iris"]) {
+      expect(getThemeDefinition(retired)).toBeNull();
+      expect(isKnownThemePreference(retired)).toBe(false);
     }
-    // The dark-variant alias keeps its raw form: it still carries a mode hint.
+    // The alias table survives them: it still normalizes, it just no longer
+    // lands on a definition. The dark-variant alias keeps its raw form,
+    // because it carries a mode hint and not only an id.
+    expect(canonicalThemePreference("t3-grove")).toBe("grove");
     expect(canonicalThemePreference("t3-chat-dark")).toBe("t3-chat-dark");
-    // A stored mix that predates the rename resolves to the new ids.
-    expect(parseThemeHalves(JSON.stringify({ light: "t3-ocean", dark: "t3-grove" }))).toEqual({
-      light: OCEAN_THEME.id,
-      dark: GROVE_THEME.id,
-    });
+    expect(getThemePreferenceMode("t3-chat-dark")).toBe("dark");
+    // A mix half naming a retired preset is dropped, not half-applied.
+    expect(parseThemeHalves(JSON.stringify({ light: "t3-ocean", dark: "t3-grove" }))).toBeNull();
   });
 
   it("recognizes only preferences the runtime can render", () => {
-    for (const preference of ["light", "dark", "system", SAKURA_THEME.id, GROVE_THEME.id]) {
+    for (const preference of ["light", "dark", "system", PAPER_THEME.id, GRAPHITE_THEME.id]) {
       expect(isKnownThemePreference(preference)).toBe(true);
     }
-    expect(isKnownThemePreference(`${GROVE_THEME.id}:dark`)).toBe(false);
+    expect(isKnownThemePreference(`${GRAPHITE_THEME.id}:dark`)).toBe(false);
     expect(isKnownThemePreference("missing-theme")).toBe(false);
   });
 

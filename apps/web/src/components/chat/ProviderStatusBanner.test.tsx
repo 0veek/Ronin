@@ -44,12 +44,12 @@ describe("ProviderStatusBanner", () => {
     expect(markup).toContain("absolute top-2 right-2");
   });
 
-  it("renders on a glass surface so the timeline never reads through the banner", () => {
+  it("renders on an opaque tinted surface so the timeline never reads through the banner", () => {
     const markup = renderToStaticMarkup(
       <ProviderStatusBanner status={warningProvider()} onDismiss={() => {}} />,
     );
 
-    expect(markup).toContain("alert-glass");
+    expect(markup).toContain("surface-alert");
     expect(markup).toContain('data-variant="warning"');
   });
 

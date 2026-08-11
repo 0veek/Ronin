@@ -50,99 +50,130 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
-          "t3-chat": {
+          paper: {
             light: {
-              background: "#fdf7fd",
-              foreground: "#501854",
-              accent: "#db2777",
-              chrome: "#fdf7fd",
+              background: "#faf9f7",
+              foreground: "#241523",
+              accent: "#5f5a55",
+              chrome: "#faf9f7",
             },
             dark: {
-              background: "#1f1a24",
-              foreground: "#f9f8fb",
-              accent: "#a3004c",
-              chrome: "#1f1a24",
+              background: "#1c1a17",
+              foreground: "#fffaff",
+              accent: "#bcb7b3",
+              chrome: "#1c1a17",
             },
           },
-          grove: {
+          graphite: {
             light: {
-              background: "#f3f7f4",
+              background: "#f4f4f5",
               foreground: "#241523",
-              accent: "#1b7d50",
-              chrome: "#f3f7f4",
+              accent: "#55555e",
+              chrome: "#f4f4f5",
             },
             dark: {
-              background: "#1b2821",
+              background: "#131316",
               foreground: "#fffaff",
-              accent: "#69d69a",
-              chrome: "#1b2821",
+              accent: "#a0a0a9",
+              chrome: "#131316",
             },
           },
-          ocean: {
+          obsidian: {
             light: {
-              background: "#f5f7f8",
+              background: "#f2f7f7",
               foreground: "#241523",
-              accent: "#2672af",
-              chrome: "#f5f7f8",
+              accent: "#0f7971",
+              chrome: "#f2f7f7",
             },
             dark: {
-              background: "#17212b",
+              background: "#0e1016",
               foreground: "#fffaff",
-              accent: "#70b9ee",
-              chrome: "#17212b",
+              accent: "#2ed4bf",
+              chrome: "#0e1016",
             },
           },
-          ember: {
+          carbon: {
             light: {
-              background: "#f9f7f5",
+              background: "#f7f5f2",
               foreground: "#241523",
-              accent: "#ae552a",
-              chrome: "#f9f7f5",
+              accent: "#ac5411",
+              chrome: "#f7f5f2",
             },
             dark: {
-              background: "#291e1a",
+              background: "#111113",
               foreground: "#fffaff",
-              accent: "#f09a64",
-              chrome: "#291e1a",
+              accent: "#e89a17",
+              chrome: "#111113",
             },
           },
-          iris: {
+          "oled-void": {
             light: {
-              background: "#f8f7f9",
+              background: "#fafafa",
               foreground: "#241523",
-              accent: "#7253b9",
-              chrome: "#f8f7f9",
+              accent: "#55555e",
+              chrome: "#fafafa",
             },
             dark: {
-              background: "#1d1929",
+              background: "#000000",
               foreground: "#fffaff",
-              accent: "#9d7df2",
-              chrome: "#1d1929",
+              accent: "#e4e4e7",
+              chrome: "#000000",
             },
           },
         };
         // Keep the built-in mode list in sync with the runtime so the selected
-        // Sakura palette is visible before React has mounted.
+        // palette is visible before React has mounted.
         const BUILT_IN_THEME_MODES = Object.fromEntries(
           Object.entries(BUILT_IN_THEME_PALETTES).map(([id, palettes]) => [
             id,
             Object.keys(palettes),
           ]),
         );
+        // Only Paper is light-first; the rest of the curated set is dark-first,
+        // so the base appearance can no longer be assumed. Mirrors each
+        // ThemeDefinition's `appearance`.
+        const BUILT_IN_THEME_APPEARANCES = {
+          paper: "light",
+          graphite: "dark",
+          obsidian: "dark",
+          carbon: "dark",
+          "oled-void": "dark",
+        };
+        // Retired palettes keep their ids claimed here, exactly as the runtime
+        // does, so a custom theme can never collide with a name an older
+        // settings.json may still be pinned to.
         const RESERVED_THEME_IDS = [
           "system",
           "light",
           "dark",
+          "paper",
+          "graphite",
           "t3-chat",
           "grove",
           "ocean",
           "ember",
           "iris",
+          "obsidian",
+          "midnight",
+          "carbon",
+          "nebula",
+          "oled-void",
+          "oled-azure",
+          "oled-phosphor",
+          "oled-plasma",
           "t3-chat-dark",
           "t3-grove",
           "t3-ocean",
           "t3-ember",
           "t3-iris",
+          "t3-obsidian",
+          "t3-midnight",
+          "t3-carbon",
+          "t3-nebula",
+          "t3-oled-void",
+          "t3-oled-azure",
+          "t3-oled-phosphor",
+          "t3-oled-plasma",
         ];
         // Update every theme-color meta so any element another layer added
         // carries the resolved color too.
@@ -232,7 +263,9 @@
             themeModes !== null;
           const theme = isKnownTheme && storedTheme ? storedTheme : "system";
           const isThemed = isKnownTheme && themeModes !== null;
-          const baseAppearance = customTheme ? customTheme.appearance : "light";
+          const baseAppearance = customTheme
+            ? customTheme.appearance
+            : (BUILT_IN_THEME_APPEARANCES[themeId] ?? "light");
           const systemMode = prefersDark ? "dark" : "light";
           const storedAppearanceMode = window.localStorage.getItem(
             THEME_APPEARANCE_MODE_STORAGE_KEY,
@@ -392,10 +425,22 @@
         margin: 0;
       }
 
+      /* Mirrors --font-sans in src/styles/tokens.css and
+         DEFAULT_SANS_FONT_STACK in src/appearanceFonts.ts. The bundled face is
+         listed first so the splash and the mounted app set in the same family;
+         it is declared in the entry stylesheet, so on a cold start the system
+         fallback covers the boot screen and no text reflows. */
       body {
         background: #ffffff;
         color: #262626;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-family:
+          "Geist Variable",
+          "Geist",
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          system-ui,
+          sans-serif;
       }
 
       html.dark body {

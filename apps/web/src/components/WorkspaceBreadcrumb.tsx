@@ -13,7 +13,7 @@ export function WorkspaceBreadcrumb({ ariaLabel, children, className }: Workspac
     <nav aria-label={ariaLabel} className={cn("min-w-0", className)}>
       {/* Keep the flexible container draggable in Electron. Interactive
           descendants are excluded by the shared .drag-region CSS rules. */}
-      <ol className="m-0 flex min-w-0 list-none items-center gap-2 p-0 text-sm sm:gap-3">
+      <ol className="m-0 flex min-w-0 list-none items-center gap-1.5 p-0 text-sm sm:gap-2">
         {children}
       </ol>
     </nav>
@@ -45,9 +45,14 @@ export function WorkspaceBreadcrumbItem({
   );
 }
 
+/**
+ * A path separator, not a chevron: the trail reads as a route because the slash
+ * is the same character the paths themselves use. Mono so it keeps a constant
+ * advance whatever sits either side of it.
+ */
 export function WorkspaceBreadcrumbSeparator() {
   return (
-    <li aria-hidden="true" className="flex shrink-0 items-center text-icon-muted">
+    <li aria-hidden="true" className="flex shrink-0 items-center font-mono text-icon-muted text-xs">
       /
     </li>
   );

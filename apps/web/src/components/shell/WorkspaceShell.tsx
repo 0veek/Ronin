@@ -9,24 +9,24 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
-import { isElectron } from "../env";
-import { getLocalStorageItem } from "../hooks/useLocalStorage";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
-import { cn, isMacPlatform } from "../lib/utils";
-import { primaryServerKeybindingsAtom } from "../state/server";
-import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
-import ThreadSidebar from "./Sidebar";
-import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
-import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { useSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
-import { useProjects } from "../state/entities";
+import { isElectron } from "~/env";
+import { getLocalStorageItem } from "~/hooks/useLocalStorage";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
+import { cn, isMacPlatform } from "~/lib/utils";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
+import ThreadSidebar from "../Sidebar";
+import { SettingsSidebarNav } from "../settings/SettingsSidebarNav";
+import { SidebarChromeHeader } from "../sidebar/SidebarChrome";
+import { useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
+import { useProjects } from "~/state/entities";
 import {
   resolveInitialThreadSidebarWidth,
   resolveThreadSidebarMaximumWidth,
   THREAD_MAIN_CONTENT_MIN_WIDTH,
   THREAD_SIDEBAR_MIN_WIDTH,
   THREAD_SIDEBAR_WIDTH_STORAGE_KEY,
-} from "./threadSidebarWidth";
+} from "../threadSidebarWidth";
 import {
   Sidebar,
   SidebarProvider,
@@ -34,9 +34,23 @@ import {
   SidebarTrigger,
   useSidebar,
   useSidebarVisibility,
-} from "./ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+} from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
+/**
+ * The outermost frame of the workspace: the resizable left sidebar, the floating
+ * sidebar toggle that sits in the topbar's left gutter, and whatever route
+ * content is passed in.
+ *
+ * Layout stays with the `ui/sidebar` primitive kit (a fixed container plus an
+ * inline gap element) rather than moving to a grid. The kit already owns the
+ * offcanvas slide, the drag-to-resize rail, and the mobile sheet swap, and it is
+ * covered by sidebar.test.tsx; a grid would have to re-implement all three to
+ * arrive at the same pixels.
+ */
+
+// Clears the macOS traffic lights. Only applies when the window is not
+// fullscreen -- fullscreen hides them and the gutter would read as a dent.
 const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
@@ -126,7 +140,7 @@ function ProjectProjectionRetention() {
   return null;
 }
 
-export function AppSidebarLayout({ children }: { children: ReactNode }) {
+export function WorkspaceShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   // Settings routes show the settings nav in place of whichever thread
   // sidebar is active.

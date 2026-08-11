@@ -751,7 +751,7 @@ export function BranchToolbarBranchSelector({
             <GitBranchIcon className="size-3 shrink-0 opacity-70" />
             <span
               data-composer-label
-              className="min-w-0 max-w-[240px] truncate transition-[max-width,opacity] duration-300 ease-out group-data-[compact]/composer-context:max-w-0 group-data-[compact]/composer-context:opacity-0"
+              className="min-w-0 max-w-[240px] truncate transition-[max-width,opacity] duration-(--duration-slow) ease-out group-data-[compact]/composer-context:max-w-0 group-data-[compact]/composer-context:opacity-0"
             >
               {triggerLabel}
             </span>

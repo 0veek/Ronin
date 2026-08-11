@@ -1,31 +1,25 @@
 import * as Schema from "effect/Schema";
 
+export const PAPER_THEME_ID = "paper" as const;
+export const PAPER_THEME_LABEL = "Paper";
+export const GRAPHITE_THEME_ID = "graphite" as const;
+export const GRAPHITE_THEME_LABEL = "Graphite";
 export const SAKURA_THEME_ID = "t3-chat" as const;
-export const SAKURA_THEME_LABEL = "Sakura";
 export const GROVE_THEME_ID = "grove" as const;
-export const GROVE_THEME_LABEL = "Grove";
 export const OCEAN_THEME_ID = "ocean" as const;
-export const OCEAN_THEME_LABEL = "Ocean";
 export const EMBER_THEME_ID = "ember" as const;
-export const EMBER_THEME_LABEL = "Ember";
 export const IRIS_THEME_ID = "iris" as const;
-export const IRIS_THEME_LABEL = "Iris";
 export const OBSIDIAN_THEME_ID = "obsidian" as const;
 export const OBSIDIAN_THEME_LABEL = "Obsidian";
 export const MIDNIGHT_THEME_ID = "midnight" as const;
-export const MIDNIGHT_THEME_LABEL = "Midnight";
 export const CARBON_THEME_ID = "carbon" as const;
 export const CARBON_THEME_LABEL = "Carbon";
 export const NEBULA_THEME_ID = "nebula" as const;
-export const NEBULA_THEME_LABEL = "Nebula";
 export const OLED_VOID_THEME_ID = "oled-void" as const;
 export const OLED_VOID_THEME_LABEL = "OLED Void";
 export const OLED_AZURE_THEME_ID = "oled-azure" as const;
-export const OLED_AZURE_THEME_LABEL = "OLED Azure";
 export const OLED_PHOSPHOR_THEME_ID = "oled-phosphor" as const;
-export const OLED_PHOSPHOR_THEME_LABEL = "OLED Phosphor";
 export const OLED_PLASMA_THEME_ID = "oled-plasma" as const;
-export const OLED_PLASMA_THEME_LABEL = "OLED Plasma";
 export const THEME_FILE_VERSION = 1 as const;
 export const CUSTOM_THEMES_STORAGE_KEY = "t3code:themes:v1";
 export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
@@ -133,6 +127,8 @@ const RESERVED_THEME_IDS = new Set([
   "system",
   "light",
   "dark",
+  PAPER_THEME_ID,
+  GRAPHITE_THEME_ID,
   SAKURA_THEME_ID,
   GROVE_THEME_ID,
   OCEAN_THEME_ID,
@@ -440,8 +436,10 @@ const SAKURA_DARK_COLORS: ThemeColors = {
   // Cards and panels stay in Sakura's plum surface family. Near-black here
   // made the right-panel surface picker look unrelated to the chat canvas.
   surface: "#29232d",
-  // Pre-composited for the composer's 80% glass layer; this resolves to the
-  // measured #29232d input fill over the canvas.
+  // Was pre-composited for the composer's 80% glass layer. The glass is gone
+  // and the composer fill is opaque now, so this is just the tier one step
+  // above `surface` -- kept at the measured value so the role base doesn't
+  // shift under themes that never set it.
   surfaceRaised: "#2c2631",
   surfaceOverlay: "#100a0e",
   text: "#f9f8fb",
@@ -1206,9 +1204,13 @@ export function createManagedThemeColors(
   // The top bar is part of the main panel, not a separate chrome layer: it
   // shares the canvas, and its controls sit on the panel's own surfaces.
   const chrome = canvas;
-  const sidebar = mixThemeRgbColors(canvas, accent, 0.08);
-  const surfaceRaised = mixThemeRgbColors(canvas, text, appearance === "dark" ? 0.12 : 0.035);
-  const surfaceOverlay = mixThemeRgbColors(canvas, text, appearance === "dark" ? 0.18 : 0.06);
+  // Flat chrome separates by rule and space, not by stacked fills, so the
+  // sidebar and the raised/overlay tiers sit much closer to the canvas than
+  // they used to. What used to be three readable steps of tint is now one
+  // barely-there step; the hairlines below carry the separation instead.
+  const sidebar = mixThemeRgbColors(canvas, accent, 0.04);
+  const surfaceRaised = mixThemeRgbColors(canvas, text, appearance === "dark" ? 0.05 : 0.018);
+  const surfaceOverlay = mixThemeRgbColors(canvas, text, appearance === "dark" ? 0.09 : 0.03);
   const secondary = mixThemeRgbColors(canvas, accent, appearance === "dark" ? 0.2 : 0.08);
   const muted = mixThemeRgbColors(canvas, accent, appearance === "dark" ? 0.13 : 0.06);
   const mutedForeground = readableThemeText(muted, text, 1, 4.6);
@@ -1262,12 +1264,14 @@ export function createManagedThemeColors(
     textMuted: themeRgbToHexColor(textMuted),
     // Borders blend through the accent before lightening so control chrome
     // carries the theme hue like the hand-tuned palettes (#5c345b, #e0d3e1)
-    // instead of flattening to grey.
+    // instead of flattening to grey. The pull toward the text is much stronger
+    // than it was: with the surface tiers compressed above, the hairline is now
+    // the only thing dividing one region from the next, so it has to be seen.
     border: themeRgbToHexColor(
       mixThemeRgbColors(
-        mixThemeRgbColors(canvas, accent, appearance === "dark" ? 0.22 : 0.1),
+        mixThemeRgbColors(canvas, accent, appearance === "dark" ? 0.28 : 0.12),
         text,
-        0.1,
+        appearance === "dark" ? 0.22 : 0.2,
       ),
     ),
     input: themeRgbToHexColor(
@@ -1305,8 +1309,10 @@ export function createManagedThemeColors(
     sidebarRowHover: themeRgbToHexColor(mixThemeRgbColors(sidebar, accent, 0.12)),
     sidebarRowActive: themeRgbToHexColor(mixThemeRgbColors(sidebar, accent, 0.2)),
     sidebarRowSelected: themeRgbToHexColor(mixThemeRgbColors(sidebar, accent, 0.24)),
+    // The sidebar no longer reads as its own tinted column, so the rule between
+    // it and the content is doing the whole job and matches the global border.
     sidebarBorder: themeRgbToHexColor(
-      mixThemeRgbColors(sidebar, text, appearance === "dark" ? 0.35 : 0.12),
+      mixThemeRgbColors(sidebar, text, appearance === "dark" ? 0.35 : 0.2),
     ),
     terminalBackground: themeRgbToHexColor(terminalBackground),
     terminalForeground: themeRgbToHexColor(readableThemeForeground(terminalBackground)),
@@ -1322,16 +1328,6 @@ export function createManagedThemeColors(
     ),
   };
 }
-
-export const SAKURA_THEME: ThemeDefinition = {
-  id: SAKURA_THEME_ID,
-  label: SAKURA_THEME_LABEL,
-  appearance: "light",
-  colors: SAKURA_LIGHT_COLORS,
-  variants: {
-    dark: SAKURA_DARK_COLORS,
-  },
-};
 
 /** Theme-file defaults follow the flagship palette for the requested mode. */
 export function getDefaultThemeColors(appearance: ThemeAppearance): ThemeColors {
@@ -1359,66 +1355,43 @@ function themeActionColors(
   };
 }
 
-export const GROVE_THEME: ThemeDefinition = {
-  id: GROVE_THEME_ID,
-  label: GROVE_THEME_LABEL,
+/**
+ * Editorial neutral, light-first: warm paper stock and a stone-grey ink accent.
+ *
+ * Paper and Graphite are deliberately near-monochrome. Flat chrome puts all the
+ * emphasis on type and rule, and a saturated accent immediately reintroduces the
+ * "one bright thing per screen" look the redesign is trying to leave; the accent
+ * here exists to tint borders and focus rings, not to decorate.
+ */
+export const PAPER_THEME: ThemeDefinition = {
+  id: PAPER_THEME_ID,
+  label: PAPER_THEME_LABEL,
   appearance: "light",
   colors: {
-    ...createManagedThemeColors("light", "#f2f8f4", "#19734a"),
-    ...themeActionColors("#8f6410"),
+    ...createManagedThemeColors("light", "#faf9f7", "#57534e"),
+    ...themeActionColors("#78716c"),
   },
   variants: {
     dark: {
-      ...createManagedThemeColors("dark", "#1d2b24", "#69d69a"),
-      ...themeActionColors("#e3b34e"),
+      ...createManagedThemeColors("dark", "#1c1a17", "#d6d3d1"),
+      ...themeActionColors("#a8a29e"),
     },
   },
 };
 
-export const OCEAN_THEME: ThemeDefinition = {
-  id: OCEAN_THEME_ID,
-  label: OCEAN_THEME_LABEL,
-  appearance: "light",
+/** Editorial neutral, dark-first: cool graphite stock with a zinc ink accent. */
+export const GRAPHITE_THEME: ThemeDefinition = {
+  id: GRAPHITE_THEME_ID,
+  label: GRAPHITE_THEME_LABEL,
+  appearance: "dark",
   colors: {
-    ...createManagedThemeColors("light", "#f2f7fb", "#2878b8"),
-    ...themeActionColors("#0a6f75"),
+    ...createManagedThemeColors("dark", "#131316", "#a1a1aa"),
+    ...themeActionColors("#d4d4d8"),
   },
   variants: {
-    dark: {
-      ...createManagedThemeColors("dark", "#1b2938", "#70b9ee"),
-      ...themeActionColors("#5bd0d6"),
-    },
-  },
-};
-
-export const EMBER_THEME: ThemeDefinition = {
-  id: EMBER_THEME_ID,
-  label: EMBER_THEME_LABEL,
-  appearance: "light",
-  colors: {
-    ...createManagedThemeColors("light", "#fff6ef", "#c4602f"),
-    ...themeActionColors("#b23535"),
-  },
-  variants: {
-    dark: {
-      ...createManagedThemeColors("dark", "#30231e", "#f39a62"),
-      ...themeActionColors("#f78a7a"),
-    },
-  },
-};
-
-export const IRIS_THEME: ThemeDefinition = {
-  id: IRIS_THEME_ID,
-  label: IRIS_THEME_LABEL,
-  appearance: "light",
-  colors: {
-    ...createManagedThemeColors("light", "#f7f4fc", "#7254b9"),
-    ...themeActionColors("#a82c87"),
-  },
-  variants: {
-    dark: {
-      ...createManagedThemeColors("dark", "#29243b", "#ad92f5"),
-      ...themeActionColors("#f099d8"),
+    light: {
+      ...createManagedThemeColors("light", "#f4f4f5", "#52525b"),
+      ...themeActionColors("#3f3f46"),
     },
   },
 };
@@ -1440,23 +1413,6 @@ export const OBSIDIAN_THEME: ThemeDefinition = {
   },
 };
 
-/** Deep navy night sky with ice-blue accent. */
-export const MIDNIGHT_THEME: ThemeDefinition = {
-  id: MIDNIGHT_THEME_ID,
-  label: MIDNIGHT_THEME_LABEL,
-  appearance: "dark",
-  colors: {
-    ...createManagedThemeColors("dark", "#0a0f1c", "#7c9cff"),
-    ...themeActionColors("#a5b4fc"),
-  },
-  variants: {
-    light: {
-      ...createManagedThemeColors("light", "#f3f6fc", "#3b5bdb"),
-      ...themeActionColors("#5b5bd6"),
-    },
-  },
-};
-
 /** Industrial charcoal with amber signal accents. */
 export const CARBON_THEME: ThemeDefinition = {
   id: CARBON_THEME_ID,
@@ -1470,23 +1426,6 @@ export const CARBON_THEME: ThemeDefinition = {
     light: {
       ...createManagedThemeColors("light", "#f7f5f2", "#b45309"),
       ...themeActionColors("#c2410c"),
-    },
-  },
-};
-
-/** Deep-space purple with hot magenta / cyan dual voice. */
-export const NEBULA_THEME: ThemeDefinition = {
-  id: NEBULA_THEME_ID,
-  label: NEBULA_THEME_LABEL,
-  appearance: "dark",
-  colors: {
-    ...createManagedThemeColors("dark", "#100e1a", "#e879f9"),
-    ...themeActionColors("#22d3ee"),
-  },
-  variants: {
-    light: {
-      ...createManagedThemeColors("light", "#f7f4fb", "#a21caf"),
-      ...themeActionColors("#0e7490"),
     },
   },
 };
@@ -1529,62 +1468,18 @@ export const OLED_VOID_THEME: ThemeDefinition = {
   },
 };
 
-/** Pure black + electric azure for high-contrast night coding. */
-export const OLED_AZURE_THEME: ThemeDefinition = {
-  id: OLED_AZURE_THEME_ID,
-  label: OLED_AZURE_THEME_LABEL,
-  appearance: "dark",
-  colors: createOledThemeColors("#38bdf8", "#818cf8"),
-  variants: {
-    light: {
-      ...createManagedThemeColors("light", "#f8fafc", "#0284c7"),
-      ...themeActionColors("#4f46e5"),
-    },
-  },
-};
-
-/** Pure black + phosphor green terminal energy. */
-export const OLED_PHOSPHOR_THEME: ThemeDefinition = {
-  id: OLED_PHOSPHOR_THEME_ID,
-  label: OLED_PHOSPHOR_THEME_LABEL,
-  appearance: "dark",
-  colors: createOledThemeColors("#4ade80", "#22d3ee"),
-  variants: {
-    light: {
-      ...createManagedThemeColors("light", "#f4faf6", "#15803d"),
-      ...themeActionColors("#0e7490"),
-    },
-  },
-};
-
-/** Pure black + neon magenta / violet. */
-export const OLED_PLASMA_THEME: ThemeDefinition = {
-  id: OLED_PLASMA_THEME_ID,
-  label: OLED_PLASMA_THEME_LABEL,
-  appearance: "dark",
-  colors: createOledThemeColors("#f472b6", "#c084fc"),
-  variants: {
-    light: {
-      ...createManagedThemeColors("light", "#fdf4f8", "#be185d"),
-      ...themeActionColors("#7e22ce"),
-    },
-  },
-};
-
+/**
+ * The curated set. Ten earlier presets were retired here; their ids stay claimed
+ * in RESERVED_THEME_IDS so a settings.json still pinned to one resolves to null
+ * and falls back to the default rather than colliding with a custom theme that
+ * later reuses the name.
+ */
 const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = [
-  SAKURA_THEME,
-  GROVE_THEME,
-  OCEAN_THEME,
-  EMBER_THEME,
-  IRIS_THEME,
+  PAPER_THEME,
+  GRAPHITE_THEME,
   OBSIDIAN_THEME,
-  MIDNIGHT_THEME,
   CARBON_THEME,
-  NEBULA_THEME,
   OLED_VOID_THEME,
-  OLED_AZURE_THEME,
-  OLED_PHOSPHOR_THEME,
-  OLED_PLASMA_THEME,
 ];
 
 export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | null {

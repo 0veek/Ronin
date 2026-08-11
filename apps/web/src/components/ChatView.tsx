@@ -165,7 +165,7 @@ import {
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
-import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
+import { WorkspaceTopbar } from "./shell/WorkspaceTopbar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
 import { type NewProjectScriptInput } from "./ProjectScriptsControl";
@@ -6099,20 +6099,12 @@ function ChatViewContent(props: ChatViewProps) {
         data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
       >
         {/* Top bar */}
-        <header
+        <WorkspaceTopbar
           data-chat-header
-          className={cn(
-            "bg-background transition-[padding-left] duration-200 ease-linear motion-reduce:transition-none",
-            isElectron
-              ? cn(
-                  "workspace-topbar drag-region relative px-3 sm:px-5",
-                  reserveTitleBarControlInset &&
-                    !inlineRightPanelOwnsTitleBar &&
-                    "wco:pr-[var(--workspace-native-controls-inset)]",
-                )
-              : "workspace-topbar pl-[calc(env(safe-area-inset-left)+0.75rem)] pr-[calc(env(safe-area-inset-right)+0.75rem)] sm:pl-[calc(env(safe-area-inset-left)+1.25rem)] sm:pr-[calc(env(safe-area-inset-right)+1.25rem)]",
-            COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
-          )}
+          className="relative"
+          reserveNativeControls={
+            isElectron && reserveTitleBarControlInset && !inlineRightPanelOwnsTitleBar
+          }
         >
           {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
@@ -6143,7 +6135,7 @@ function ChatViewContent(props: ChatViewProps) {
             onUpdateProjectScript={updateProjectScript}
             onDeleteProjectScript={deleteProjectScript}
           />
-        </header>
+        </WorkspaceTopbar>
 
         <ThreadErrorBanner
           error={threadError}
@@ -6214,7 +6206,7 @@ function ChatViewContent(props: ChatViewProps) {
                     aria-label="Scroll to end"
                     title="Scroll to end"
                     onClick={() => scrollToEnd(true)}
-                    className="chat-composer-glass pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1 text-muted-foreground text-xs shadow-sm transition-colors hover:border-border hover:text-foreground hover:cursor-pointer"
+                    className="pointer-events-auto flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-muted-foreground text-xs transition-colors duration-(--duration-fast) hover:bg-accent hover:text-foreground"
                   >
                     <ChevronDownIcon className="size-3.5" />
                     Scroll to end
@@ -6271,13 +6263,8 @@ function ChatViewContent(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <div
-                      className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
-                        showComposerContextStrip && "chat-composer-glass-shell-with-context",
-                      )}
-                    >
-                      <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+                    <div className={cn("composer-surface relative mx-auto w-full max-w-3xl")}>
+                      <div className="relative z-10 w-full">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}

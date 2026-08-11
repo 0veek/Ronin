@@ -43,7 +43,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   return (
     <SidebarHeader
       className={cn(
-        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center px-3 py-0 md:px-0",
+        "@container/sidebar-header relative h-[var(--workspace-topbar-height)] shrink-0 flex-row items-center border-b border-sidebar-border px-3 py-0 md:px-0",
         isElectron && "drag-region",
       )}
     >
@@ -81,12 +81,9 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       to="/"
     >
       <RoninAppIcon />
-      <span
-        className={cn(
-          "truncate text-sm font-medium tracking-tight",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
-      >
+      {/* Set as a masthead rather than a UI label: mono small-caps at the same
+          weight as every other structural label in the shell. */}
+      <span className={cn("label-meta truncate", onBackdrop ? "text-white/80" : "text-foreground")}>
         Ronin
       </span>
     </Link>

@@ -12,7 +12,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "../branding";
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
-import { AppSidebarLayout } from "../components/AppSidebarLayout";
+import { WorkspaceShell } from "../components/shell/WorkspaceShell";
 import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -118,9 +118,9 @@ function RootRouteView() {
 
   const appShell = (
     <CommandPalette>
-      <AppSidebarLayout>
+      <WorkspaceShell>
         <Outlet />
-      </AppSidebarLayout>
+      </WorkspaceShell>
     </CommandPalette>
   );
 
@@ -128,7 +128,6 @@ function RootRouteView() {
     <ToastProvider>
       <AnchoredToastProvider>
         <DocumentTitleSync />
-        <GlassAppearanceSync />
         <FontAppearanceSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
         <SshPasswordPromptDialog />
@@ -144,16 +143,6 @@ function RootRouteView() {
       </AnchoredToastProvider>
     </ToastProvider>
   );
-}
-
-function GlassAppearanceSync() {
-  const glassOpacity = useClientSettings((settings) => settings.glassOpacity);
-
-  useEffect(() => {
-    document.documentElement.style.setProperty("--glass-opacity", `${glassOpacity}%`);
-  }, [glassOpacity]);
-
-  return null;
 }
 
 function FontAppearanceSync() {
@@ -244,7 +233,7 @@ function RootRouteErrorView({ error, reset }: ErrorComponentProps) {
         <div className="absolute inset-0 bg-[linear-gradient(145deg,color-mix(in_srgb,var(--background)_90%,var(--color-black))_0%,var(--background)_55%)]" />
       </div>
 
-      <section className="relative w-full max-w-xl rounded-2xl border border-border/80 bg-card/90 p-6 shadow-2xl shadow-black/20 backdrop-blur-md sm:p-8">
+      <section className="relative w-full max-w-xl rounded-(--radius-lg) border border-border bg-card p-6 sm:p-8">
         <p className="text-[11px] font-semibold tracking-[0.18em] text-muted-foreground uppercase">
           {APP_DISPLAY_NAME}
         </p>

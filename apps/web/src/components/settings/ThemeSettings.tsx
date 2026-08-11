@@ -16,19 +16,11 @@ import {
   type ThemeAppearance,
   type ThemeDefinition,
   type ThemeHalves,
-  SAKURA_THEME,
   CARBON_THEME,
-  EMBER_THEME,
-  GROVE_THEME,
-  IRIS_THEME,
-  MIDNIGHT_THEME,
-  NEBULA_THEME,
+  GRAPHITE_THEME,
   OBSIDIAN_THEME,
-  OCEAN_THEME,
-  OLED_AZURE_THEME,
-  OLED_PHOSPHOR_THEME,
-  OLED_PLASMA_THEME,
   OLED_VOID_THEME,
+  PAPER_THEME,
 } from "../../themePalette";
 import {
   AlertDialog,
@@ -54,20 +46,13 @@ import {
 } from "./ThemePreviewCircles";
 import { ThemeWireframe } from "./ThemeWireframe";
 
+// Ordered light-first, then by how dark the canvas gets.
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
-  SAKURA_THEME,
-  GROVE_THEME,
-  OCEAN_THEME,
-  EMBER_THEME,
-  IRIS_THEME,
+  PAPER_THEME,
+  GRAPHITE_THEME,
   OBSIDIAN_THEME,
-  MIDNIGHT_THEME,
   CARBON_THEME,
-  NEBULA_THEME,
   OLED_VOID_THEME,
-  OLED_AZURE_THEME,
-  OLED_PHOSPHOR_THEME,
-  OLED_PLASMA_THEME,
 ];
 
 function downloadThemeFile(filename: string, contents: string): void {
@@ -114,8 +99,8 @@ function ThemeLibraryCard({
         render={
           <div
             className={cn(
-              "cursor-pointer overflow-hidden rounded-xl border border-border/70 bg-card/60 transition-colors hover:bg-accent/10",
-              isActive && "bg-accent/30",
+              "cursor-pointer overflow-hidden rounded-(--radius) border border-border bg-card transition-colors duration-(--duration-fast) ease-out hover:bg-accent",
+              isActive && "bg-accent",
             )}
             data-theme-library-card={theme.id}
             onClick={onUse}
@@ -451,10 +436,8 @@ export function ThemeLibrary({
             aria-label={mode === "system" ? "Follow the system appearance" : `Use ${mode} mode`}
             aria-pressed={isActive}
             className={cn(
-              "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-xl border p-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-              isActive
-                ? "border-transparent bg-accent/30"
-                : "border-border/70 bg-card/60 hover:bg-accent/10",
+              "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-(--radius) border border-border p-2 outline-none transition-colors duration-(--duration-fast) ease-out focus-visible:ring-2 focus-visible:ring-ring",
+              isActive ? "bg-accent" : "bg-card hover:bg-accent",
             )}
             key={mode}
             style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
