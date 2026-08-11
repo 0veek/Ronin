@@ -33,8 +33,15 @@ import {
   resolveGrokHome,
 } from "./providerRateLimitSources.ts";
 
-/** Long enough that polling is cheap, short enough that the meter feels live. */
-export const SNAPSHOT_TTL_MS = 60_000;
+/**
+ * The real rate guard.
+ *
+ * The client polls on this same interval, but that only paces one reader --
+ * this cache is what stops a second window, a reconnect, or a re-render from
+ * each opening its own round trips to the three provider hosts. Shortening it
+ * below the client's interval would let those pile up again.
+ */
+export const SNAPSHOT_TTL_MS = 30_000;
 
 export class RateLimitService extends Context.Service<
   RateLimitService,

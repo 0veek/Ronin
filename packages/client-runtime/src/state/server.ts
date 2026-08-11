@@ -113,6 +113,13 @@ export class ServerUpdateTerminalError extends Schema.TaggedErrorClass<ServerUpd
 
 // Covers the 120-second trial deadline and a final restart of the previous
 // version when the trial rolls back.
+/**
+ * How often the sidebar quota meter refreshes, and the floor on how often the
+ * provider usage endpoints are called. RateLimitService caches on the same
+ * clock; the two are meant to be read together.
+ */
+export const PROVIDER_RATE_LIMIT_POLL_MS = 30_000;
+
 const SERVER_UPDATE_RESUME_TIMEOUT = Duration.minutes(4);
 
 export function matchesServerUpdateReadyEvent(
@@ -714,13 +721,19 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
     }),
-    // Three outbound requests per refresh, to three provider hosts. The server
-    // caches for a minute of its own; matching that here keeps a re-render or
-    // a window switch from queueing another round trip behind it.
+    // A meter nobody refreshes is a meter that lies, so this one polls rather
+    // than only fetching on mount. Thirty seconds is the floor: each refresh is
+    // three outbound requests to three provider hosts, and the point of the
+    // readout is to notice a window filling up, not to watch it tick.
+    //
+    // The server caches on the same 30s clock, which is what actually holds the
+    // rate down -- that cache is shared, so a second window or a re-render
+    // rides the same snapshot instead of opening its own round trips.
     providerRateLimits: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:provider-rate-limits",
       tag: WS_METHODS.serverGetProviderRateLimits,
-      staleTimeMs: 60_000,
+      staleTimeMs: PROVIDER_RATE_LIMIT_POLL_MS,
+      refreshIntervalMs: PROVIDER_RATE_LIMIT_POLL_MS,
     }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
