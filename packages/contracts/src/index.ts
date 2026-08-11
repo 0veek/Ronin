@@ -30,4 +30,5 @@ export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";
 export * from "./usage.ts";
 export * from "./rateLimit.ts";
+export * from "./speechToText.ts";
 export * from "./rpc.ts";

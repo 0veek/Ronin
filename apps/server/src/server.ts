@@ -91,6 +91,7 @@ import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts
 import * as ResourceMonitorBinary from "./resourceTelemetry/ResourceMonitorBinary.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as RateLimitService from "./rateLimits/RateLimitService.ts";
+import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import {
@@ -151,6 +152,13 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
 const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
 const RateLimitLayerLive = RateLimitService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+
+// The secret store is a direct dependency here, not just settings': this is
+// where the API keys live, deliberately outside settings.json.
+const SpeechToTextLayerLive = SpeechToTextService.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
+  Layer.provide(ServerSecretStore.layer),
+);
 
 const ResourceDiagnosticsLayerLive = Layer.mergeAll(
   ResourceTelemetryLayerLive,
@@ -381,6 +389,7 @@ const RuntimeDependenciesLive = RuntimeCoreDependenciesLive.pipe(
   Layer.provideMerge(ResourceDiagnosticsLayerLive),
   Layer.provideMerge(UsageLayerLive),
   Layer.provideMerge(RateLimitLayerLive),
+  Layer.provideMerge(SpeechToTextLayerLive),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(AnalyticsService.layer),
   Layer.provideMerge(ExternalLauncher.layer),

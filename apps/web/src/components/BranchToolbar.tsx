@@ -25,6 +25,7 @@ import {
   resolvePreviousWorktreeSeed,
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
+import { ComposerDictationControl } from "./chat/ComposerDictationControl";
 import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
@@ -447,6 +448,8 @@ export const BranchToolbar = memo(function BranchToolbar({
           ) : null}
         </div>
       )}
+
+      <ComposerDictationControl />
 
       {showGitControls ? (
         <BranchToolbarBranchSelector

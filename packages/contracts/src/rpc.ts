@@ -169,6 +169,13 @@ import {
   ResourceTelemetrySnapshot,
 } from "./resourceTelemetry.ts";
 import { ProviderRateLimitsSnapshot, RateLimitReadError } from "./rateLimit.ts";
+import {
+  SpeechToTextError,
+  SpeechToTextKeyStatus,
+  SpeechToTextSetKeyInput,
+  SpeechToTextTranscribeInput,
+  SpeechToTextTranscript,
+} from "./speechToText.ts";
 import { UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
@@ -264,6 +271,9 @@ export const WS_METHODS = {
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
   serverGetProviderRateLimits: "server.getProviderRateLimits",
+  serverTranscribeAudio: "server.transcribeAudio",
+  serverGetSpeechToTextKeyStatus: "server.getSpeechToTextKeyStatus",
+  serverSetSpeechToTextKey: "server.setSpeechToTextKey",
 
   // Pull request methods
   pullRequestsList: "pullRequests.list",
@@ -422,6 +432,27 @@ export const WsServerGetProviderRateLimitsRpc = Rpc.make(WS_METHODS.serverGetPro
   payload: Schema.Struct({}),
   success: ProviderRateLimitsSnapshot,
   error: Schema.Union([EnvironmentAuthorizationError, RateLimitReadError]),
+});
+
+export const WsServerTranscribeAudioRpc = Rpc.make(WS_METHODS.serverTranscribeAudio, {
+  payload: SpeechToTextTranscribeInput,
+  success: SpeechToTextTranscript,
+  error: Schema.Union([EnvironmentAuthorizationError, SpeechToTextError]),
+});
+
+export const WsServerGetSpeechToTextKeyStatusRpc = Rpc.make(
+  WS_METHODS.serverGetSpeechToTextKeyStatus,
+  {
+    payload: Schema.Struct({}),
+    success: SpeechToTextKeyStatus,
+    error: Schema.Union([EnvironmentAuthorizationError, SpeechToTextError]),
+  },
+);
+
+export const WsServerSetSpeechToTextKeyRpc = Rpc.make(WS_METHODS.serverSetSpeechToTextKey, {
+  payload: SpeechToTextSetKeyInput,
+  success: SpeechToTextKeyStatus,
+  error: Schema.Union([EnvironmentAuthorizationError, SpeechToTextError]),
 });
 
 export const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -951,6 +982,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
   WsServerGetProviderRateLimitsRpc,
+  WsServerTranscribeAudioRpc,
+  WsServerGetSpeechToTextKeyStatusRpc,
+  WsServerSetSpeechToTextKeyRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,

@@ -2,6 +2,7 @@ export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
+  | "/settings/speech-to-text"
   | "/settings/providers"
   | "/settings/source-control"
   | "/settings/connections"
@@ -22,6 +23,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/general": "General",
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
+  "/settings/speech-to-text": "Dictation",
   "/settings/providers": "Providers",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
@@ -35,6 +37,26 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  * here once instead of separately in the panel and the index.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "speech-to-text",
+    title: "Dictation",
+    to: "/settings/speech-to-text",
+  },
+  {
+    id: "speech-to-text-deepgram",
+    title: "Deepgram API key",
+    to: "/settings/speech-to-text",
+  },
+  {
+    id: "speech-to-text-groq",
+    title: "Groq API key",
+    to: "/settings/speech-to-text",
+  },
+  {
+    id: "speech-to-text-openrouter",
+    title: "OpenRouter API key",
+    to: "/settings/speech-to-text",
+  },
   {
     id: "color-scheme",
     title: "Color scheme",

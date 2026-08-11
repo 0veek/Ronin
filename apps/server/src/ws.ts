@@ -104,6 +104,7 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as RateLimitService from "./rateLimits/RateLimitService.ts";
+import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -415,6 +416,7 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const rateLimits = yield* RateLimitService.RateLimitService;
+      const speechToText = yield* SpeechToTextService.SpeechToTextService;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
           message: `The authenticated token is missing required scope: ${requiredScope}.`,
@@ -1567,6 +1569,18 @@ const makeWsRpcLayer = (
           }),
         [WS_METHODS.serverGetProviderRateLimits]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetProviderRateLimits, rateLimits.readSnapshot, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverTranscribeAudio]: (input) =>
+          observeRpcEffect(WS_METHODS.serverTranscribeAudio, speechToText.transcribe(input), {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverGetSpeechToTextKeyStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverGetSpeechToTextKeyStatus, speechToText.keyStatus, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverSetSpeechToTextKey]: (input) =>
+          observeRpcEffect(WS_METHODS.serverSetSpeechToTextKey, speechToText.setKey(input), {
             "rpc.aggregate": "server",
           }),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) =>

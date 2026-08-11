@@ -279,6 +279,11 @@ export function usePrimarySettings<T = UnifiedSettings>(
   return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
 }
 
+/** Whether the composer should offer dictation at all. */
+export function useSpeechToTextEnabled(): boolean {
+  return usePrimarySettings((settings) => settings.speechToText.enabled);
+}
+
 /**
  * Returns an updater that routes each key to the correct backing store.
  *

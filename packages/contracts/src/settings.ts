@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
+import { SpeechToTextProvider, SpeechToTextSettings } from "./speechToText.ts";
 import { TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { ThreadEnvMode } from "./environment.ts";
 import {
@@ -599,6 +600,7 @@ export const ServerSettings = Schema.Struct({
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  speechToText: SpeechToTextSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
@@ -719,6 +721,22 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  // No apiKey member: keys go to the secret store through their own RPC, so a
+  // settings patch can never carry one into settings.json.
+  speechToText: Schema.optionalKey(
+    Schema.Struct({
+      enabled: Schema.optionalKey(Schema.Boolean),
+      provider: Schema.optionalKey(SpeechToTextProvider),
+      models: Schema.optionalKey(
+        Schema.Struct({
+          deepgram: Schema.optionalKey(TrimmedString),
+          groq: Schema.optionalKey(TrimmedString),
+          openrouter: Schema.optionalKey(TrimmedString),
+        }),
+      ),
+      language: Schema.optionalKey(TrimmedString),
+    }),
+  ),
   observability: Schema.optionalKey(
     Schema.Struct({
       otlpTracesUrl: Schema.optionalKey(TrimmedString),

@@ -140,6 +140,7 @@ import * as NativeTelemetryClient from "./resourceTelemetry/NativeTelemetryClien
 import * as ResourceAttribution from "./resourceTelemetry/ResourceAttribution.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as RateLimitService from "./rateLimits/RateLimitService.ts";
+import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as Data from "effect/Data";
 
@@ -814,6 +815,7 @@ const buildAppUnderTest = (options?: {
       Layer.provide(resourceTelemetryLayer),
       Layer.provide(UsageService.layerTest),
       Layer.provide(RateLimitService.layerTest),
+      Layer.provide(SpeechToTextService.layerTest),
       Layer.provide(
         Layer.mock(BrowserTraceCollector.BrowserTraceCollector)({
           record: () => Effect.void,

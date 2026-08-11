@@ -729,6 +729,19 @@ export function createServerEnvironmentAtoms<R, E>(
     // The server caches on the same 30s clock, which is what actually holds the
     // rate down -- that cache is shared, so a second window or a re-render
     // rides the same snapshot instead of opening its own round trips.
+    speechToTextKeyStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:speech-to-text-key-status",
+      tag: WS_METHODS.serverGetSpeechToTextKeyStatus,
+      staleTimeMs: 5_000,
+    }),
+    transcribeAudio: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:transcribe-audio",
+      tag: WS_METHODS.serverTranscribeAudio,
+    }),
+    setSpeechToTextKey: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:set-speech-to-text-key",
+      tag: WS_METHODS.serverSetSpeechToTextKey,
+    }),
     providerRateLimits: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:provider-rate-limits",
       tag: WS_METHODS.serverGetProviderRateLimits,

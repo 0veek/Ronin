@@ -1,0 +1,287 @@
+/**
+ * Push-to-talk microphone capture for the composer.
+ *
+ * Recording happens here because only the renderer can reach a microphone;
+ * transcription happens on the server because only it holds the API key. This
+ * hook owns the half in between: permission, the recorder, and turning the
+ * result into base64 for the socket.
+ *
+ * Hold to speak, release to send. A toggle would be fewer events, but it also
+ * leaves the microphone live when attention moves elsewhere -- the whole point
+ * of push-to-talk is that letting go is the same gesture as being done, so
+ * there is no state to forget about.
+ *
+ * @module hooks/useDictation
+ */
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { serverEnvironment } from "../state/server";
+import { usePrimaryEnvironmentId } from "../state/environments";
+import { useAtomCommand } from "../state/use-atom-command";
+
+export type DictationStatus = "idle" | "recording" | "transcribing";
+
+export interface DictationController {
+  readonly status: DictationStatus;
+  readonly error: string | null;
+  readonly isSupported: boolean;
+  /** Key or button went down. Idempotent while already recording. */
+  readonly beginHold: () => void;
+  /** Key or button came up. Stops and transcribes what was captured. */
+  readonly endHold: () => void;
+  /** Drops the clip without transcribing it. Escape, or losing the window. */
+  readonly cancel: () => void;
+  readonly dismissError: () => void;
+}
+
+/**
+ * Container preference, best first.
+ *
+ * All three providers accept Opus in WebM, and it is roughly a tenth the size
+ * of the WAV a naive capture would produce -- which matters because the clip
+ * crosses the socket base64-encoded. Safari records MP4/AAC instead, so that
+ * is the fallback rather than an error.
+ */
+const PREFERRED_MIME_TYPES = [
+  "audio/webm;codecs=opus",
+  "audio/webm",
+  "audio/mp4",
+  "audio/ogg;codecs=opus",
+];
+
+/**
+ * A press shorter than this is a fumble, not speech.
+ *
+ * Push-to-talk invites accidental taps, and a 40ms clip costs a round trip to
+ * the provider to be told there is no speech in it.
+ */
+const MIN_HOLD_MS = 250;
+
+function pickMimeType(): string | null {
+  if (typeof MediaRecorder === "undefined") return null;
+  for (const candidate of PREFERRED_MIME_TYPES) {
+    if (MediaRecorder.isTypeSupported(candidate)) return candidate;
+  }
+  // An empty string is valid: it tells MediaRecorder to choose for itself.
+  return "";
+}
+
+function isSupported(): boolean {
+  return (
+    typeof navigator !== "undefined" &&
+    navigator.mediaDevices?.getUserMedia !== undefined &&
+    typeof MediaRecorder !== "undefined"
+  );
+}
+
+/**
+ * Bytes to base64 without blowing the stack.
+ *
+ * `String.fromCharCode(...bytes)` is the obvious spelling and throws on a clip
+ * of any real length, because the argument list becomes the whole recording.
+ */
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function describeCaptureFailure(error: unknown): string {
+  const name = error instanceof Error ? error.name : "";
+  if (name === "NotAllowedError" || name === "SecurityError") {
+    return "Microphone access was denied.";
+  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") {
+    return "No microphone was found.";
+  }
+  return "The microphone could not be opened.";
+}
+
+export function useDictation(options: {
+  readonly onTranscript: (text: string) => void;
+}): DictationController {
+  const environmentId = usePrimaryEnvironmentId();
+  const transcribe = useAtomCommand(serverEnvironment.transcribeAudio, {
+    label: "dictation transcribe",
+    // The composer surfaces the failure inline; a toast on top of that is one
+    // notification too many for a held key that produced nothing.
+    reportFailure: false,
+  });
+
+  const [status, setStatus] = useState<DictationStatus>("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const cancelledRef = useRef(false);
+  const startedAtRef = useRef(0);
+  /**
+   * Set the moment the hold begins and cleared when it ends. `status` cannot
+   * do this job: getUserMedia takes a permission round trip, so a quick tap
+   * can release before the recorder ever starts, and this is what remembers
+   * that the release already happened.
+   */
+  const holdingRef = useRef(false);
+  // Kept in a ref so the recorder's stop handler always calls the current
+  // consumer rather than the one captured when recording began.
+  const onTranscriptRef = useRef(options.onTranscript);
+  onTranscriptRef.current = options.onTranscript;
+
+  const releaseStream = useCallback(() => {
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    chunksRef.current = [];
+    // Every track has to be stopped explicitly, or the OS keeps showing the
+    // microphone as in use long after dictation ended.
+    for (const track of recorder?.stream.getTracks() ?? []) track.stop();
+  }, []);
+
+  useEffect(() => releaseStream, [releaseStream]);
+
+  const stopRecorder = useCallback(() => {
+    const recorder = recorderRef.current;
+    if (recorder !== null && recorder.state !== "inactive") recorder.stop();
+  }, []);
+
+  const cancel = useCallback(() => {
+    holdingRef.current = false;
+    cancelledRef.current = true;
+    stopRecorder();
+    setStatus("idle");
+  }, [stopRecorder]);
+
+  const beginHold = useCallback(() => {
+    if (holdingRef.current || status !== "idle") return;
+    holdingRef.current = true;
+
+    if (!isSupported()) {
+      holdingRef.current = false;
+      setError("This build cannot record audio.");
+      return;
+    }
+    if (environmentId === null) {
+      holdingRef.current = false;
+      setError("Not connected to an environment.");
+      return;
+    }
+
+    setError(null);
+    cancelledRef.current = false;
+
+    void (async () => {
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (captureError) {
+        holdingRef.current = false;
+        setError(describeCaptureFailure(captureError));
+        return;
+      }
+
+      // The permission prompt can outlast the hold. Releasing before the
+      // stream arrives means there is nothing to record, so hand the device
+      // straight back rather than starting a recorder nobody is holding.
+      if (!holdingRef.current) {
+        for (const track of stream.getTracks()) track.stop();
+        return;
+      }
+
+      const mimeType = pickMimeType();
+      let recorder: MediaRecorder;
+      try {
+        recorder = new MediaRecorder(
+          stream,
+          mimeType === null || mimeType === "" ? undefined : { mimeType },
+        );
+      } catch {
+        for (const track of stream.getTracks()) track.stop();
+        holdingRef.current = false;
+        setError("This build cannot record audio.");
+        return;
+      }
+
+      recorderRef.current = recorder;
+      chunksRef.current = [];
+
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      });
+
+      recorder.addEventListener("stop", () => {
+        const chunks = chunksRef.current;
+        const recordedType = recorder.mimeType || mimeType || "audio/webm";
+        const heldMs = Date.now() - startedAtRef.current;
+        releaseStream();
+
+        if (cancelledRef.current) {
+          setStatus("idle");
+          return;
+        }
+        if (chunks.length === 0 || heldMs < MIN_HOLD_MS) {
+          setStatus("idle");
+          // Silent on a fumble: an error banner for a mis-tap is noise.
+          if (chunks.length > 0) return;
+          setError("Nothing was recorded.");
+          return;
+        }
+
+        setStatus("transcribing");
+        void (async () => {
+          try {
+            const buffer = await new Blob(chunks, { type: recordedType }).arrayBuffer();
+            const result = await transcribe({
+              environmentId,
+              input: {
+                audioBase64: toBase64(new Uint8Array(buffer)),
+                mimeType: recordedType,
+              },
+            });
+
+            if (result._tag !== "Success") {
+              setError("Transcription failed.");
+              return;
+            }
+            const text = result.value.text.trim();
+            if (text.length === 0) {
+              setError("No speech was detected.");
+              return;
+            }
+            onTranscriptRef.current(text);
+          } catch {
+            setError("Transcription failed.");
+          } finally {
+            setStatus("idle");
+          }
+        })();
+      });
+
+      startedAtRef.current = Date.now();
+      recorder.start();
+      setStatus("recording");
+
+      // Released while the recorder was being constructed.
+      if (!holdingRef.current) stopRecorder();
+    })();
+  }, [environmentId, releaseStream, status, stopRecorder, transcribe]);
+
+  const endHold = useCallback(() => {
+    if (!holdingRef.current) return;
+    holdingRef.current = false;
+    stopRecorder();
+  }, [stopRecorder]);
+
+  const dismissError = useCallback(() => setError(null), []);
+
+  return {
+    status,
+    error,
+    isSupported: isSupported(),
+    beginHold,
+    endHold,
+    cancel,
+    dismissError,
+  };
+}
