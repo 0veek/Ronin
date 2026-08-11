@@ -36,7 +36,7 @@ function UsagePageHeader({ onBack }: { readonly onBack: () => void }) {
         Back to editor
       </Button>
       <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
-        <WorkspaceBreadcrumbItem current>Usage</WorkspaceBreadcrumbItem>
+        <WorkspaceBreadcrumbItem current>Stats</WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
     </div>
   );

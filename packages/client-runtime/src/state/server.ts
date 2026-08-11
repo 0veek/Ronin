@@ -714,6 +714,14 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
     }),
+    // Three outbound requests per refresh, to three provider hosts. The server
+    // caches for a minute of its own; matching that here keeps a re-render or
+    // a window switch from queueing another round trip behind it.
+    providerRateLimits: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:provider-rate-limits",
+      tag: WS_METHODS.serverGetProviderRateLimits,
+      staleTimeMs: 60_000,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",
