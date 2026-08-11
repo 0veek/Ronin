@@ -29,7 +29,6 @@ import {
 } from "../ui/sidebar";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUsageMeter } from "./SidebarUsageMeter";
-import { SidebarUpdatePill } from "./SidebarUpdatePill";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -181,7 +180,6 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter className="gap-0 p-0">
       <div className="flex flex-col gap-2 p-[var(--sidebar-content-inset)]">
         <SidebarProviderUpdatePill />
-        <SidebarUpdatePill />
         <SidebarMenu>
           {currentFooterPage === "pull-requests" ? (
             <SidebarMenuItem>

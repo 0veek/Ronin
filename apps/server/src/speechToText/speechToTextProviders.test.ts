@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, it } from "@effect/vitest";
+import { expect } from "vite-plus/test";
 
 import { HttpClient } from "effect/unstable/http";
 import * as Effect from "effect/Effect";
@@ -71,16 +72,18 @@ describe("OpenRouter container support", () => {
     language: "",
   });
 
-  it("rejects webm before spending a request on it", async () => {
-    // Chromium records WebM by default and OpenRouter does not list it, so
-    // without this the clip goes out and returns as an opaque model failure.
-    const exit = await Effect.runPromiseExit(
-      transcribeWithOpenRouter(deps("audio/webm;codecs=opus")),
-    );
+  it.effect("rejects webm before spending a request on it", () =>
+    Effect.gen(function* () {
+      // Chromium records WebM by default and OpenRouter does not list it, so
+      // without this the clip goes out and returns as an opaque model failure.
+      const error = yield* transcribeWithOpenRouter(deps("audio/webm;codecs=opus")).pipe(
+        Effect.flip,
+      );
 
-    expect(exit._tag).toBe("Failure");
-    expect(JSON.stringify(exit)).toContain("does not accept webm audio");
-  });
+      expect(error.reason).toBe("audioRejected");
+      expect(error.detail).toContain("does not accept webm audio");
+    }),
+  );
 
   it("accepts the containers OpenRouter documents", () => {
     // m4a is what the renderer records for this provider; the rest are the

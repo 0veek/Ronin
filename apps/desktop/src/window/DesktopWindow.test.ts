@@ -73,6 +73,10 @@ function makeFakeBrowserWindow() {
     reload: vi.fn(),
     replaceMisspelling: vi.fn(),
     send: vi.fn(),
+    session: {
+      setPermissionRequestHandler: vi.fn(),
+      setPermissionCheckHandler: vi.fn(),
+    },
     setWindowOpenHandler: vi.fn(),
   };
 
@@ -213,7 +217,6 @@ function makeTestLayer(input: {
       }),
     setServerExposureMode: () => Effect.die("unexpected server exposure update"),
     setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
-    setUpdateChannel: () => Effect.die("unexpected update channel change"),
   } satisfies DesktopAppSettings.DesktopAppSettings["Service"]);
 
   const electronWindowLayer = Layer.succeed(ElectronWindow.ElectronWindow, {

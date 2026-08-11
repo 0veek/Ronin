@@ -29,7 +29,6 @@ import * as ElectronProtocol from "./electron/ElectronProtocol.ts";
 import * as ElectronSafeStorage from "./electron/ElectronSafeStorage.ts";
 import * as ElectronShell from "./electron/ElectronShell.ts";
 import * as ElectronTheme from "./electron/ElectronTheme.ts";
-import * as ElectronUpdater from "./electron/ElectronUpdater.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
@@ -55,7 +54,6 @@ import * as DesktopSshEnvironment from "./ssh/DesktopSshEnvironment.ts";
 import * as DesktopSshPasswordPrompts from "./ssh/DesktopSshPasswordPrompts.ts";
 import * as DesktopState from "./app/DesktopState.ts";
 import * as DesktopTelemetryPublisher from "./telemetry/DesktopTelemetryPublisher.ts";
-import * as DesktopUpdates from "./updates/DesktopUpdates.ts";
 import * as BrowserSession from "./preview/BrowserSession.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import * as DesktopWindow from "./window/DesktopWindow.ts";
@@ -91,7 +89,6 @@ const resolveDesktopSshCliRunner = (
   return {
     packageSpec: resolveRemoteT3CliPackageSpec({
       appVersion: environment.appVersion,
-      updateChannel: settings.updateChannel,
       isDevelopment: environment.isDevelopment,
     }),
     nodeEngineRange: serverPackageJson.engines.node,
@@ -119,7 +116,6 @@ const electronLayer = Layer.mergeAll(
   ElectronSafeStorage.layer,
   ElectronShell.layer,
   ElectronTheme.layer,
-  ElectronUpdater.layer,
   ElectronWindow.layer,
   DesktopIpc.layer(Electron.ipcMain),
 );
@@ -174,7 +170,6 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopShellEnvironment.layer,
   desktopSshLayer,
 ).pipe(
-  Layer.provideMerge(DesktopUpdates.layer),
   Layer.provideMerge(desktopBackendLayer),
   Layer.provideMerge(desktopLocalEnvironmentAuthLayer),
 );

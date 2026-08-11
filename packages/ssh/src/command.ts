@@ -1,6 +1,6 @@
 import * as NodeCrypto from "node:crypto";
 
-import type { DesktopSshEnvironmentTarget, DesktopUpdateChannel } from "@t3tools/contracts";
+import type { DesktopSshEnvironmentTarget } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -366,7 +366,6 @@ export const resolveSshTarget = Effect.fn("ssh/command.resolveSshTarget")(functi
 
 export function resolveRemoteT3CliPackageSpec(input: {
   readonly appVersion: string;
-  readonly updateChannel: DesktopUpdateChannel;
   readonly isDevelopment?: boolean;
 }): string {
   const appVersion = input.appVersion.trim();
@@ -378,5 +377,8 @@ export function resolveRemoteT3CliPackageSpec(input: {
     return "t3@nightly";
   }
 
-  return input.updateChannel === "nightly" ? "t3@nightly" : "t3@latest";
+  // Was selected by the desktop update channel, which no longer exists. The
+  // running build's own version says the same thing without a setting behind
+  // it: a nightly desktop installs the nightly CLI.
+  return appVersion.includes("-nightly.") ? "t3@nightly" : "t3@latest";
 }

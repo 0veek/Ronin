@@ -14,7 +14,6 @@ import * as Path from "effect/Path";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
-import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 
 export interface MakeDesktopEnvironmentInput {
   readonly dirname: string;
@@ -80,6 +79,17 @@ export class DesktopEnvironment extends Context.Service<
 >()("@t3tools/desktop/app/DesktopEnvironment") {}
 
 const APP_BASE_NAME = "Ronin";
+
+/**
+ * Whether this build came off the nightly line.
+ *
+ * Build identity, not an update channel: it only decides how the app names
+ * itself. Ronin has no update mechanism, and this outlived the one it was
+ * originally part of.
+ */
+function isNightlyDesktopVersion(version: string): boolean {
+  return version.includes("-nightly.");
+}
 
 function resolveDesktopAppStageLabel(input: {
   readonly isDevelopment: boolean;

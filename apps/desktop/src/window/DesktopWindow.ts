@@ -330,7 +330,8 @@ export const make = Effect.gen(function* () {
      * preview sessions run untrusted web content and keep their own, stricter
      * handler in BrowserSession.ts; nothing here touches them.
      */
-    window.webContents.session.setPermissionRequestHandler(
+    const windowSession = window.webContents.session as Electron.Session | undefined;
+    windowSession?.setPermissionRequestHandler(
       (requestingContents, permission, callback, details) => {
         if (requestingContents.id !== window.webContents.id || permission !== "media") {
           callback(false);
@@ -342,7 +343,7 @@ export const make = Effect.gen(function* () {
         callback(mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio"));
       },
     );
-    window.webContents.session.setPermissionCheckHandler(
+    windowSession?.setPermissionCheckHandler(
       (requestingContents, permission) =>
         requestingContents?.id === window.webContents.id && permission === "media",
     );

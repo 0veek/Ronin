@@ -66,9 +66,6 @@ export class ElectronApp extends Context.Service<
     readonly setDesktopName: (desktopName: string) => Effect.Effect<void>;
     readonly setDockIcon: (iconPath: string) => Effect.Effect<void>;
     readonly appendCommandLineSwitch: (switchName: string, value?: string) => Effect.Effect<void>;
-    readonly onBeforeQuitForUpdate: (
-      listener: () => void,
-    ) => Effect.Effect<void, never, Scope.Scope>;
     readonly removeCommandLineSwitch: (switchName: string) => Effect.Effect<void>;
     readonly on: <Args extends ReadonlyArray<unknown>>(
       eventName: string,
@@ -182,16 +179,6 @@ export const make = ElectronApp.of({
       }
       Electron.app.commandLine.appendSwitch(switchName, value);
     }),
-  onBeforeQuitForUpdate: (listener) =>
-    Effect.acquireRelease(
-      Effect.sync(() => {
-        Electron.autoUpdater.on("before-quit-for-update", listener);
-      }),
-      () =>
-        Effect.sync(() => {
-          Electron.autoUpdater.removeListener("before-quit-for-update", listener);
-        }),
-    ).pipe(Effect.asVoid),
   removeCommandLineSwitch: (switchName) =>
     Effect.sync(() => {
       Electron.app.commandLine.removeSwitch(switchName);
