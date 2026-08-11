@@ -211,7 +211,22 @@ const startup = Effect.gen(function* () {
   const safeStorage = yield* ElectronSafeStorage.ElectronSafeStorage;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
 
-  yield* shellEnvironment.installIntoProcess;
+  /*
+   * The login-shell probe spawns the user's shell and waits for it to finish
+   * sourcing rc files -- up to five seconds on a machine with nvm, conda or a
+   * corporate profile. It has to happen before whenReady, because the Linux
+   * password-store switch below is read from process.env and Electron only
+   * accepts command-line switches while it is still starting.
+   *
+   * So the cache stands in for it. A remembered environment is applied
+   * immediately, the real probe is forked to run alongside whenReady, and its
+   * result is written back for next time. Only a launch with no usable cache
+   * pays the original cost.
+   */
+  const usedCachedShellEnvironment = yield* shellEnvironment.installCachedIntoProcess;
+  if (!usedCachedShellEnvironment) {
+    yield* shellEnvironment.installIntoProcess;
+  }
   const hasCommandLinePasswordStore =
     preReadyElectronOptions.linuxPasswordStoreCommandLine !== null;
   const linuxElectronOptions =
@@ -250,11 +265,20 @@ const startup = Effect.gen(function* () {
   yield* appIdentity.configure;
   yield* lifecycle.register;
 
+  // Forked before whenReady rather than after it: the probe and Electron's
+  // own startup are independent, so they should overlap. Detached from this
+  // fiber so a slow shell cannot hold up the window.
+  if (usedCachedShellEnvironment) {
+    yield* Effect.forkScoped(shellEnvironment.refreshCache);
+  }
+
   yield* electronApp.whenReady.pipe(
     Effect.withSpan("desktop.electron.whenReady"),
     Effect.catchCause((cause) => fatalStartupCause("whenReady", cause)),
   );
-  yield* logStartupInfo("app ready");
+  yield* logStartupInfo("app ready", {
+    shellEnvironment: usedCachedShellEnvironment ? "cached" : "probed",
+  });
   if (environment.platform === "linux") {
     const selectedBackend = yield* safeStorage.selectedStorageBackend;
     yield* logStartupInfo("safe storage ready", {

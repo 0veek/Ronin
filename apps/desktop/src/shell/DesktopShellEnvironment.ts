@@ -1,3 +1,4 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -9,6 +10,14 @@ import * as ChildProcess from "effect/unstable/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import {
+  applyCachedEnv,
+  isApplicableCache,
+  parseShellEnvironmentCache,
+  selectCacheableEnv,
+  serializeShellEnvironmentCache,
+  SHELL_ENVIRONMENT_CACHE_VERSION,
+} from "./shellEnvironmentCache.ts";
 
 type EnvironmentPatch = Record<string, string>;
 
@@ -63,7 +72,18 @@ export class DesktopShellEnvironmentCommandTimeoutError extends Schema.TaggedErr
 export class DesktopShellEnvironment extends Context.Service<
   DesktopShellEnvironment,
   {
+    /**
+     * Applies the last known-good environment without spawning anything.
+     *
+     * Resolves true when a usable cache was found. False means this launch has
+     * to pay for the probe before it can trust `process.env` -- which is what
+     * `installIntoProcess` is for.
+     */
+    readonly installCachedIntoProcess: Effect.Effect<boolean>;
+    /** Spawns the login shell and installs what it reports. Slow by nature. */
     readonly installIntoProcess: Effect.Effect<void>;
+    /** The probe, plus a cache write for the next launch. Safe to fork. */
+    readonly refreshCache: Effect.Effect<void>;
   }
 >()("@t3tools/desktop/shell/DesktopShellEnvironment") {}
 
@@ -502,10 +522,23 @@ const installShellEnvironment = (
   return Effect.void;
 };
 
+/** Everything either probe can set, and therefore everything worth caching. */
+const CACHEABLE_ENV_NAMES: ReadonlyArray<string> = [
+  ...LOGIN_SHELL_ENV_NAMES,
+  ...WINDOWS_PROFILE_ENV_NAMES,
+];
+
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+
+  // Under baseDir rather than userData: userData is resolved from the
+  // environment this cache exists to repair, and a cache you cannot read until
+  // after the probe is no cache at all.
+  const cachePath = `${environment.baseDir}/shell-environment.json`;
+  const loginShell = trimNonEmpty(process.env.SHELL);
+
   const installIntoProcess: DesktopShellEnvironment["Service"]["installIntoProcess"] =
     installShellEnvironment({
       env: process.env,
@@ -517,7 +550,58 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("desktop.shellEnvironment.installIntoProcess"),
     );
 
-  return DesktopShellEnvironment.of({ installIntoProcess });
+  const installCachedIntoProcess = Effect.gen(function* () {
+    const raw = yield* fileSystem.readFileString(cachePath).pipe(Effect.orElseSucceed(() => null));
+    if (raw === null) return false;
+
+    const cache = parseShellEnvironmentCache(raw);
+    if (
+      cache === null ||
+      !isApplicableCache(cache, {
+        platform: environment.platform,
+        shell: Option.getOrNull(loginShell),
+      })
+    ) {
+      return false;
+    }
+
+    applyCachedEnv(process.env, cache.env);
+    return true;
+  }).pipe(
+    // A cache that cannot be read is a slow launch, never a failed one.
+    Effect.orElseSucceed(() => false),
+    Effect.withSpan("desktop.shellEnvironment.installCachedIntoProcess"),
+  );
+
+  const refreshCache = Effect.gen(function* () {
+    yield* installIntoProcess;
+
+    const captured = selectCacheableEnv(process.env, CACHEABLE_ENV_NAMES);
+    if (Object.keys(captured).length === 0) return;
+
+    const now = yield* Clock.currentTimeMillis;
+    const serialized = serializeShellEnvironmentCache({
+      version: SHELL_ENVIRONMENT_CACHE_VERSION,
+      capturedAt: now,
+      platform: environment.platform,
+      shell: Option.getOrNull(loginShell),
+      env: captured,
+    });
+
+    yield* fileSystem.makeDirectory(environment.baseDir, { recursive: true }).pipe(Effect.ignore);
+    yield* fileSystem.writeFileString(cachePath, serialized).pipe(Effect.ignore);
+  }).pipe(
+    // Backgrounded, so a failure here must never escalate into a startup fault.
+    Effect.orElseSucceed(() => undefined),
+    Effect.asVoid,
+    Effect.withSpan("desktop.shellEnvironment.refreshCache"),
+  );
+
+  return DesktopShellEnvironment.of({
+    installCachedIntoProcess,
+    installIntoProcess,
+    refreshCache,
+  });
 });
 
 export const layer = Layer.effect(DesktopShellEnvironment, make);

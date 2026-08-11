@@ -3,7 +3,6 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -98,17 +97,14 @@ describe("DesktopSettings", () => {
   );
 
   it("defaults packaged nightly builds to the nightly update channel", () => {
-    assert.deepEqual(
-      DesktopAppSettings.resolveDefaultDesktopSettings("0.0.17-nightly.20260415.1"),
-      {
-        linuxPasswordStore: "auto",
-        mainWindowBounds: null,
-        mainWindowMaximized: false,
-        serverExposureMode: "local-only",
-        tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
-      } satisfies DesktopAppSettings.DesktopSettings,
-    );
+    assert.deepEqual(DesktopAppSettings.resolveDefaultDesktopSettings(), {
+      linuxPasswordStore: "auto",
+      mainWindowBounds: null,
+      mainWindowMaximized: false,
+      serverExposureMode: "local-only",
+      tailscaleServeEnabled: false,
+      tailscaleServePort: 443,
+    } satisfies DesktopAppSettings.DesktopSettings);
   });
 
   it.effect("reports the failed desktop settings write operation and path", () =>

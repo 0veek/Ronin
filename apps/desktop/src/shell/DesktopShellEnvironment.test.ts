@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as PlatformError from "effect/PlatformError";
@@ -62,6 +63,50 @@ function withProcessEnv<A, E, R>(
         process.env = previous;
       }),
   );
+}
+
+/**
+ * Like runShellEnvironment, but with a real baseDir so the cache has somewhere
+ * to live, and with the spawn count exposed -- the point of the cache is that
+ * a warm launch spawns nothing at all.
+ */
+function runCachingShellEnvironment(input: {
+  readonly env: NodeJS.ProcessEnv;
+  readonly baseDir: string;
+  readonly handler: (command: ChildProcess.Command) => string;
+  readonly use: (
+    service: DesktopShellEnvironment.DesktopShellEnvironment["Service"],
+  ) => Effect.Effect<void, never, never>;
+}) {
+  const spawns: ChildProcess.Command[] = [];
+  const environmentLayer = Layer.succeed(
+    DesktopEnvironment.DesktopEnvironment,
+    DesktopEnvironment.DesktopEnvironment.of({
+      platform: "darwin",
+      baseDir: input.baseDir,
+    } as DesktopEnvironment.DesktopEnvironment["Service"]),
+  );
+  const spawnerLayer = Layer.succeed(
+    ChildProcessSpawner.ChildProcessSpawner,
+    ChildProcessSpawner.make((command) => {
+      spawns.push(command);
+      return Effect.succeed(makeProcess(input.handler(command)));
+    }),
+  );
+
+  const program = Effect.gen(function* () {
+    const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
+    yield* input.use(shellEnvironment);
+    return spawns.length;
+  }).pipe(
+    Effect.provide(
+      DesktopShellEnvironment.layer.pipe(
+        Layer.provide(Layer.mergeAll(environmentLayer, NodeServices.layer, spawnerLayer)),
+      ),
+    ),
+  );
+
+  return withProcessEnv(input.env, program);
 }
 
 function runShellEnvironment(input: {
@@ -343,4 +388,71 @@ describe("DesktopShellEnvironment", () => {
       Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
     );
   });
+
+  it.effect("skips the login shell entirely once a cache exists", () =>
+    Effect.gen(function* () {
+      // The whole point: a warm launch must not spawn the user's shell, since
+      // that spawn is what stands between the click and the first frame.
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped();
+      const env: NodeJS.ProcessEnv = { SHELL: "/bin/zsh" };
+      const handler = () => envOutput({ PATH: "/opt/homebrew/bin:/usr/bin" });
+
+      // Cold: nothing cached, so the probe runs and writes one.
+      const coldSpawns = yield* runCachingShellEnvironment({
+        env,
+        baseDir,
+        handler,
+        use: (service) =>
+          Effect.gen(function* () {
+            assert.isFalse(yield* service.installCachedIntoProcess);
+            yield* service.refreshCache;
+          }),
+      });
+      assert.isAbove(coldSpawns, 0);
+
+      // Warm: the cache answers, and the spawner is never touched.
+      const warmEnv: NodeJS.ProcessEnv = { SHELL: "/bin/zsh" };
+      const warmSpawns = yield* runCachingShellEnvironment({
+        env: warmEnv,
+        baseDir,
+        handler,
+        use: (service) =>
+          Effect.gen(function* () {
+            assert.isTrue(yield* service.installCachedIntoProcess);
+            assert.strictEqual(process.env.PATH, "/opt/homebrew/bin:/usr/bin");
+          }),
+      });
+      assert.strictEqual(warmSpawns, 0);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("ignores a cache captured under a different login shell", () =>
+    Effect.gen(function* () {
+      // A different shell means a different PATH; carrying the old one forward
+      // would point at tools the new shell never set up.
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped();
+      const handler = () => envOutput({ PATH: "/from/zsh" });
+
+      yield* runCachingShellEnvironment({
+        env: { SHELL: "/bin/zsh" },
+        baseDir,
+        handler,
+        use: (service) => service.refreshCache,
+      });
+
+      const spawns = yield* runCachingShellEnvironment({
+        env: { SHELL: "/usr/bin/fish" },
+        baseDir,
+        handler: () => envOutput({ PATH: "/from/fish" }),
+        use: (service) =>
+          Effect.gen(function* () {
+            assert.isFalse(yield* service.installCachedIntoProcess);
+          }),
+      });
+
+      assert.strictEqual(spawns, 0);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
 });

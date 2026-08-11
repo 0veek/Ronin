@@ -138,10 +138,13 @@ export class DesktopAppSettings extends Context.Service<
   }
 >()("@t3tools/desktop/settings/DesktopAppSettings") {}
 
-export function resolveDefaultDesktopSettings(appVersion: string): DesktopSettings {
-  return {
-    ...DEFAULT_DESKTOP_SETTINGS,
-  };
+/**
+ * Defaults no longer vary by build: the app version only ever chose an update
+ * channel. Kept as a function because it hands back a fresh object, and
+ * callers mutate what they get.
+ */
+export function resolveDefaultDesktopSettings(): DesktopSettings {
+  return { ...DEFAULT_DESKTOP_SETTINGS };
 }
 
 function normalizeTailscaleServePort(value: unknown): number {
@@ -154,11 +157,7 @@ export function normalizeMainWindowBounds(value: unknown): DesktopWindowBounds |
   return Option.getOrNull(decodeDesktopWindowBounds(value));
 }
 
-function normalizeDesktopSettingsDocument(
-  parsed: DesktopSettingsDocument,
-  appVersion: string,
-): DesktopSettings {
-  const defaultSettings = resolveDefaultDesktopSettings(appVersion);
+function normalizeDesktopSettingsDocument(parsed: DesktopSettingsDocument): DesktopSettings {
   const mainWindowBounds = normalizeMainWindowBounds(parsed.mainWindowBounds);
 
   return {
@@ -248,9 +247,8 @@ function setTailscaleServe(
 function readSettings(
   fileSystem: FileSystem.FileSystem,
   settingsPath: string,
-  appVersion: string,
 ): Effect.Effect<DesktopSettings> {
-  const defaultSettings = resolveDefaultDesktopSettings(appVersion);
+  const defaultSettings = resolveDefaultDesktopSettings();
 
   return fileSystem.readFileString(settingsPath).pipe(
     Effect.option,
@@ -259,7 +257,7 @@ function readSettings(
         onNone: () => Effect.succeed(defaultSettings),
         onSome: (raw) =>
           decodeDesktopSettingsJson(raw).pipe(
-            Effect.map((parsed) => normalizeDesktopSettingsDocument(parsed, appVersion)),
+            Effect.map((parsed) => normalizeDesktopSettingsDocument(parsed)),
             Effect.orElseSucceed(() => defaultSettings),
           ),
       }),
@@ -364,11 +362,7 @@ export const make = Effect.gen(function* () {
   return DesktopAppSettings.of({
     get: SynchronizedRef.get(settingsRef),
     load: Effect.gen(function* () {
-      const settings = yield* readSettings(
-        fileSystem,
-        environment.desktopSettingsPath,
-        environment.appVersion,
-      );
+      const settings = yield* readSettings(fileSystem, environment.desktopSettingsPath);
       return yield* SynchronizedRef.setAndGet(settingsRef, settings);
     }).pipe(Effect.withSpan("desktop.settings.load")),
     setMainWindowBounds: (bounds, isMaximized) =>
