@@ -1,0 +1,44 @@
+/*
+ * @pierre/diffs bridge. The diff engine renders inside shadow roots with its
+ * own token names; these rules point those tokens at the app palette so a diff
+ * reads as part of the panel rather than as an embedded widget.
+ */
+
+.diff-panel-viewport {
+  background: var(--background);
+}
+
+/* Diffs live directly on the panel canvas. Normal chat code blocks may use a
+   raised code surface, but carrying that fill into the diff creates a card-like
+   rectangle that does not belong in the panel. */
+.diff-render-surface {
+  --code-background: var(--background);
+}
+
+.diff-render-file,
+.diff-render-surface diffs-container {
+  border: 0;
+  border-radius: 0;
+  overflow: clip;
+  background: var(--code-background);
+  color: var(--code-foreground);
+}
+
+/* Pierre's file renderer owns its own surface tokens. Keep the root of a file
+   preview on the same themeable code surface as the diff panel. */
+.diff-render-surface diffs-container,
+.file-preview-virtualizer diffs-container {
+  --diffs-bg: var(--code-background) !important;
+  --diffs-light-bg: var(--code-background) !important;
+  --diffs-dark-bg: var(--code-background) !important;
+  background-color: var(--code-background) !important;
+  color: var(--code-foreground) !important;
+}
+
+/* Line numbers are a column of measurements read down the gutter, so they set
+   on a fixed advance. Proportional digits make the column ragged at every
+   power of ten. */
+.diff-render-surface diffs-container,
+.file-preview-virtualizer diffs-container {
+  font-variant-numeric: tabular-nums;
+}

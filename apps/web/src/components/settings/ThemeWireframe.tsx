@@ -1,9 +1,18 @@
 import { cn } from "../../lib/utils";
 import type { ThemeCardPreviewColors } from "./ThemePreviewCircles";
 
-// A simple miniature of the app: sidebar, a short conversation, the
-// composer, and the orchestrator panel floating over the interface as an
-// island with horizontal agent rows.
+/**
+ * A miniature of the app: topbar, sidebar, a short conversation, the composer,
+ * and the right panel.
+ *
+ * The old miniature drew the shell it replaced -- rounded thread pills floating
+ * inside an inset sidebar, and an orchestrator island with a drop shadow
+ * hovering over the composer. Neither exists now, so the drawing would have
+ * been advertising chrome the theme could no longer produce. What it shows
+ * instead is what the redesign actually renders: full-bleed rows divided by
+ * hairlines, an accent rule marking the active one, flat underlined tabs, and
+ * a panel that is a bounded region rather than a floating card.
+ */
 export function ThemeWireframePane({
   colors,
   clip,
@@ -32,80 +41,102 @@ export function ThemeWireframePane({
         style={{ backgroundColor: colors.sidebar, boxShadow: `inset -1px 0 0 ${line}` }}
       />
 
-      {/* Sidebar: search, then thread rows */}
+      {/* Topbar: one hairline under a breadcrumb, no fill of its own. */}
+      <span className="absolute inset-x-0 top-[11%] h-px" style={{ backgroundColor: line }} />
       <span
-        className="absolute left-[3%] top-[8%] h-[8%] w-[16%] rounded-md"
-        style={{ backgroundColor: colors.surface, boxShadow: `inset 0 0 0 1px ${line}` }}
-      />
-      <span
-        className="absolute left-[3%] top-[22%] h-[7%] w-[16%] rounded-md"
-        style={{ backgroundColor: colors.accentSurface }}
-      />
-      <span
-        className="absolute left-[3%] top-[32%] h-[7%] w-[16%] rounded-md"
-        style={{ backgroundColor: colors.messageSurface, opacity: 0.7 }}
-      />
-      <span
-        className="absolute left-[3%] top-[42%] h-[7%] w-[16%] rounded-md"
-        style={{ backgroundColor: colors.messageSurface, opacity: 0.5 }}
+        className="absolute left-[26%] top-[4%] h-[3%] w-[18%]"
+        style={{ backgroundColor: line, opacity: 0.8 }}
       />
 
-      {/* Conversation */}
+      {/* Sidebar: a mono section label, then full-bleed hairline-divided rows.
+          The active row is marked by an accent rule, not a filled pill. */}
       <span
-        className="absolute right-[28%] top-[11%] h-[9%] w-[24%] rounded-lg"
+        className="absolute left-[4%] top-[16%] h-[2.5%] w-[9%]"
+        style={{ backgroundColor: line, opacity: 0.9 }}
+      />
+      {[0, 1, 2].map((row) => (
+        <span key={row}>
+          <span
+            className="absolute left-0 w-[22%]"
+            style={{ top: `${24 + row * 13}%`, height: "1px", backgroundColor: line }}
+          />
+          <span
+            className="absolute left-[6%] w-[13%]"
+            style={{
+              top: `${29 + row * 13}%`,
+              height: "3%",
+              backgroundColor: row === 0 ? colors.messageAction : line,
+              opacity: row === 0 ? 0.9 : 0.7,
+            }}
+          />
+        </span>
+      ))}
+      <span
+        className="absolute left-0 w-[1.5%]"
+        style={{ top: "24%", height: "13%", backgroundColor: colors.messageAction }}
+      />
+
+      {/* Conversation: one message surface, then unfilled body lines. */}
+      <span
+        className="absolute right-[30%] top-[19%] h-[9%] w-[22%] rounded-[3px]"
         style={{ backgroundColor: colors.messageSurface }}
       />
       <span
-        className="absolute left-[27%] top-[28%] h-[5%] w-[34%] rounded-sm"
+        className="absolute left-[26%] top-[34%] h-[3.5%] w-[32%] rounded-[2px]"
         style={{ backgroundColor: line }}
       />
       <span
-        className="absolute left-[27%] top-[38%] h-[5%] w-[26%] rounded-sm"
+        className="absolute left-[26%] top-[42%] h-[3.5%] w-[24%] rounded-[2px]"
         style={{ backgroundColor: line }}
       />
 
-      {/* Composer */}
+      {/* Composer: one box, one border, with the context strip as a region
+          inside it divided off by a single hairline. */}
       <span
-        className="absolute bottom-[8%] left-[26%] right-[6%] flex h-[15%] items-center justify-between rounded-md px-[2.5%]"
-        style={{
-          backgroundColor: colors.surface,
-          boxShadow: `inset 0 0 0 1px ${line}`,
-        }}
+        className="absolute bottom-[7%] left-[26%] right-[32%] h-[20%] overflow-hidden rounded-[4px]"
+        style={{ backgroundColor: colors.surface, boxShadow: `inset 0 0 0 1px ${line}` }}
       >
         <span
-          className="block h-[26%] w-[34%] rounded-full"
+          className="absolute left-[7%] top-[18%] block h-[16%] w-[46%] rounded-[2px]"
           style={{ backgroundColor: line, opacity: 0.7 }}
         />
+        <span className="absolute inset-x-0 bottom-[34%] h-px" style={{ backgroundColor: line }} />
         <span
-          className="block aspect-square h-[58%] rounded-full"
+          className="absolute bottom-[10%] right-[7%] block aspect-square h-[20%] rounded-[2px]"
           style={{ backgroundColor: colors.messageAction }}
         />
       </span>
 
-      {/* Orchestrator island floating over the composer */}
+      {/* Right panel: bounded by a rule, tabs marked by an underline. */}
       <span
-        className="absolute right-[5%] top-[8%] h-[46%] w-[20%] rounded-lg"
-        style={{
-          backgroundColor: colors.surface,
-          boxShadow: `inset 0 0 0 1px ${line}, 0 2px 5px rgb(0 0 0 / 0.14)`,
-        }}
+        className="absolute bottom-0 right-0 top-[11%] w-[30%]"
+        style={{ boxShadow: `inset 1px 0 0 ${line}` }}
       >
-        {[0, 1, 2].map((row) => (
+        <span className="absolute inset-x-0 top-[13%] h-px" style={{ backgroundColor: line }} />
+        <span
+          className="absolute left-[10%] top-[5%] h-[3%] w-[22%]"
+          style={{ backgroundColor: colors.messageAction, opacity: 0.9 }}
+        />
+        <span
+          className="absolute left-[10%] top-[12.2%] h-[1.8%] w-[22%]"
+          style={{ backgroundColor: colors.messageAction }}
+        />
+        <span
+          className="absolute left-[40%] top-[5%] h-[3%] w-[22%]"
+          style={{ backgroundColor: line, opacity: 0.8 }}
+        />
+        {[0, 1, 2, 3].map((row) => (
           <span
-            className="absolute left-[11%] right-[11%] flex items-center gap-[5%]"
+            className="absolute left-[10%]"
             key={row}
-            style={{ top: `${10 + row * 30}%`, height: "20%" }}
-          >
-            <span
-              className="block aspect-square h-[26%] rounded-full"
-              style={{
-                backgroundColor:
-                  row === 0 ? "#34d399" : row === 1 ? colors.messageAction : "#fbbf24",
-                opacity: 0.55,
-              }}
-            />
-            <span className="block h-[30%] w-[52%] rounded-sm" style={{ backgroundColor: line }} />
-          </span>
+            style={{
+              top: `${24 + row * 9}%`,
+              height: "3%",
+              width: `${64 - row * 9}%`,
+              backgroundColor: line,
+              opacity: 0.6,
+            }}
+          />
         ))}
       </span>
     </span>
@@ -124,7 +155,7 @@ export function ThemeWireframe({
     <span
       aria-hidden
       className={cn(
-        "relative block w-full overflow-hidden rounded-lg border border-border/60",
+        "relative block w-full overflow-hidden rounded-(--radius) border border-border",
         className,
       )}
     >

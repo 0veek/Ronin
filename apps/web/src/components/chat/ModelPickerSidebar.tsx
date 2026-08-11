@@ -97,9 +97,12 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
               data-model-picker-selected-indicator="true"
               className={cn(
                 SELECTED_INDICATOR_CLASS,
-                "right-0 translate-y-0 transition-[top] duration-200 ease-out",
+                // Parked at the top and moved with a transform rather than
+                // animating `top`, so travelling between providers stays on the
+                // compositor instead of relaying out the sidebar every frame.
+                "top-0 right-0 translate-y-0 transition-transform duration-(--duration-base) ease-out",
               )}
-              style={{ top: selectedIndicatorTop }}
+              style={{ transform: `translateY(${selectedIndicatorTop}px)` }}
             />
           ) : null}
           {/* Favorites section */}

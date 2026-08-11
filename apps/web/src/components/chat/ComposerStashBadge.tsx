@@ -28,7 +28,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       aria-expanded={props.menuOpen}
       className={cn(
         "absolute -top-3 right-4 z-10 inline-flex cursor-pointer items-center gap-1.5 rounded-full border bg-popover px-2.5 py-0.5 text-xs shadow-sm",
-        "transition-[color,border-color,opacity] duration-200",
+        "transition-[color,border-color,opacity] duration-(--duration-base)",
         props.menuOpen || props.pulsing
           ? "border-border text-foreground opacity-100"
           : "border-border/70 text-muted-foreground opacity-70 hover:opacity-100 hover:text-foreground",

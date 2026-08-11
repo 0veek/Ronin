@@ -1,7 +1,7 @@
 /**
  * The review form floated over the Code tab: how many comments the review is holding, its
  * summary, and the verdict that sends the lot. Hidden entirely on a host that cannot take a
- * review. The glass card frame belongs to the caller (PullRequestCodeTab), which is why this
+ * review. The card frame belongs to the caller (PullRequestCodeTab), which is why this
  * only contributes its own padding.
  */
 import type { EnvironmentId, PullRequestRef, PullRequestReviewVerdict } from "@t3tools/contracts";

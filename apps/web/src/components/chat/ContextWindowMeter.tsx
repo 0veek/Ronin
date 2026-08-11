@@ -114,9 +114,15 @@ export function ContextWindowMeter(props: {
               aria-valuenow={Math.round(normalizedPercentage)}
               aria-label="Context window usage"
             >
+              {/* scaleX, not width: this animates on every token that lands, and
+                  a width transition relayouts the composer footer each frame.
+                  The track's overflow-hidden supplies the rounded cap. */}
               <div
-                className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
-                style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
+                className="h-full w-full origin-left transition-[scale,background-color] duration-(--duration-slow) ease-out"
+                style={{
+                  scale: `${normalizedPercentage / 100} 1`,
+                  backgroundColor: usageColor,
+                }}
               />
             </div>
           ) : null}

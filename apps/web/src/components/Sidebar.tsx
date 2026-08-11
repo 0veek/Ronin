@@ -266,7 +266,6 @@ function SidebarThreadTooltip({
       side="right"
       align="start"
       sideOffset={4}
-      variant="glass"
       className="max-w-80 text-left whitespace-normal [&_[data-slot=tooltip-viewport]]:p-0"
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
@@ -474,10 +473,11 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         role="button"
         tabIndex={0}
         data-testid="sidebar-draft-row"
+        data-selected={props.isActive}
         className={cn(
-          "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left text-sidebar-foreground outline-none select-none",
+          "sidebar-row group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left text-sidebar-foreground outline-none select-none",
           props.isActive
-            ? "bg-sidebar-row-active"
+            ? "bg-amber-400/[0.08] font-medium"
             : "bg-amber-400/[0.04] hover:bg-amber-400/[0.08]",
         )}
         onClick={handleActivate}
@@ -1018,10 +1018,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // like elevated cards while settled threads were plain rows, leaving neither
   // a useful hierarchy nor a reliable hover cue. Status now lives in the row
   // content; surface is reserved for interaction (hover, multi-select, route).
+  //
+  // The route-active row is marked by the leading accent rule that `.sidebar-row`
+  // draws plus a foreground shift -- not by a filled pill, which at this density
+  // turned a list into a stack of cards. Multi-select still fills, because there
+  // it is a selection region rather than a single point of focus.
   const rowSurfaceClassName = cn(
-    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none",
+    "sidebar-row group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left outline-none select-none",
     props.isActive
-      ? "bg-sidebar-row-active text-sidebar-foreground"
+      ? "font-medium text-sidebar-foreground"
       : isSelected
         ? "bg-sidebar-row-selected text-sidebar-foreground"
         : shouldRecede
@@ -1121,6 +1126,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 role="button"
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
+                data-selected={props.isActive}
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
                 onClick={handleClick}
@@ -1268,6 +1274,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               role="button"
               tabIndex={0}
               data-testid="sidebar-row-card"
+              data-selected={props.isActive}
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
               onClick={handleClick}

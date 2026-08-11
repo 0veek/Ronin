@@ -232,10 +232,10 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       <div className="group pointer-events-auto absolute right-2 top-2 z-[34] size-3">
         <div
           aria-hidden="true"
-          className="absolute right-0 top-0 size-2 rounded-full bg-foreground/25 shadow-sm ring-1 ring-background/70 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
+          className="absolute right-0 top-0 size-2 rounded-full bg-foreground/25 ring-1 ring-background/70 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
         />
         <div
-          className="pointer-events-none absolute right-0 top-0 flex h-8 cursor-grab items-center gap-0.5 rounded-lg border border-border/80 bg-popover/92 p-0.5 opacity-0 shadow-lg/20 backdrop-blur-xl transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 active:cursor-grabbing"
+          className="pointer-events-none absolute right-0 top-0 flex h-8 cursor-grab items-center gap-0.5 rounded-(--radius-lg) border border-border bg-popover p-0.5 opacity-0 shadow-(--shadow-popover) transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 active:cursor-grabbing"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={endDrag}
@@ -284,11 +284,15 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       </div>
 
       <div className="relative h-full min-h-0">
-        <div className="absolute inset-0 z-[29] rounded-xl bg-muted shadow-2xl/35" />
+        <div className="absolute inset-0 z-[29] rounded-xl bg-muted shadow-(--shadow-popover)" />
         <BrowserSurfaceSlot
           tabId={runtimeTabId}
           visible={Boolean(desktopOverlay?.hasWebContents)}
-          cornerRadius={12}
+          // The native surface can't read CSS, so this mirrors the rounded-xl
+          // frames around it -- --radius-xl is --radius + 4px, and --radius is
+          // now 4px. They have to be changed together or the webview's corners
+          // cut outside the ring drawn over them.
+          cornerRadius={8}
           fitSourceContent
           layoutVersion={position ? `${position.x}:${position.y}` : `initial:${bottomInset}`}
           className="absolute inset-0"

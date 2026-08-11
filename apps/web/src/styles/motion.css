@@ -1,0 +1,365 @@
+/*
+ * Motion. Everything that moves in the app is declared or named here.
+ *
+ * Two rules hold across this file:
+ *   1. Animate transform and opacity only. Animated blur, box-shadow,
+ *      background, and geometry are a tracked regression class in this repo
+ *      (idle GPU spikes), not a style preference.
+ *   2. Timing comes from the duration/easing tokens in tokens.css. The single
+ *      prefers-reduced-motion block lives there and zeroes the durations, so
+ *      nothing here needs its own reduced-motion handling.
+ */
+
+/* -------------------------------------------------------------------------
+ * Theme keyframes
+ *
+ * Declared inside @theme so Tailwind emits them for the matching --animate-*
+ * tokens in tokens.css. These are all deliberately duty-cycled: a short active
+ * phase with a stepped ramp, then a long hold. On a 120Hz display that is the
+ * difference between a handful of compositor updates per cycle and one per
+ * vsync, for every indicator on screen at once. Do not smooth them out.
+ * ------------------------------------------------------------------------- */
+@theme {
+  @keyframes skeleton {
+    /* Transform-only so the highlight sweep stays on the compositor, then a
+       long hold with the band parked off-screen instead of a constant shimmer. */
+    0% {
+      transform: translateX(-100%);
+    }
+    60%,
+    100% {
+      transform: translateX(100%);
+    }
+  }
+  @keyframes ghost-pulse {
+    /* The loading ghosts' breath. Stepped like the status indicators, so however many bars a
+       ghost holds, the compositor draws a handful of discrete frames per cycle rather than one
+       per vsync — which on a 120Hz display is the difference between ~14 and ~288 updates. */
+    0%,
+    42% {
+      opacity: 1;
+      animation-timing-function: steps(4);
+    }
+    50%,
+    92% {
+      opacity: 0.55;
+      animation-timing-function: steps(4);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes status-pulse {
+    0%,
+    40% {
+      opacity: 1;
+      animation-timing-function: steps(6);
+    }
+    50%,
+    90% {
+      opacity: 0.5;
+      animation-timing-function: steps(6);
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes status-ping {
+    /* Burst first (immediate feedback for click ripples), then hold
+       invisible for the rest of the cycle. Mirrors animate-ping's
+       75%-scale start. */
+    0% {
+      opacity: 0.9;
+      scale: 0.75;
+      animation-timing-function: steps(8);
+    }
+    40%,
+    100% {
+      opacity: 0;
+      scale: 2;
+    }
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * View transitions
+ * ------------------------------------------------------------------------- */
+
+/* On mobile, morph the expanded hero composer into the compact docked
+   composer while it moves; the rest of the app remains visually stationary. */
+html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
+html[data-mobile-composer-route-transition="true"]::view-transition-new(root) {
+  animation: none;
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-composer) {
+  animation-duration: var(--duration-base);
+  animation-timing-function: var(--ease-out);
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-image-pair(t3-mobile-composer) {
+  isolation: isolate;
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-composer) {
+  animation: t3-mobile-composer-old var(--duration-base) linear both;
+  mix-blend-mode: normal;
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-new(t3-mobile-composer) {
+  animation: t3-mobile-composer-new var(--duration-base) linear both;
+  mix-blend-mode: normal;
+}
+
+/* The expanded and compact composers have different internal layouts. Use a
+   brief crossfade while their shared wrapper moves so the layout change does
+   not read as a single-frame cut. */
+@keyframes t3-mobile-composer-old {
+  0%,
+  35% {
+    opacity: 1;
+  }
+  65%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes t3-mobile-composer-new {
+  0%,
+  35% {
+    opacity: 0;
+  }
+  65%,
+  100% {
+    opacity: 1;
+  }
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-draft-headline) {
+  animation-duration: var(--duration-fast);
+}
+
+html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-draft-headline) {
+  animation: t3-mobile-draft-headline-exit var(--duration-fast) var(--ease-in) both;
+  mix-blend-mode: normal;
+}
+
+@keyframes t3-mobile-draft-headline-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+/* Right-panel surface switch. Same mechanism as the mobile composer morph:
+   the panel frame is a persistent view-transition-name, so only its contents
+   cross-dissolve while the frame itself holds still. The old surface leaves
+   slightly faster than the new one arrives, which reads as a cut-in rather
+   than a dissolve and keeps the strip feeling instant. */
+html[data-panel-surface-transition="true"]::view-transition-old(root),
+html[data-panel-surface-transition="true"]::view-transition-new(root) {
+  animation: none;
+}
+
+/* The name is granted only for the duration of the transition, and taken back
+   in the helper's cleanup. A view-transition-name must be unique across the
+   document, and the right panel can be mounted in more than one mode; scoping
+   it to the flag means an idle document never carries the name at all. */
+html[data-panel-surface-transition="true"] [data-right-panel-surface-content] {
+  view-transition-name: t3-panel-surface;
+}
+
+html[data-panel-surface-transition="true"]::view-transition-group(t3-panel-surface) {
+  animation-duration: var(--duration-fast);
+  animation-timing-function: var(--ease-out);
+}
+
+html[data-panel-surface-transition="true"]::view-transition-image-pair(t3-panel-surface) {
+  isolation: isolate;
+}
+
+html[data-panel-surface-transition="true"]::view-transition-old(t3-panel-surface) {
+  animation: t3-panel-surface-exit var(--duration-instant) var(--ease-in) both;
+  mix-blend-mode: normal;
+}
+
+html[data-panel-surface-transition="true"]::view-transition-new(t3-panel-surface) {
+  animation: t3-panel-surface-enter var(--duration-fast) var(--ease-out) both;
+  mix-blend-mode: normal;
+}
+
+@keyframes t3-panel-surface-exit {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes t3-panel-surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * One-shot, event-driven animations
+ * ------------------------------------------------------------------------- */
+
+/* Prompt-stash save acknowledgement: the new count fades up from just below
+   its resting position, once, then stops. One-shot and event-driven (React
+   remounts the element by key on each stash) — no continuous animation. */
+@keyframes prompt-stash-count-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.prompt-stash-count-enter {
+  animation: prompt-stash-count-enter var(--duration-base) var(--ease-out) both;
+}
+
+@keyframes provider-update-pill-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.provider-update-pill-progress {
+  animation: provider-update-pill-countdown var(--provider-update-pill-dismiss-ms) linear forwards;
+}
+
+/* The skeleton sweep is decorative rather than informative — the layout alone
+   already communicates "loading" — so reduced motion drops it entirely instead
+   of running it at zero duration. */
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="skeleton"]::after {
+    content: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
+ * Ultrathink accent
+ *
+ * The one deliberate exception to the transform/opacity rule: an animated
+ * gradient sweep marking the highest reasoning tier. It is scoped to a mode
+ * the user opts into, and to a border and a few words rather than a full
+ * surface. Everything else in the app stays on the compositor.
+ * ------------------------------------------------------------------------- */
+
+@keyframes ultrathink-rainbow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes ultrathink-chroma-shift {
+  0% {
+    filter: hue-rotate(0deg) saturate(1.2);
+  }
+  100% {
+    filter: hue-rotate(360deg) saturate(1.2);
+  }
+}
+
+.ultrathink-frame {
+  --ultrathink-spectrum: linear-gradient(
+    120deg,
+    #ff6b6b 0%,
+    #f59e0b 18%,
+    #22c55e 36%,
+    #14b8a6 54%,
+    #3b82f6 72%,
+    #ec4899 90%,
+    #ff6b6b 100%
+  );
+  position: relative;
+  background: transparent;
+}
+
+.ultrathink-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background-image: var(--ultrathink-spectrum);
+  background-size: 220% 220%;
+  pointer-events: none;
+  filter: saturate(0.82) brightness(0.92);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: ultrathink-rainbow 10s linear infinite;
+}
+
+.ultrathink-frame > * {
+  position: relative;
+}
+
+.ultrathink-chroma {
+  animation: ultrathink-chroma-shift 10s linear infinite;
+}
+
+.ultrathink-pill {
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    var(--ultrathink-spectrum) border-box;
+  background-size:
+    100% 100%,
+    220% 220%;
+  background-position:
+    0 0,
+    0% 50%;
+  animation: ultrathink-rainbow 10s linear infinite;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card) 82%, transparent);
+}
+
+.ultrathink-word {
+  display: inline-block;
+  color: transparent;
+  background-image: var(--ultrathink-spectrum);
+  background-size: 220% 220%;
+  background-position: 0% 50%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  animation: ultrathink-rainbow 10s linear infinite;
+}
+
+/* Reduced motion parks every ultrathink sweep at its first frame. The gradient
+   still reads as the mode's signature; it simply stops moving. */
+@media (prefers-reduced-motion: reduce) {
+  .ultrathink-frame::before,
+  .ultrathink-chroma,
+  .ultrathink-pill,
+  .ultrathink-word {
+    animation: none;
+  }
+}

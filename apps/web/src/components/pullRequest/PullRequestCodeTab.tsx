@@ -810,7 +810,7 @@ export function PullRequestCodeTab({
     review.verdicts.length === 0 ? null : (
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
         {reviewOpen ? (
-          <div className="chat-composer-glass pointer-events-auto absolute inset-x-3 bottom-3 rounded-xl border border-border/60 shadow-lg">
+          <div className="composer-surface pointer-events-auto absolute inset-x-3 bottom-3">
             <Button
               type="button"
               size="icon-sm"
@@ -836,7 +836,7 @@ export function PullRequestCodeTab({
           // edge.
           <button
             type="button"
-            className="chat-composer-glass pointer-events-auto absolute bottom-3 right-4 flex items-center gap-1.5 rounded-full border border-border/60 px-3 py-1.5 text-xs font-medium shadow-lg"
+            className="pointer-events-auto absolute right-4 bottom-3 flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 font-medium text-xs"
             onClick={() => setReviewOpen(true)}
           >
             <MessageSquareIcon className="size-3.5" />

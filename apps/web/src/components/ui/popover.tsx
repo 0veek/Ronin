@@ -49,9 +49,8 @@ function PopoverPopup({
       >
         <PopoverPrimitive.Popup
           className={cn(
-            "dropdown-glass relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-lg text-popover-foreground outline-none transition-[width,height,scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] has-data-[slot=calendar]:rounded-xl has-data-[slot=calendar]:before:rounded-[calc(var(--radius-xl)-1px)] data-starting-style:scale-98 data-starting-style:opacity-0 dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
-            tooltipStyle &&
-              "w-fit text-balance rounded-md text-xs shadow-md/5 before:rounded-[calc(var(--radius-md)-1px)]",
+            "surface-menu relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-(--radius) text-popover-foreground outline-none transition-[width,height,scale,opacity] duration-(--duration-fast) ease-out data-starting-style:scale-98 data-starting-style:opacity-0",
+            tooltipStyle && "w-fit text-balance text-xs",
             className,
           )}
           data-slot="popover-popup"

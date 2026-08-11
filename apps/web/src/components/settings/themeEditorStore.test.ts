@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { OCEAN_THEME_ID, SAKURA_THEME_ID } from "../../themePalette";
+import { GRAPHITE_THEME_ID, PAPER_THEME_ID } from "../../themePalette";
 import { toggleThemeEditorForTheme, useThemeEditorStore } from "./themeEditorStore";
 
 afterEach(() => {
@@ -10,14 +10,14 @@ afterEach(() => {
 describe("toggleThemeEditorForTheme", () => {
   it("opens a new editor seeded from the theme active for the current appearance", () => {
     toggleThemeEditorForTheme({
-      theme: SAKURA_THEME_ID,
-      themeHalves: { dark: OCEAN_THEME_ID },
+      theme: PAPER_THEME_ID,
+      themeHalves: { dark: GRAPHITE_THEME_ID },
       initialAppearance: "dark",
     });
 
     expect(useThemeEditorStore.getState().session).toMatchObject({
       editingThemeId: null,
-      seedThemeId: OCEAN_THEME_ID,
+      seedThemeId: GRAPHITE_THEME_ID,
       seedName: null,
       initialAppearance: "dark",
     });
@@ -25,12 +25,12 @@ describe("toggleThemeEditorForTheme", () => {
 
   it("closes an open editor", () => {
     toggleThemeEditorForTheme({
-      theme: SAKURA_THEME_ID,
+      theme: PAPER_THEME_ID,
       themeHalves: null,
       initialAppearance: "light",
     });
     toggleThemeEditorForTheme({
-      theme: SAKURA_THEME_ID,
+      theme: PAPER_THEME_ID,
       themeHalves: null,
       initialAppearance: "light",
     });

@@ -1,0 +1,514 @@
+/*
+ * Workspace chrome: titlebar, sidebar art, panel frames, floating surfaces.
+ *
+ * The governing rule here is that chrome separates with a hairline rule and
+ * space, never with a tinted surface tier or a shadow. The only exception is
+ * --shadow-popover, which the three genuinely-floating layer types (menu,
+ * dialog, toast) share so they read as one family.
+ */
+
+@layer components {
+  .sidebar-brand {
+    display: none;
+  }
+
+  .sidebar-brand-stage {
+    display: none;
+  }
+
+  @media (min-width: 48rem) {
+    @container sidebar-header (min-width: 13.5rem) {
+      .sidebar-brand {
+        display: flex;
+      }
+    }
+
+    @container sidebar-header (min-width: 15.75rem) {
+      .sidebar-brand-stage {
+        display: inline-flex;
+      }
+    }
+  }
+
+  /* Stage-channel sidebar art; ::after ramps to the sidebar bg color and the
+     mask lets the surface grain show through at the boundary. Panels whose
+     background differs from the app chrome override --sidebar-stage-fade so
+     the art fades into their own surface color. */
+  .sidebar-stage-backdrop {
+    --stage-fade: var(--sidebar-stage-fade, var(--app-chrome-background));
+    mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
+  }
+
+  .sidebar-stage-backdrop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      transparent 28%,
+      color-mix(in srgb, var(--stage-fade) 10%, transparent) 40%,
+      color-mix(in srgb, var(--stage-fade) 30%, transparent) 52%,
+      color-mix(in srgb, var(--stage-fade) 58%, transparent) 64%,
+      color-mix(in srgb, var(--stage-fade) 82%, transparent) 75%,
+      color-mix(in srgb, var(--stage-fade) 96%, transparent) 85%,
+      var(--stage-fade) 93%
+    );
+  }
+
+  .stage-blueprint {
+    --stage-bp-top: #67c2ff;
+    --stage-bp-mid: #347ff8;
+    --stage-bp-bottom: #1538d0;
+  }
+
+  .dark .stage-blueprint {
+    --stage-bp-top: #3a7ad1;
+    --stage-bp-mid: #2050ae;
+    --stage-bp-bottom: #101f6e;
+  }
+
+  .workspace-topbar {
+    display: flex;
+    height: var(--workspace-topbar-height);
+    min-height: var(--workspace-topbar-height);
+    flex-shrink: 0;
+    align-items: center;
+  }
+
+  .workspace-titlebar-controls {
+    position: absolute;
+    top: var(--workspace-controls-top);
+    right: var(--workspace-controls-right);
+    display: flex;
+    height: var(--workspace-topbar-height);
+    align-items: center;
+    -webkit-app-region: no-drag;
+  }
+
+  /* Fade rows themselves as they pass beneath the top chrome. A mask remains
+     visible even when the header and timeline share the same background. */
+  .chat-timeline-scroll-fade,
+  .settings-page-scroll-fade,
+  .pull-requests-scroll-fade {
+    --topbar-scroll-fade-height: 2.5rem;
+    -webkit-mask-image:
+      linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgb(0 0 0 / 10%) 10%,
+        rgb(0 0 0 / 30%) 24%,
+        rgb(0 0 0 / 58%) 42%,
+        rgb(0 0 0 / 82%) 62%,
+        rgb(0 0 0 / 96%) 82%,
+        black 100%
+      ),
+      linear-gradient(black, black), linear-gradient(black, black);
+    -webkit-mask-position: top, bottom, right;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size:
+      100% var(--topbar-scroll-fade-height),
+      100% calc(100% - var(--topbar-scroll-fade-height)),
+      var(--app-scrollbar-width) 100%;
+    mask-image:
+      linear-gradient(
+        to bottom,
+        transparent 0%,
+        rgb(0 0 0 / 10%) 10%,
+        rgb(0 0 0 / 30%) 24%,
+        rgb(0 0 0 / 58%) 42%,
+        rgb(0 0 0 / 82%) 62%,
+        rgb(0 0 0 / 96%) 82%,
+        black 100%
+      ),
+      linear-gradient(black, black), linear-gradient(black, black);
+    mask-position: top, bottom, right;
+    mask-repeat: no-repeat;
+    mask-size:
+      100% var(--topbar-scroll-fade-height),
+      100% calc(100% - var(--topbar-scroll-fade-height)),
+      var(--app-scrollbar-width) 100%;
+  }
+
+  /* The pull request list sits directly under its topbar, so the tall band the
+     chat and settings pages fade under would read as empty padding here. */
+  .pull-requests-scroll-fade {
+    --topbar-scroll-fade-height: 1.5rem;
+  }
+
+  @keyframes settings-search-target-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.55;
+    }
+  }
+
+  /* Destination indicator for settings search. Opacity-only so it stays on the
+     compositor; the old version animated box-shadow, which repainted. */
+  .settings-page-scroll-fade div.settings-search-target-pulse,
+  .settings-page-scroll-fade section.settings-search-target-pulse > div:first-child {
+    animation: settings-search-target-pulse var(--duration-slow) var(--ease-in-out) 2;
+    border-radius: var(--radius);
+    outline: 1px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .settings-page-scroll-fade .settings-search-target-pulse:focus {
+    outline: none;
+  }
+
+  /*
+   * Panel and section frames. A subheader is a band of space closed by a rule,
+   * not a filled bar.
+   */
+  .surface-subheader {
+    @apply flex h-9 min-h-9 shrink-0 items-center border-b border-border bg-transparent;
+  }
+
+  [data-preview-panel-mode="inline"] [data-right-panel-surface-content] [data-surface-subheader] {
+    height: calc(var(--spacing) * 7);
+    min-height: calc(var(--spacing) * 7);
+    margin-bottom: calc(var(--spacing) * 3);
+    border-bottom-color: transparent;
+  }
+
+  /* A 1px divider that keeps a comfortable pointer target. Used by the panel
+     and sidebar resize handles, which are rules the user can grab rather than
+     visible gutters. */
+  .workspace-resize-rule {
+    position: relative;
+    flex-shrink: 0;
+    width: 1px;
+    background-color: var(--border);
+    transition: background-color var(--duration-fast) var(--ease-out);
+  }
+
+  .workspace-resize-rule::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline: -3px;
+    cursor: col-resize;
+  }
+
+  .workspace-resize-rule:hover,
+  .workspace-resize-rule[data-dragging="true"] {
+    background-color: var(--ring);
+  }
+
+  /*
+   * Panel tabs. Flat: the active tab is named by a rule under it and by
+   * foreground weight, not by a filled pill. The rule is a pseudo-element so
+   * switching tabs animates opacity/transform rather than background.
+   */
+  .panel-tab {
+    position: relative;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .panel-tab::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: -1px;
+    height: 1px;
+    background-color: var(--foreground);
+    opacity: 0;
+    transform: scaleX(0.6);
+    transition:
+      opacity var(--duration-fast) var(--ease-out),
+      transform var(--duration-fast) var(--ease-out);
+  }
+
+  .panel-tab[data-active-tab="true"]::after {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+
+  /*
+   * Sidebar rows. Full-bleed and hairline-separated; the selected row is marked
+   * by an accent rule on its leading edge plus a foreground shift. No pill, no
+   * fill, so a dense list reads as a list instead of a stack of cards.
+   */
+  .sidebar-row {
+    position: relative;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+
+  .sidebar-row::before {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 2px;
+    background-color: var(--ring);
+    opacity: 0;
+    transform: scaleY(0.4);
+    transition:
+      opacity var(--duration-fast) var(--ease-out),
+      transform var(--duration-fast) var(--ease-out);
+  }
+
+  .sidebar-row[data-selected="true"]::before {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+
+  .chat-composer-horizontal-inset {
+    padding-inline-start: calc(env(safe-area-inset-left) + var(--space-3));
+    padding-inline-end: calc(env(safe-area-inset-right) + var(--space-3));
+  }
+
+  /*
+   * Composer. Formerly a translucent glass shell whose outline had to be cut
+   * with a shape() clip-path, because the strip was drawn as a second pane
+   * tucked under the first and the two had to read as one continuous piece of
+   * material. Flat, they already are one box: the shell owns the only border,
+   * and the strip is a region inside it divided off by a single hairline.
+   */
+  .composer-surface {
+    position: relative;
+    isolation: isolate;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background-color: var(--card);
+  }
+
+  .composer-context-strip {
+    position: relative;
+    border-top: 1px solid var(--border);
+    /* Inset by the shell's own border so the corner curves stay concentric. */
+    border-end-start-radius: calc(var(--radius-lg) - 1px);
+    border-end-end-radius: calc(var(--radius-lg) - 1px);
+    background-color: color-mix(in srgb, var(--card) 60%, var(--background));
+  }
+
+  .composer-surface:focus-within {
+    border-color: color-mix(in srgb, var(--ring) 45%, var(--border));
+  }
+
+  /*
+   * Floating layers. One shadow token, one hairline, opaque fills. Opaque is
+   * the point: a blurred translucent menu over a code panel is unreadable, and
+   * backdrop-filter forced a full-viewport recomposite on every frame beneath
+   * it, which is exactly the GPU cost this project audits for.
+   */
+  .surface-menu {
+    background-color: var(--popover);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-popover);
+  }
+
+  .surface-dialog {
+    background-color: var(--popover);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-popover);
+  }
+
+  .surface-alert {
+    --alert-surface-tint: transparent;
+    background:
+      linear-gradient(
+        color-mix(in srgb, var(--alert-surface-tint) 8%, transparent),
+        color-mix(in srgb, var(--alert-surface-tint) 8%, transparent)
+      ),
+      var(--background);
+  }
+
+  .surface-alert[data-variant="error"] {
+    --alert-surface-tint: var(--destructive);
+  }
+
+  .surface-alert[data-variant="info"] {
+    --alert-surface-tint: var(--info);
+  }
+
+  .surface-alert[data-variant="success"] {
+    --alert-surface-tint: var(--success);
+  }
+
+  .surface-alert[data-variant="warning"] {
+    --alert-surface-tint: var(--warning);
+  }
+
+  .dialog-backdrop {
+    background: color-mix(in srgb, var(--background) 72%, transparent);
+  }
+
+  .dark .dialog-backdrop {
+    background: color-mix(in srgb, var(--background) 78%, transparent);
+  }
+
+  .dark .model-picker-surface.model-picker-surface {
+    background-color: var(--popover);
+  }
+
+  .settings-slider {
+    --settings-slider-progress: 0%;
+    --settings-slider-fill-offset: 0.5rem;
+    --settings-slider-fill-position: calc(
+      var(--settings-slider-progress) + var(--settings-slider-fill-offset)
+    );
+    appearance: none;
+    height: 1.5rem;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .settings-slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: linear-gradient(
+      to right,
+      var(--primary) 0 var(--settings-slider-fill-position),
+      var(--border) var(--settings-slider-fill-position) 100%
+    );
+  }
+
+  .settings-slider::-moz-range-track {
+    height: 2px;
+    background: var(--border);
+  }
+
+  .settings-slider::-moz-range-progress {
+    height: 2px;
+    background: var(--primary);
+  }
+
+  .settings-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 0.75rem;
+    height: 0.75rem;
+    margin-top: -0.3125rem;
+    border: 0;
+    border-radius: var(--control-radius);
+    background: var(--primary);
+    transition: transform var(--duration-fast) var(--ease-out);
+  }
+
+  .settings-slider::-moz-range-thumb {
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 0;
+    border-radius: var(--control-radius);
+    background: var(--primary);
+    transition: transform var(--duration-fast) var(--ease-out);
+  }
+
+  .settings-slider:hover::-webkit-slider-thumb {
+    transform: scale(1.15);
+  }
+
+  .settings-slider:hover::-moz-range-thumb {
+    transform: scale(1.15);
+  }
+
+  .settings-slider:active::-webkit-slider-thumb {
+    transform: scale(0.92);
+  }
+
+  .settings-slider:active::-moz-range-thumb {
+    transform: scale(0.92);
+  }
+
+  .settings-slider:focus-visible {
+    outline: none;
+  }
+
+  .settings-slider:focus-visible::-webkit-slider-thumb {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  .settings-slider:focus-visible::-moz-range-thumb {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  @media (forced-colors: active) {
+    .settings-slider {
+      appearance: auto;
+      accent-color: Highlight;
+    }
+
+    .settings-slider::-webkit-slider-runnable-track,
+    .settings-slider::-webkit-slider-thumb {
+      all: revert;
+    }
+
+    .settings-slider::-moz-range-track,
+    .settings-slider::-moz-range-progress,
+    .settings-slider::-moz-range-thumb {
+      all: revert;
+    }
+  }
+
+  @media (min-width: 40rem) {
+    .chat-timeline-scroll-fade,
+    .settings-page-scroll-fade {
+      --topbar-scroll-fade-height: 3rem;
+    }
+
+    .chat-composer-horizontal-inset {
+      padding-inline-start: calc(env(safe-area-inset-left) + var(--space-5));
+      padding-inline-end: calc(env(safe-area-inset-right) + var(--space-5));
+    }
+  }
+}
+
+.model-picker-list::-webkit-scrollbar-track {
+  margin-block: var(--space-2);
+}
+
+.model-picker-list-scroll-fade-top,
+.model-picker-list-scroll-fade-bottom {
+  -webkit-mask-image: var(--model-picker-list-scroll-mask), linear-gradient(black, black);
+  -webkit-mask-position: left, right;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size:
+    calc(100% - var(--app-scrollbar-width)) 100%,
+    var(--app-scrollbar-width) 100%;
+  mask-image: var(--model-picker-list-scroll-mask), linear-gradient(black, black);
+  mask-position: left, right;
+  mask-repeat: no-repeat;
+  mask-size:
+    calc(100% - var(--app-scrollbar-width)) 100%,
+    var(--app-scrollbar-width) 100%;
+}
+
+.model-picker-list-scroll-fade-top {
+  --model-picker-list-scroll-mask: linear-gradient(to bottom, transparent, black var(--fade-size));
+}
+
+.model-picker-list-scroll-fade-bottom {
+  --model-picker-list-scroll-mask: linear-gradient(
+    to bottom,
+    black calc(100% - var(--fade-size)),
+    transparent
+  );
+}
+
+.model-picker-list-scroll-fade-top.model-picker-list-scroll-fade-bottom {
+  --model-picker-list-scroll-mask: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--fade-size),
+    black calc(100% - var(--fade-size)),
+    transparent
+  );
+}
+
+/* Composer chips are non-editable decorators, so the browser skips them when
+   painting text selection; this overlay stands in for the native highlight. */
+.composer-inline-chip[data-composer-chip-selected]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--control-radius);
+  background-color: Highlight;
+  opacity: 0.3;
+  pointer-events: none;
+}

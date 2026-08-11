@@ -49,7 +49,7 @@ describe("ComposerBannerStack", () => {
     const markup = renderToStaticMarkup(<ComposerBannerStack items={[banner("front")]} />);
 
     expect(markup).not.toContain("data-composer-banner-stack-expanded-items");
-    expect(markup).toContain("alert-glass");
+    expect(markup).toContain("surface-alert");
     expect(markup).toContain('data-variant="warning"');
     expect(markup).toContain("transform:none");
     expect(markup).not.toContain("will-change:transform");

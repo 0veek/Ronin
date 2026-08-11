@@ -111,7 +111,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
               "pointer-events-none absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-[22px]",
               "border border-b-0 bg-background/96 shadow-[0_6px_18px_rgba(0,0,0,0.06)]",
               stackCapBorderClass[firstStackedItem.variant],
-              "transition-opacity duration-150 ease-out",
+              "transition-opacity duration-(--duration-fast) ease-out",
               "group-hover/banner-stack:opacity-0 group-focus-within/banner-stack:opacity-0",
             )}
             style={{ width: "96%" }}
@@ -138,7 +138,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
           <div
             data-composer-banner-stack-expanded-items="true"
             className={cn(
-              "relative z-20 grid grid-rows-[0fr] transition-[grid-template-rows] duration-150 ease-out",
+              "relative z-20 grid grid-rows-[0fr] transition-[grid-template-rows] duration-(--duration-fast) ease-out",
               "group-hover/banner-stack:grid-rows-[1fr] group-focus-within/banner-stack:grid-rows-[1fr]",
             )}
           >
@@ -146,7 +146,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
               <div
                 className={cn(
                   "invisible pointer-events-none space-y-2 pb-2 opacity-0",
-                  "translate-y-1 transform-gpu transition-[opacity,transform] duration-150 ease-out will-change-[opacity,transform]",
+                  "translate-y-1 transform-gpu transition-[opacity,transform] duration-(--duration-fast) ease-out will-change-[opacity,transform]",
                   "group-hover/banner-stack:visible group-hover/banner-stack:pointer-events-auto group-hover/banner-stack:translate-y-0 group-hover/banner-stack:opacity-100",
                   "group-focus-within/banner-stack:visible group-focus-within/banner-stack:pointer-events-auto group-focus-within/banner-stack:translate-y-0 group-focus-within/banner-stack:opacity-100",
                 )}
@@ -190,7 +190,10 @@ function ComposerBannerStackAlert({
   return (
     <Alert
       variant={item.variant}
-      className={cn("alert-glass rounded-[22px]", item.className)}
+      className={cn(
+        "surface-alert rounded-[var(--radius-lg)] border border-border",
+        item.className,
+      )}
       data-variant={item.variant}
     >
       {item.icon}

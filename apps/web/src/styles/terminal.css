@@ -1,0 +1,35 @@
+/*
+ * Ghostty WASM terminal chrome. The terminal surface itself is drawn to a
+ * canvas by Ghostty and takes its colors from the --terminal-* roles in
+ * tokens.css; only the scrollbar and cursor affordance are CSS.
+ */
+
+.t3-ghostty-canvas {
+  cursor: text;
+}
+
+.t3-ghostty-scrollbar {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  right: 1px;
+  bottom: 4px;
+  width: var(--app-scrollbar-width);
+  cursor: default;
+  touch-action: none;
+}
+
+.t3-ghostty-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  right: 1px;
+  left: 1px;
+  border-radius: 3px;
+  background: var(--app-scrollbar-thumb);
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.t3-ghostty-scrollbar:hover .t3-ghostty-scrollbar-thumb,
+.t3-ghostty-scrollbar:focus-visible .t3-ghostty-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb-hover);
+}
