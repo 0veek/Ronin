@@ -1,4 +1,12 @@
-import { ArchiveIcon, ArchiveX, ChevronRightIcon, LoaderIcon, SettingsIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveX,
+  ChevronRightIcon,
+  ExternalLinkIcon,
+  GithubIcon,
+  LoaderIcon,
+  SettingsIcon,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,7 +43,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
-import { APP_VERSION, HOSTED_APP_CHANNEL } from "../../branding";
+import { APP_REPOSITORY_URL, APP_VERSION, HOSTED_APP_CHANNEL } from "../../branding";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
@@ -207,17 +215,55 @@ function AboutVersionTitle() {
 }
 
 /**
- * Just the version.
+ * The version, and somewhere to compare it against.
  *
- * The update mechanism that used to live here belonged to T3 Code -- its
- * release feed, its stable/nightly channels, its installer. Ronin is not that
- * app and has not chosen how it ships yet, so shipping a "Check for Updates"
- * button that points at somebody else's releases would be worse than having
- * none. When there is an update story, it gets built here.
+ * The updater that used to live here belonged to T3 Code -- its release feed,
+ * its stable/nightly channels, its installer. Ronin has not chosen how it
+ * ships, so rather than a button that checks nothing, this opens the
+ * repository and lets the reader do the comparing. Honest about what it does:
+ * it says "Releases", not "Check for Updates".
  */
 function AboutVersionSection() {
+  const [isOpening, setIsOpening] = useState(false);
+
+  const handleOpenReleases = useCallback(async () => {
+    setIsOpening(true);
+    try {
+      // Through the shell, not an anchor: in the desktop build a bare link
+      // would navigate the app window itself rather than the browser.
+      await ensureLocalApi().shell.openExternal(APP_REPOSITORY_URL);
+    } catch (error) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not open the repository",
+          description: error instanceof Error ? error.message : APP_REPOSITORY_URL,
+        }),
+      );
+    } finally {
+      setIsOpening(false);
+    }
+  }, []);
+
   return (
-    <SettingsRow title={<AboutVersionTitle />} description="Current version of the application." />
+    <SettingsRow
+      title={<AboutVersionTitle />}
+      description="Current version of the application. Releases are published on GitHub."
+      control={
+        <Button
+          className="gap-1.5"
+          disabled={isOpening}
+          onClick={() => void handleOpenReleases()}
+          size="xs"
+          type="button"
+          variant="outline"
+        >
+          <GithubIcon className="size-3.5" />
+          Releases
+          <ExternalLinkIcon className="size-3 text-muted-foreground" />
+        </Button>
+      }
+    />
   );
 }
 

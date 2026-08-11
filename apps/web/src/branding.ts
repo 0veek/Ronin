@@ -25,3 +25,11 @@ export const APP_DISPLAY_NAME =
   injectedDesktopAppBranding?.displayName ??
   formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel: APP_STAGE_LABEL });
 export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
+
+/**
+ * Where releases live.
+ *
+ * Ronin has no in-app updater, so this is the whole update story: the version
+ * you are running, and somewhere to compare it against.
+ */
+export const APP_REPOSITORY_URL = "https://github.com/0veek/Ronin";
