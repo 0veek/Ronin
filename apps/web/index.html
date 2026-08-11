@@ -52,71 +52,71 @@
         const BUILT_IN_THEME_PALETTES = {
           paper: {
             light: {
-              background: "#faf9f7",
-              foreground: "#241523",
-              accent: "#5f5a55",
-              chrome: "#faf9f7",
+              background: "oklch(0.982097 0.002477 84.558)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.471015 0.010291 73.637)",
+              chrome: "oklch(0.982097 0.002477 84.558)",
             },
             dark: {
-              background: "#1c1a17",
-              foreground: "#fffaff",
-              accent: "#bcb7b3",
-              chrome: "#1c1a17",
+              background: "oklch(0.218914 0.006526 78.185)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.781805 0.007264 56.305)",
+              chrome: "oklch(0.218914 0.006526 78.185)",
             },
           },
           graphite: {
             light: {
-              background: "#f4f4f5",
-              foreground: "#241523",
-              accent: "#55555e",
-              chrome: "#f4f4f5",
+              background: "oklch(0.967434 0.001326 286.375)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.45322 0.015072 285.783)",
+              chrome: "oklch(0.967434 0.001326 286.375)",
             },
             dark: {
-              background: "#131316",
-              foreground: "#fffaff",
-              accent: "#a0a0a9",
-              chrome: "#131316",
+              background: "oklch(0.188083 0.006031 285.806)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.709794 0.013034 286.063)",
+              chrome: "oklch(0.188083 0.006031 285.806)",
             },
           },
           obsidian: {
             light: {
-              background: "#f2f7f7",
-              foreground: "#241523",
-              accent: "#0f7971",
-              chrome: "#f2f7f7",
+              background: "oklch(0.971767 0.004466 197.083)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.520974 0.087836 186.373)",
+              chrome: "oklch(0.971767 0.004466 197.083)",
             },
             dark: {
-              background: "#0e1016",
-              foreground: "#fffaff",
-              accent: "#2ed4bf",
-              chrome: "#0e1016",
+              background: "oklch(0.174879 0.012255 264.187)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.785391 0.132273 181.968)",
+              chrome: "oklch(0.174879 0.012255 264.187)",
             },
           },
           carbon: {
             light: {
-              background: "#f7f5f2",
-              foreground: "#241523",
-              accent: "#ac5411",
-              chrome: "#f7f5f2",
+              background: "oklch(0.970497 0.003806 78.301)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.544631 0.135245 50.822)",
+              chrome: "oklch(0.970497 0.003806 78.301)",
             },
             dark: {
-              background: "#111113",
-              foreground: "#fffaff",
-              accent: "#e89a17",
-              chrome: "#111113",
+              background: "oklch(0.178529 0.004066 285.981)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.746877 0.155118 72.187)",
+              chrome: "oklch(0.178529 0.004066 285.981)",
             },
           },
           "oled-void": {
             light: {
-              background: "#fafafa",
-              foreground: "#241523",
-              accent: "#55555e",
-              chrome: "#fafafa",
+              background: "oklch(0.985104 0 0)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.453064 0.015251 285.775)",
+              chrome: "oklch(0.985104 0 0)",
             },
             dark: {
               background: "#000000",
-              foreground: "#fffaff",
-              accent: "#e4e4e7",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.919729 0.004031 286.32)",
               chrome: "#000000",
             },
           },
@@ -183,9 +183,26 @@
           }
         };
 
-        const isHexColor = (value) =>
-          typeof value === "string" &&
-          /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
+        // The runtime decodes the same literal CSS formats into OKLCH. Keep
+        // contextual colors out: they cannot be resolved from stored data.
+        const SYSTEM_COLOR_KEYWORD =
+          /^(?:accentcolor(?:text)?|active(?:border|caption|text)|appworkspace|background|button(?:border|face|highlight|shadow|text)|canvas(?:text)?|captiontext|field(?:text)?|graytext|highlight(?:text)?|inactive(?:border|caption(?:text)?)|info(?:background|text)|linktext|mark(?:text)?|menu(?:text)?|scrollbar|selecteditem(?:text)?|threed(?:darkshadow|face|highlight|lightshadow|shadow)|visitedtext|window(?:frame|text)?)$/i;
+        const isThemeColor = (value) => {
+          if (typeof value !== "string" || typeof CSS === "undefined") return false;
+          const color = value.trim();
+          if (
+            /^(?:currentcolor|inherit|initial|revert|revert-layer|unset)$/i.test(color) ||
+            SYSTEM_COLOR_KEYWORD.test(color) ||
+            /\bfrom\b|(?:var|env|attr|calc|min|max|clamp)\(/i.test(color)
+          ) {
+            return false;
+          }
+          const isLiteralColor =
+            /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ||
+            /^[a-z]+$/i.test(color) ||
+            /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(/i.test(color);
+          return isLiteralColor && CSS.supports("color", color);
+        };
         const isRecord = (value) =>
           typeof value === "object" && value !== null && !Array.isArray(value);
         const isThemeId = (value) =>
@@ -355,13 +372,13 @@
           const fallbackSplash = isDark ? SPLASH_COLORS.dark : SPLASH_COLORS.light;
           const customSplash = customColors
             ? {
-                background: isHexColor(customColors.canvas)
+                background: isThemeColor(customColors.canvas)
                   ? customColors.canvas
                   : (customDefaults?.background ?? fallbackSplash.background),
-                foreground: isHexColor(customColors.text)
+                foreground: isThemeColor(customColors.text)
                   ? customColors.text
                   : (customDefaults?.foreground ?? fallbackSplash.foreground),
-                accent: isHexColor(customColors.accent)
+                accent: isThemeColor(customColors.accent)
                   ? customColors.accent
                   : (customDefaults?.accent ?? fallbackSplash.accent),
               }
@@ -383,7 +400,7 @@
           }
           document.documentElement.classList.toggle("dark", isDark);
           const chromeColor = customColors
-            ? isHexColor(customColors.chrome)
+            ? isThemeColor(customColors.chrome)
               ? customColors.chrome
               : (customDefaults?.chrome ?? fallbackSplash.background)
             : builtInSplash

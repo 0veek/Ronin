@@ -70,7 +70,22 @@ describe("theme failure handling", () => {
     }
   });
 
-  it("reads the persisted Sakura theme preference", async () => {
+  it("reads a persisted theme preference", async () => {
+    vi.stubGlobal("window", {
+      localStorage: createStorage({
+        getItem: () => "graphite",
+      }),
+    });
+
+    const { readThemePreference } = await import("./useTheme");
+
+    expect(readThemePreference()).toBe("graphite");
+  });
+
+  it("drops a preference pinned to a preset this build retired", async () => {
+    // t3-chat was a built-in before the theme cull. Its id stays reserved, so
+    // it must degrade to system rather than resolve to nothing and render the
+    // document unstyled.
     vi.stubGlobal("window", {
       localStorage: createStorage({
         getItem: () => "t3-chat",
@@ -79,7 +94,7 @@ describe("theme failure handling", () => {
 
     const { readThemePreference } = await import("./useTheme");
 
-    expect(readThemePreference()).toBe("t3-chat");
+    expect(readThemePreference()).toBe("system");
   });
 
   it("falls back during initial theme application and logs only safe attributes", async () => {
