@@ -3,9 +3,10 @@ import { memo, useCallback, useEffect, useRef } from "react";
 
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { useDictation } from "~/hooks/useDictation";
-import { useSpeechToTextEnabled } from "~/hooks/useSettings";
+import { useSpeechToTextSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
  * Push-to-talk dictation, as a button in the composer strip.
@@ -26,7 +27,7 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
   /** True when a keyboard event is the dictation binding. */
   readonly matchesShortcut: (event: KeyboardEvent) => boolean;
 }) {
-  const enabled = useSpeechToTextEnabled();
+  const { enabled, provider } = useSpeechToTextSettings();
   const composerHandleRef = useComposerHandleContext();
 
   const onTranscript = useCallback(
@@ -39,8 +40,20 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
     [composerHandleRef],
   );
 
-  const dictation = useDictation({ onTranscript });
-  const { beginHold, endHold, cancel, status } = dictation;
+  const dictation = useDictation({ onTranscript, provider });
+  const { beginHold, endHold, cancel, error, status } = dictation;
+
+  // Microphone problems are the ones worth interrupting for: they are almost
+  // always permission or hardware, and the fix is never "hold it again".
+  const reportedErrorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (error === null || error === reportedErrorRef.current) {
+      reportedErrorRef.current = error;
+      return;
+    }
+    reportedErrorRef.current = error;
+    toastManager.add(stackedThreadToast({ type: "error", title: "Dictation", description: error }));
+  }, [error]);
 
   // Held from the keyboard, as opposed to the pointer. Tracked so a key
   // release only ends a hold the keyboard started.

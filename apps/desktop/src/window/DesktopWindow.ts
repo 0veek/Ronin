@@ -320,6 +320,32 @@ export const make = Effect.gen(function* () {
     if (environment.platform === "darwin") {
       window.setAutoHideCursor(false);
     }
+
+    /**
+     * Composer dictation needs the microphone, and Electron denies every
+     * getUserMedia request on a session with no handler -- silently, without
+     * rejecting the promise, so the renderer just waits forever.
+     *
+     * Only the app's own window session is granted, and only for audio. The
+     * preview sessions run untrusted web content and keep their own, stricter
+     * handler in BrowserSession.ts; nothing here touches them.
+     */
+    window.webContents.session.setPermissionRequestHandler(
+      (requestingContents, permission, callback, details) => {
+        if (requestingContents.id !== window.webContents.id || permission !== "media") {
+          callback(false);
+          return;
+        }
+        // Audio only. `mediaTypes` is absent on some request shapes, and an
+        // absent list must not be read as "everything".
+        const mediaTypes = "mediaTypes" in details ? (details.mediaTypes ?? []) : [];
+        callback(mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio"));
+      },
+    );
+    window.webContents.session.setPermissionCheckHandler(
+      (requestingContents, permission) =>
+        requestingContents?.id === window.webContents.id && permission === "media",
+    );
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let boundsPersistenceEnabled = persistedBounds === null || restoredPersistedBounds;

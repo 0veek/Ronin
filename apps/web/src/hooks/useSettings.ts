@@ -9,6 +9,7 @@
  * access is intentionally named as such so environment-sensitive consumers
  * cannot silently read the wrong server's settings.
  */
+import type { SpeechToTextProvider, SpeechToTextSettings } from "@t3tools/contracts";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -279,9 +280,24 @@ export function usePrimarySettings<T = UnifiedSettings>(
   return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
 }
 
-/** Whether the composer should offer dictation at all. */
-export function useSpeechToTextEnabled(): boolean {
-  return usePrimarySettings((settings) => settings.speechToText.enabled);
+/**
+ * Dictation's enabled flag and provider.
+ *
+ * Falls back rather than reading straight through: a server older than this
+ * setting answers with no `speechToText` section at all, and dereferencing it
+ * would take the whole composer down with a TypeError.
+ */
+export function useSpeechToTextSettings(): {
+  readonly enabled: boolean;
+  readonly provider: SpeechToTextProvider;
+} {
+  return usePrimarySettings((settings) => {
+    const stt = settings.speechToText as SpeechToTextSettings | undefined;
+    return {
+      enabled: stt?.enabled ?? false,
+      provider: stt?.provider ?? "deepgram",
+    };
+  });
 }
 
 /**

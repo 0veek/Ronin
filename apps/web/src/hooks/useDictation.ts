@@ -13,6 +13,7 @@
  *
  * @module hooks/useDictation
  */
+import type { SpeechToTextProvider } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { serverEnvironment } from "../state/server";
@@ -35,19 +36,31 @@ export interface DictationController {
 }
 
 /**
- * Container preference, best first.
+ * Container preference, best first, per provider.
  *
- * All three providers accept Opus in WebM, and it is roughly a tenth the size
- * of the WAV a naive capture would produce -- which matters because the clip
- * crosses the socket base64-encoded. Safari records MP4/AAC instead, so that
- * is the fallback rather than an error.
+ * Deepgram and Groq both take WebM/Opus, which is roughly a tenth the size of
+ * the WAV a naive capture would produce -- and the clip crosses the socket
+ * base64-encoded, so size is not academic.
+ *
+ * OpenRouter is the exception and the reason this is a per-provider list at
+ * all: its audio content part accepts wav, mp3, aiff, aac, ogg, flac, m4a,
+ * pcm16 and pcm24, and WebM is not among them. So for OpenRouter the order
+ * starts at MP4, which Chromium records as m4a.
  */
-const PREFERRED_MIME_TYPES = [
-  "audio/webm;codecs=opus",
-  "audio/webm",
-  "audio/mp4",
-  "audio/ogg;codecs=opus",
-];
+const PREFERRED_MIME_TYPES: Readonly<Record<SpeechToTextProvider, ReadonlyArray<string>>> = {
+  deepgram: ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"],
+  groq: ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"],
+  openrouter: ["audio/mp4", "audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/webm"],
+};
+
+/**
+ * How long to wait on the permission prompt before giving up.
+ *
+ * Electron does not always reject getUserMedia when a session denies it
+ * (electron#42714); the promise can simply never settle, which reads to the
+ * user as the button doing nothing at all.
+ */
+const PERMISSION_TIMEOUT_MS = 15_000;
 
 /**
  * A press shorter than this is a fumble, not speech.
@@ -57,9 +70,9 @@ const PREFERRED_MIME_TYPES = [
  */
 const MIN_HOLD_MS = 250;
 
-function pickMimeType(): string | null {
+function pickMimeType(provider: SpeechToTextProvider): string | null {
   if (typeof MediaRecorder === "undefined") return null;
-  for (const candidate of PREFERRED_MIME_TYPES) {
+  for (const candidate of PREFERRED_MIME_TYPES[provider]) {
     if (MediaRecorder.isTypeSupported(candidate)) return candidate;
   }
   // An empty string is valid: it tells MediaRecorder to choose for itself.
@@ -90,6 +103,9 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 function describeCaptureFailure(error: unknown): string {
+  if (error instanceof Error && error.message === "MicrophonePermissionTimeout") {
+    return "The microphone permission prompt never answered.";
+  }
   const name = error instanceof Error ? error.name : "";
   if (name === "NotAllowedError" || name === "SecurityError") {
     return "Microphone access was denied.";
@@ -102,14 +118,11 @@ function describeCaptureFailure(error: unknown): string {
 
 export function useDictation(options: {
   readonly onTranscript: (text: string) => void;
+  /** Decides which container to record, since the providers disagree. */
+  readonly provider: SpeechToTextProvider;
 }): DictationController {
   const environmentId = usePrimaryEnvironmentId();
-  const transcribe = useAtomCommand(serverEnvironment.transcribeAudio, {
-    label: "dictation transcribe",
-    // The composer surfaces the failure inline; a toast on top of that is one
-    // notification too many for a held key that produced nothing.
-    reportFailure: false,
-  });
+  const transcribe = useAtomCommand(serverEnvironment.transcribeAudio, "dictation transcribe");
 
   const [status, setStatus] = useState<DictationStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -174,7 +187,15 @@ export function useDictation(options: {
     void (async () => {
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await Promise.race([
+          navigator.mediaDevices.getUserMedia({ audio: true }),
+          new Promise<never>((_resolve, reject) =>
+            setTimeout(
+              () => reject(new Error("MicrophonePermissionTimeout")),
+              PERMISSION_TIMEOUT_MS,
+            ),
+          ),
+        ]);
       } catch (captureError) {
         holdingRef.current = false;
         setError(describeCaptureFailure(captureError));
@@ -189,7 +210,7 @@ export function useDictation(options: {
         return;
       }
 
-      const mimeType = pickMimeType();
+      const mimeType = pickMimeType(options.provider);
       let recorder: MediaRecorder;
       try {
         recorder = new MediaRecorder(
@@ -265,7 +286,7 @@ export function useDictation(options: {
       // Released while the recorder was being constructed.
       if (!holdingRef.current) stopRecorder();
     })();
-  }, [environmentId, releaseStream, status, stopRecorder, transcribe]);
+  }, [environmentId, options.provider, releaseStream, status, stopRecorder, transcribe]);
 
   const endHold = useCallback(() => {
     if (!holdingRef.current) return;

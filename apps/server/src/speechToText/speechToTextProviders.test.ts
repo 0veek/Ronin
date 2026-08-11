@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { audioFileName, audioFormat, stripChatPreamble } from "./speechToTextProviders.ts";
+import { HttpClient } from "effect/unstable/http";
+import * as Effect from "effect/Effect";
+
+import {
+  audioFileName,
+  audioFormat,
+  stripChatPreamble,
+  transcribeWithOpenRouter,
+} from "./speechToTextProviders.ts";
 
 describe("audioFormat", () => {
   it("drops the codec parameters MediaRecorder attaches", () => {
@@ -49,5 +57,36 @@ describe("stripChatPreamble", () => {
     // "here is the" is a normal thing to say; only the transcript-announcing
     // form is removed.
     expect(stripChatPreamble("here is the file you wanted")).toBe("here is the file you wanted");
+  });
+});
+
+describe("OpenRouter container support", () => {
+  const deps = (mimeType: string) => ({
+    // Never reached: the format check fails before any request is built.
+    httpClient: null as unknown as HttpClient.HttpClient,
+    apiKey: "test-key",
+    audio: new Uint8Array([1, 2, 3]),
+    mimeType,
+    model: "google/gemini-2.0-flash-001",
+    language: "",
+  });
+
+  it("rejects webm before spending a request on it", async () => {
+    // Chromium records WebM by default and OpenRouter does not list it, so
+    // without this the clip goes out and returns as an opaque model failure.
+    const exit = await Effect.runPromiseExit(
+      transcribeWithOpenRouter(deps("audio/webm;codecs=opus")),
+    );
+
+    expect(exit._tag).toBe("Failure");
+    expect(JSON.stringify(exit)).toContain("does not accept webm audio");
+  });
+
+  it("accepts the containers OpenRouter documents", () => {
+    // m4a is what the renderer records for this provider; the rest are the
+    // formats a user could reach with a different browser.
+    for (const mimeType of ["audio/mp4", "audio/ogg", "audio/wav", "audio/mpeg"]) {
+      expect(["m4a", "ogg", "wav", "mp3"]).toContain(audioFormat(mimeType));
+    }
   });
 });

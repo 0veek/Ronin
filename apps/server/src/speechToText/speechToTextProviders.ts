@@ -189,9 +189,39 @@ export const transcribeWithGroq = Effect.fn("speechToText.groq")(function* (
  * were not there, which reads as a nonsense transcript rather than an error.
  * And the reply is chat output, so it gets the preamble stripping below.
  */
+/**
+ * Containers OpenRouter's audio content part accepts.
+ *
+ * WebM is deliberately absent because OpenRouter does not list it, and that is
+ * exactly what Chromium records by default -- so without this check the clip
+ * goes out and comes back as an opaque model failure.
+ */
+const OPENROUTER_AUDIO_FORMATS: ReadonlySet<string> = new Set([
+  "wav",
+  "mp3",
+  "aiff",
+  "aac",
+  "ogg",
+  "flac",
+  "m4a",
+  "pcm16",
+  "pcm24",
+]);
+
 export const transcribeWithOpenRouter = Effect.fn("speechToText.openrouter")(function* (
   deps: TranscriptionDeps,
 ) {
+  const format = audioFormat(deps.mimeType);
+  if (!OPENROUTER_AUDIO_FORMATS.has(format)) {
+    return yield* Effect.fail(
+      fail(
+        "openrouter",
+        "audioRejected",
+        `OpenRouter does not accept ${format} audio. Deepgram or Groq will take this recording.`,
+      ),
+    );
+  }
+
   const instruction =
     deps.language.length > 0
       ? `${OPENROUTER_INSTRUCTION} The audio is in ${deps.language}.`
@@ -211,7 +241,7 @@ export const transcribeWithOpenRouter = Effect.fn("speechToText.openrouter")(fun
             { type: "text", text: instruction },
             {
               type: "input_audio",
-              input_audio: { data: toBase64(deps.audio), format: audioFormat(deps.mimeType) },
+              input_audio: { data: toBase64(deps.audio), format },
             },
           ],
         },
