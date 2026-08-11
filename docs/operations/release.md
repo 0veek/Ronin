@@ -1,6 +1,6 @@
 # Release Checklist
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Ronin? See [docs/user](../user/).
 
 This document covers the unified release workflow for stable and nightly desktop releases.
 

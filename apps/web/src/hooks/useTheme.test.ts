@@ -70,7 +70,7 @@ describe("theme failure handling", () => {
     }
   });
 
-  it("reads the persisted T3 Chat theme preference", async () => {
+  it("reads the persisted Sakura theme preference", async () => {
     vi.stubGlobal("window", {
       localStorage: createStorage({
         getItem: () => "t3-chat",

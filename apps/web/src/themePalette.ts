@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
-export const T3_CHAT_THEME_ID = "t3-chat" as const;
-export const T3_CHAT_THEME_LABEL = "T3 Chat";
+export const SAKURA_THEME_ID = "t3-chat" as const;
+export const SAKURA_THEME_LABEL = "Sakura";
 export const GROVE_THEME_ID = "grove" as const;
 export const GROVE_THEME_LABEL = "Grove";
 export const OCEAN_THEME_ID = "ocean" as const;
@@ -32,7 +32,7 @@ export const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "t3code:theme-follow-system";
 export const THEME_APPEARANCE_MODE_STORAGE_KEY = "t3code:theme-appearance-mode";
 export const THEME_HALVES_STORAGE_KEY = "t3code:theme-halves:v1";
 
-const LEGACY_T3_CHAT_DARK_THEME_ID = "t3-chat-dark";
+const LEGACY_SAKURA_DARK_THEME_ID = "t3-chat-dark";
 
 export const ThemePreference = Schema.String;
 export type ThemePreference = typeof ThemePreference.Type;
@@ -133,7 +133,7 @@ const RESERVED_THEME_IDS = new Set([
   "system",
   "light",
   "dark",
-  T3_CHAT_THEME_ID,
+  SAKURA_THEME_ID,
   GROVE_THEME_ID,
   OCEAN_THEME_ID,
   EMBER_THEME_ID,
@@ -146,7 +146,7 @@ const RESERVED_THEME_IDS = new Set([
   OLED_AZURE_THEME_ID,
   OLED_PHOSPHOR_THEME_ID,
   OLED_PLASMA_THEME_ID,
-  LEGACY_T3_CHAT_DARK_THEME_ID,
+  LEGACY_SAKURA_DARK_THEME_ID,
   "t3-grove",
   "t3-ocean",
   "t3-ember",
@@ -317,10 +317,10 @@ export function subscribeToCustomThemes(listener: () => void): () => void {
 }
 
 // Earlier builds shipped every maintainer theme under a t3- prefix; only the
-// genuinely T3-branded palette keeps it. Stored preferences and mixes with the
+// genuinely brand-specific palette keeps it. Stored preferences and mixes with the
 // old ids stay readable through this alias table.
 const LEGACY_THEME_ID_ALIASES: Readonly<Record<string, string>> = {
-  [LEGACY_T3_CHAT_DARK_THEME_ID]: T3_CHAT_THEME_ID,
+  [LEGACY_SAKURA_DARK_THEME_ID]: SAKURA_THEME_ID,
   "t3-grove": GROVE_THEME_ID,
   "t3-ocean": OCEAN_THEME_ID,
   "t3-ember": EMBER_THEME_ID,
@@ -337,17 +337,17 @@ function normalizeThemeId(themeId: string): string {
  * still carries the appearance hint getThemePreferenceMode reads.
  */
 export function canonicalThemePreference(theme: string): string {
-  return theme === LEGACY_T3_CHAT_DARK_THEME_ID ? theme : normalizeThemeId(theme);
+  return theme === LEGACY_SAKURA_DARK_THEME_ID ? theme : normalizeThemeId(theme);
 }
 
 function themeIdFromPreference(theme: ThemePreference): string {
   return normalizeThemeId(theme);
 }
 
-// Older builds stored the dark T3 Chat palette as a separate theme. Keep
+// Older builds stored the dark Sakura palette as a separate theme. Keep
 // those preferences readable while mapping them to the dark variant.
 function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
-  return theme === LEGACY_T3_CHAT_DARK_THEME_ID ? "dark" : null;
+  return theme === LEGACY_SAKURA_DARK_THEME_ID ? "dark" : null;
 }
 
 /**
@@ -356,17 +356,17 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
  */
 // Measured from the live t3.chat default theme. Translucent chat surfaces are
 // flattened over --chat-background so this opaque palette reproduces the
-// pixels users see after T3 Chat's blur and noise layers are composited.
+// pixels users see after Sakura's blur and noise layers are composited.
 // Foreground pairs deviate where necessary to keep normal text at WCAG AA.
-const T3_CHAT_LIGHT_COLORS: ThemeColors = {
+const SAKURA_LIGHT_COLORS: ThemeColors = {
   canvas: "#fdf7fd",
-  // T3 Code's workspace header belongs to the chat panel, so keep it seamless
-  // with the light chat canvas rather than mapping it to T3 Chat's outer shell.
+  // Ronin's workspace header belongs to the chat panel, so keep it seamless
+  // with the light chat canvas rather than mapping it to Sakura's outer shell.
   chrome: "#fdf7fd",
   toolbar: "#fdf7fd",
   toolbarForeground: "#501854",
   toolbarBorder: "#efbdeb",
-  // T3 Chat's light chrome controls sit on its pale gradient-noise surface,
+  // Sakura's light chrome controls sit on its pale gradient-noise surface,
   // not the substantially darker solid accent token.
   toolbarControl: "#f3e6f5",
   toolbarControlForeground: "#501854",
@@ -404,11 +404,11 @@ const T3_CHAT_LIGHT_COLORS: ThemeColors = {
   messageAction: "#db2777",
   messageActionForeground: "#ffffff",
   messageActionHover: "#c12269",
-  // T3 Chat uses a light lavender code surface in light mode. Keeping the
-  // dark plum pair here also leaked the dark palette into T3 Code's diffs.
+  // Sakura uses a light lavender code surface in light mode. Keeping the
+  // dark plum pair here also leaked the dark palette into Ronin's diffs.
   codeBackground: "#f5ecf9",
   codeForeground: "#673c8b",
-  // The live sidebar is transparent over T3 Chat's outer shell. Use that
+  // The live sidebar is transparent over Sakura's outer shell. Use that
   // rendered shell color rather than its unused, darker sidebar token.
   sidebar: "#f2e1f4",
   sidebarForeground: "#454554",
@@ -426,10 +426,10 @@ const T3_CHAT_LIGHT_COLORS: ThemeColors = {
   terminalScrollbarHover: "#eaa7cb",
 };
 
-const T3_CHAT_DARK_COLORS: ThemeColors = {
+const SAKURA_DARK_COLORS: ThemeColors = {
   canvas: "#1f1a24",
-  // T3 Code's workspace header belongs to the chat panel, so keep it seamless
-  // with the canvas rather than mapping it to T3 Chat's outer shell.
+  // Ronin's workspace header belongs to the chat panel, so keep it seamless
+  // with the canvas rather than mapping it to Sakura's outer shell.
   chrome: "#1f1a24",
   toolbar: "#1f1a24",
   toolbarForeground: "#f9f8fb",
@@ -437,7 +437,7 @@ const T3_CHAT_DARK_COLORS: ThemeColors = {
   toolbarControl: "#362d3d",
   toolbarControlForeground: "#d4c7e1",
   toolbarControlHover: "#463753",
-  // Cards and panels stay in T3 Chat's plum surface family. Near-black here
+  // Cards and panels stay in Sakura's plum surface family. Near-black here
   // made the right-panel surface picker look unrelated to the chat canvas.
   surface: "#29232d",
   // Pre-composited for the composer's 80% glass layer; this resolves to the
@@ -474,7 +474,7 @@ const T3_CHAT_DARK_COLORS: ThemeColors = {
   messageAction: "#a3004c",
   messageActionForeground: "#fbd0e8",
   messageActionHover: "#a2004c",
-  // Diffs and file previews are full workspace surfaces in T3 Code. Keep them
+  // Diffs and file previews are full workspace surfaces in Ronin. Keep them
   // continuous with the themed canvas instead of dropping to near-black.
   codeBackground: "#1f1a24",
   codeForeground: "#d8c3ef",
@@ -488,7 +488,7 @@ const T3_CHAT_DARK_COLORS: ThemeColors = {
   sidebarRowHover: "#261922",
   sidebarRowActive: "#261922",
   sidebarRowSelected: "#261922",
-  // T3 Chat draws the chat panel edge in this muted pink. The resize rail uses
+  // Sakura draws the chat panel edge in this muted pink. The resize rail uses
   // the same role on hover, so it stays pink instead of falling back to black.
   sidebarBorder: "#322028",
   terminalBackground: "#1f1a24",
@@ -500,7 +500,7 @@ const T3_CHAT_DARK_COLORS: ThemeColors = {
 };
 
 /**
- * The palette T3 Code wears with no theme installed, captured from the app's
+ * The palette Ronin wears with no theme installed, captured from the app's
  * stock tokens (index.css) so a draft seeded from the default look paints the
  * pixels the user is already seeing. Alpha-bearing tokens are flattened over
  * their real backdrops (canvas, or the sidebar for its rows) because theme
@@ -627,9 +627,9 @@ const T3_CODE_DARK_THEME_COLORS: ThemeColors = {
 };
 
 /**
- * The standard T3 Code look as a theme palette, for seeding a new theme when
+ * The standard Ronin look as a theme palette, for seeding a new theme when
  * no theme is installed. Distinct from {@link getDefaultThemeColors}, which
- * carries the flagship T3 Chat palette used to fill roles omitted by theme
+ * carries the flagship Sakura palette used to fill roles omitted by theme
  * files.
  */
 export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {
@@ -845,7 +845,7 @@ function solveOklchLightness(
 }
 
 /**
- * The status colors T3 Code shows without a theme, read from the app's own
+ * The status colors Ronin shows without a theme, read from the app's own
  * tokens (red-500 / amber-500 families). Generated palettes fall back to
  * these instead of the flagship theme's, so an imported or created theme
  * never inherits a brand tint on destructive buttons and warnings.
@@ -1323,23 +1323,23 @@ export function createManagedThemeColors(
   };
 }
 
-export const T3_CHAT_THEME: ThemeDefinition = {
-  id: T3_CHAT_THEME_ID,
-  label: T3_CHAT_THEME_LABEL,
+export const SAKURA_THEME: ThemeDefinition = {
+  id: SAKURA_THEME_ID,
+  label: SAKURA_THEME_LABEL,
   appearance: "light",
-  colors: T3_CHAT_LIGHT_COLORS,
+  colors: SAKURA_LIGHT_COLORS,
   variants: {
-    dark: T3_CHAT_DARK_COLORS,
+    dark: SAKURA_DARK_COLORS,
   },
 };
 
 /** Theme-file defaults follow the flagship palette for the requested mode. */
 export function getDefaultThemeColors(appearance: ThemeAppearance): ThemeColors {
-  return appearance === "dark" ? T3_CHAT_DARK_COLORS : T3_CHAT_LIGHT_COLORS;
+  return appearance === "dark" ? SAKURA_DARK_COLORS : SAKURA_LIGHT_COLORS;
 }
 
 /**
- * A companion action color in the T3 Chat mold. This gives send buttons,
+ * A companion action color in the Sakura mold. This gives send buttons,
  * status pills, and theme previews a second voice; foreground and hover follow
  * the same rules as the managed generator.
  */
@@ -1572,7 +1572,7 @@ export const OLED_PLASMA_THEME: ThemeDefinition = {
 };
 
 const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = [
-  T3_CHAT_THEME,
+  SAKURA_THEME,
   GROVE_THEME,
   OCEAN_THEME,
   EMBER_THEME,

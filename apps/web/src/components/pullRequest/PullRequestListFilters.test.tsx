@@ -83,7 +83,7 @@ describe("pull request filters menu", () => {
     const projectId = "project-1" as ProjectId;
     const onProject = vi.fn();
     const view = menu({
-      projects: [{ id: projectId, title: "T3 Code", workspaceRoot: "/work/t3code" }],
+      projects: [{ id: projectId, title: "Ronin", workspaceRoot: "/work/t3code" }],
       projectId,
       onProject,
     });

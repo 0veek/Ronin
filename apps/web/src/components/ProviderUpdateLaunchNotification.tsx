@@ -17,11 +17,10 @@ import { ProviderUpdatePrimaryNotification } from "./ProviderUpdatePrimaryNotifi
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
 /**
- * True when a desktop-local secondary backend (the parallel WSL backend) is
- * present alongside the primary. Local secondaries connect over loopback with a
- * `local:<backendInstanceId>` bearer connection id; everything else (SSH, relay,
- * remote) is ignored. Gating on this keeps non-WSL users on the unchanged
- * single-prompt flow.
+ * True when a desktop-local secondary backend is present alongside the primary.
+ * Local secondaries connect over loopback with a `local:<backendInstanceId>`
+ * bearer connection id; everything else (SSH, relay, remote) is ignored.
+ * Gating on this keeps single-backend users on the unchanged single-prompt flow.
  */
 function useHasLocalSecondaryEnvironment(): boolean {
   const { environments } = useEnvironments();
@@ -33,9 +32,9 @@ function useHasLocalSecondaryEnvironment(): boolean {
 }
 
 /**
- * The provider update popover. With a WSL backend present it splits the update
- * trigger per environment; without one (the common case) it falls back to the
- * single-prompt flow so non-WSL users see no change.
+ * The provider update popover. With a desktop-local secondary present it splits
+ * the update trigger per environment; without one (the common case) it falls
+ * back to the single-prompt flow.
  */
 export function ProviderUpdateLaunchNotification() {
   const hasLocalSecondary = useHasLocalSecondaryEnvironment();
@@ -50,7 +49,7 @@ export function ProviderUpdateLaunchNotification() {
 const seenProviderUpdateNotificationKeys = new Set<string>();
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
-// While a local backend (e.g. WSL) is still connecting, defer the popover so it
+// While a local secondary backend is still connecting, defer the popover so it
 // reflects every environment. Cap the wait so a stuck or failed backend can't
 // suppress the primary's updates indefinitely.
 const SETTLING_GRACE_MS = 30_000;
@@ -71,8 +70,8 @@ function ProviderUpdateEnvironmentsNotification() {
   // is kept so in-progress rows are not torn down.
   const hasInteractedRef = useRef(false);
 
-  // Close our prompt if this flow unmounts (e.g. the WSL backend is disabled
-  // and we fall back to the single-prompt flow).
+  // Close our prompt if this flow unmounts (e.g. the secondary is removed and
+  // we fall back to the single-prompt flow).
   useEffect(() => {
     return () => {
       if (activeToastRef.current !== null) {

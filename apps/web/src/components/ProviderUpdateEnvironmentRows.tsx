@@ -152,9 +152,9 @@ function EnvironmentUpdateRow({
 }
 
 /**
- * The launch popover's body when WSL is present: one row per local environment
- * (Windows + WSL), each with its own "update all" trigger that targets only
- * that environment's backend.
+ * The launch popover's body when multiple local environments are present: one
+ * row per environment, each with its own "update all" trigger that targets
+ * only that environment's backend.
  */
 export function ProviderUpdateEnvironmentRows({
   onInteract,

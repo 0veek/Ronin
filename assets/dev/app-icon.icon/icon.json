@@ -7,8 +7,8 @@
       "layers": [
         {
           "glass": true,
-          "image-name": "text.svg",
-          "name": "Text",
+          "image-name": "mark.svg",
+          "name": "Mark",
           "position": {
             "scale": 8.5,
             "translation-in-points": [0, 0]

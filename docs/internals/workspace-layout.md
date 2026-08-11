@@ -1,6 +1,6 @@
 # Workspace layout
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Ronin? See [docs/user](../user/).
 
 A pnpm workspace driven by [vite-plus](https://vite.plus) (`vp`). See [scripts.md](./scripts.md) for
 the task commands.

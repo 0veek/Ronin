@@ -20,7 +20,7 @@ describe("DesktopLifecycle", () => {
 
       const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
         metadata: Effect.die("unexpected metadata read"),
-        name: Effect.succeed("T3 Code"),
+        name: Effect.succeed("Ronin"),
         whenReady: Effect.void,
         quit: Effect.void,
         exit: () => Effect.void,
@@ -73,7 +73,6 @@ describe("DesktopLifecycle", () => {
         revealOrCreateMain: Effect.die("unexpected window creation"),
         activate: Effect.void,
         createMainIfBackendReady: Effect.void,
-        showConnectingSplash: Effect.void,
         handleBackendReady: () => Effect.void,
         handleBackendNotReady: Effect.void,
         flushMainWindowBounds: Effect.void,

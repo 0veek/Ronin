@@ -1,5 +1,5 @@
 import { ChartNoAxesColumnIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useId } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -80,31 +80,45 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <T3Wordmark />
+      <RoninMark />
       <span
         className={cn(
           "truncate text-sm font-medium tracking-tight",
           onBackdrop ? "text-white/70" : "text-muted-foreground",
         )}
       >
-        Code
+        Ronin
       </span>
     </Link>
   );
 }
 
-function T3Wordmark() {
+/**
+ * The Ronin kasa, in one colour so it reads against both the sidebar surface
+ * and the stage backdrop. Geometry is assets/brand/ronin-mark-mono.svg; the
+ * blade is clipped against an inflated copy of the hat so the two shapes stay
+ * separate at this size instead of merging into a blob.
+ */
+function RoninMark() {
+  const maskId = useId();
+  const hat = "M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z";
   return (
     <svg
-      aria-label="T3"
-      className="h-2.5 w-auto shrink-0"
-      viewBox="15.5309 37 94.3941 56.96"
+      aria-label="Ronin"
+      className="size-4 shrink-0"
+      viewBox="6 6 116 116"
       xmlns="http://www.w3.org/2000/svg"
     >
+      <mask height="128" id={maskId} maskUnits="userSpaceOnUse" width="128" x="0" y="0">
+        <rect fill="white" height="128" width="128" />
+        <path d={hat} fill="black" stroke="black" strokeLinejoin="round" strokeWidth="7" />
+      </mask>
       <path
-        d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z"
+        d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z"
         fill="currentColor"
+        mask={`url(#${maskId})`}
       />
+      <path d={hat} fill="currentColor" />
     </svg>
   );
 }

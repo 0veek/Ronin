@@ -1,19 +1,25 @@
-# T3 Code
+<p align="center">
+  <img src="assets/prod/logo.svg" width="96" height="96" alt="Ronin" />
+</p>
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class [Electron-based desktop app](https://t3.codes), with an optional local web UI via `npx t3`.
+<h1 align="center">Ronin</h1>
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
+<p align="center"><strong>浪人</strong> — a masterless samurai. Your agents, no master but you.</p>
+
+Ronin is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class [Electron-based desktop app](https://t3.codes), with an optional local web UI via `npx t3`.
+
+Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, Ronin can control them.
 
 ## "Wait, what are you selling me?"
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+Nothing. We built Ronin because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
 
 We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
 
 ## Installation
 
 > [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
+> Ronin currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
 >
 > - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
 > - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
@@ -23,13 +29,13 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 ### Try it out (install-free)
 
-The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+The easiest way to test Ronin is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
 
 ```bash
 npx t3@latest
 ```
 
-This will launch T3 Code's backend on your machine as well as the local web app to control your agents.
+This will launch Ronin's backend on your machine as well as the local web app to control your agents.
 
 Tip: Use `npx t3@latest --help` for the full CLI reference.
 
@@ -73,7 +79,7 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 - [Keeping app and server in sync](./docs/user/updating.md)
 - [Source control integrations](./docs/user/source-control.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run T3 Code as a background service](./docs/user/background-service.md)
+- Linux: [run Ronin as a background service](./docs/user/background-service.md)
 
 Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
 
@@ -81,7 +87,7 @@ Building from source? Start at [docs/internals/overview.md](./docs/internals/ove
 
 ### Install `vp`
 
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
+Ronin uses Vite+ so you'll need to install the global `vp` command-line tool.
 
 #### macOS / Linux
 

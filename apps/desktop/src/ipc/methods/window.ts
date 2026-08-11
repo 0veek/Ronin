@@ -19,9 +19,6 @@ import * as Schema from "effect/Schema";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
-import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
-import * as DesktopWslBackend from "../../wsl/DesktopWslBackend.ts";
-import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
@@ -29,11 +26,6 @@ import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
-import {
-  extractDistroFromUncPath,
-  resolveWslPickFolderDefaultPath,
-  wslUncPathToLinuxPath,
-} from "../../wsl/wslPathParsing.ts";
 
 const ContextMenuPosition = Schema.Struct({
   x: Schema.Number,
@@ -81,21 +73,16 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
       const isPrimary = instance.id === PRIMARY_LOCAL_ENVIRONMENT_ID;
       const config = yield* instance.currentConfig;
       const snapshot = yield* instance.snapshot;
-      // A secondary backend (e.g. a parallel WSL backend) that hasn't produced
-      // a config yet (mid-registration, before its first start cycle) or that
-      // is retrying a *transient* preflight failure (WSL VM still booting, a
-      // not-yet-built linux server entry) is not listening on a port. We
-      // surface it as a *pending* bootstrap (null endpoints, no token) so the
-      // renderer can show a "Connecting…" indicator while it retries — null
-      // endpoints keep the renderer from dialing the dead port, avoiding the
-      // needless /api/auth/bootstrap/bearer error cycles a real endpoint would
-      // trigger.
+      // A secondary backend that hasn't produced a config yet (mid-registration,
+      // before its first start cycle) or that is retrying a *transient* preflight
+      // failure is not listening on a port. Surface it as a *pending* bootstrap
+      // (null endpoints, no token) so the renderer can show a "Connecting…"
+      // indicator while it retries — null endpoints keep the renderer from
+      // dialing the dead port.
       if (Option.isNone(config) || Option.isSome(config.value.preflightFailure)) {
         // Skip the primary (same-origin, no "connecting" affordance) and skip a
-        // secondary whose preflight failed *fatally* (no node, wrong version,
-        // missing build tools): it has stopped retrying, so an indefinite
-        // "Connecting…" would be misleading — its error is surfaced by the
-        // WSL-state UI instead.
+        // secondary whose preflight failed *fatally* or stopped retrying: an
+        // indefinite "Connecting…" would be misleading.
         const fatalPreflight =
           Option.isSome(config) &&
           Option.isSome(config.value.preflightFailure) &&
@@ -118,7 +105,7 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
       const runningDistro = config.value.runningDistro ?? null;
       bootstraps.push({
         id: instance.id,
-        label: runningDistro === null ? yield* instance.label : `WSL (${runningDistro})`,
+        label: yield* instance.label,
         runningDistro,
         httpBaseUrl: httpBaseUrl.href,
         wsBaseUrl: toWebSocketBaseUrl(httpBaseUrl),
@@ -130,18 +117,6 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
     return bootstraps;
   }),
 });
-
-// Pull the distro selection out of a backend instance id like
-// "wsl:ubuntu". Returns null for "wsl:default", which is the sentinel
-// for "track the user's WSL default distro" and maps to the
-// wslEnv-derived default at picker time.
-function extractWslDistroFromEnvironmentId(envId: string): string | null {
-  if (!envId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)) {
-    return null;
-  }
-  const suffix = envId.slice(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX.length);
-  return suffix === "default" || suffix.length === 0 ? null : suffix;
-}
 
 export const getLocalEnvironmentBearerToken = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL,
@@ -161,62 +136,14 @@ export const pickFolder = DesktopIpc.makeIpcMethod({
     const dialog = yield* ElectronDialog.ElectronDialog;
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
-    const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
-    // Three picker modes:
-    //   - targetEnvironmentId omitted: default to the primary picker. Keeps
-    //     the historical behavior unchanged for users who never enabled the
-    //     WSL backend, and is what unfamiliar callers should get out of the
-    //     box.
-    //   - targetEnvironmentId starts with "wsl:": route to the WSL picker
-    //     using the distro encoded in the id (or the user's selected
-    //     wslDistro when the id is the "wsl:default" sentinel).
-    //   - anything else (incl. PRIMARY_LOCAL_ENVIRONMENT_ID): primary picker.
-    const targetId = options?.targetEnvironmentId;
-    const wslDistroFromTarget =
-      targetId !== undefined && targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX)
-        ? extractWslDistroFromEnvironmentId(targetId)
-        : null;
-    const useWsl =
-      targetId !== undefined &&
-      targetId !== PRIMARY_LOCAL_ENVIRONMENT_ID &&
-      targetId.startsWith(DesktopWslBackend.WSL_INSTANCE_ID_PREFIX);
-    const settings = yield* appSettings.get;
-    // Fall back to the persisted wslDistro when the id is the
-    // "wsl:default" sentinel; the orchestrator uses the same fallback
-    // for the actual backend.
-    const wslDistro = useWsl ? (wslDistroFromTarget ?? settings.wslDistro) : null;
-    const defaultPath = useWsl
-      ? Option.fromNullishOr(
-          resolveWslPickFolderDefaultPath(
-            options,
-            { distro: wslDistro },
-            yield* wslEnvironment.listDistros,
-            Option.getOrNull(yield* wslEnvironment.getUserHome(wslDistro)),
-          ),
-        )
-      : environment.resolvePickFolderDefaultPath(options);
+    // targetEnvironmentId is accepted for schema compatibility but ignored for
+    // routing — folder picks always use the native primary-environment dialog.
+    void options?.targetEnvironmentId;
     const selectedPath = yield* dialog.pickFolder({
       owner: yield* electronWindow.focusedMainOrFirst,
-      defaultPath,
+      defaultPath: environment.resolvePickFolderDefaultPath(options),
     });
-    if (Option.isNone(selectedPath)) {
-      return null;
-    }
-    if (!useWsl) {
-      return selectedPath.value;
-    }
-
-    const linuxUncPath = wslUncPathToLinuxPath(selectedPath.value);
-    if (linuxUncPath !== null) {
-      return linuxUncPath;
-    }
-
-    const converted = yield* wslEnvironment.windowsToWslPath(
-      extractDistroFromUncPath(selectedPath.value) ?? wslDistro,
-      selectedPath.value,
-    );
-    return Option.getOrElse(converted, () => selectedPath.value);
+    return Option.getOrNull(selectedPath);
   }),
 });
 

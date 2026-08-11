@@ -21,9 +21,7 @@
     "effect": "catalog:",
     "electron": "41.5.0",
     "electron-store": "^8.2.0",
-    "electron-updater": "^6.6.2",
-    "playwright-core": "1.60.0",
-    "react-grab": "^0.1.32"
+    "electron-updater": "^6.6.2"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
@@ -33,5 +31,5 @@
     "tailwindcss": "^4.0.0",
     "vite-plus": "catalog:"
   },
-  "productName": "T3 Code (Alpha)"
+  "productName": "Ronin (Alpha)"
 }

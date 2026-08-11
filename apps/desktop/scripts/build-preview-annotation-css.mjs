@@ -8,20 +8,18 @@ import { compile } from "tailwindcss";
 const directory = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const appRoot = NodePath.join(directory, "..");
 const sourcePath = NodePath.join(appRoot, "src", "preview", "Annotation.css");
-const preloadPath = NodePath.join(appRoot, "src", "preview", "PickPreload.ts");
 const outputPath = NodePath.join(appRoot, "src", "preview", "AnnotationStyles.generated.ts");
 const require = NodeModule.createRequire(import.meta.url);
 const tailwindRoot = NodePath.dirname(require.resolve("tailwindcss/package.json"));
 
-const [annotationSource, preloadSource, themeSource, preflightSource] = await Promise.all([
+const [annotationSource, themeSource, preflightSource] = await Promise.all([
   NodeFSP.readFile(sourcePath, "utf8"),
-  NodeFSP.readFile(preloadPath, "utf8"),
   NodeFSP.readFile(NodePath.join(tailwindRoot, "theme.css"), "utf8"),
   NodeFSP.readFile(NodePath.join(tailwindRoot, "preflight.css"), "utf8"),
 ]);
 
 const candidates = new Set(
-  Array.from(preloadSource.matchAll(/!?-?[A-Za-z0-9_:@/.[\]()%,-]+/g), (match) => match[0]),
+  Array.from(annotationSource.matchAll(/!?-?[A-Za-z0-9_:@/.[\]()%,-]+/g), (match) => match[0]),
 );
 const compilerInput = [
   themeSource,

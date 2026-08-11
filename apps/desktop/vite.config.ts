@@ -47,22 +47,5 @@ export default defineConfig({
       outExtensions: () => ({ js: ".cjs" }),
       entry: ["src/preload.ts"],
     },
-    {
-      format: "cjs",
-      outDir: "dist-electron",
-      sourcemap: true,
-      outExtensions: () => ({ js: ".cjs" }),
-      entry: ["src/preview-pick-preload.ts"],
-      deps: {
-        alwaysBundle: (id) => id === "react-grab" || id.startsWith("react-grab/"),
-      },
-    },
-    {
-      format: "cjs",
-      outDir: "dist-electron",
-      sourcemap: true,
-      outExtensions: () => ({ js: ".cjs" }),
-      entry: ["src/preview-pip-preload.ts"],
-    },
   ],
 });

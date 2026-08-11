@@ -18,7 +18,7 @@ const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 
 export const makeCli = () =>
   Command.make("t3", { ...sharedServerCommandFlags }).pipe(
-    Command.withDescription("Run the T3 Code server."),
+    Command.withDescription("Run the Ronin server."),
     Command.withHandler((flags) => runServerCommand(flags)),
     Command.withSubcommands([
       startCommand,

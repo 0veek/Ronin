@@ -30,7 +30,11 @@ describe("isTransportConnectionErrorMessage", () => {
     expect(isTransportConnectionErrorMessage("ClientProtocolError: socket closed")).toBe(true);
   });
 
-  it("returns true for the T3 server WebSocket message", () => {
+  it("returns true for the server WebSocket message under either brand name", () => {
+    expect(
+      isTransportConnectionErrorMessage("Unable to connect to the Ronin server WebSocket."),
+    ).toBe(true);
+    // Pre-rebrand servers still send the old wording.
     expect(isTransportConnectionErrorMessage("Unable to connect to the T3 server WebSocket.")).toBe(
       true,
     );

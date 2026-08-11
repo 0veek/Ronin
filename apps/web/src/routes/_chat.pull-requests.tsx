@@ -936,7 +936,7 @@ function PullRequestsRouteView() {
       ) : !pullRequestsSupported ? (
         <PullRequestsUnavailableState
           title="Pull requests unavailable"
-          error="Update this environment's T3 Code server to browse pull requests."
+          error="Update this environment's Ronin server to browse pull requests."
         />
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} />

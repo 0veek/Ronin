@@ -266,14 +266,13 @@ export const DesktopUpdateCheckResultSchema = Schema.Struct({
 export const PRIMARY_LOCAL_ENVIRONMENT_ID = "primary";
 
 export interface DesktopEnvironmentBootstrap {
-  // Stable backend instance id (e.g. "primary" or "wsl:ubuntu"). The
-  // web env runtime keys local environments off this so projects
-  // routed to a specific backend reopen against the same one.
+  // Stable backend instance id (e.g. "primary"). The web env runtime keys
+  // local environments off this so projects routed to a specific backend
+  // reopen against the same one.
   id: string;
   label: string;
-  // Concrete WSL distro used by the current backend run. This stays separate
-  // from id because a default-tracking instance keeps the stable
-  // "wsl:default" IPC target while each run launches a specific distro.
+  // Optional concrete distro/runtime label for the current backend run.
+  // Kept for schema stability; may be null or omitted.
   runningDistro?: string | null;
   httpBaseUrl: string | null;
   wsBaseUrl: string | null;
@@ -424,9 +423,8 @@ export interface PickFolderOptions {
   initialPath?: string | null;
   // When set, the desktop dialog opens against the named backend's
   // filesystem instead of the primary's. Used by callers that already
-  // know which local environment they're targeting (e.g. opening a
-  // project that lives inside WSL). Omitting it keeps the historical
-  // behavior so non-WSL users never see a different picker.
+  // know which local environment they're targeting. Omitting it keeps
+  // the historical primary-picker behavior.
   targetEnvironmentId?: string;
 }
 
@@ -450,48 +448,6 @@ export const PickedThemeFileSchema = Schema.Struct({
   name: Schema.String,
   size: Schema.Number,
   text: Schema.String,
-});
-
-export interface DesktopWslDistro {
-  name: string;
-  isDefault: boolean;
-  version: 1 | 2;
-}
-
-export const DesktopWslDistroSchema = Schema.Struct({
-  name: Schema.String,
-  isDefault: Schema.Boolean,
-  version: Schema.Literals([1, 2]),
-});
-
-export interface DesktopWslState {
-  // True when the user has opted the WSL backend in; the actual backend
-  // process is registered with the desktop pool independently of this
-  // flag and may take a moment to come up after the user enables it.
-  enabled: boolean;
-  // null means "track the current WSL default distro".
-  distro: string | null;
-  available: boolean;
-  // When true (and `enabled` is also true) the desktop runs only the
-  // WSL backend as the primary; the Windows-side Node backend is not
-  // started. Toggling this requires an app restart because the
-  // primary backend's spec is captured once at layer init.
-  wslOnly: boolean;
-  distros: readonly DesktopWslDistro[];
-  // Reason the dual-mode WSL backend last failed preflight (no node, wrong
-  // version, missing build tools), or null. Surfaced inline in Connections
-  // settings. Always null in wsl-only mode — that path shows a dialog and
-  // falls back to Windows instead.
-  preflightError: string | null;
-}
-
-export const DesktopWslStateSchema = Schema.Struct({
-  enabled: Schema.Boolean,
-  distro: Schema.NullOr(Schema.String),
-  available: Schema.Boolean,
-  wslOnly: Schema.Boolean,
-  distros: Schema.Array(DesktopWslDistroSchema),
-  preflightError: Schema.NullOr(Schema.String),
 });
 
 /**
@@ -1026,10 +982,6 @@ export interface DesktopBridge {
     readonly port?: number;
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
-  getWslState: () => Promise<DesktopWslState>;
-  setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
-  setWslDistro: (distro: string | null) => Promise<DesktopWslState>;
-  setWslOnly: (enabled: boolean) => Promise<DesktopWslState>;
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
   /**
    * Multi-select JSON file picker that opens in the VS Code extensions

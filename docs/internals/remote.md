@@ -1,6 +1,6 @@
 # Remote Architecture
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Ronin? See [docs/user](../user/).
 
 Remote environments are shipped, not planned. Direct, bearer-paired, relay-tunneled, Tailscale, and
 desktop-managed SSH access all exist today. This document describes the model they share and where

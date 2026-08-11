@@ -1,6 +1,6 @@
 # Connection Runtime
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Ronin? See [docs/user](../user/).
 
 The connection runtime is shared by the web renderer (embedded in desktop). It
 owns connectivity, authentication, retries, transport lifetime, cached

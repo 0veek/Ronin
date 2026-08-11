@@ -1,0 +1,31 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Icon Composer layer source for the Ronin mark. Single colour, because this
+    layer is rendered through Icon Composer's glass and translucency treatment.
+    Scaled to 0.84 about the centre so the mark occupies roughly the footprint
+    the old wordmark did, keeping the layer scale in icon.json valid.
+
+    Generated from assets/brand/ronin-mark-mono.svg - edit that file, not this
+    copy, then mirror the change into all three app-icon.icon projects.
+  -->
+  <defs>
+    <mask id="ronin-hat-halo" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+      <rect width="128" height="128" fill="white" />
+      <path
+        d="M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z"
+        fill="black"
+        stroke="black"
+        stroke-width="7"
+        stroke-linejoin="round"
+      />
+    </mask>
+  </defs>
+  <g transform="translate(64 64) scale(0.84) translate(-64 -64)">
+    <path
+      d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z"
+      fill="white"
+      mask="url(#ronin-hat-halo)"
+    />
+    <path d="M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z" fill="white" />
+  </g>
+</svg>

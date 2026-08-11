@@ -122,7 +122,7 @@
           },
         };
         // Keep the built-in mode list in sync with the runtime so the selected
-        // T3 Chat palette is visible before React has mounted.
+        // Sakura palette is visible before React has mounted.
         const BUILT_IN_THEME_MODES = Object.fromEntries(
           Object.entries(BUILT_IN_THEME_PALETTES).map(([id, palettes]) => [
             id,
@@ -201,7 +201,7 @@
         try {
           const storedTheme = window.localStorage.getItem("t3code:theme");
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          // Older builds stored the dark T3 Chat palette as its own theme id
+          // Older builds stored the dark Sakura palette as its own theme id
           // and every maintainer theme under a t3- prefix; keep those
           // preferences readable. Mirrors the runtime's legacy alias table.
           const LEGACY_THEME_IDS = {
@@ -429,19 +429,41 @@
         height: 96px;
       }
 
+      /* The mark, not the app-icon tile: inlined so the boot screen paints with
+         no extra request, and drawn in currentColor so it follows the resolved
+         theme instead of flashing a fixed-colour badge over a themed canvas. */
       #boot-shell-logo {
         width: 64px;
         height: 64px;
-        object-fit: contain;
+      }
+
+      #boot-shell-logo .kasa {
+        fill: currentColor;
+      }
+
+      #boot-shell-logo .blade {
+        fill: #c6303a;
       }
     </style>
-    <title>T3 Code (Alpha)</title>
+    <title>Ronin (Alpha)</title>
   </head>
   <body>
     <div id="root">
       <div id="boot-shell">
-        <div id="boot-shell-card" aria-label="T3 Code splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+        <div id="boot-shell-card" aria-label="Ronin splash screen">
+          <svg
+            id="boot-shell-logo"
+            viewBox="6 6 116 116"
+            role="img"
+            aria-label="Ronin"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path class="blade" d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z" />
+            <path
+              class="kasa"
+              d="M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z"
+            />
+          </svg>
         </div>
       </div>
     </div>

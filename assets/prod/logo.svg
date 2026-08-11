@@ -1,4 +1,54 @@
 <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M0 10C0 4.47715 4.47715 0 10 0H118C123.523 0 128 4.47715 128 10V118C128 123.523 123.523 128 118 128H10C4.47715 128 0 123.523 0 118V10Z" fill="black"/>
-<path d="M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z" fill="white"/>
+  <!--
+    Production Ronin logo with the corners already rounded, for READMEs, release
+    notes, and anywhere a single self-contained file is easier than the raster
+    exports. The artwork is assets/brand/ronin-icon.svg; regenerate both from
+    there rather than editing this copy.
+  -->
+  <defs>
+    <clipPath id="logo-corners">
+      <path
+        d="M0 40C0 17.909 17.909 0 40 0H88C110.091 0 128 17.909 128 40V88C128 110.091 110.091 128 88 128H40C17.909 128 0 110.091 0 88V40Z"
+      />
+    </clipPath>
+    <linearGradient id="logo-ink" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E1E27" />
+      <stop offset="0.55" stop-color="#0E0E13" />
+      <stop offset="1" stop-color="#050508" />
+    </linearGradient>
+    <radialGradient
+      id="logo-ember"
+      cx="0"
+      cy="0"
+      r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(98 22) rotate(133) scale(88 80)"
+    >
+      <stop stop-color="#C6303A" stop-opacity="0.4" />
+      <stop offset="0.55" stop-color="#8E1C26" stop-opacity="0.14" />
+      <stop offset="1" stop-color="#06060A" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="logo-kasa" x1="26" y1="26" x2="102" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8" />
+      <stop offset="1" stop-color="#D8CEBB" />
+    </linearGradient>
+    <linearGradient id="logo-blade" x1="120" y1="10" x2="16" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F2646F" />
+      <stop offset="0.5" stop-color="#C6303A" />
+      <stop offset="1" stop-color="#7C151C" />
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#logo-corners)">
+    <rect width="128" height="128" fill="#0B0B10" />
+    <rect width="128" height="128" fill="url(#logo-ink)" />
+    <rect width="128" height="128" fill="url(#logo-ember)" />
+    <g transform="translate(64 64) scale(0.76) translate(-64 -64)">
+      <path d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z" fill="url(#logo-blade)" />
+      <path
+        d="M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z"
+        fill="url(#logo-kasa)"
+      />
+    </g>
+  </g>
 </svg>

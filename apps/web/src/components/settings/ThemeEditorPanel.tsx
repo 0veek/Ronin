@@ -100,7 +100,7 @@ const THEME_EDITOR_ROLE_GROUPS: ReadonlyArray<{
 type ThemeEditorColors = Record<ThemeColorRole, string>;
 type ThemeEditorColorsByAppearance = Record<ThemeAppearance, ThemeEditorColors>;
 
-// A draft with no source theme starts as the standard T3 Code look — the
+// A draft with no source theme starts as the standard Ronin look — the
 // palette on screen when no theme is installed — so creating from the default
 // theme changes nothing until the user edits a color.
 function getThemeEditorDefaults(appearance: ThemeAppearance): ThemeEditorColors {
@@ -858,7 +858,7 @@ export function ThemeEditorPanel({
     <label className="grid cursor-pointer grid-cols-[minmax(0,1fr)_minmax(0,2fr)] items-center gap-3">
       <span className="text-sm font-medium">Sidebar artwork</span>
       <span className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-        <span>Show T3 Code environment artwork</span>
+        <span>Show Ronin environment artwork</span>
         <Switch
           aria-label="Allow sidebar artwork with this theme"
           checked={sidebarArtwork}

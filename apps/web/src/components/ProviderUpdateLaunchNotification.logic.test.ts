@@ -28,7 +28,6 @@ import {
   isProviderUpdateCandidate,
   isTerminalProviderUpdatePhase,
   localEnvironmentUpdateNotificationKey,
-  parseWslDistroFromInstanceId,
   providerUpdateNotificationKey,
   resolveEnvironmentUpdateRowStatus,
   type LocalEnvironmentProvidersInput,
@@ -948,44 +947,28 @@ describe("provider update launch notification logic", () => {
     it("labels environments by platform so they are distinguishable", () => {
       expect(
         deriveEnvironmentDisplayLabel({
-          isWsl: false,
-          wslDistro: null,
           platformOs: "windows",
           fallbackLabel: "Jgratton24",
         }),
       ).toBe("Windows");
       expect(
         deriveEnvironmentDisplayLabel({
-          isWsl: true,
-          wslDistro: null,
           platformOs: "linux",
           fallbackLabel: "Jgratton24",
         }),
-      ).toBe("WSL");
+      ).toBe("Linux");
       expect(
         deriveEnvironmentDisplayLabel({
-          isWsl: true,
-          wslDistro: "ubuntu",
-          platformOs: "linux",
+          platformOs: "darwin",
           fallbackLabel: "Jgratton24",
         }),
-      ).toBe("WSL · ubuntu");
+      ).toBe("macOS");
       expect(
         deriveEnvironmentDisplayLabel({
-          isWsl: false,
-          wslDistro: null,
           platformOs: undefined,
           fallbackLabel: "My Device",
         }),
       ).toBe("My Device");
-    });
-
-    it("parses the WSL distro from the backend instance id", () => {
-      expect(parseWslDistroFromInstanceId("wsl:ubuntu")).toBe("ubuntu");
-      expect(parseWslDistroFromInstanceId("wsl:default")).toBeNull();
-      expect(parseWslDistroFromInstanceId("wsl:")).toBeNull();
-      expect(parseWslDistroFromInstanceId("ssh:host")).toBeNull();
-      expect(parseWslDistroFromInstanceId(undefined)).toBeNull();
     });
   });
 

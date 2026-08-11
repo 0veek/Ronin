@@ -465,12 +465,10 @@ export const make = Effect.gen(function* () {
     yield* Ref.set(updateInstallInFlightRef, true);
 
     return yield* Effect.gen(function* () {
-      // Stop every backend in the pool, not just the primary. With
-      // parallel WSL + Windows backends, leaving the WSL instance up
-      // means quitAndInstall's app.quit() exits before the pool's
-      // scope cascade has a chance to run its stop finalizer, so the
-      // WSL child gets hard-killed by the OS instead of receiving
-      // SIGTERM + grace. Stops run concurrently with the same 5s
+      // Stop every backend in the pool, not just the primary.
+      // quitAndInstall's app.quit() can race the pool's scope cascade;
+      // stopping here ensures children receive SIGTERM + grace rather
+      // than being hard-killed. Stops run concurrently with the same 5s
       // budget the primary had on its own.
       const instances = yield* pool.list;
       yield* Effect.forEach(

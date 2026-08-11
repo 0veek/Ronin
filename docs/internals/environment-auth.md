@@ -1,6 +1,6 @@
 # Environment Authentication Profile
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Ronin? See [docs/user](../user/).
 
 Environment authorization is capability-based. A session carries zero or more
 OAuth-style scope strings:

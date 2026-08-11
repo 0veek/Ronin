@@ -14,9 +14,9 @@ import {
 
 /**
  * A local environment is either the same-origin primary backend or a
- * desktop-local secondary (the parallel WSL backend), which connects over
- * loopback with a bearer token and carries a `local:<backendInstanceId>`
- * connection id. SSH, relay, and other remote targets are excluded.
+ * desktop-local secondary, which connects over loopback with a bearer token
+ * and carries a `local:<backendInstanceId>` connection id. SSH, relay, and
+ * other remote targets are excluded.
  */
 function isLocalConnectionTarget(target: ConnectionCatalogEntry["target"]): boolean {
   return target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target);
@@ -43,9 +43,9 @@ function normalizeConnectionState(phase: string | undefined): EnvironmentUpdateC
 
 /**
  * Reactively enumerate the enabled local environments (the primary plus any
- * desktop-local secondary such as WSL) with each one's full provider list and a
- * flag for whether any is still connecting. Drives the launch popover's gating
- * and its per-environment update triggers.
+ * desktop-local secondary) with each one's full provider list and a flag for
+ * whether any is still connecting. Drives the launch popover's gating and its
+ * per-environment update triggers.
  */
 export function useLocalEnvironmentUpdateGroups(): {
   readonly groups: LocalEnvironmentUpdateGroup[];
@@ -67,13 +67,11 @@ export function useLocalEnvironmentUpdateGroups(): {
 
       inputs.push({
         environmentId: environment.environmentId,
-        // Secondaries carry a meaningful label straight from the platform source
-        // (e.g. "WSL (Ubuntu)"). The primary's catalog label can be the account
-        // name, so fall back to its platform OS so the row reads "Windows"/"Linux".
+        // Secondaries carry a meaningful label straight from the platform
+        // source. The primary's catalog label can be the account name, so fall
+        // back to its platform OS so the row reads "Windows"/"Linux"/"macOS".
         label: isPrimary
           ? deriveEnvironmentDisplayLabel({
-              isWsl: false,
-              wslDistro: null,
               platformOs: serverConfig?.environment.platform.os,
               fallbackLabel: environment.label,
             })

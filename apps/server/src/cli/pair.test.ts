@@ -205,7 +205,7 @@ describe("t3 pair", () => {
       const rendered = String(
         typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
       );
-      assert.include(rendered, "No running T3 Code server found.");
+      assert.include(rendered, "No running Ronin server found.");
       assert.include(rendered, "npx t3 serve");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -235,7 +235,7 @@ describe("t3 pair", () => {
         const rendered = String(
           typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
         );
-        assert.include(rendered, "No running T3 Code server found.");
+        assert.include(rendered, "No running Ronin server found.");
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );
@@ -261,7 +261,7 @@ describe("t3 pair", () => {
       const rendered = String(
         typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
       );
-      assert.include(rendered, "No running T3 Code server found.");
+      assert.include(rendered, "No running Ronin server found.");
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 });

@@ -1,6 +1,6 @@
-# T3 Code docs
+# Ronin docs
 
-## Using T3 Code
+## Using Ronin
 
 - [Install and first run](./user/install.md)
 - [Permission modes](./user/permission-modes.md)
@@ -15,7 +15,7 @@
 
 ---
 
-## Working on T3 Code
+## Working on Ronin
 
 Everything below is for maintainers. Setup lives in the [root README](../README.md);
 policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../AGENTS.md).

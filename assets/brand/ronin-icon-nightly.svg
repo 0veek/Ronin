@@ -1,0 +1,53 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Nightly-channel Ronin icon. Keeps the night-sky gradient the nightly build
+    has always used so a nightly install stays distinguishable in the dock; only
+    the mark changed. Mark geometry mirrors ronin-icon.svg - edit both together.
+  -->
+  <defs>
+    <linearGradient id="night-sky" x1="12" y1="6" x2="116" y2="124" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#07152F" />
+      <stop offset="0.5" stop-color="#151443" />
+      <stop offset="1" stop-color="#32155B" />
+    </linearGradient>
+    <radialGradient
+      id="night-glow"
+      cx="0"
+      cy="0"
+      r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(90 28) rotate(137) scale(78 70)"
+    >
+      <stop stop-color="#5165D8" stop-opacity="0.4" />
+      <stop offset="0.5" stop-color="#283075" stop-opacity="0.16" />
+      <stop offset="1" stop-color="#111635" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="night-kasa" x1="26" y1="26" x2="102" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8" />
+      <stop offset="1" stop-color="#CFC9DE" />
+    </linearGradient>
+    <linearGradient
+      id="night-blade"
+      x1="120"
+      y1="10"
+      x2="16"
+      y2="118"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#F2646F" />
+      <stop offset="0.5" stop-color="#C6303A" />
+      <stop offset="1" stop-color="#6E1230" />
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" fill="url(#night-sky)" />
+  <rect width="128" height="128" fill="url(#night-glow)" />
+
+  <g transform="translate(64 64) scale(0.76) translate(-64 -64)">
+    <path d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z" fill="url(#night-blade)" />
+    <path
+      d="M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z"
+      fill="url(#night-kasa)"
+    />
+  </g>
+</svg>

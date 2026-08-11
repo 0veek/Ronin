@@ -1,0 +1,31 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Ronin mark: the kasa (sugegasa) worn by a masterless samurai, with a katana
+    laid behind it so only the tip and the hilt end show. The hat is drawn last
+    and stays a single unbroken shape, which is what keeps the mark readable at
+    favicon sizes - an earlier version cut the blade through the hat and the
+    silhouette fell apart below 32px.
+
+    The blade is a lens built from one centreline, tips at (120,10) and
+    (16,118). Control points sit 9 units off that line because a cubic only
+    carries 3/4 of a control-point offset to its midpoint, so 9 gives the ~7
+    unit half-width the shape is drawn for.
+  -->
+  <defs>
+    <linearGradient id="ronin-kasa" x1="26" y1="26" x2="102" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8" />
+      <stop offset="1" stop-color="#DCD2C0" />
+    </linearGradient>
+    <linearGradient id="ronin-blade" x1="120" y1="10" x2="16" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#EC5A66" />
+      <stop offset="0.5" stop-color="#C6303A" />
+      <stop offset="1" stop-color="#87191F" />
+    </linearGradient>
+  </defs>
+
+  <path d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z" fill="url(#ronin-blade)" />
+  <path
+    d="M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z"
+    fill="url(#ronin-kasa)"
+  />
+</svg>

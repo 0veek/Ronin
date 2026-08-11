@@ -1,0 +1,46 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!--
+    Development-channel Ronin icon. Keeps the blueprint blue the dev build has
+    always used so a dev window is still tellable from a release window at a
+    glance in the dock; only the mark changed. Mark geometry mirrors
+    ronin-icon.svg - edit both together.
+  -->
+  <defs>
+    <linearGradient id="dev-paper" x1="36" y1="0" x2="92" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#67C2FF" />
+      <stop offset="0.44" stop-color="#347FF8" />
+      <stop offset="1" stop-color="#1538D0" />
+    </linearGradient>
+    <radialGradient
+      id="dev-glow"
+      cx="0"
+      cy="0"
+      r="1"
+      gradientUnits="userSpaceOnUse"
+      gradientTransform="translate(92 22) rotate(137) scale(78 70)"
+    >
+      <stop stop-color="#D4F6FF" stop-opacity="0.62" />
+      <stop offset="0.52" stop-color="#65C8FF" stop-opacity="0.24" />
+      <stop offset="1" stop-color="#276AF1" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="dev-kasa" x1="26" y1="26" x2="102" y2="98" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" />
+      <stop offset="1" stop-color="#DCE9FA" />
+    </linearGradient>
+    <linearGradient id="dev-blade" x1="120" y1="10" x2="16" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E2A6B" />
+      <stop offset="1" stop-color="#06153C" />
+    </linearGradient>
+  </defs>
+
+  <rect width="128" height="128" fill="url(#dev-paper)" />
+  <rect width="128" height="128" fill="url(#dev-glow)" />
+
+  <g transform="translate(64 64) scale(0.76) translate(-64 -64)">
+    <path d="M120 10C94 54 59 90 16 118C46 78 81 42 120 10Z" fill="url(#dev-blade)" />
+    <path
+      d="M64 22C84 40 102 60 118 82C98 101 30 101 10 82C26 60 44 40 64 22Z"
+      fill="url(#dev-kasa)"
+    />
+  </g>
+</svg>
