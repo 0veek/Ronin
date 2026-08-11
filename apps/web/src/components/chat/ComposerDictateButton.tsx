@@ -1,11 +1,11 @@
 import { MicIcon, MicOffIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useRef } from "react";
 
-import { useComposerHandleContext } from "~/composerHandleContext";
 import { useDictation } from "~/hooks/useDictation";
 import { useSpeechToTextSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useComposerDictationInsert } from "./composerDictationContext";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
@@ -28,16 +28,34 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
   readonly matchesShortcut: (event: KeyboardEvent) => boolean;
 }) {
   const { enabled, provider } = useSpeechToTextSettings();
-  const composerHandleRef = useComposerHandleContext();
+  const insertDictatedText = useComposerDictationInsert();
 
   const onTranscript = useCallback(
     (text: string) => {
-      // ensureLeadingBoundary so speaking twice in a row does not run the two
-      // takes together into one word.
-      composerHandleRef?.current?.insertTextAtEnd(text, { ensureLeadingBoundary: true });
-      composerHandleRef?.current?.focusAtEnd();
+      // Both branches would otherwise transcribe successfully and drop the
+      // text on the floor, which is indistinguishable from dictation being
+      // broken.
+      if (insertDictatedText === null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Dictation",
+            description: "No composer is attached to receive the transcript.",
+          }),
+        );
+        return;
+      }
+      if (!insertDictatedText(text)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Dictation",
+            description: `The composer would not accept the transcript: "${text}"`,
+          }),
+        );
+      }
     },
-    [composerHandleRef],
+    [insertDictatedText],
   );
 
   const dictation = useDictation({ onTranscript, provider });
