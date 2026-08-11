@@ -16,11 +16,14 @@ import {
   type ThemeAppearance,
   type ThemeDefinition,
   type ThemeHalves,
+  AIZOME_THEME,
   CARBON_THEME,
   GRAPHITE_THEME,
   OBSIDIAN_THEME,
   OLED_VOID_THEME,
   PAPER_THEME,
+  TSUKIMI_THEME,
+  URUSHI_THEME,
 } from "../../themePalette";
 import {
   AlertDialog,
@@ -49,7 +52,10 @@ import { ThemeWireframe } from "./ThemeWireframe";
 // Ordered light-first, then by how dark the canvas gets.
 const MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = [
   PAPER_THEME,
+  TSUKIMI_THEME,
   GRAPHITE_THEME,
+  AIZOME_THEME,
+  URUSHI_THEME,
   OBSIDIAN_THEME,
   CARBON_THEME,
   OLED_VOID_THEME,

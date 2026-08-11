@@ -78,6 +78,48 @@
               chrome: "oklch(0.188083 0.006031 285.806)",
             },
           },
+          tsukimi: {
+            light: {
+              background: "oklch(0.959894 0.006946 98.177)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.512233 0.034286 174.771)",
+              chrome: "oklch(0.959894 0.006946 98.177)",
+            },
+            dark: {
+              background: "oklch(0.215163 0.009777 173.192)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.705446 0.043964 170.951)",
+              chrome: "oklch(0.215163 0.009777 173.192)",
+            },
+          },
+          aizome: {
+            light: {
+              background: "oklch(0.956075 0.004879 239.806)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.460781 0.090032 257.013)",
+              chrome: "oklch(0.956075 0.004879 239.806)",
+            },
+            dark: {
+              background: "oklch(0.200147 0.018708 255.739)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.655989 0.090428 265.787)",
+              chrome: "oklch(0.200147 0.018708 255.739)",
+            },
+          },
+          urushi: {
+            light: {
+              background: "oklch(0.954036 0.005165 51.41)",
+              foreground: "oklch(0.222003 0.03479 328.979)",
+              accent: "oklch(0.488723 0.14076 15.778)",
+              chrome: "oklch(0.954036 0.005165 51.41)",
+            },
+            dark: {
+              background: "oklch(0.180375 0.021581 354.729)",
+              foreground: "oklch(0.990339 0.008411 325.64)",
+              accent: "oklch(0.620247 0.148157 18.313)",
+              chrome: "oklch(0.180375 0.021581 354.729)",
+            },
+          },
           obsidian: {
             light: {
               background: "oklch(0.971767 0.004466 197.083)",
@@ -129,12 +171,15 @@
             Object.keys(palettes),
           ]),
         );
-        // Only Paper is light-first; the rest of the curated set is dark-first,
-        // so the base appearance can no longer be assumed. Mirrors each
+        // Paper and Tsukimi are light-first; the rest of the curated set is
+        // dark-first, so the base appearance cannot be assumed. Mirrors each
         // ThemeDefinition's `appearance`.
         const BUILT_IN_THEME_APPEARANCES = {
           paper: "light",
           graphite: "dark",
+          tsukimi: "light",
+          aizome: "dark",
+          urushi: "dark",
           obsidian: "dark",
           carbon: "dark",
           "oled-void": "dark",
@@ -148,6 +193,9 @@
           "dark",
           "paper",
           "graphite",
+          "tsukimi",
+          "aizome",
+          "urushi",
           "t3-chat",
           "grove",
           "ocean",

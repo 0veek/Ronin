@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import indexHtml from "../index.html?raw";
 import {
+  AIZOME_THEME,
   CARBON_THEME,
   CUSTOM_THEMES_STORAGE_KEY,
   getDefaultThemeColors,
@@ -12,6 +13,8 @@ import {
   OBSIDIAN_THEME,
   OLED_VOID_THEME,
   PAPER_THEME,
+  TSUKIMI_THEME,
+  URUSHI_THEME,
   resolveThemeAppearance,
   THEME_APPEARANCE_MODE_STORAGE_KEY,
   THEME_FOLLOW_SYSTEM_STORAGE_KEY,
@@ -180,6 +183,21 @@ describe("index.html boot script", () => {
     {
       name: "Graphite follows a light OS",
       storage: { [THEME_STORAGE_KEY]: "graphite", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      prefersDark: false,
+    },
+    {
+      name: "Tsukimi follows a dark OS",
+      storage: { [THEME_STORAGE_KEY]: "tsukimi", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      prefersDark: true,
+    },
+    {
+      name: "Aizome follows a light OS",
+      storage: { [THEME_STORAGE_KEY]: "aizome", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
+      prefersDark: false,
+    },
+    {
+      name: "Urushi stays dark when not following a light OS",
+      storage: { [THEME_STORAGE_KEY]: "urushi", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "false" },
       prefersDark: false,
     },
     {
@@ -359,7 +377,10 @@ describe("index.html boot script", () => {
   it("keeps every built-in boot splash in sync with the real palettes", () => {
     for (const theme of [
       PAPER_THEME,
+      TSUKIMI_THEME,
       GRAPHITE_THEME,
+      AIZOME_THEME,
+      URUSHI_THEME,
       OBSIDIAN_THEME,
       CARBON_THEME,
       OLED_VOID_THEME,
@@ -383,10 +404,10 @@ describe("index.html boot script", () => {
         expect(boot.metaContent).toBe(colors!.chrome);
       }
 
-      // Only Paper is light-first, so the boot script can no longer assume a
-      // base appearance. With follow-system off and no explicit mode stored,
-      // the splash has to land on the definition's own appearance -- this is
-      // what pins the BUILT_IN_THEME_APPEARANCES copy to the real palettes.
+      // The boot script cannot assume a base appearance. With follow-system
+      // off and no explicit mode stored, the splash has to land on the
+      // definition's own appearance -- this is what pins the
+      // BUILT_IN_THEME_APPEARANCES copy to the real palettes.
       const base = runBootScript({
         storage: {
           [THEME_STORAGE_KEY]: theme.id,

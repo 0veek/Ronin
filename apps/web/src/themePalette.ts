@@ -6,6 +6,12 @@ export const PAPER_THEME_ID = "paper" as const;
 export const PAPER_THEME_LABEL = "Paper";
 export const GRAPHITE_THEME_ID = "graphite" as const;
 export const GRAPHITE_THEME_LABEL = "Graphite";
+export const TSUKIMI_THEME_ID = "tsukimi" as const;
+export const TSUKIMI_THEME_LABEL = "Tsukimi";
+export const AIZOME_THEME_ID = "aizome" as const;
+export const AIZOME_THEME_LABEL = "Aizome";
+export const URUSHI_THEME_ID = "urushi" as const;
+export const URUSHI_THEME_LABEL = "Urushi";
 export const SAKURA_THEME_ID = "t3-chat" as const;
 export const GROVE_THEME_ID = "grove" as const;
 export const OCEAN_THEME_ID = "ocean" as const;
@@ -130,6 +136,9 @@ const RESERVED_THEME_IDS = new Set([
   "dark",
   PAPER_THEME_ID,
   GRAPHITE_THEME_ID,
+  TSUKIMI_THEME_ID,
+  AIZOME_THEME_ID,
+  URUSHI_THEME_ID,
   SAKURA_THEME_ID,
   GROVE_THEME_ID,
   OCEAN_THEME_ID,
@@ -1508,6 +1517,63 @@ export const GRAPHITE_THEME: ThemeDefinition = {
   sidebarArtwork: true,
 };
 
+/**
+ * Moon-viewing palette: warm paper, weathered pine, and a restrained clay-red
+ * action. Light-first, but its night half stays green-black rather than grey.
+ */
+export const TSUKIMI_THEME: ThemeDefinition = {
+  id: TSUKIMI_THEME_ID,
+  label: TSUKIMI_THEME_LABEL,
+  appearance: "light",
+  colors: {
+    ...createManagedThemeColors("light", "#f1efe4", "#526d65"),
+    ...themeActionColors("#9f5948"),
+  },
+  variants: {
+    dark: {
+      ...createManagedThemeColors("dark", "#151b19", "#86aa9d"),
+      ...themeActionColors("#d3836f"),
+    },
+  },
+  sidebarArtwork: true,
+};
+
+/** Indigo-dyed cloth with a persimmon cord — cool, inky, and quietly vivid. */
+export const AIZOME_THEME: ThemeDefinition = {
+  id: AIZOME_THEME_ID,
+  label: AIZOME_THEME_LABEL,
+  appearance: "dark",
+  colors: {
+    ...createManagedThemeColors("dark", "#0d1622", "#7790c9"),
+    ...themeActionColors("#d17a55"),
+  },
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#edf1f4", "#36598a"),
+      ...themeActionColors("#b85d3e"),
+    },
+  },
+  sidebarArtwork: true,
+};
+
+/** Black-red lacquer, cinnabar seal, and aged brass action accents. */
+export const URUSHI_THEME: ThemeDefinition = {
+  id: URUSHI_THEME_ID,
+  label: URUSHI_THEME_LABEL,
+  appearance: "dark",
+  colors: {
+    ...createManagedThemeColors("dark", "#1a0d12", "#d05b63"),
+    ...themeActionColors("#c69b4c"),
+  },
+  variants: {
+    light: {
+      ...createManagedThemeColors("light", "#f5ece7", "#9f3544"),
+      ...themeActionColors("#806a2f"),
+    },
+  },
+  sidebarArtwork: true,
+};
+
 /** Void-black graphite with electric teal — dark-first proprietary set. */
 export const OBSIDIAN_THEME: ThemeDefinition = {
   id: OBSIDIAN_THEME_ID,
@@ -1595,7 +1661,10 @@ export const OLED_VOID_THEME: ThemeDefinition = {
  */
 const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = [
   PAPER_THEME,
+  TSUKIMI_THEME,
   GRAPHITE_THEME,
+  AIZOME_THEME,
+  URUSHI_THEME,
   OBSIDIAN_THEME,
   CARBON_THEME,
   OLED_VOID_THEME,

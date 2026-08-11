@@ -38,7 +38,7 @@ This tree is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** — ev
 <p align="center">
   <img src="Screenshots/Themes.png" alt="Ronin Appearance settings — color scheme, built-in themes including OLED Void" width="920" />
 </p>
-<p align="center"><sub><strong>Appearance</strong> — system / light / dark, first-party themes (Ronin, Carbon, OLED Void…), typography you can tune.</sub></p>
+<p align="center"><sub><strong>Appearance</strong> — system / light / dark, first-party themes (Tsukimi, Aizome, Urushi, OLED Void…), typography you can tune.</sub></p>
 
 <br/>
 
