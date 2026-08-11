@@ -109,7 +109,10 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
             aria-label="Hold to dictate"
             aria-pressed={isRecording}
             className={cn(
-              "inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-(--control-radius) text-muted-foreground outline-none transition-colors duration-(--duration-fast) ease-out hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:size-6",
+              // Same footprint as the send button beside it, so the pair reads as one
+              // row of controls rather than a small thing next to a big one.
+              // Ghost rather than filled: send stays the primary action.
+              "relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground outline-none transition-colors duration-(--duration-fast) ease-out hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 sm:h-8 sm:w-8",
               isRecording && "bg-destructive/12 text-destructive hover:bg-destructive/12",
               isTranscribing && "text-foreground/70",
               dictation.error !== null && !isRecording && "text-destructive/80",
@@ -144,9 +147,9 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
                 live-mic indicator is exactly the idle GPU cost this project
                 audits for. */}
             {dictation.error !== null && !isRecording ? (
-              <MicOffIcon className="size-3.5" />
+              <MicOffIcon className="size-4" />
             ) : (
-              <MicIcon className="size-3.5" />
+              <MicIcon className="size-4" />
             )}
           </button>
         }

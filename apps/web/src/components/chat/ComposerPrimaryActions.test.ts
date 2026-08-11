@@ -9,6 +9,12 @@ const stageArtworkState = vi.hoisted(() => ({
 
 vi.mock("~/hooks/useSettings", () => ({
   useEnvironmentIdentificationMode: () => stageArtworkState.mode,
+  // The send button now shares its row with the dictation control, which
+  // reads this. Off here so these cases stay about the send button.
+  useSpeechToTextEnabled: () => false,
+}));
+vi.mock("./ComposerDictationControl", () => ({
+  ComposerDictationControl: () => "dictation-control",
 }));
 vi.mock("../SidebarStageBackdrop", () => ({
   StageBackdropButtonArt: ({ variant }: { variant: string }) => `stage-${variant}`,
@@ -37,6 +43,28 @@ function renderPendingActions(isRunning: boolean) {
       isEnvironmentUnavailable: false,
       isPreparingWorktree: false,
       hasSendableContent: false,
+      onPreviousPendingQuestion: () => {},
+      onInterrupt: () => {},
+      onImplementPlanInNewThread: () => {},
+    }),
+  );
+}
+
+/** The ordinary composer state: nothing pending, nothing running. */
+function renderSendRow() {
+  return renderToStaticMarkup(
+    createElement(ComposerPrimaryActions, {
+      compact: false,
+      pendingAction: null,
+      isRunning: false,
+      showPlanFollowUpPrompt: false,
+      promptHasText: true,
+      isSendBusy: false,
+      sendDisabledReason: null,
+      isConnecting: false,
+      isEnvironmentUnavailable: false,
+      isPreparingWorktree: false,
+      hasSendableContent: true,
       onPreviousPendingQuestion: () => {},
       onInterrupt: () => {},
       onImplementPlanInNewThread: () => {},
@@ -214,5 +242,27 @@ describe("ComposerPrimaryActions", () => {
 
     expect(markup).not.toContain("stage-nightly");
     expect(markup).toContain("bg-message-action text-message-action-foreground");
+  });
+});
+
+describe("ComposerPrimaryActions dictation placement", () => {
+  it("puts the mic immediately before the send button", () => {
+    // The pair reads as one row of controls, so the mic has to precede the
+    // submit button rather than sit down in the context strip.
+    const markup = renderSendRow();
+
+    const mic = markup.indexOf("dictation-control");
+    const send = markup.indexOf('type="submit"');
+    expect(mic).toBeGreaterThanOrEqual(0);
+    expect(send).toBeGreaterThan(mic);
+  });
+
+  it("gives the mic the send button's footprint", () => {
+    // Same height and width so neither reads as the smaller sibling; the
+    // send button stays the filled one.
+    const markup = renderSendRow();
+
+    expect(markup).toContain("h-9 w-9");
+    expect(markup).toContain("sm:h-8 sm:w-8");
   });
 });
