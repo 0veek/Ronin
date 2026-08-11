@@ -117,7 +117,7 @@ function describeCaptureFailure(error: unknown): string {
 }
 
 export function useDictation(options: {
-  readonly onTranscript: (text: string) => void;
+  readonly onTranscript: (text: string) => void | Promise<void>;
   /** Decides which container to record, since the providers disagree. */
   readonly provider: SpeechToTextProvider;
 }): DictationController {
@@ -270,7 +270,7 @@ export function useDictation(options: {
               setError("No speech was detected.");
               return;
             }
-            onTranscriptRef.current(text);
+            await onTranscriptRef.current(text);
           } catch {
             setError("Transcription failed.");
           } finally {

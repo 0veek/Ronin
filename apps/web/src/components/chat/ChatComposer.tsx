@@ -88,7 +88,10 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
-import { ComposerDictationContext } from "./composerDictationContext";
+import {
+  ComposerDictationContext,
+  createComposerDictationInsert,
+} from "./composerDictationContext";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
@@ -2543,11 +2546,44 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const insertComposerTextAtEndRef = useRef(insertComposerTextAtEnd);
   insertComposerTextAtEndRef.current = insertComposerTextAtEnd;
 
-  const insertDictatedText = useCallback((text: string) => {
-    const inserted = insertComposerTextAtEndRef.current(text, { ensureLeadingBoundary: true });
-    if (inserted) composerEditorRef.current?.focusAtEnd();
-    return inserted;
+  const pendingDictationCommitRef = useRef<{
+    readonly prompt: string;
+    readonly resolve: (committed: boolean) => void;
+  } | null>(null);
+  const waitForDictatedPromptCommit = useCallback((expectedPrompt: string) => {
+    pendingDictationCommitRef.current?.resolve(false);
+    return new Promise<boolean>((resolve) => {
+      pendingDictationCommitRef.current = { prompt: expectedPrompt, resolve };
+    });
   }, []);
+
+  // Effects run after the controlled editor has received the new prompt. Keep
+  // dictation in its transcribing state until this acknowledgment, so the mic
+  // only becomes available once the text is actually in the chat box.
+  useEffect(() => {
+    const pending = pendingDictationCommitRef.current;
+    if (pending === null || pending.prompt !== prompt) return;
+    pendingDictationCommitRef.current = null;
+    pending.resolve(true);
+  }, [prompt]);
+
+  useEffect(
+    () => () => {
+      pendingDictationCommitRef.current?.resolve(false);
+      pendingDictationCommitRef.current = null;
+    },
+    [],
+  );
+
+  const insertDictatedText = useMemo(
+    () =>
+      createComposerDictationInsert(
+        insertComposerTextAtEndRef,
+        promptRef,
+        waitForDictatedPromptCommit,
+      ),
+    [promptRef, waitForDictatedPromptCommit],
+  );
 
   useImperativeHandle(
     composerRef,

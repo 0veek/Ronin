@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ComposerDictationInsert } from "./composerDictationContext";
+import { createComposerDictationInsert } from "./composerDictationContext";
 
 /**
  * The composer publishes its insert through a ref rather than a captured
@@ -11,16 +11,18 @@ function makeComposerLikeInsert() {
   // false at mount and only become true once the thread is connected.
   let accepting = false;
   const inserted: string[] = [];
+  const promptRef = { current: "" };
 
   // Rebuilt every render, exactly like the real one.
   const currentInsert = () => (text: string) => {
     if (!accepting) return false;
     inserted.push(text);
+    promptRef.current += text;
     return true;
   };
 
   const ref = { current: currentInsert() };
-  const stable: ComposerDictationInsert = (text) => ref.current(text);
+  const stable = createComposerDictationInsert(ref, promptRef, async () => true);
 
   return {
     inserted,
@@ -35,30 +37,84 @@ function makeComposerLikeInsert() {
 }
 
 describe("dictation insert wiring", () => {
-  it("sees the composer's current state, not the state it had at mount", () => {
+  it("sees the composer's current state, not the state it had at mount", async () => {
     // The bug this guards: a useCallback with empty deps captures the first
     // render's insert, whose guards say "still connecting" forever, so every
     // transcript is refused for the life of the thread and nothing is typed.
     const composer = makeComposerLikeInsert();
 
-    expect(composer.stable("first")).toBe(false);
+    await expect(composer.stable("first")).resolves.toBe(false);
 
     composer.connect();
     composer.render();
 
-    expect(composer.stable("second")).toBe(true);
+    await expect(composer.stable("second")).resolves.toBe(true);
     expect(composer.inserted).toEqual(["second"]);
   });
 
-  it("reports refusal rather than silently dropping the text", () => {
+  it("reports refusal rather than silently dropping the text", async () => {
     // A void return would make "composer refused" and "insert succeeded" look
     // identical to the caller, which is how a transcript goes missing without
     // a single error anywhere.
     const composer = makeComposerLikeInsert();
 
-    const result = composer.stable("dropped");
+    const result = await composer.stable("dropped");
 
     expect(result).toBe(false);
     expect(composer.inserted).toEqual([]);
+  });
+
+  it("leaves focus scheduling to the controlled insertion", async () => {
+    const calls: Array<{
+      text: string;
+      options: { ensureLeadingBoundary?: boolean } | undefined;
+    }> = [];
+    const insertRef = {
+      current: (text: string, options?: { ensureLeadingBoundary?: boolean }) => {
+        calls.push({ text, options });
+        return true;
+      },
+    };
+    const promptRef = { current: "existing spoken words" };
+    const committedPrompts: string[] = [];
+
+    const insert = createComposerDictationInsert(insertRef, promptRef, async (prompt) => {
+      committedPrompts.push(prompt);
+      return true;
+    });
+
+    await expect(insert("spoken words")).resolves.toBe(true);
+    expect(calls).toEqual([{ text: "spoken words", options: { ensureLeadingBoundary: true } }]);
+    expect(committedPrompts).toEqual(["existing spoken words"]);
+  });
+
+  it("does not resolve until the controlled prompt is committed", async () => {
+    const promptRef = { current: "" };
+    const deferredCommit: { resolve?: (committed: boolean) => void } = {};
+    const insert = createComposerDictationInsert(
+      {
+        current: (text) => {
+          promptRef.current = text;
+          return true;
+        },
+      },
+      promptRef,
+      () =>
+        new Promise<boolean>((resolve) => {
+          deferredCommit.resolve = resolve;
+        }),
+    );
+    let settled = false;
+
+    const result = insert("spoken words").then((committed) => {
+      settled = true;
+      return committed;
+    });
+    await Promise.resolve();
+
+    expect(settled).toBe(false);
+    expect(deferredCommit.resolve).toBeDefined();
+    deferredCommit.resolve?.(true);
+    await expect(result).resolves.toBe(true);
   });
 });

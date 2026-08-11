@@ -6,6 +6,7 @@ import { useSpeechToTextSettings } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useComposerDictationInsert } from "./composerDictationContext";
+import { resolveDictationKeyDownAction } from "./composerDictationKeyboard";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
@@ -31,7 +32,7 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
   const insertDictatedText = useComposerDictationInsert();
 
   const onTranscript = useCallback(
-    (text: string) => {
+    async (text: string) => {
       // Both branches would otherwise transcribe successfully and drop the
       // text on the floor, which is indistinguishable from dictation being
       // broken.
@@ -45,7 +46,7 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
         );
         return;
       }
-      if (!insertDictatedText(text)) {
+      if (!(await insertDictatedText(text))) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
@@ -81,23 +82,35 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
     if (!enabled) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return;
-      if (event.key === "Escape" && keyHeldRef.current) {
+      const action = resolveDictationKeyDownAction({
+        key: event.key,
+        repeat: event.repeat,
+        keyHeld: keyHeldRef.current,
+        shortcutMatches: matchesShortcut(event),
+      });
+      if (action === "none") return;
+
+      // Claim repeats too. Returning before preventDefault lets a held custom
+      // shortcut such as a paste chord trigger its native action many times.
+      event.preventDefault();
+      event.stopPropagation();
+      if (action === "claim") return;
+      if (action === "cancel") {
         keyHeldRef.current = false;
         cancel();
         return;
       }
-      if (!matchesShortcut(event)) return;
-      event.preventDefault();
       keyHeldRef.current = true;
       beginHold();
     };
 
-    const onKeyUp = () => {
+    const onKeyUp = (event: KeyboardEvent) => {
       if (!keyHeldRef.current) return;
       // Releasing any part of the chord ends the hold. Waiting for the exact
       // key would strand the recorder open when the modifier goes up first,
       // which is the common way people let go of a chord.
+      event.preventDefault();
+      event.stopPropagation();
       keyHeldRef.current = false;
       endHold();
     };
@@ -145,7 +158,7 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
               // Ghost rather than filled: send stays the primary action.
               "relative inline-flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground outline-none transition-colors duration-(--duration-fast) ease-out hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 sm:h-8 sm:w-8",
               isRecording && "bg-destructive/12 text-destructive hover:bg-destructive/12",
-              isTranscribing && "text-foreground/70",
+              isTranscribing && "cursor-wait bg-muted text-muted-foreground hover:bg-muted",
               dictation.error !== null && !isRecording && "text-destructive/80",
             )}
             disabled={isTranscribing}
@@ -163,8 +176,9 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
             // Space and Enter activate a focused button, so they get the same
             // hold semantics rather than firing a click on release.
             onKeyDown={(event) => {
-              if (event.repeat || (event.key !== " " && event.key !== "Enter")) return;
+              if (event.key !== " " && event.key !== "Enter") return;
               event.preventDefault();
+              if (event.repeat) return;
               beginHold();
             }}
             onKeyUp={(event) => {
