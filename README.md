@@ -20,7 +20,7 @@
 
 Ronin is a **lean desktop harness** for coding agents — rebuilt UI, thinner surface, same sharp forge.
 
-Drive the CLIs you already pay for (Codex, Claude Code, Cursor, Grok Build, OpenCode) from a dark-first Electron shell: chat, terminal, preview, **git**, usage, and settings. Bring your own subscription. Nothing is sold here.
+Drive the CLIs you already pay for (Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi) from a dark-first Electron shell: chat, terminal, preview, **git**, usage, and settings. Bring your own subscription. Nothing is sold here.
 
 This tree is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** — event-sourced server, multi-provider adapters, remote-ready websockets — re-cut and re-skinned for a masterless desktop.
 
@@ -88,7 +88,7 @@ T3 Code is an excellent open product with a wide surface. Ronin is that product 
 ### What we keep (on purpose)
 
 - **Git features** — checkpoints, restore, diffs, worktrees, source control UI, PRs
-- **Multi-provider agents** — Codex · Claude · Cursor · Grok · OpenCode
+- **Multi-provider agents** — Codex · Claude · Cursor · Grok · OpenCode · Antigravity · Droid · Kilo · Pi
 - **Remote-ready architecture** — local, LAN, Tailscale / SSH
 - **Performance posture** — no continuous GPU-burning chrome; careful websocket + render cost
 - **Open source** — forkable, inspectable, yours
@@ -128,13 +128,17 @@ T3 Code is an excellent open product with a wide surface. Ronin is that product 
 > [!IMPORTANT]
 > Install and authenticate at least one provider first:
 >
-> | Provider   | Install                                               | Auth                  |
-> | ---------- | ----------------------------------------------------- | --------------------- |
-> | Codex      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex login`         |
-> | Claude     | [Claude Code](https://claude.com/product/claude-code) | `claude auth login`   |
-> | Cursor     | [Cursor CLI](https://cursor.com/cli)                  | `agent login`         |
-> | Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok login`          |
-> | OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode auth login` |
+> | Provider    | Install                                                     | Auth                        |
+> | ----------- | ----------------------------------------------------------- | --------------------------- |
+> | Codex       | [Codex CLI](https://developers.openai.com/codex/cli)        | `codex login`               |
+> | Claude      | [Claude Code](https://claude.com/product/claude-code)       | `claude auth login`         |
+> | Cursor      | [Cursor CLI](https://cursor.com/cli)                        | `agent login`               |
+> | Grok Build  | [Grok Build CLI](https://x.ai/cli)                          | `grok login`                |
+> | OpenCode    | [OpenCode](https://opencode.ai)                             | `opencode auth login`       |
+> | Antigravity | [Antigravity CLI](https://antigravity.google) (`agy`)       | sign in via `agy`           |
+> | Droid       | [Factory Droid](https://docs.factory.ai/droid-cli/overview) | `droid` / `FACTORY_API_KEY` |
+> | Kilo        | [Kilo CLI](https://kilo.ai/cli)                             | `kilo` auth                 |
+> | Pi          | [Pi](https://pi.dev/)                                       | `pi`                        |
 
 ### From this fork
 
@@ -199,9 +203,12 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
 
 Ronin stands on **[T3 Code](https://github.com/pingdotgg/t3code)** by Theo and the T3 tools team.
 
+Some later product surfaces — portable Agent skills, composer slash commands, and the extra providers Antigravity, Droid, Kilo, and Pi — were adapted from **[Synara](https://github.com/Emanuele-web04/synara)** by Emanuele. We kept Ronin’s existing Codex / Claude / Cursor / Grok / OpenCode adapters and its event-sourced core; Synara was the reference for how those extra tools should feel.
+
 ```
 upstream  →  pingdotgg/t3code
-this fork →  0veek/t3code  (Ronin)
+reference →  Emanuele-web04/synara
+this fork →  0veek/Ronin
 ```
 
 Screenshots live in [`Screenshots/`](./Screenshots) (`Code.png`, `Themes.png`, `Usage.png`).
