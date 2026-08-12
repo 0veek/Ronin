@@ -28,9 +28,13 @@ The shipped product surface is **desktop**. It is a full Electron app that embed
 
 ## A note from Theo
 
-I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
+I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive.
 
-Channel both "measure twice, cut once" and "yagni". Fight scope creep. Try to honor the dev's intent in both a minimal and realistic fashion.
+How you work depends on the job:
+
+- **Bug fixes.** Channel "measure twice, cut once" and YAGNI. Change only what the bug requires. Do not use a fix as a chance to redesign, abstract, or do "while I'm here" extra work. Fight scope creep. Honor the existing shape.
+
+- **Frontend, features, and new functions.** Be creative. Do not shrink the idea just to stay minimal. Invent the interaction, the visual language, and the API shape that make the behavior feel obvious and delightful. YAGNI does not apply here. Still keep systems simple and performance honest — creativity is not an excuse for slop, extra machinery, or half-finished surfaces. Understand the real constraint, then build the version that makes the correct behavior unsurprising.
 
 The rest of this document is meant to help you navigate the codebase and make changes effectively. Think of these instructions less as "hard rules", more as "good defaults". The developer's preferences should be able to override anything here.
 
@@ -133,7 +137,7 @@ Full glossary with file links: `docs/internals/glossary.md`
 
 ## Taste
 
-- Complexity belongs at the adapter boundary. Orchestration stays pure, UI stays dumb.
+- Complexity belongs at the adapter boundary. Orchestration stays pure. UI stays dumb about business rules — not about craft. On frontend and feature work, ship something considered, not the smallest possible patch.
 - Inferred types over annotations. `any` is the enemy.
 - Comments describe how a thing is used, and move when the code moves. To be used mostly to describe functions, not to annotate every line of behavior.
 - Our users drive agents all day and notice a dropped frame, a lying spinner, and a stale label. No continuously repainting animations; they peg the GPU on high-refresh displays.
