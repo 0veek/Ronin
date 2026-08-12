@@ -92,3 +92,25 @@ describe("codex window classification, end to end", () => {
     expect(window?.resetsAt).toBe("2026-02-02T02:40:00.000Z");
   });
 });
+
+describe("rate-limit cooldown", () => {
+  it("treats a useless retry-after as a real cooldown", async () => {
+    // Anthropic has been observed answering 429 with `retry-after: 0`. Taken
+    // literally that means "retry immediately", which is precisely how a
+    // client talks itself into an hours-long lockout.
+    const { parseRetryAfterMsForTest } = await import("./providerRateLimitSources.ts");
+
+    expect(parseRetryAfterMsForTest("0")).toBeGreaterThan(60_000);
+    expect(parseRetryAfterMsForTest(undefined)).toBeGreaterThan(60_000);
+    expect(parseRetryAfterMsForTest("not-a-number")).toBeGreaterThan(60_000);
+    expect(parseRetryAfterMsForTest("-5")).toBeGreaterThan(60_000);
+  });
+
+  it("honours a sensible retry-after, capped", async () => {
+    const { parseRetryAfterMsForTest } = await import("./providerRateLimitSources.ts");
+
+    expect(parseRetryAfterMsForTest("30")).toBe(30_000);
+    // A provider asking us to wait a week is asking for more than we will hold.
+    expect(parseRetryAfterMsForTest("604800")).toBe(60 * 60 * 1000);
+  });
+});

@@ -117,8 +117,13 @@ export class ServerUpdateTerminalError extends Schema.TaggedErrorClass<ServerUpd
  * How often the sidebar quota meter refreshes, and the floor on how often the
  * provider usage endpoints are called. RateLimitService caches on the same
  * clock; the two are meant to be read together.
+ *
+ * Two minutes because Anthropic's usage endpoint rate-limits hard: polling it
+ * every 30-60s is documented to earn a 429 that then persists for hours, so
+ * the number is set by what the provider tolerates rather than by how live the
+ * readout could be. Quota moves slowly enough that this costs nothing to read.
  */
-export const PROVIDER_RATE_LIMIT_POLL_MS = 30_000;
+export const PROVIDER_RATE_LIMIT_POLL_MS = 120_000;
 
 const SERVER_UPDATE_RESUME_TIMEOUT = Duration.minutes(4);
 

@@ -27,6 +27,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { resolveClaudeHomePath } from "../provider/Drivers/ClaudeHome.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import {
+  type ProviderReadResult,
   readClaudeRateLimits,
   readCodexRateLimits,
   readGrokRateLimits,
@@ -41,7 +42,7 @@ import {
  * each opening its own round trips to the three provider hosts. Shortening it
  * below the client's interval would let those pile up again.
  */
-export const SNAPSHOT_TTL_MS = 30_000;
+export const SNAPSHOT_TTL_MS = 120_000;
 
 export class RateLimitService extends Context.Service<
   RateLimitService,
@@ -66,6 +67,10 @@ export const make = Effect.gen(function* () {
 
   let cached: ProviderRateLimitsSnapshot | null = null;
   let cachedAtMs: number | null = null;
+  /** Last reading that actually carried windows, per provider. */
+  const lastGood = new Map<ProviderRateLimits["provider"], ProviderRateLimits>();
+  /** When each provider may be asked again, after it answered 429. */
+  const cooldownUntilMs = new Map<ProviderRateLimits["provider"], number>();
 
   const readSnapshot = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
@@ -92,13 +97,55 @@ export const make = Effect.gen(function* () {
     const observedAt = DateTime.formatIso(yield* DateTime.now);
     const deps = { fileSystem, path, httpClient, nowMs, observedAt };
 
+    /**
+     * Runs a provider unless it has asked us to stop.
+     *
+     * Anthropic's usage endpoint is known to answer 429 aggressively and then
+     * keep answering 429 for hours if a client carries on polling, so a
+     * cooldown is respected literally: the request is not made at all, and the
+     * last good reading is shown in its place. A row that is a few minutes
+     * stale is worth far more than a row that says nothing because we spent
+     * the quota finding out we had none.
+     */
+    const readProvider = (
+      provider: ProviderRateLimits["provider"],
+      read: Effect.Effect<ProviderReadResult, never, never>,
+    ): Effect.Effect<ProviderRateLimits, never, never> =>
+      Effect.gen(function* () {
+        const cooldownUntil = cooldownUntilMs.get(provider) ?? 0;
+        if (nowMs < cooldownUntil) {
+          const remembered = lastGood.get(provider);
+          if (remembered !== undefined) return remembered;
+          return {
+            provider,
+            status: "error" as const,
+            windows: [],
+            planLabel: null,
+            observedAt,
+            message: "Rate limited. Waiting before checking again.",
+          };
+        }
+
+        const result = yield* read;
+        if (result.cooldownMs !== null) {
+          cooldownUntilMs.set(provider, nowMs + result.cooldownMs);
+          const remembered = lastGood.get(provider);
+          if (remembered !== undefined) return remembered;
+          return result.limits;
+        }
+
+        cooldownUntilMs.delete(provider);
+        if (result.limits.status === "ok") lastGood.set(provider, result.limits);
+        return result.limits;
+      });
+
     // Concurrent because these are three independent network round trips to
     // three different hosts; serially they would stack their timeouts.
     const providers = yield* Effect.all(
       [
-        readClaudeRateLimits(deps, claudeHome),
-        readCodexRateLimits(deps, codexLayout.sharedHomePath),
-        readGrokRateLimits(deps, resolveGrokHome()),
+        readProvider("claude", readClaudeRateLimits(deps, claudeHome)),
+        readProvider("codex", readCodexRateLimits(deps, codexLayout.sharedHomePath)),
+        readProvider("grok", readGrokRateLimits(deps, resolveGrokHome())),
       ],
       { concurrency: "unbounded" },
     ).pipe(

@@ -25,7 +25,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { HttpClient, HttpClientRequest } from "effect/unstable/http";
 
 import {
   classifyCodexWindows,
@@ -60,6 +60,27 @@ const GROK_PREFERRED_ISSUER = "https://auth.x.ai";
 const GROK_TOKEN_SKEW_MS = 5 * 60 * 1000;
 
 type Provider = ProviderRateLimits["provider"];
+
+/**
+ * A single provider read.
+ *
+ * `cooldownMs` is set only when the provider answered 429. The caller uses it
+ * to stop asking, which is the part that actually ends a lockout -- the wire
+ * contract has no place for it, since it describes our behaviour rather than
+ * the account's quota.
+ */
+export interface ProviderReadResult {
+  readonly limits: ProviderRateLimits;
+  readonly cooldownMs: number | null;
+}
+
+function ok(limits: ProviderRateLimits): ProviderReadResult {
+  return { limits, cooldownMs: null };
+}
+
+function cooling(limits: ProviderRateLimits, cooldownMs: number): ProviderReadResult {
+  return { limits, cooldownMs };
+}
 
 /**
  * Services are handed in rather than pulled from context so each reader stays
@@ -108,18 +129,69 @@ const readJsonFile = Effect.fn("rateLimits.readJsonFile")(function* (
   return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
 });
 
+/**
+ * Longest cooldown a provider can ask for, and the one assumed when it asks
+ * for nothing useful.
+ *
+ * Anthropic's usage endpoint has been observed answering 429 with
+ * `retry-after: 0`, which taken literally means "retry immediately" and is how
+ * a client talks itself into a permanent lockout. Zero is treated as absent.
+ */
+const DEFAULT_RATE_LIMIT_COOLDOWN_MS = 15 * 60 * 1000;
+const MAX_RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
+
+export type JsonOutcome =
+  | { readonly kind: "ok"; readonly body: unknown }
+  /** The provider asked us to stop. `cooldownMs` is how long for. */
+  | { readonly kind: "rateLimited"; readonly cooldownMs: number }
+  | { readonly kind: "failed"; readonly detail: string };
+
+function parseRetryAfterMs(header: string | undefined): number {
+  if (header === undefined) return DEFAULT_RATE_LIMIT_COOLDOWN_MS;
+  const seconds = Number(header.trim());
+  if (!Number.isFinite(seconds) || seconds <= 0) return DEFAULT_RATE_LIMIT_COOLDOWN_MS;
+  return Math.min(seconds * 1000, MAX_RATE_LIMIT_COOLDOWN_MS);
+}
+
+/** Exposed for tests; the cooldown rule is the whole point of the 429 branch. */
+export const parseRetryAfterMsForTest = parseRetryAfterMs;
+
 const getJson = Effect.fn("rateLimits.getJson")(function* (
   deps: RateLimitSourceDeps,
   url: string,
   headers: Record<string, string>,
-) {
+): Effect.fn.Return<JsonOutcome, never, never> {
   const request = HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders(headers));
-  return yield* deps.httpClient.execute(request).pipe(
-    Effect.flatMap(HttpClientResponse.filterStatusOk),
-    Effect.flatMap((response) => response.json),
+  const response = yield* deps.httpClient.execute(request).pipe(
     Effect.timeout(REQUEST_TIMEOUT_MS),
     Effect.catchCause(() => Effect.succeed(null)),
   );
+
+  if (response === null) return { kind: "failed", detail: "The provider could not be reached." };
+
+  // Told apart from every other failure on purpose: a 429 answered by retrying
+  // on the usual schedule is what turns a brief limit into an hours-long one.
+  if (response.status === 429) {
+    return {
+      kind: "rateLimited",
+      cooldownMs: parseRetryAfterMs(response.headers["retry-after"]),
+    };
+  }
+
+  if (response.status >= 400) {
+    return {
+      kind: "failed",
+      detail:
+        response.status === 401 || response.status === 403
+          ? "The credentials were rejected."
+          : `The provider returned HTTP ${response.status}.`,
+    };
+  }
+
+  const body = yield* response.json.pipe(Effect.catchCause(() => Effect.succeed(null)));
+  return body === null
+    ? { kind: "failed", detail: "The provider returned an unreadable body." }
+    : { kind: "ok", body };
 });
 
 // ---------------------------------------------------------------------------
@@ -163,21 +235,28 @@ export const readClaudeRateLimits = Effect.fn("rateLimits.readClaudeRateLimits")
     // On macOS the CLI can keep this in the login keychain instead of on disk,
     // which Ronin does not read. Absent is reported as "no data", never as a
     // fault, so a keychain install shows an empty row rather than an alert.
-    return outcome("claude", "unavailable", observedAt, "Not signed in to Claude");
+    return ok(outcome("claude", "unavailable", observedAt, "Not signed in to Claude"));
   }
 
   // The locally stored expiry is not authoritative for this endpoint -- these
   // credentials still authenticate against it past that stamp -- so the request
   // goes out regardless and the server decides.
-  const data = (yield* getJson(deps, CLAUDE_USAGE_URL, {
+  const response = yield* getJson(deps, CLAUDE_USAGE_URL, {
     authorization: `Bearer ${token}`,
     "anthropic-beta": CLAUDE_OAUTH_BETA,
     accept: "application/json",
-  })) as ClaudeUsageResponse | null;
+  });
 
-  if (data === null) {
-    return outcome("claude", "error", observedAt, "Claude usage request failed");
+  if (response.kind === "rateLimited") {
+    return cooling(
+      outcome("claude", "error", observedAt, "Rate limited by Anthropic. Pausing usage checks."),
+      response.cooldownMs,
+    );
   }
+  if (response.kind === "failed") {
+    return ok(outcome("claude", "error", observedAt, response.detail));
+  }
+  const data = response.body as ClaudeUsageResponse;
 
   const windows = [
     mapClaudeWindow(data.five_hour, "session", SESSION_WINDOW_MINUTES),
@@ -186,10 +265,10 @@ export const readClaudeRateLimits = Effect.fn("rateLimits.readClaudeRateLimits")
 
   if (windows.length === 0) {
     // API-key, Bedrock and Vertex billing have no subscription window at all.
-    return outcome("claude", "unavailable", observedAt, "No plan limits on this account");
+    return ok(outcome("claude", "unavailable", observedAt, "No plan limits on this account"));
   }
 
-  return outcome("claude", "ok", observedAt, null, windows);
+  return ok(outcome("claude", "ok", observedAt, null, windows));
 });
 
 // ---------------------------------------------------------------------------
@@ -249,7 +328,7 @@ export const readCodexRateLimits = Effect.fn("rateLimits.readCodexRateLimits")(f
     typeof tokens === "object" && tokens !== null ? (tokens as Record<string, unknown>) : null;
   const accessToken = tokenBag?.["access_token"];
   if (typeof accessToken !== "string" || accessToken.length === 0) {
-    return outcome("codex", "unavailable", observedAt, "Not signed in to Codex");
+    return ok(outcome("codex", "unavailable", observedAt, "Not signed in to Codex"));
   }
 
   const accountId = tokenBag?.["account_id"];
@@ -265,10 +344,17 @@ export const readCodexRateLimits = Effect.fn("rateLimits.readCodexRateLimits")(f
     headers["chatgpt-account-id"] = accountId;
   }
 
-  const data = (yield* getJson(deps, CODEX_USAGE_URL, headers)) as CodexUsageResponse | null;
-  if (data === null) {
-    return outcome("codex", "error", observedAt, "Codex usage request failed");
+  const response = yield* getJson(deps, CODEX_USAGE_URL, headers);
+  if (response.kind === "rateLimited") {
+    return cooling(
+      outcome("codex", "error", observedAt, "Rate limited by the provider. Pausing usage checks."),
+      response.cooldownMs,
+    );
   }
+  if (response.kind === "failed") {
+    return ok(outcome("codex", "error", observedAt, response.detail));
+  }
+  const data = response.body as CodexUsageResponse;
 
   const classified = classifyCodexWindows({
     primary: codexWindowSnapshot(data.rate_limit?.primary_window),
@@ -281,14 +367,14 @@ export const readCodexRateLimits = Effect.fn("rateLimits.readCodexRateLimits")(f
   ].filter((window): window is RateLimitWindow => window !== null);
 
   if (windows.length === 0) {
-    return outcome("codex", "unavailable", observedAt, "No plan limits on this account");
+    return ok(outcome("codex", "unavailable", observedAt, "No plan limits on this account"));
   }
 
   const planType = data.plan_type;
   const planLabel =
     typeof planType === "string" && planType.trim().length > 0 ? planType.trim() : null;
 
-  return outcome("codex", "ok", observedAt, null, windows, planLabel);
+  return ok(outcome("codex", "ok", observedAt, null, windows, planLabel));
 });
 
 // ---------------------------------------------------------------------------
@@ -414,13 +500,15 @@ export const readGrokRateLimits = Effect.fn("rateLimits.readGrokRateLimits")(fun
   const session = parsed === null ? null : selectGrokSession(parsed, deps.nowMs);
 
   if (session === null) {
-    return outcome("grok", "unavailable", observedAt, "Not signed in to Grok");
+    return ok(outcome("grok", "unavailable", observedAt, "Not signed in to Grok"));
   }
   if (!isGrokTokenFresh(session, deps.nowMs)) {
     // Reaching here means a stored but expired session -- a real sign-out
     // returned `unavailable` above. The CLI refreshes on its next run, so this
     // does not ask for a fresh login.
-    return outcome("grok", "error", observedAt, "Grok sign-in expired — run grok to refresh it");
+    return ok(
+      outcome("grok", "error", observedAt, "Grok sign-in expired — run grok to refresh it"),
+    );
   }
 
   const headers: Record<string, string> = {
@@ -430,32 +518,41 @@ export const readGrokRateLimits = Effect.fn("rateLimits.readGrokRateLimits")(fun
   };
   if (session.userId !== null) headers["x-userid"] = session.userId;
 
-  const credits = (yield* getJson(deps, GROK_CREDITS_URL, headers)) as GrokBillingResponse | null;
-  if (credits === null) {
-    return outcome("grok", "error", observedAt, "Grok usage request failed");
+  const creditsResponse = yield* getJson(deps, GROK_CREDITS_URL, headers);
+  if (creditsResponse.kind === "rateLimited") {
+    return cooling(
+      outcome("grok", "error", observedAt, "Rate limited by xAI. Pausing usage checks."),
+      creditsResponse.cooldownMs,
+    );
   }
+  if (creditsResponse.kind === "failed") {
+    return ok(outcome("grok", "error", observedAt, creditsResponse.detail));
+  }
+  const credits = creditsResponse.body as GrokBillingResponse;
 
   const config =
     credits.config ?? (typeof credits.creditUsagePercent === "number" ? credits : null);
   if (config === null) {
-    return outcome("grok", "unavailable", observedAt, "No plan limits on this account");
+    return ok(outcome("grok", "unavailable", observedAt, "No plan limits on this account"));
   }
 
   const planLabel = config.subscriptionTier?.trim() || null;
 
   const weekly = grokWeeklyWindow(config);
   if (weekly !== null) {
-    return outcome("grok", "ok", observedAt, null, [weekly], planLabel);
+    return ok(outcome("grok", "ok", observedAt, null, [weekly], planLabel));
   }
 
   // Unified-billing accounts expose a monthly included budget instead, and
   // their credits view omits the percentage, so the default view is the only
   // place that figure exists.
-  const billing = (yield* getJson(deps, GROK_BILLING_URL, headers)) as GrokBillingResponse | null;
+  const billingResponse = yield* getJson(deps, GROK_BILLING_URL, headers);
+  const billing =
+    billingResponse.kind === "ok" ? (billingResponse.body as GrokBillingResponse) : null;
   const monthly = billing === null ? null : grokMonthlyWindow(billing.config ?? billing);
   if (monthly !== null) {
-    return outcome("grok", "ok", observedAt, null, [monthly], planLabel);
+    return ok(outcome("grok", "ok", observedAt, null, [monthly], planLabel));
   }
 
-  return outcome("grok", "unavailable", observedAt, "No plan limits on this account");
+  return ok(outcome("grok", "unavailable", observedAt, "No plan limits on this account"));
 });
