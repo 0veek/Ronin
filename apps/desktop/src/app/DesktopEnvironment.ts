@@ -1,3 +1,4 @@
+import { formatAppDisplayName } from "@t3tools/shared/appDisplayName";
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
@@ -99,7 +100,7 @@ function resolveDesktopAppStageLabel(input: {
     return "Dev";
   }
 
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
+  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Stable";
 }
 
 function resolveDesktopAppBranding(input: {
@@ -110,7 +111,9 @@ function resolveDesktopAppBranding(input: {
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
+    // Through the shared formatter, not string interpolation: a shipping build
+    // is called Ronin, and only Dev and Nightly earn a suffix.
+    displayName: formatAppDisplayName({ baseName: APP_BASE_NAME, stageLabel }),
   };
 }
 

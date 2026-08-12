@@ -182,6 +182,10 @@
     "./usageFormat": {
       "types": "./src/usageFormat.ts",
       "import": "./src/usageFormat.ts"
+    },
+    "./appDisplayName": {
+      "types": "./src/appDisplayName.ts",
+      "import": "./src/appDisplayName.ts"
     }
   },
   "scripts": {

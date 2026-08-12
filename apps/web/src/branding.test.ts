@@ -76,7 +76,7 @@ describe("branding logic", () => {
     expect(
       resolveServerBackedAppStageLabel({
         primaryServerVersion: "0.0.28-nightly.20260616.12",
-        fallbackStageLabel: "Alpha",
+        fallbackStageLabel: "Stable",
       }),
     ).toBe("Nightly");
   });
@@ -85,8 +85,8 @@ describe("branding logic", () => {
     expect(
       resolveServerBackedAppDisplayName({
         baseName: "Ronin",
-        fallbackDisplayName: "Ronin (Alpha)",
-        fallbackStageLabel: "Alpha",
+        fallbackDisplayName: "Ronin",
+        fallbackStageLabel: "Stable",
         primaryServerVersion: "0.0.28-nightly.20260616.12",
       }),
     ).toBe("Ronin (Nightly)");
@@ -96,21 +96,21 @@ describe("branding logic", () => {
     expect(
       resolveServerBackedAppDisplayName({
         baseName: "Ronin",
-        fallbackDisplayName: "Ronin (Alpha)",
-        fallbackStageLabel: "Alpha",
+        fallbackDisplayName: "Ronin",
+        fallbackStageLabel: "Stable",
         primaryServerVersion: "0.0.27",
       }),
-    ).toBe("Ronin (Alpha)");
+    ).toBe("Ronin");
   });
 
   it("keeps the fallback display name for malformed nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
         baseName: "Ronin",
-        fallbackDisplayName: "Ronin (Alpha)",
-        fallbackStageLabel: "Alpha",
+        fallbackDisplayName: "Ronin",
+        fallbackStageLabel: "Stable",
         primaryServerVersion: "0.0.28-nightly.20260616",
       }),
-    ).toBe("Ronin (Alpha)");
+    ).toBe("Ronin");
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "@t3tools/desktop",
-  "version": "0.0.33",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
@@ -30,5 +30,5 @@
     "electron-builder": "26.15.6",
     "vite-plus": "catalog:"
   },
-  "productName": "Ronin (Alpha)"
+  "productName": "Ronin"
 }

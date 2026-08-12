@@ -1,15 +1,8 @@
+import { formatAppDisplayName } from "@t3tools/shared/appDisplayName";
+
+export { formatAppDisplayName };
+
 const NIGHTLY_SERVER_VERSION_PATTERN = /-nightly\.\d{8}\.\d+$/;
-
-export function formatAppDisplayName(input: {
-  readonly baseName: string;
-  readonly stageLabel: string;
-}): string {
-  if (input.stageLabel.trim().toLowerCase() === "latest") {
-    return input.baseName;
-  }
-
-  return `${input.baseName} (${input.stageLabel})`;
-}
 
 export function resolveServerBackedAppStageLabel(input: {
   readonly primaryServerVersion: string | null | undefined;
