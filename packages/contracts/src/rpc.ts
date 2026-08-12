@@ -161,6 +161,8 @@ import {
   ServerSignalProcessResult,
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
+  ProviderSkillsCatalogInput,
+  ProviderSkillsCatalogResult,
 } from "./server.ts";
 import {
   ResourceTelemetryHistory,
@@ -274,6 +276,7 @@ export const WS_METHODS = {
   serverTranscribeAudio: "server.transcribeAudio",
   serverGetSpeechToTextKeyStatus: "server.getSpeechToTextKeyStatus",
   serverSetSpeechToTextKey: "server.setSpeechToTextKey",
+  serverGetSkillsCatalog: "server.getSkillsCatalog",
 
   // Pull request methods
   pullRequestsList: "pullRequests.list",
@@ -448,6 +451,12 @@ export const WsServerGetSpeechToTextKeyStatusRpc = Rpc.make(
     error: Schema.Union([EnvironmentAuthorizationError, SpeechToTextError]),
   },
 );
+
+export const WsServerGetSkillsCatalogRpc = Rpc.make(WS_METHODS.serverGetSkillsCatalog, {
+  payload: ProviderSkillsCatalogInput,
+  success: ProviderSkillsCatalogResult,
+  error: EnvironmentAuthorizationError,
+});
 
 export const WsServerSetSpeechToTextKeyRpc = Rpc.make(WS_METHODS.serverSetSpeechToTextKey, {
   payload: SpeechToTextSetKeyInput,
@@ -984,6 +993,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetProviderRateLimitsRpc,
   WsServerTranscribeAudioRpc,
   WsServerGetSpeechToTextKeyStatusRpc,
+  WsServerGetSkillsCatalogRpc,
   WsServerSetSpeechToTextKeyRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,

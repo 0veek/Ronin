@@ -42,7 +42,16 @@ import {
   createModelSelection,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
+import {
+  buildSlashReviewComposerPrompt,
+  getAvailableComposerSlashCommands,
+  parseComposerSlashInvocation,
+  parseForkSlashCommandArgs,
+  type ForkSlashCommandTarget,
+  type ReviewSlashCommandTarget,
+} from "@t3tools/shared/composerSlashCommands";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
+import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
@@ -74,10 +83,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
-import {
-  collapseExpandedComposerCursor,
-  parseStandaloneComposerSlashCommand,
-} from "../composer-logic";
+import { collapseExpandedComposerCursor } from "../composer-logic";
 import {
   derivePendingApprovals,
   derivePendingUserInputs,
@@ -161,7 +167,11 @@ import {
   AlarmClockIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
+  FileDiffIcon,
+  FolderGit2Icon,
   GitBranchIcon,
+  GitCompareIcon,
+  LaptopIcon,
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
@@ -244,6 +254,8 @@ import {
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { ComposerSlashStatusDialog } from "./chat/ComposerSlashStatusDialog";
+import { ComposerSlashTargetPicker } from "./chat/ComposerSlashTargetPicker";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
@@ -1334,6 +1346,9 @@ function ChatViewContent(props: ChatViewProps) {
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [isSlashStatusDialogOpen, setIsSlashStatusDialogOpen] = useState(false);
+  const [isSlashForkPickerOpen, setIsSlashForkPickerOpen] = useState(false);
+  const [isSlashReviewPickerOpen, setIsSlashReviewPickerOpen] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
@@ -1703,8 +1718,82 @@ function ChatViewContent(props: ChatViewProps) {
     : null;
   const activeProject = useProject(activeProjectRef);
   const handleNewThreadInActiveProject = useCallback(() => {
-    startNewThreadForProject(activeProjectRef, handleNewThread);
+    return startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  const applyReviewPrompt = useCallback(
+    (target: ReviewSlashCommandTarget, extraArgs = "") => {
+      const prompt =
+        target === "base-branch"
+          ? buildSlashReviewComposerPrompt(extraArgs ? `base ${extraArgs}` : "base")
+          : buildSlashReviewComposerPrompt(extraArgs);
+      setComposerDraftPrompt(composerDraftTarget, prompt);
+      composerRef.current?.resetCursorState({ prompt, cursor: prompt.length });
+      scheduleComposerFocus();
+    },
+    [composerDraftTarget, setComposerDraftPrompt],
+  );
+  const createForkThread = useCallback(
+    (target: ForkSlashCommandTarget) => {
+      if (!activeProjectRef) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Fork is unavailable",
+            description: "Choose a project first.",
+          }),
+        );
+        return false;
+      }
+      void handleNewThread(activeProjectRef, {
+        envMode: target === "worktree" ? "worktree" : "local",
+      });
+      return true;
+    },
+    [activeProjectRef, handleNewThread],
+  );
+  const handleAppSlashCommand = useCallback(
+    (command: "clear" | "compact" | "review" | "fork" | "side" | "status") => {
+      if (command === "clear" || command === "side") {
+        if (!handleNewThreadInActiveProject()) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: command === "side" ? "Side is unavailable" : "Clear is unavailable",
+              description: "Choose a project first.",
+            }),
+          );
+        }
+        return;
+      }
+      if (command === "status") {
+        setIsSlashStatusDialogOpen(true);
+        return;
+      }
+      if (command === "review") {
+        setIsSlashReviewPickerOpen(true);
+        return;
+      }
+      if (command === "fork") {
+        setIsSlashForkPickerOpen(true);
+        return;
+      }
+      if (command === "compact") {
+        const usage = deriveLatestContextWindowSnapshot(activeThread?.activities ?? []);
+        toastManager.add(
+          stackedThreadToast({
+            type: "info",
+            title: usage?.compactsAutomatically
+              ? "Context compacting is automatic"
+              : "Compact is unavailable",
+            description: usage?.compactsAutomatically
+              ? "This provider already compacts the thread when the window fills."
+              : "This provider does not expose a compact command here. Try sending /compact as a provider command if it supports one.",
+          }),
+        );
+      }
+    },
+    [activeThread?.activities, handleNewThreadInActiveProject],
+  );
   const activeEnvironmentShell = useEnvironmentQuery(
     activeThread ? environmentShell.stateAtom(activeThread.environmentId) : null,
   );
@@ -4973,23 +5062,100 @@ function ChatViewContent(props: ChatViewProps) {
       });
       return;
     }
-    // Legacy plan mode: /plan and /default only act when the beta flag is on;
-    // otherwise they send as plain text like any other message.
-    const standaloneSlashCommand =
-      settings.planModeEnabled &&
+    // Built-in slash commands only act on a bare composer. Attachments keep
+    // the text as a normal message so users can still send "/review this".
+    const canHandleAppSlashCommand =
       composerImages.length === 0 &&
       sendableComposerTerminalContexts.length === 0 &&
       composerElementContexts.length === 0 &&
       composerPreviewAnnotations.length === 0 &&
-      composerReviewComments.length === 0
-        ? parseStandaloneComposerSlashCommand(trimmed)
-        : null;
-    if (standaloneSlashCommand) {
-      handleInteractionModeChange(standaloneSlashCommand);
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      return;
+      composerReviewComments.length === 0;
+    const slashInvocation = canHandleAppSlashCommand ? parseComposerSlashInvocation(trimmed) : null;
+    const selectedProviderSnapshot =
+      providerStatuses.find((status) => status.instanceId === composerActiveProvider) ??
+      providerStatuses.find(
+        (status) => status.instanceId === activeThread?.session?.providerInstanceId,
+      ) ??
+      providerStatuses.find(
+        (status) => status.instanceId === activeThread?.modelSelection?.instanceId,
+      );
+    const nativeCommandNames =
+      selectedProviderSnapshot?.slashCommands.map((command) => command.name) ?? [];
+    const availableAppCommands = new Set(
+      getAvailableComposerSlashCommands({
+        planModeEnabled: settings.planModeEnabled,
+        nativeCommandNames,
+        canOfferForkCommand: activeProjectRef !== null,
+        canOfferSideCommand: activeProjectRef !== null,
+      }),
+    );
+    if (slashInvocation && availableAppCommands.has(slashInvocation.command)) {
+      if (slashInvocation.command === "plan" || slashInvocation.command === "default") {
+        handleInteractionModeChange(slashInvocation.command);
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        return;
+      }
+      if (slashInvocation.command === "clear" || slashInvocation.command === "side") {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        handleAppSlashCommand(slashInvocation.command);
+        return;
+      }
+      if (slashInvocation.command === "status") {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        handleAppSlashCommand("status");
+        return;
+      }
+      if (slashInvocation.command === "review") {
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        if (slashInvocation.args.length === 0) {
+          handleAppSlashCommand("review");
+          return;
+        }
+        applyReviewPrompt(
+          slashInvocation.args.toLowerCase().startsWith("base") ? "base-branch" : "changes",
+          slashInvocation.args.replace(/^base\b/i, "").trim(),
+        );
+        return;
+      }
+      if (slashInvocation.command === "fork") {
+        const { target, invalid } = parseForkSlashCommandArgs(slashInvocation.args);
+        if (invalid) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: "Invalid /fork command",
+              description: "Use /fork, /fork local, or /fork worktree.",
+            }),
+          );
+          return;
+        }
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        if (!target) {
+          handleAppSlashCommand("fork");
+          return;
+        }
+        createForkThread(target);
+        return;
+      }
+      if (slashInvocation.command === "compact") {
+        // Leave `/compact` as a sendable provider command when the provider
+        // listed it natively. The app command is hidden in that case.
+        handleAppSlashCommand("compact");
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        return;
+      }
     }
     if (!hasSendableContent) {
       if (expiredTerminalContextCount > 0) {
@@ -6370,6 +6536,7 @@ function ChatViewContent(props: ChatViewProps) {
                             toggleInteractionMode={toggleInteractionMode}
                             handleRuntimeModeChange={handleRuntimeModeChange}
                             handleInteractionModeChange={handleInteractionModeChange}
+                            onAppSlashCommand={handleAppSlashCommand}
                             focusComposer={focusComposer}
                             scheduleComposerFocus={scheduleComposerFocus}
                             setThreadError={setThreadError}
@@ -6573,6 +6740,57 @@ function ChatViewContent(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
 
+      <ComposerSlashStatusDialog
+        open={isSlashStatusDialogOpen}
+        onOpenChange={setIsSlashStatusDialogOpen}
+        thread={activeThread}
+      />
+      <ComposerSlashTargetPicker
+        open={isSlashReviewPickerOpen}
+        onOpenChange={setIsSlashReviewPickerOpen}
+        title="Review changes"
+        description="Choose what the agent should review in this project."
+        options={[
+          {
+            id: "changes",
+            label: "Uncommitted changes",
+            description: "Review the working tree against HEAD.",
+            icon: FileDiffIcon,
+          },
+          {
+            id: "base-branch",
+            label: "Diff against base branch",
+            description: "Review this branch relative to its merge base.",
+            icon: GitCompareIcon,
+          },
+        ]}
+        onSelect={(target) => {
+          applyReviewPrompt(target);
+        }}
+      />
+      <ComposerSlashTargetPicker
+        open={isSlashForkPickerOpen}
+        onOpenChange={setIsSlashForkPickerOpen}
+        title="New thread"
+        description="Start a parallel thread in this project. The current conversation stays as it is."
+        options={[
+          {
+            id: "local",
+            label: "Same checkout",
+            description: "Keep working in the current directory.",
+            icon: LaptopIcon,
+          },
+          {
+            id: "worktree",
+            label: "New worktree",
+            description: "Create an isolated checkout for this thread.",
+            icon: FolderGit2Icon,
+          },
+        ]}
+        onSelect={(target) => {
+          createForkThread(target);
+        }}
+      />
       {expandedImage && (
         <ExpandedImageDialog
           key={`${expandedImage.images[expandedImage.index]?.src ?? "image"}:${expandedImage.index}`}

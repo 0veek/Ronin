@@ -4,6 +4,7 @@ export type SettingsPath =
   | "/settings/keybindings"
   | "/settings/speech-to-text"
   | "/settings/providers"
+  | "/settings/skills"
   | "/settings/source-control"
   | "/settings/connections"
   | "/settings/archived";
@@ -25,6 +26,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/keybindings": "Keybindings",
   "/settings/speech-to-text": "Dictation",
   "/settings/providers": "Providers",
+  "/settings/skills": "Agent skills",
   "/settings/source-control": "Source Control",
   "/settings/connections": "Connections",
   "/settings/archived": "Archive",
@@ -184,6 +186,17 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "providers",
     title: "Providers",
     to: "/settings/providers",
+  },
+  {
+    id: "agent-skills",
+    title: "Agent skills",
+    to: "/settings/skills",
+  },
+  {
+    id: "portable-skills",
+    title: "Ronin skills folder",
+    to: "/settings/skills",
+    targetId: "agent-skills",
   },
   {
     id: "source-control",

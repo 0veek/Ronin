@@ -10,7 +10,7 @@ If a server is already running on this machine, mint a fresh pairing token and Q
 npx t3 pair
 ```
 
-`t3 pair` finds the running server (the shared `~/.t3` install, or the current worktree's dev server when run inside one), issues a one-time pairing token, and prints the pairing URL as a QR code you can scan from your phone.
+`t3 pair` finds the running server (the shared `~/.ronin` install, or the current worktree's dev server when run inside one), issues a one-time pairing token, and prints the pairing URL as a QR code you can scan from your phone.
 
 If the server is only bound to loopback, the printed URL is not reachable from another device. Pair over your tailnet instead:
 
@@ -138,7 +138,7 @@ SSH launch is a desktop feature because it needs local process and SSH access. O
 
 #### SSH Launch Troubleshooting
 
-The desktop SSH launcher connects with a non-interactive `sh` session, writes a small launcher script under `~/.t3/ssh-launch/<host-key>/`, starts or reuses a remote T3 server, and forwards the remote loopback port back to your desktop.
+The desktop SSH launcher connects with a non-interactive `sh` session, writes a small launcher script under `~/.ronin/ssh-launch/<host-key>/`, starts or reuses a remote T3 server, and forwards the remote loopback port back to your desktop.
 
 The remote host must have a compatible Node.js runtime. Ronin uses the server package's `engines.node` requirement:
 
@@ -165,7 +165,7 @@ nvm alias default 24
 
 With mise, asdf, fnm, or nodenv, make sure the tool's shim directory is installed and resolves to a Node version satisfying the range above without an interactive shell.
 
-If reconnecting after an app update fails, retry the SSH launch once. The launcher now compares its generated runner script, stops stale launcher-managed remote servers, clears the SSH launch PID/port state, and starts a fresh remote server. You should not normally need to delete `~/.t3/ssh-launch` or kill `t3` processes manually.
+If reconnecting after an app update fails, retry the SSH launch once. The launcher now compares its generated runner script, stops stale launcher-managed remote servers, clears the SSH launch PID/port state, and starts a fresh remote server. You should not normally need to delete `~/.ronin/ssh-launch` or kill `t3` processes manually.
 
 ## Updating a Remote Server
 

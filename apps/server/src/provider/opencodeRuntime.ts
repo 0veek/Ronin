@@ -40,6 +40,30 @@ const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";
 const DEFAULT_OPENCODE_SERVER_TIMEOUT_MS = 30_000;
 const DEFAULT_HOSTNAME = "127.0.0.1";
+
+export interface OpenCodeCompatibleCliSpec {
+  readonly defaultBinaryPath: string;
+  readonly displayName: string;
+  readonly serverReadyPrefix: string;
+  readonly configContentEnvVar: string;
+  readonly serverAuthUsername: string;
+}
+
+export const OPENCODE_CLI_SPEC: OpenCodeCompatibleCliSpec = {
+  defaultBinaryPath: "opencode",
+  displayName: "OpenCode",
+  serverReadyPrefix: OPENCODE_SERVER_READY_PREFIX,
+  configContentEnvVar: "OPENCODE_CONFIG_CONTENT",
+  serverAuthUsername: "opencode",
+};
+
+export const KILO_CLI_SPEC: OpenCodeCompatibleCliSpec = {
+  defaultBinaryPath: "kilo",
+  displayName: "Kilo",
+  serverReadyPrefix: "kilo server listening",
+  configContentEnvVar: "KILO_CONFIG_CONTENT",
+  serverAuthUsername: "kilo",
+};
 export interface OpenCodeServerProcess {
   readonly url: string;
   readonly exitCode: Effect.Effect<number, never>;
@@ -121,6 +145,7 @@ export interface OpenCodeRuntimeShape {
     readonly port?: number;
     readonly hostname?: string;
     readonly timeoutMs?: number;
+    readonly cliSpec?: OpenCodeCompatibleCliSpec;
   }) => Effect.Effect<OpenCodeServerProcess, OpenCodeRuntimeError, Scope.Scope>;
   /**
    * Returns a handle to either an externally-managed OpenCode server (when
@@ -134,6 +159,7 @@ export interface OpenCodeRuntimeShape {
     readonly port?: number;
     readonly hostname?: string;
     readonly timeoutMs?: number;
+    readonly cliSpec?: OpenCodeCompatibleCliSpec;
   }) => Effect.Effect<OpenCodeServerConnection, OpenCodeRuntimeError, Scope.Scope>;
   readonly runOpenCodeCommand: (input: {
     readonly binaryPath: string;
@@ -144,6 +170,7 @@ export interface OpenCodeRuntimeShape {
     readonly baseUrl: string;
     readonly directory: string;
     readonly serverPassword?: string;
+    readonly cliSpec?: OpenCodeCompatibleCliSpec;
   }) => OpencodeClient;
   readonly loadOpenCodeInventory: (
     client: OpencodeClient,
@@ -154,9 +181,12 @@ export interface OpenCodeRuntimeShape {
   }) => Effect.Effect<OpenCodeInventory, OpenCodeRuntimeError>;
 }
 
-function parseServerUrlFromOutput(output: string): string | null {
+function parseServerUrlFromOutput(
+  output: string,
+  readyPrefix: string = OPENCODE_SERVER_READY_PREFIX,
+): string | null {
   for (const line of output.split("\n")) {
-    if (!line.startsWith(OPENCODE_SERVER_READY_PREFIX)) {
+    if (!line.startsWith(readyPrefix)) {
       continue;
     }
     const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
@@ -457,6 +487,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
           ),
         ));
       const timeoutMs = input.timeoutMs ?? DEFAULT_OPENCODE_SERVER_TIMEOUT_MS;
+      const cliSpec = input.cliSpec ?? OPENCODE_CLI_SPEC;
       const args = ["serve", `--hostname=${hostname}`, `--port=${port}`];
       const spawnCommand = yield* resolveCommand(input.binaryPath, args, input.environment);
 
@@ -467,7 +498,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             shell: spawnCommand.shell,
             env: {
               ...input.environment,
-              OPENCODE_CONFIG_CONTENT: OPENCODE_EMPTY_CONFIG_CONTENT,
+              [cliSpec.configContentEnvVar]: OPENCODE_EMPTY_CONFIG_CONTENT,
             },
             extendEnv: input.environment === undefined,
           }),
@@ -510,7 +541,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       const setReadyFromStdoutChunk = (chunk: string) =>
         Ref.updateAndGet(stdoutRef, (stdout) => `${stdout}${chunk}`).pipe(
           Effect.flatMap((nextStdout) => {
-            const parsed = parseServerUrlFromOutput(nextStdout);
+            const parsed = parseServerUrlFromOutput(nextStdout, cliSpec.serverReadyPrefix);
             return parsed
               ? Deferred.succeed(readyDeferred, parsed).pipe(Effect.ignore)
               : Effect.void;
@@ -611,6 +642,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ...(input.port !== undefined ? { port: input.port } : {}),
       ...(input.hostname !== undefined ? { hostname: input.hostname } : {}),
       ...(input.timeoutMs !== undefined ? { timeoutMs: input.timeoutMs } : {}),
+      ...(input.cliSpec !== undefined ? { cliSpec: input.cliSpec } : {}),
     }).pipe(
       Effect.map((server) => ({
         url: server.url,
@@ -627,7 +659,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       ...(input.serverPassword
         ? {
             headers: {
-              Authorization: `Basic ${Buffer.from(`opencode:${input.serverPassword}`, "utf8").toString("base64")}`,
+              Authorization: `Basic ${Buffer.from(`${(input.cliSpec ?? OPENCODE_CLI_SPEC).serverAuthUsername}:${input.serverPassword}`, "utf8").toString("base64")}`,
             },
           }
         : {}),

@@ -119,6 +119,14 @@ describe("ServerSettings.providerInstances (slice-2 invariant)", () => {
     // Legacy `providers` struct is still hydrated with its per-driver defaults
     // so existing call sites keep working through the migration.
     expect(decoded.providers.codex.enabled).toBe(true);
+    expect(decoded.providers.antigravity.enabled).toBe(false);
+    expect(decoded.providers.droid.enabled).toBe(false);
+    expect(decoded.providers.kilo.enabled).toBe(false);
+    expect(decoded.providers.pi.enabled).toBe(false);
+    expect(decoded.providers.antigravity.binaryPath).toBe("agy");
+    expect(decoded.providers.droid.binaryPath).toBe("droid");
+    expect(decoded.providers.kilo.binaryPath).toBe("kilo");
+    expect(decoded.providers.pi.binaryPath).toBe("pi");
   });
 
   it("decodes a multi-instance map mixing first-party and fork drivers", () => {
@@ -199,6 +207,15 @@ describe("ServerSettings.sourceControlWritingStyle", () => {
     expect(patch.sourceControlWritingStyle).toEqual({
       mode: "custom",
       customInstructions: "Prefer concise wording.",
+    });
+  });
+});
+
+describe("ServerSettings skills", () => {
+  it("defaults to no disabled skills and accepts a disable list", () => {
+    expect(decodeServerSettings({}).skills).toEqual({ disabled: [] });
+    expect(decodeServerSettingsPatch({ skills: { disabled: ["review"] } }).skills).toEqual({
+      disabled: ["review"],
     });
   });
 });

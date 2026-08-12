@@ -47,6 +47,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverGetProviderRateLimits]: AuthOrchestrationReadScope,
   [WS_METHODS.serverTranscribeAudio]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverGetSpeechToTextKeyStatus]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetSkillsCatalog]: AuthOrchestrationReadScope,
   [WS_METHODS.serverSetSpeechToTextKey]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverSignalProcess]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverReportClientActivity]: AuthOrchestrationReadScope,

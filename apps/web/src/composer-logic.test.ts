@@ -371,4 +371,9 @@ describe("parseStandaloneComposerSlashCommand", () => {
   it("ignores slash commands with extra message text", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
   });
+
+  it("leaves other built-in commands to the app slash parser", () => {
+    expect(parseStandaloneComposerSlashCommand("/clear")).toBeNull();
+    expect(parseStandaloneComposerSlashCommand("/status")).toBeNull();
+  });
 });

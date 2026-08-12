@@ -1,3 +1,5 @@
+import * as NodeOS from "node:os";
+
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -41,6 +43,7 @@ import {
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
+  type ServerProviderSkill,
   type ServerSelfUpdateError,
   type ServerSelfUpdateProgressEvent,
   type FilesystemBrowseFailure,
@@ -78,6 +81,12 @@ import {
   observeRpcStreamEffect as instrumentRpcStreamEffect,
 } from "./observability/RpcInstrumentation.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import {
+  discoverSkillsCatalog,
+  filterDisabledSkills,
+  mergeSkillsIntoCatalog,
+  roninSkillsDir,
+} from "./provider/skillsCatalog.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -1022,9 +1031,27 @@ const makeWsRpcLayer = (
       const loadServerConfig = Effect.gen(function* () {
         const keybindingsConfig = yield* keybindings.loadConfigState;
         const providers = yield* providerRegistry.getProviders;
-        const settings = ServerSettings.redactServerSettingsForClient(
-          yield* serverSettings.getSettings,
-        );
+        const rawSettings = yield* serverSettings.getSettings;
+        const settings = ServerSettings.redactServerSettingsForClient(rawSettings);
+        const catalogSkills = yield* Effect.tryPromise(() =>
+          discoverSkillsCatalog({
+            homeDir: NodeOS.homedir(),
+            roninBaseDir: config.baseDir,
+            cwd: config.cwd,
+            includeDuplicateOrigins: false,
+          }),
+        ).pipe(Effect.orElseSucceed((): ServerProviderSkill[] => []));
+        const disabledSkillNames = settings.skills.disabled;
+        const providersWithCatalog = providers.map((provider) => ({
+          ...provider,
+          skills: filterDisabledSkills(
+            mergeSkillsIntoCatalog({
+              native: provider.skills,
+              catalog: catalogSkills,
+            }),
+            disabledSkillNames,
+          ),
+        }));
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
 
@@ -1035,7 +1062,7 @@ const makeWsRpcLayer = (
           keybindingsConfigPath: config.keybindingsConfigPath,
           keybindings: keybindingsConfig.keybindings,
           issues: keybindingsConfig.issues,
-          providers,
+          providers: providersWithCatalog,
           availableEditors: yield* resolveAvailableEditorsForConfig(
             externalLauncher.resolveAvailableEditors(),
           ),
@@ -1603,6 +1630,29 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetProviderRateLimits, rateLimits.readSnapshot, {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverGetSkillsCatalog]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverGetSkillsCatalog,
+            Effect.tryPromise(() =>
+              discoverSkillsCatalog({
+                homeDir: NodeOS.homedir(),
+                roninBaseDir: config.baseDir,
+                cwd: input.cwd ?? config.cwd,
+                includeDuplicateOrigins: true,
+              }).then((skills) => ({
+                skills,
+                roninSkillsDir: roninSkillsDir(NodeOS.homedir()),
+              })),
+            ).pipe(
+              Effect.orElseSucceed(() => ({
+                skills: [],
+                roninSkillsDir: roninSkillsDir(NodeOS.homedir()),
+              })),
+            ),
+            {
+              "rpc.aggregate": "server",
+            },
+          ),
         [WS_METHODS.serverTranscribeAudio]: (input) =>
           observeRpcEffect(WS_METHODS.serverTranscribeAudio, speechToText.transcribe(input), {
             "rpc.aggregate": "server",

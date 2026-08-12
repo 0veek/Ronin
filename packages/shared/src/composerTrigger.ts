@@ -1,5 +1,10 @@
+import {
+  parseComposerSlashInvocation,
+  type BuiltInComposerSlashCommand,
+} from "./composerSlashCommands.ts";
+
 export type ComposerTriggerKind = "path" | "slash-command" | "slash-model" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand = BuiltInComposerSlashCommand;
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -126,14 +131,15 @@ export function detectComposerTrigger(
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
-  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
-  if (!match) {
+): Extract<ComposerSlashCommand, "plan" | "default"> | null {
+  const invocation = parseComposerSlashInvocation(text);
+  if (!invocation || invocation.args.length > 0) {
     return null;
   }
-  const command = match[1]?.toLowerCase();
-  if (command === "plan") return "plan";
-  return "default";
+  if (invocation.command === "plan" || invocation.command === "default") {
+    return invocation.command;
+  }
+  return null;
 }
 
 export function replaceTextRange(

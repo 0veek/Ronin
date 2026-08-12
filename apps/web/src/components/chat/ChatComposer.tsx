@@ -18,6 +18,12 @@ import {
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import {
+  COMPOSER_SLASH_COMMAND_DEFINITIONS,
+  getAvailableComposerSlashCommands,
+  shouldHideProviderNativeSlashCommand,
+  type BuiltInComposerSlashCommand,
+} from "@t3tools/shared/composerSlashCommands";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
@@ -593,6 +599,9 @@ export interface ChatComposerProps {
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
+  onAppSlashCommand?: (
+    command: Exclude<BuiltInComposerSlashCommand, "model" | "plan" | "default">,
+  ) => void;
 
   focusComposer: () => void;
   scheduleComposerFocus: () => void;
@@ -665,6 +674,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
+    onAppSlashCommand,
     focusComposer,
     scheduleComposerFocus,
     setThreadError,
@@ -1041,52 +1051,46 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }));
     }
     if (composerTrigger.kind === "slash-command") {
-      const builtInSlashCommandItems = [
-        {
-          id: "slash:model",
-          type: "slash-command",
-          command: "model",
-          label: "/model",
-          description: "Switch response model for this thread",
-        },
-        ...(planModeUiEnabled
-          ? ([
-              {
-                id: "slash:plan",
-                type: "slash-command",
-                command: "plan",
-                label: "/plan",
-                description: "Switch this thread into plan mode",
-              },
-              {
-                id: "slash:default",
-                type: "slash-command",
-                command: "default",
-                label: "/default",
-                description: "Switch this thread back to normal build mode",
-              },
-            ] as const)
-          : []),
-      ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
-      const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? []).map(
-        (command) => ({
+      const nativeCommandNames = (selectedProviderStatus?.slashCommands ?? []).map(
+        (command) => command.name,
+      );
+      const availableBuiltInCommands = getAvailableComposerSlashCommands({
+        planModeEnabled: planModeUiEnabled,
+        nativeCommandNames,
+        canOfferForkCommand: true,
+        canOfferSideCommand: true,
+      });
+      const availableBuiltInCommandSet = new Set(availableBuiltInCommands);
+      const builtInSlashCommandItems = availableBuiltInCommands.map((command) => {
+        const definition = COMPOSER_SLASH_COMMAND_DEFINITIONS[command];
+        return {
+          id: `slash:${definition.command}`,
+          type: "slash-command" as const,
+          command: definition.command,
+          label: definition.label,
+          description: definition.description,
+        };
+      });
+      const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? [])
+        .filter(
+          (command) =>
+            !shouldHideProviderNativeSlashCommand(command.name, availableBuiltInCommandSet),
+        )
+        .map((command) => ({
           id: `provider-slash-command:${selectedProvider}:${command.name}`,
           type: "provider-slash-command" as const,
           provider: selectedProvider,
           command,
           label: `/${command.name}`,
           description: command.description ?? command.input?.hint ?? "Run provider command",
-        }),
+        }));
+      const visibleSkills = (selectedProviderStatus?.skills ?? []).filter(
+        (skill) =>
+          !(settings.skills?.disabled ?? []).some(
+            (name) => name.trim().toLowerCase() === skill.name.trim().toLowerCase(),
+          ),
       );
-      const query = composerTrigger.query.trim().toLowerCase();
-      const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
-      if (!query) {
-        return slashCommandItems;
-      }
-      return searchSlashCommandItems(slashCommandItems, query);
-    }
-    if (composerTrigger.kind === "skill") {
-      return searchProviderSkills(selectedProviderStatus?.skills ?? [], composerTrigger.query).map(
+      const skillItems = searchProviderSkills(visibleSkills, composerTrigger.query).map(
         (skill) => ({
           id: `skill:${selectedProvider}:${skill.name}`,
           type: "skill" as const,
@@ -1099,6 +1103,31 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
         }),
       );
+      const query = composerTrigger.query.trim().toLowerCase();
+      const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
+      const rankedSlashItems = query
+        ? searchSlashCommandItems(slashCommandItems, query)
+        : slashCommandItems;
+      return [...rankedSlashItems, ...skillItems];
+    }
+    if (composerTrigger.kind === "skill") {
+      const visibleSkills = (selectedProviderStatus?.skills ?? []).filter(
+        (skill) =>
+          !(settings.skills?.disabled ?? []).some(
+            (name) => name.trim().toLowerCase() === skill.name.trim().toLowerCase(),
+          ),
+      );
+      return searchProviderSkills(visibleSkills, composerTrigger.query).map((skill) => ({
+        id: `skill:${selectedProvider}:${skill.name}`,
+        type: "skill" as const,
+        provider: selectedProvider,
+        skill,
+        label: formatProviderSkillDisplayName(skill),
+        description:
+          skill.shortDescription ??
+          skill.description ??
+          (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+      }));
     }
     return [];
   }, [
@@ -1106,6 +1135,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeUiEnabled,
     selectedProvider,
     selectedProviderStatus,
+    settings.skills,
     workspaceEntries.entries,
   ]);
 
@@ -1692,13 +1722,33 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
-        void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
+        if (item.command === "plan" || item.command === "default") {
+          void handleInteractionModeChange(item.command);
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+          }
+          return;
+        }
+        if (item.command === "compact") {
+          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          });
+          if (applied) {
+            setComposerHighlightedItemId(null);
+          }
+          onAppSlashCommand?.("compact");
+          return;
+        }
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
         });
         if (applied) {
           setComposerHighlightedItemId(null);
         }
+        onAppSlashCommand?.(item.command);
         return;
       }
       if (item.type === "provider-slash-command") {
@@ -1738,7 +1788,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
     },
-    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
+    [
+      applyPromptReplacement,
+      handleInteractionModeChange,
+      onAppSlashCommand,
+      resolveActiveComposerTrigger,
+    ],
   );
 
   const onComposerMenuItemHighlighted = useCallback(

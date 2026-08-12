@@ -40,6 +40,7 @@ import {
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodePermissionRules,
+  OPENCODE_CLI_SPEC,
   OpenCodeRuntime,
   OpenCodeRuntimeError,
   openCodeQuestionId,
@@ -49,6 +50,7 @@ import {
   toOpenCodeFileParts,
   toOpenCodePermissionReply,
   toOpenCodeQuestionAnswers,
+  type OpenCodeCompatibleCliSpec,
   type OpenCodeServerConnection,
 } from "../opencodeRuntime.ts";
 import * as Option from "effect/Option";
@@ -242,6 +244,8 @@ export interface OpenCodeAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly nativeEventLogPath?: string;
   readonly nativeEventLogger?: EventNdjsonLogger;
+  readonly provider?: ProviderDriverKind;
+  readonly cliSpec?: OpenCodeCompatibleCliSpec;
 }
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -252,9 +256,12 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
  * sites pipe through this in `Effect.mapError` so they never build the error
  * shape by hand.
  */
-const toRequestError = (cause: OpenCodeRuntimeError): ProviderAdapterRequestError =>
+const toRequestError = (
+  cause: OpenCodeRuntimeError,
+  provider: ProviderDriverKind = PROVIDER,
+): ProviderAdapterRequestError =>
   new ProviderAdapterRequestError({
-    provider: PROVIDER,
+    provider,
     method: cause.operation,
     detail: cause.detail,
     cause: cause.cause,
@@ -266,9 +273,13 @@ const toRequestError = (cause: OpenCodeRuntimeError): ProviderAdapterRequestErro
  * in which case we preserve its `detail`; otherwise we fall back to
  * {@link openCodeRuntimeErrorDetail} for unknown causes (defects, etc.).
  */
-const toProcessError = (threadId: ThreadId, cause: unknown): ProviderAdapterProcessError =>
+const toProcessError = (
+  threadId: ThreadId,
+  cause: unknown,
+  provider: ProviderDriverKind = PROVIDER,
+): ProviderAdapterProcessError =>
   new ProviderAdapterProcessError({
-    provider: PROVIDER,
+    provider,
     threadId,
     detail: OpenCodeRuntimeError.is(cause) ? cause.detail : openCodeRuntimeErrorDetail(cause),
     cause,
@@ -565,7 +576,9 @@ export function makeOpenCodeAdapter(
   options?: OpenCodeAdapterLiveOptions,
 ) {
   return Effect.gen(function* () {
-    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("opencode");
+    const provider = options?.provider ?? PROVIDER;
+    const cliSpec = options?.cliSpec ?? OPENCODE_CLI_SPEC;
+    const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make(provider);
     const serverConfig = yield* ServerConfig;
     const openCodeRuntime = yield* OpenCodeRuntime;
     const crypto = yield* Crypto.Crypto;
@@ -590,7 +603,7 @@ export function makeOpenCodeAdapter(
       Effect.mapError(
         (cause) =>
           new ProviderAdapterRequestError({
-            provider: PROVIDER,
+            provider,
             method: "crypto/randomUUIDv4",
             detail: "Failed to generate OpenCode runtime identifier.",
             cause,
@@ -604,7 +617,7 @@ export function makeOpenCodeAdapter(
       }).pipe(
         Effect.map(({ eventId, createdAt }) => ({
           eventId,
-          provider: PROVIDER,
+          provider,
           threadId: input.threadId,
           createdAt,
           ...(input.turnId ? { turnId: input.turnId } : {}),
@@ -795,7 +808,7 @@ export function makeOpenCodeAdapter(
       yield* writeNativeEventBestEffort(context.session.threadId, {
         observedAt: yield* nowIso,
         event: {
-          provider: PROVIDER,
+          provider,
           threadId: context.session.threadId,
           providerThreadId: context.openCodeSessionId,
           type: event.type,
@@ -1208,11 +1221,13 @@ export function makeOpenCodeAdapter(
                 binaryPath,
                 serverUrl,
                 ...(options?.environment ? { environment: options.environment } : {}),
+                ...(cliSpec !== OPENCODE_CLI_SPEC ? { cliSpec } : {}),
               });
               const client = openCodeRuntime.createOpenCodeSdkClient({
                 baseUrl: server.url,
                 directory,
                 ...(server.external && serverPassword ? { serverPassword } : {}),
+                ...(cliSpec !== OPENCODE_CLI_SPEC ? { cliSpec } : {}),
               });
               const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
               if (mcpSession && !server.external) {
@@ -1350,7 +1365,7 @@ export function makeOpenCodeAdapter(
 
         const createdAt = yield* nowIso;
         const session: ProviderSession = {
-          provider: PROVIDER,
+          provider,
           providerInstanceId: boundInstanceId,
           status: "ready",
           runtimeMode: input.runtimeMode,
@@ -1423,7 +1438,7 @@ export function makeOpenCodeAdapter(
           : undefined);
       if (modelSelection !== undefined && modelSelection.instanceId !== boundInstanceId) {
         return yield* new ProviderAdapterValidationError({
-          provider: PROVIDER,
+          provider,
           operation: "sendTurn",
           issue: `OpenCode model selection is bound to instance '${modelSelection?.instanceId}', expected '${boundInstanceId}'.`,
         });
@@ -1431,7 +1446,7 @@ export function makeOpenCodeAdapter(
       const parsedModel = parseOpenCodeModelSlug(modelSelection?.model);
       if (!parsedModel) {
         return yield* new ProviderAdapterValidationError({
-          provider: PROVIDER,
+          provider,
           operation: "sendTurn",
           issue: "OpenCode model selection must use the 'provider/model' format.",
         });
@@ -1448,7 +1463,7 @@ export function makeOpenCodeAdapter(
       });
       if ((!text || text.length === 0) && fileParts.length === 0) {
         return yield* new ProviderAdapterValidationError({
-          provider: PROVIDER,
+          provider,
           operation: "sendTurn",
           issue: "OpenCode turns require text input or at least one attachment.",
         });
@@ -1564,7 +1579,7 @@ export function makeOpenCodeAdapter(
       const context = yield* ensureSessionContext(sessions, threadId);
       if (!context.pendingPermissions.has(requestId)) {
         return yield* new ProviderAdapterRequestError({
-          provider: PROVIDER,
+          provider,
           method: "permission.reply",
           detail: `Unknown pending permission request: ${requestId}`,
         });
@@ -1585,7 +1600,7 @@ export function makeOpenCodeAdapter(
       const request = context.pendingQuestions.get(requestId);
       if (!request) {
         return yield* new ProviderAdapterRequestError({
-          provider: PROVIDER,
+          provider,
           method: "question.reply",
           detail: `Unknown pending user-input request: ${requestId}`,
         });
@@ -1604,7 +1619,7 @@ export function makeOpenCodeAdapter(
         const context = sessions.get(threadId);
         if (!context) {
           return yield* new ProviderAdapterSessionNotFoundError({
-            provider: PROVIDER,
+            provider,
             threadId,
           });
         }
@@ -1698,7 +1713,7 @@ export function makeOpenCodeAdapter(
       });
 
     return {
-      provider: PROVIDER,
+      provider,
       capabilities: {
         sessionModelSwitch: "in-session",
       },

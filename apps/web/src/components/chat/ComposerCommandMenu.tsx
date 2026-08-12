@@ -4,7 +4,18 @@ import {
   type ServerProviderSkill,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
-import { BotIcon } from "lucide-react";
+import {
+  BotIcon,
+  EraserIcon,
+  GitForkIcon,
+  InfoIcon,
+  Layers2Icon,
+  type LucideIcon,
+  MessageSquarePlusIcon,
+  Minimize2Icon,
+  PencilRulerIcon,
+  ScanSearchIcon,
+} from "lucide-react";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
@@ -92,16 +103,32 @@ function groupCommandItems(
 
   const builtInItems = items.filter((item) => item.type === "slash-command");
   const providerItems = items.filter((item) => item.type === "provider-slash-command");
+  const skillItems = items.filter((item) => item.type === "skill");
 
   const groups: ComposerCommandGroup[] = [];
   if (builtInItems.length > 0) {
     groups.push({ id: "built-in", label: "Built-in", items: builtInItems });
+  }
+  if (skillItems.length > 0) {
+    groups.push({ id: "skills", label: "Skills", items: skillItems });
   }
   if (providerItems.length > 0) {
     groups.push({ id: "provider", label: "Provider", items: providerItems });
   }
   return groups;
 }
+
+const SLASH_COMMAND_ICONS: Record<ComposerSlashCommand, LucideIcon> = {
+  clear: EraserIcon,
+  compact: Minimize2Icon,
+  model: Layers2Icon,
+  plan: PencilRulerIcon,
+  default: BotIcon,
+  review: ScanSearchIcon,
+  fork: GitForkIcon,
+  side: MessageSquarePlusIcon,
+  status: InfoIcon,
+};
 
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   items: ComposerCommandItem[];
@@ -234,9 +261,12 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           theme={props.resolvedTheme}
         />
       ) : null}
-      {props.item.type === "slash-command" ? (
-        <BotIcon className="size-4 shrink-0 text-icon-muted" />
-      ) : null}
+      {props.item.type === "slash-command"
+        ? (() => {
+            const Icon = SLASH_COMMAND_ICONS[props.item.command];
+            return <Icon className="size-4 shrink-0 text-icon-muted" />;
+          })()
+        : null}
       {props.item.type === "provider-slash-command" ? (
         <span className="inline-flex size-4 shrink-0 items-center justify-center text-icon-muted">
           <SkillGlyph className="size-3.5" />

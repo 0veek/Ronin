@@ -739,6 +739,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetSpeechToTextKeyStatus,
       staleTimeMs: 5_000,
     }),
+    skillsCatalog: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:skills-catalog",
+      tag: WS_METHODS.serverGetSkillsCatalog,
+      staleTimeMs: 10_000,
+    }),
     transcribeAudio: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:transcribe-audio",
       tag: WS_METHODS.serverTranscribeAudio,

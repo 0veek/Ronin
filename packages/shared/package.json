@@ -131,6 +131,10 @@
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
     },
+    "./composerSlashCommands": {
+      "types": "./src/composerSlashCommands.ts",
+      "import": "./src/composerSlashCommands.ts"
+    },
     "./composerTrigger": {
       "types": "./src/composerTrigger.ts",
       "import": "./src/composerTrigger.ts"
@@ -166,6 +170,10 @@
     "./httpReadiness": {
       "types": "./src/httpReadiness.ts",
       "import": "./src/httpReadiness.ts"
+    },
+    "./roninHome": {
+      "types": "./src/roninHome.ts",
+      "import": "./src/roninHome.ts"
     },
     "./devHome": {
       "types": "./src/devHome.ts",

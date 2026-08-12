@@ -4,6 +4,7 @@ import {
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
@@ -12,6 +13,7 @@ import {
   type RuntimeMode,
   type TurnId,
 } from "@t3tools/contracts";
+import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -27,7 +29,10 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
+import { ServerConfig } from "../../config.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import { buildInlineSkillInstructions } from "../../provider/skillPromptInjection.ts";
+import { discoverSkillsCatalog, filterDisabledSkills } from "../../provider/skillsCatalog.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -753,7 +758,49 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const normalizedInput = toNonEmptyProviderInput(input.messageText);
+    const invokedSkillNames = collectComposerInlineTokens(`${input.messageText} `)
+      .filter((token) => token.type === "skill")
+      .map((token) => token.value.toLowerCase());
+    const skillInlineText =
+      invokedSkillNames.length > 0
+        ? yield* Effect.gen(function* () {
+            const config = yield* ServerConfig;
+            const settings = yield* serverSettingsService.getSettings;
+            const catalog = yield* Effect.tryPromise(() =>
+              discoverSkillsCatalog({
+                homeDir: process.env.HOME?.trim() || "",
+                roninBaseDir: config.baseDir,
+                cwd: config.cwd,
+                includeDuplicateOrigins: false,
+              }),
+            ).pipe(Effect.orElseSucceed(() => []));
+            const available = filterDisabledSkills(catalog, settings.skills.disabled);
+            const referenced = available.filter((skill) =>
+              invokedSkillNames.includes(skill.name.toLowerCase()),
+            );
+            if (referenced.length === 0) {
+              return "";
+            }
+            const provider = thread.modelSelection.instanceId;
+            const driver = isProviderDriverKind(provider)
+              ? provider
+              : ProviderDriverKind.make("codex");
+            return yield* Effect.tryPromise(() =>
+              buildInlineSkillInstructions({
+                provider: driver,
+                skills: referenced,
+                maxChars: Math.max(
+                  0,
+                  PROVIDER_SEND_TURN_MAX_INPUT_CHARS - input.messageText.length - 2048,
+                ),
+              }),
+            ).pipe(Effect.orElseSucceed(() => ""));
+          })
+        : "";
+    const messageWithSkills = skillInlineText
+      ? `${input.messageText}\n\n${skillInlineText}`
+      : input.messageText;
+    const normalizedInput = toNonEmptyProviderInput(messageWithSkills);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
