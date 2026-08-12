@@ -17,10 +17,12 @@
   }
 
   @media (min-width: 48rem) {
-    @container sidebar-header (min-width: 13.5rem) {
-      .sidebar-brand {
-        display: flex;
-      }
+    /* No container query: the old 13.5rem threshold sat above the sidebar's
+       own 13rem minimum, so dragging the sidebar to its narrowest legal width
+       made the wordmark vanish. The stage label below keeps its query, since
+       its threshold is genuinely above the minimum. */
+    .sidebar-brand {
+      display: flex;
     }
 
     @container sidebar-header (min-width: 15.75rem) {
