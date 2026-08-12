@@ -60,6 +60,7 @@ import {
   commandLabel,
   DEFAULT_WHEN_VARIABLE,
   isKnownWhenVariable,
+  keybindingDisplayParts,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
@@ -75,7 +76,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
 
 function KeybindingPill({ value }: { value: string }) {
-  const parts = value.split("+");
+  const parts = keybindingDisplayParts(value);
   return (
     <KbdGroup className="bg-transparent p-0 shadow-none">
       {parts.map((part) => (
@@ -100,6 +101,9 @@ function KeybindingPill({ value }: { value: string }) {
     </KbdGroup>
   );
 }
+
+const KEYBINDING_GRID_COLUMNS =
+  "min-w-[500px] grid-cols-[minmax(130px,1.1fr)_minmax(160px,0.85fr)_minmax(125px,1fr)_52px]";
 
 function ExpandableHeaderSearch({
   query,
@@ -814,7 +818,12 @@ function KeybindingTableRow({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+    <div
+      className={cn(
+        "grid items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40",
+        KEYBINDING_GRID_COLUMNS,
+      )}
+    >
       <div className="min-w-0 pr-4">
         <div className="flex min-w-0 items-center gap-1.5">
           <Tooltip>
@@ -986,7 +995,12 @@ function NewKeybindingTableRow({
   };
 
   return (
-    <div className="grid grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40">
+    <div
+      className={cn(
+        "grid items-center px-4 py-1.5 text-sm even:bg-muted/15 hover:bg-accent/40",
+        KEYBINDING_GRID_COLUMNS,
+      )}
+    >
       <div className="min-w-0 pr-4">
         <Select
           value={commandDraft}
@@ -1293,16 +1307,21 @@ export function KeybindingsSettingsPanel() {
         <ScrollArea
           chainVerticalScroll
           scrollFade
-          hideScrollbars
+          scrollbarGutter
           className="w-full max-w-full rounded-none"
         >
-          <div className="grid min-w-[680px] grid-cols-[minmax(190px,1.1fr)_minmax(220px,0.85fr)_minmax(210px,1fr)_60px] border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+          <div
+            className={cn(
+              "grid border-b border-border/70 bg-muted/25 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground",
+              KEYBINDING_GRID_COLUMNS,
+            )}
+          >
             <div>Command</div>
             <div>Keybinding</div>
             <div>When</div>
             <div>Status</div>
           </div>
-          <div className="min-w-[680px] divide-y divide-border/60">
+          <div className="min-w-[500px] divide-y divide-border/60">
             {isAddingBinding ? (
               <NewKeybindingTableRow
                 commandOptions={commandOptions}

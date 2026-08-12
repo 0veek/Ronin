@@ -170,7 +170,7 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
   readonly onExpectedFailure?: (
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
-  readonly retryExpectedFailureAfter?: Duration.Input;
+  readonly retryExpectedFailureAfter?: Duration.Input | ((retryAttempt: number) => Duration.Input);
   readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
 
@@ -202,6 +202,7 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
           Option.match({
             onNone: () => Stream.empty,
             onSome: (session) => {
+              let consecutiveExpectedFailures = 0;
               const method = session.client[tag] as (
                 input: EnvironmentRpcInput<TTag>,
               ) => Stream.Stream<
@@ -222,6 +223,11 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                         input,
                       });
                       return method(input).pipe(
+                        Stream.tap(() =>
+                          Effect.sync(() => {
+                            consecutiveExpectedFailures = 0;
+                          }),
+                        ),
                         Stream.ensuring(completeObservation),
                         Stream.catchCause((cause) => {
                           const hasOnlyExpectedFailures =
@@ -251,11 +257,14 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                             if (options.retryExpectedFailureAfter === undefined) {
                               return handled;
                             }
+                            consecutiveExpectedFailures += 1;
+                            const retryAfter =
+                              typeof options.retryExpectedFailureAfter === "function"
+                                ? options.retryExpectedFailureAfter(consecutiveExpectedFailures)
+                                : options.retryExpectedFailureAfter;
                             return handled.pipe(
                               Stream.concat(
-                                Stream.fromEffect(
-                                  Effect.sleep(options.retryExpectedFailureAfter),
-                                ).pipe(Stream.drain),
+                                Stream.fromEffect(Effect.sleep(retryAfter)).pipe(Stream.drain),
                               ),
                               Stream.concat(subscribeToSession()),
                             );

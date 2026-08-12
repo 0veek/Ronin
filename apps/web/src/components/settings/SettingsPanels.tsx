@@ -1503,7 +1503,7 @@ export function GeneralSettingsPanel() {
   );
 
   return (
-    <SettingsPageContainer>
+    <SettingsPageContainer className="max-w-3xl">
       <SettingsSection title="General">
         <SettingsRow
           {...searchableSetting("project-grouping")}

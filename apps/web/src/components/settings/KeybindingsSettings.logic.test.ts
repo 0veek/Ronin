@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
 
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+
 import {
   buildKeybindingRows,
   buildKeybindingCommandOptions,
   buildWhenVariableOptions,
   commandLabel,
   keybindingConflictLabels,
+  keybindingDisplayParts,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
   shortcutToKeybindingInput,
@@ -124,6 +127,18 @@ describe("KeybindingsSettings.logic", () => {
     expect(commandLabel("commandPalette.toggle")).toBe("Command Palette: Toggle");
     expect(commandLabel("themeEditor.toggle")).toBe("Theme Editor: Toggle");
     expect(commandLabel("script.setup-db.run")).toBe("Run Script: Setup Db");
+  });
+
+  it("keeps a plus key intact for keycap rendering", () => {
+    expect(keybindingDisplayParts("mod++")).toEqual(["mod", "+"]);
+    expect(keybindingDisplayParts("mod+shift++")).toEqual(["mod", "shift", "+"]);
+  });
+
+  it("searches the readable command label", () => {
+    const rows = buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS, "Preview: Zoom In");
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((row) => row.command === "preview.zoomIn")).toBe(true);
   });
 
   it("builds known when variable options from defaults without frontend labels", () => {
@@ -245,5 +260,17 @@ describe("KeybindingsSettings.logic", () => {
         when: "",
       }),
     ).toEqual(["Chat: New Local"]);
+  });
+
+  it("does not flag the intentional default model-picker jump shadows", () => {
+    const rows = buildKeybindingRows(DEFAULT_RESOLVED_KEYBINDINGS, "");
+    const jumpRows = rows.filter(
+      (row) =>
+        String(row.command).startsWith("thread.jump") ||
+        String(row.command).startsWith("modelPicker.jump"),
+    );
+
+    expect(jumpRows).toHaveLength(18);
+    expect(jumpRows.every((row) => row.conflicts.length === 0)).toBe(true);
   });
 });

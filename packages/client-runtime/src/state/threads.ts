@@ -48,6 +48,16 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
  */
 export const INITIAL_THREAD_USER_TURN_LIMIT = 10;
 export const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
+const THREAD_SUBSCRIPTION_RETRY_BASE_MS = 250;
+const THREAD_SUBSCRIPTION_RETRY_MAX_MS = 30_000;
+
+export function threadSubscriptionRetryDelay(retryAttempt: number): number {
+  const exponent = Math.max(0, Math.floor(retryAttempt) - 1);
+  return Math.min(
+    THREAD_SUBSCRIPTION_RETRY_BASE_MS * 2 ** exponent,
+    THREAD_SUBSCRIPTION_RETRY_MAX_MS,
+  );
+}
 
 function pageStateFromSnapshot(
   page: OrchestrationThreadDetailPage | undefined,
@@ -166,6 +176,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
   );
   const awaitingCompletion = yield* Ref.make(false);
+  // HTTP is a one-shot bootstrap for a live state machine. If both transports
+  // reject the snapshot, socket retries must not re-run the same expensive
+  // HTTP request on every attempt.
+  const attemptedInitialHttpSnapshot = yield* Ref.make(false);
   // Bumped whenever loaded history may have been rewritten out from under an
   // in-flight older-page fetch (snapshot replacement, revert, deletion). A
   // page response captured under an older epoch is discarded, not merged.
@@ -215,7 +229,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       : {
           ...current,
           status: "synchronizing" as const,
-          error: Option.none(),
         },
   );
   const setReady = SubscriptionRef.update(state, (current) =>
@@ -224,7 +237,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       : {
           ...current,
           status: "synchronizing" as const,
-          error: Option.none(),
         },
   );
   const setDisconnected = Effect.gen(function* () {
@@ -590,7 +602,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           yield* SubscriptionRef.set(lastSequence, 0);
           current = yield* SubscriptionRef.get(state);
         }
-        if (Option.isNone(current.data) && current.status !== "deleted") {
+        if (
+          Option.isNone(current.data) &&
+          current.status !== "deleted" &&
+          !(yield* Ref.getAndSet(attemptedInitialHttpSnapshot, true))
+        ) {
           const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
             Effect.flatMap(
               Option.match({
@@ -638,7 +654,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       }),
       {
         onExpectedFailure: setStreamError,
-        retryExpectedFailureAfter: "250 millis",
+        retryExpectedFailureAfter: threadSubscriptionRetryDelay,
         resubscribe: foregroundResubscriptions,
       },
     ).pipe(Stream.runForEach(applyItem)),

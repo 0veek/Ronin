@@ -238,26 +238,43 @@ interface ExpectedAgentInput {
 
 const APP_FORWARDED_SHORTCUTS: ReadonlyArray<{
   key: string;
-  meta: boolean;
   shift: boolean;
-  control: boolean;
 }> = Object.freeze([
   // mod+shift+J → preview.toggle
-  { key: "j", meta: true, shift: true, control: false },
+  { key: "j", shift: true },
   // mod+K → command palette
-  { key: "k", meta: true, shift: false, control: false },
+  { key: "k", shift: false },
   // mod+, → settings (macOS convention)
-  { key: ",", meta: true, shift: false, control: false },
+  { key: ",", shift: false },
   // mod+W → close tab/panel
-  { key: "w", meta: true, shift: false, control: false },
+  { key: "w", shift: false },
+  // mod+L → focus the preview URL field in the renderer
+  { key: "l", shift: false },
 ]);
 
+export type PreviewOwnedShortcutAction =
+  | "refresh"
+  | "focus-url"
+  | "zoom-in"
+  | "zoom-out"
+  | "reset-zoom";
+
+export const previewOwnedShortcutAction = (
+  input: Electron.Input,
+): PreviewOwnedShortcutAction | null => {
+  if (input.type !== "keyDown" || (!input.meta && !input.control) || input.alt) return null;
+  const key = input.key.toLowerCase();
+  if (key === "+" || key === "=") return "zoom-in";
+  if (input.shift) return null;
+  if (key === "r") return "refresh";
+  if (key === "l") return "focus-url";
+  if (key === "-") return "zoom-out";
+  if (key === "0") return "reset-zoom";
+  return null;
+};
+
 export const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
-  input.type === "keyDown" &&
-  input.key.toLowerCase() === "r" &&
-  (input.meta || input.control) &&
-  !input.shift &&
-  !input.alt;
+  previewOwnedShortcutAction(input) === "refresh";
 
 const isPreviewInputSignal = (value: unknown): value is PreviewInputSignal => {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
@@ -996,12 +1013,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const isAppShortcut = (input: Electron.Input): boolean =>
     input.type === "keyDown" &&
+    (input.meta || input.control) &&
+    !input.alt &&
     APP_FORWARDED_SHORTCUTS.some(
       (shortcut) =>
-        shortcut.key.toLowerCase() === input.key.toLowerCase() &&
-        shortcut.meta === input.meta &&
-        shortcut.shift === input.shift &&
-        shortcut.control === input.control,
+        shortcut.key.toLowerCase() === input.key.toLowerCase() && shortcut.shift === input.shift,
     );
 
   const computeNavStatus = (wc: Electron.WebContents): PreviewNavStatus => {
@@ -1160,13 +1176,26 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       });
     });
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
-      if (isPreviewRefreshShortcut(input)) {
+      const previewAction = previewOwnedShortcutAction(input);
+      if (previewAction !== null) {
         event.preventDefault();
-        runFork(
-          attempt({ operation: "shortcut.refresh", tabId, webContentsId: wc.id }, () =>
-            wc.reload(),
-          ).pipe(Effect.ignore),
-        );
+        if (previewAction === "focus-url") {
+          runFork(forwardShortcut(event, input));
+        } else if (previewAction === "refresh") {
+          runFork(
+            attempt({ operation: "shortcut.refresh", tabId, webContentsId: wc.id }, () =>
+              wc.reload(),
+            ).pipe(Effect.ignore),
+          );
+        } else {
+          const transform =
+            previewAction === "zoom-in"
+              ? (current: number) => nextZoomLevel(current, "in")
+              : previewAction === "zoom-out"
+                ? (current: number) => nextZoomLevel(current, "out")
+                : () => DEFAULT_ZOOM_FACTOR;
+          runFork(applyZoom(tabId, transform).pipe(Effect.ignore));
+        }
         return;
       }
       runFork(forwardShortcut(event, input));

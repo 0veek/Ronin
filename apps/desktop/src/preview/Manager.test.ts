@@ -40,6 +40,25 @@ describe("isPreviewRefreshShortcut", () => {
     expect(PreviewManager.isPreviewRefreshShortcut(input({ shift: true }))).toBe(false);
     expect(PreviewManager.isPreviewRefreshShortcut(input({ type: "keyUp" }))).toBe(false);
   });
+
+  it("routes preview focus and zoom chords owned by the embedded page", () => {
+    expect(PreviewManager.previewOwnedShortcutAction(input({ key: "l" }))).toBe("focus-url");
+    expect(PreviewManager.previewOwnedShortcutAction(input({ key: "=", shift: false }))).toBe(
+      "zoom-in",
+    );
+    expect(PreviewManager.previewOwnedShortcutAction(input({ key: "+", shift: true }))).toBe(
+      "zoom-in",
+    );
+    expect(PreviewManager.previewOwnedShortcutAction(input({ key: "=", shift: true }))).toBe(
+      "zoom-in",
+    );
+    expect(PreviewManager.previewOwnedShortcutAction(input({ key: "-" }))).toBe("zoom-out");
+    expect(PreviewManager.previewOwnedShortcutAction(input({ key: "0" }))).toBe("reset-zoom");
+    expect(
+      PreviewManager.previewOwnedShortcutAction(input({ key: "l", meta: false, control: true })),
+    ).toBe("focus-url");
+    expect(PreviewManager.previewOwnedShortcutAction(input({ key: "l", alt: true }))).toBeNull();
+  });
 });
 
 const {
@@ -376,6 +395,24 @@ describe("PreviewManager", () => {
 
         expect(states.at(-1)?.zoomFactor).toBe(0.9);
         expect(setZoomFactor).not.toHaveBeenCalled();
+
+        const preventDefault = vi.fn();
+        listeners.get("before-input-event")?.(
+          { preventDefault },
+          {
+            type: "keyDown",
+            key: "=",
+            meta: true,
+            control: false,
+            shift: false,
+            alt: false,
+          },
+        );
+        yield* Effect.yieldNow;
+
+        expect(preventDefault).toHaveBeenCalledOnce();
+        expect(setZoomFactor).toHaveBeenCalledWith(1);
+        setZoomFactor.mockClear();
 
         effectiveZoom = 1.25;
         listeners.get("did-navigate")?.();

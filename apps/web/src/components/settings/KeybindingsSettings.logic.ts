@@ -1,4 +1,6 @@
 import {
+  MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
+  THREAD_JUMP_KEYBINDING_COMMANDS,
   type KeybindingCommand,
   type KeybindingShortcut,
   type KeybindingWhenNode,
@@ -135,17 +137,50 @@ function conflictsWithWhen(leftWhen: string, rightWhen: string): boolean {
   return leftWhen.length === 0 || rightWhen.length === 0 || leftWhen === rightWhen;
 }
 
+function intentionalDefaultJumpShadow(
+  left: Pick<KeybindingRow, "command" | "source" | "when">,
+  right: Pick<KeybindingRow, "command" | "source" | "when">,
+): boolean {
+  if (left.source !== "Default" || right.source !== "Default") return false;
+
+  const leftThreadIndex = THREAD_JUMP_KEYBINDING_COMMANDS.findIndex(
+    (command) => command === left.command,
+  );
+  const rightThreadIndex = THREAD_JUMP_KEYBINDING_COMMANDS.findIndex(
+    (command) => command === right.command,
+  );
+  const leftModelIndex = MODEL_PICKER_JUMP_KEYBINDING_COMMANDS.findIndex(
+    (command) => command === left.command,
+  );
+  const rightModelIndex = MODEL_PICKER_JUMP_KEYBINDING_COMMANDS.findIndex(
+    (command) => command === right.command,
+  );
+
+  return (
+    (leftThreadIndex >= 0 &&
+      leftThreadIndex === rightModelIndex &&
+      left.when === "" &&
+      right.when === "modelPickerOpen") ||
+    (rightThreadIndex >= 0 &&
+      rightThreadIndex === leftModelIndex &&
+      right.when === "" &&
+      left.when === "modelPickerOpen")
+  );
+}
+
 export function keybindingConflictLabels(
   rows: ReadonlyArray<KeybindingRow>,
   input: { readonly rowId: string; readonly key: string; readonly when: string },
 ): ReadonlyArray<string> {
   if (input.key.trim().length === 0) return [];
   const conflicts: Array<string> = [];
+  const inputRow = rows.find((row) => row.id === input.rowId);
   for (const candidate of rows) {
     if (
       candidate.id !== input.rowId &&
       candidate.key === input.key &&
-      conflictsWithWhen(candidate.when, input.when)
+      conflictsWithWhen(candidate.when, input.when) &&
+      !(inputRow && intentionalDefaultJumpShadow({ ...inputRow, when: input.when }, candidate))
     ) {
       conflicts.push(commandLabel(candidate.command));
     }
@@ -198,12 +233,24 @@ export function buildKeybindingRows(
 
   return rowsWithConflicts.filter((row) => {
     return (
+      commandLabel(row.command).toLowerCase().includes(normalizedQuery) ||
       row.command.toLowerCase().includes(normalizedQuery) ||
       row.key.toLowerCase().includes(normalizedQuery) ||
       row.when.toLowerCase().includes(normalizedQuery) ||
       row.source.toLowerCase().includes(normalizedQuery)
     );
   });
+}
+
+export function keybindingDisplayParts(value: string): ReadonlyArray<string> {
+  const parts = value.split("+");
+  let trailingEmptyCount = 0;
+  while (parts.at(-1) === "") {
+    trailingEmptyCount += 1;
+    parts.pop();
+  }
+  if (trailingEmptyCount > 0) parts.push("+");
+  return parts;
 }
 
 function collectWhenIdentifiersFromNode(
