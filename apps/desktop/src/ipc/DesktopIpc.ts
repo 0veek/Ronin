@@ -4,10 +4,58 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
-export interface DesktopIpcInvokeEvent {}
+export interface DesktopIpcWebContents {
+  readonly mainFrame: unknown;
+  getURL(): string;
+  isDestroyed(): boolean;
+}
 
-export interface DesktopIpcSyncEvent {
+export interface DesktopIpcSenderFrame {
+  readonly url: string;
+}
+
+export interface DesktopIpcOwnerWindow {
+  readonly webContents: DesktopIpcWebContents;
+  isDestroyed(): boolean;
+}
+
+export interface DesktopIpcInvokeEvent {
+  readonly sender?: DesktopIpcWebContents;
+  readonly senderFrame?: DesktopIpcSenderFrame | null;
+}
+
+export interface DesktopIpcSyncEvent extends DesktopIpcInvokeEvent {
   returnValue: unknown;
+}
+
+export type DesktopIpcSenderAuthorizer = (event: DesktopIpcInvokeEvent) => boolean;
+
+const TRUSTED_DESKTOP_PROTOCOLS = new Set(["t3code:", "t3code-dev:"]);
+
+export function isTrustedDesktopIpcSender(input: {
+  readonly event: DesktopIpcInvokeEvent;
+  readonly resolveOwner: (sender: DesktopIpcWebContents) => DesktopIpcOwnerWindow | null;
+}): boolean {
+  try {
+    const { sender, senderFrame } = input.event;
+    if (!sender || !senderFrame || sender.isDestroyed() || senderFrame !== sender.mainFrame) {
+      return false;
+    }
+    const owner = input.resolveOwner(sender);
+    if (!owner || owner.isDestroyed() || owner.webContents !== sender) {
+      return false;
+    }
+    const url = new URL(senderFrame.url || sender.getURL());
+    return (
+      TRUSTED_DESKTOP_PROTOCOLS.has(url.protocol) &&
+      url.hostname === "app" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.port === ""
+    );
+  } catch {
+    return false;
+  }
 }
 
 export type DesktopIpcHandleListener = (
@@ -50,6 +98,17 @@ export class DesktopIpcUnregistrationError extends Schema.TaggedErrorClass<Deskt
   }
 }
 
+export class DesktopIpcUnauthorizedSenderError extends Schema.TaggedErrorClass<DesktopIpcUnauthorizedSenderError>()(
+  "DesktopIpcUnauthorizedSenderError",
+  {
+    channel: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `Rejected unauthorized IPC sender for ${this.channel}.`;
+  }
+}
+
 export const DesktopIpcError = Schema.Union([
   DesktopIpcRegistrationError,
   DesktopIpcUnregistrationError,
@@ -79,7 +138,10 @@ export class DesktopIpc extends Context.Service<
   }
 >()("@t3tools/desktop/ipc/DesktopIpc") {}
 
-export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
+export const make = (
+  ipcMain: DesktopIpcMain,
+  isTrustedSender: DesktopIpcSenderAuthorizer = () => false,
+): DesktopIpc["Service"] =>
   DesktopIpc.of({
     handle: Effect.fn("desktop.ipc.registerInvoke")(function* <E, R>({
       channel,
@@ -93,10 +155,13 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
         Effect.try({
           try: () => {
             ipcMain.removeHandler(channel);
-            ipcMain.handle(channel, (_event, raw) =>
+            ipcMain.handle(channel, (event, raw) =>
               runPromise(
                 Effect.gen(function* () {
                   yield* Effect.annotateCurrentSpan({ channel });
+                  if (!isTrustedSender(event)) {
+                    return yield* new DesktopIpcUnauthorizedSenderError({ channel });
+                  }
                   return yield* handler(raw);
                 }).pipe(Effect.annotateLogs({ channel }), Effect.withSpan("desktop.ipc.invoke")),
               ),
@@ -130,6 +195,9 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
               event.returnValue = runSync(
                 Effect.gen(function* () {
                   yield* Effect.annotateCurrentSpan({ channel });
+                  if (!isTrustedSender(event)) {
+                    return yield* new DesktopIpcUnauthorizedSenderError({ channel });
+                  }
                   return yield* handler();
                 }).pipe(
                   Effect.annotateLogs({ channel }),
@@ -151,7 +219,8 @@ export const make = (ipcMain: DesktopIpcMain): DesktopIpc["Service"] =>
     }),
   });
 
-export const layer = (ipcMain: DesktopIpcMain) => Layer.succeed(DesktopIpc, make(ipcMain));
+export const layer = (ipcMain: DesktopIpcMain, isTrustedSender: DesktopIpcSenderAuthorizer) =>
+  Layer.succeed(DesktopIpc, make(ipcMain, isTrustedSender));
 
 /**
  * Convenience helpers for creating IPC methods

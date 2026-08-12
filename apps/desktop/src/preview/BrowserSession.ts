@@ -11,23 +11,12 @@ import * as SynchronizedRef from "effect/SynchronizedRef";
 
 const PREVIEW_PARTITION_PREFIX = "persist:t3code-preview-";
 
-// Permissions granted to preview web content. `clipboard-sanitized-write` is the
-// Electron permission behind `navigator.clipboard.writeText()` — note it is NOT
-// `clipboard-write`, which is not a valid Electron permission name. Async
-// clipboard writes are gated by the permission *check* handler (not only the
-// request handler), so both handlers must allow it; otherwise built-in "Copy"
-// buttons — e.g. the Next.js / Vercel error overlay — fail with
-// `Failed to execute 'writeText' on 'Clipboard': Write permission denied`.
-const ALLOWED_PREVIEW_PERMISSIONS: ReadonlySet<string> = new Set([
-  "clipboard-read",
-  "clipboard-sanitized-write",
-  "notifications",
-  "geolocation",
-  // Deliberately NOT local-fonts: preview sessions run untrusted web content,
-  // and silently granting it would hand every page the user's installed-font
-  // fingerprint (and font file bytes via FontData.blob()). The app's own font
-  // picker runs in the main window session, which is unaffected by this list.
-]);
+// Preview sessions host arbitrary web content, so they only receive the narrow
+// permission needed by built-in "Copy" buttons such as framework error overlays.
+// Electron calls this `clipboard-sanitized-write` (not `clipboard-write`) and
+// requires it in both the request and check handlers. Clipboard reads, location,
+// notifications, local fonts, and every unrelated permission remain denied.
+const ALLOWED_PREVIEW_PERMISSIONS: ReadonlySet<string> = new Set(["clipboard-sanitized-write"]);
 
 export class BrowserSessionPartitionDerivationError extends Schema.TaggedErrorClass<BrowserSessionPartitionDerivationError>()(
   "BrowserSessionPartitionDerivationError",

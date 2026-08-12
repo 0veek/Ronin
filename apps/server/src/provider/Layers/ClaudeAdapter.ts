@@ -1942,8 +1942,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (!hasDurableClaudeSessionId(message)) {
       return;
     }
-    const nextThreadId = message.session_id;
-    context.resumeSessionId = message.session_id;
+    const nextThreadId =
+      message.type === "conversation_reset" ? message.new_conversation_id : message.session_id;
+    context.resumeSessionId = nextThreadId;
     yield* updateResumeCursor(context);
 
     if (context.lastThreadStartedId !== nextThreadId) {
@@ -1963,7 +1964,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           source: "claude.sdk.message",
           method: "claude/thread/started",
           payload: {
-            session_id: message.session_id,
+            session_id: nextThreadId,
           },
         },
       });
@@ -3051,18 +3052,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       },
     };
 
-    // Undeclared-but-real subtypes (absent from the SDK's union, so they can't
-    // be switch cases): consumed intentionally without emitting, otherwise
-    // they fall through to the unknown-subtype warning and surface as spurious
-    // error rows in client work logs. `background_tasks_changed` is a roster
-    // snapshot ({tasks: [...]}) — the task_* lifecycle events carry the
-    // authoritative per-agent data and the typed background_tasks control
-    // request is the reconciliation source. `vcs_state_changed`
-    // ({kind: commit|push|rebase}) and `code_change_published`
-    // ({provider, url, repo}) are informational CLI notices; the work log
-    // already shows the underlying git/gh tool calls.
+    // Undeclared-but-real subtypes (absent from the SDK's union) are consumed
+    // intentionally instead of surfacing spurious unknown-subtype warnings.
+    // The VCS and publication notices duplicate the underlying git/gh tools.
     switch (message.subtype as string) {
-      case "background_tasks_changed":
       case "vcs_state_changed":
       case "code_change_published":
         return;
@@ -3352,12 +3345,39 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
+      case "control_request_progress":
+        yield* offerRuntimeEvent({
+          ...base,
+          type: "session.state.changed",
+          payload: {
+            state: "running",
+            reason: `control_request:${message.status}`,
+          },
+        });
+        return;
       case "notification":
         // User-facing CLI notification (e.g. context-limit warnings). Only
         // high-priority ones warrant a work-log row.
         if (message.priority === "high" || message.priority === "immediate") {
           yield* emitRuntimeWarning(context, message.text, message);
         }
+        return;
+      case "informational":
+        if (message.level === "warning" || message.prevent_continuation === true) {
+          yield* emitRuntimeWarning(context, message.content, message);
+        }
+        return;
+      case "model_refusal_no_fallback":
+        yield* emitRuntimeWarning(context, message.content, message);
+        return;
+      case "background_tasks_changed":
+        // This is a level snapshot of background work only. The task lifecycle
+        // events remain authoritative because `liveTaskIds` also includes
+        // foreground agents that must still be interrupted with the turn.
+        return;
+      case "worker_shutting_down":
+        // Historical instances can appear during resume. Stream termination is
+        // the authoritative live signal and emits the canonical session exit.
         return;
       // Inner protocol/UX details with no T3 surface today — consumed
       // deliberately so they don't masquerade as unknown-subtype warnings.
@@ -3483,6 +3503,57 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
   });
 
+  const handleConversationReset = Effect.fn("handleConversationReset")(function* (
+    context: ClaudeSessionContext,
+    message: Extract<SDKMessage, { type: "conversation_reset" }>,
+  ) {
+    if (context.turnState) {
+      yield* completeTurn(context, "interrupted", "Claude conversation reset.");
+    }
+
+    context.turns.length = 0;
+    context.inFlightTools.clear();
+    context.claudeTasks.clear();
+    context.taskAgents.clear();
+    context.workflowMemberFingerprints.clear();
+    context.liveTaskIds.clear();
+    context.lastKnownTokenUsage = undefined;
+    context.lastKnownTotalProcessedTokens = undefined;
+    context.lastAssistantUuid = undefined;
+    context.resumeSessionId = message.new_conversation_id;
+    const updatedAt = yield* nowIso;
+    context.session = {
+      ...context.session,
+      status: "ready",
+      activeTurnId: undefined,
+      updatedAt,
+    };
+    yield* updateResumeCursor(context);
+
+    const stamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      type: "session.state.changed",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      payload: {
+        state: "ready",
+        reason: "conversation_reset",
+        detail: {
+          providerConversationId: message.new_conversation_id,
+        },
+      },
+      providerRefs: nativeProviderRefs(context),
+      raw: {
+        source: "claude.sdk.message",
+        method: "claude/conversation_reset",
+        messageType: message.type,
+        payload: message,
+      },
+    });
+  });
+
   const handleSdkMessage = Effect.fn("handleSdkMessage")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
@@ -3511,6 +3582,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       case "auth_status":
       case "rate_limit_event":
         yield* handleSdkTelemetryMessage(context, message);
+        return;
+      case "conversation_reset":
+        yield* handleConversationReset(context, message);
         return;
       // Composer prompt suggestions have no T3 surface; consumed deliberately.
       case "prompt_suggestion":

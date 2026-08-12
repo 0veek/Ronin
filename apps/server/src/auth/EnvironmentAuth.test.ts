@@ -108,6 +108,44 @@ it.layer(NodeServices.layer)("EnvironmentAuth.layer", (it) => {
     }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
   );
 
+  it.effect("prefers an explicit bearer credential over an ambient session cookie", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const bearerSession = yield* serverAuth.issueSession({ subject: "explicit-bearer" });
+
+      const verified = yield* serverAuth.authenticateHttpRequest({
+        cookies: { [sessions.cookieName]: "stale-cookie" },
+        headers: { authorization: `Bearer ${bearerSession.token}` },
+      } as unknown as Parameters<
+        EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]
+      >[0]);
+
+      expect(verified.sessionId).toBe(bearerSession.sessionId);
+      expect(verified.method).toBe("bearer-access-token");
+      expect(verified.subject).toBe("explicit-bearer");
+    }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
+  );
+
+  it.effect("does not fall back to a cookie when an explicit bearer credential is invalid", () =>
+    Effect.gen(function* () {
+      const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+      const sessions = yield* SessionStore.SessionStore;
+      const browserSession = yield* serverAuth.issueSession({ subject: "cookie-session" });
+
+      const error = yield* serverAuth
+        .authenticateHttpRequest({
+          cookies: { [sessions.cookieName]: browserSession.token },
+          headers: { authorization: "Bearer invalid-bearer" },
+        } as unknown as Parameters<
+          EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]
+        >[0])
+        .pipe(Effect.flip);
+
+      expect(error._tag).toBe("ServerAuthInvalidCredentialError");
+    }).pipe(Effect.provide(makeEnvironmentAuthLayer())),
+  );
+
   it.effect("does not exchange ordinary pairing grants for administrative access tokens", () =>
     Effect.gen(function* () {
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

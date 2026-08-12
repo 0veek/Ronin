@@ -47,6 +47,43 @@ const makeFailingSecretStoreLayer = (cause: ServerSecretStore.SecretStoreError) 
     }),
   );
 
+const makeSettingsWriteFailureLayer = (control: { failSettingsRename: boolean }) => {
+  const fileSystemLayer = Layer.effect(
+    FileSystem.FileSystem,
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      return {
+        ...fileSystem,
+        rename: (from, to) =>
+          control.failSettingsRename && String(to).endsWith("settings.json")
+            ? Effect.fail(
+                PlatformError.systemError({
+                  _tag: "PermissionDenied",
+                  module: "FileSystem",
+                  method: "rename",
+                  pathOrDescriptor: `${String(from)} -> ${String(to)}`,
+                  description: "Injected settings persistence failure.",
+                }),
+              )
+            : fileSystem.rename(from, to),
+      } satisfies FileSystem.FileSystem;
+    }),
+  ).pipe(Layer.provide(NodeServices.layer));
+
+  return ServerSettingsModule.layer.pipe(
+    Layer.provide(ServerSecretStore.layer),
+    Layer.provideMerge(
+      Layer.fresh(
+        ServerConfig.layerTest(process.cwd(), {
+          prefix: "t3code-server-settings-rollback-test-",
+        }),
+      ),
+    ),
+    Layer.provideMerge(fileSystemLayer),
+  );
+};
+
 it.layer(NodeServices.layer)("server settings", (it) => {
   it.effect("preserves context when reading a provider environment secret fails", () => {
     const platformCause = PlatformError.systemError({
@@ -691,4 +728,62 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       );
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
+
+  it.effect("rolls back provider secrets when settings persistence fails", () => {
+    const control = { failSettingsRename: false };
+
+    return Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const instanceId = ProviderInstanceId.make("codex_personal");
+
+      yield* serverSettings.updateSettings({
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("codex"),
+            environment: [
+              { name: "FIRST_API_KEY", value: "first-old", sensitive: true },
+              { name: "SECOND_API_KEY", value: "second-old", sensitive: true },
+            ],
+            config: {},
+          },
+        },
+      });
+      const rawBeforeFailure = yield* fileSystem.readFileString(serverConfig.settingsPath);
+
+      control.failSettingsRename = true;
+      const error = yield* Effect.flip(
+        serverSettings.updateSettings({
+          providerInstances: {
+            [instanceId]: {
+              driver: ProviderDriverKind.make("codex"),
+              displayName: "Must not persist",
+              environment: [{ name: "FIRST_API_KEY", value: "first-new", sensitive: true }],
+              config: {},
+            },
+          },
+        }),
+      );
+
+      assert.equal(error.operation, "write-file");
+      assert.equal(yield* fileSystem.readFileString(serverConfig.settingsPath), rawBeforeFailure);
+      const current = yield* serverSettings.getSettings;
+      assert.isUndefined(current.providerInstances[instanceId]?.displayName);
+      assert.deepEqual(current.providerInstances[instanceId]?.environment, [
+        {
+          name: "FIRST_API_KEY",
+          value: "first-old",
+          sensitive: true,
+          valueRedacted: true,
+        },
+        {
+          name: "SECOND_API_KEY",
+          value: "second-old",
+          sensitive: true,
+          valueRedacted: true,
+        },
+      ]);
+    }).pipe(Effect.provide(makeSettingsWriteFailureLayer(control)));
+  });
 });

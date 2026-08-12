@@ -50,6 +50,9 @@ export const DEFAULT_SPEECH_TO_TEXT_MODELS: Readonly<Record<SpeechToTextProvider
 
 /** Longest clip accepted, as raw bytes before base64. Roughly 10 minutes of Opus. */
 export const MAX_SPEECH_AUDIO_BYTES = 8 * 1024 * 1024;
+export const MAX_SPEECH_AUDIO_BASE64_CHARS = Math.ceil(MAX_SPEECH_AUDIO_BYTES / 3) * 4;
+export const MAX_SPEECH_MIME_TYPE_CHARS = 100;
+export const MAX_SPEECH_API_KEY_CHARS = 16_384;
 
 export const SpeechToTextModels = Schema.Struct({
   deepgram: TrimmedNonEmptyString.pipe(
@@ -92,8 +95,8 @@ export const SpeechToTextTranscribeInput = Schema.Struct({
    * which is what every one of these providers accepts and is an order of
    * magnitude smaller than WAV over the socket.
    */
-  audioBase64: TrimmedNonEmptyString,
-  mimeType: TrimmedNonEmptyString,
+  audioBase64: TrimmedNonEmptyString.check(Schema.isMaxLength(MAX_SPEECH_AUDIO_BASE64_CHARS)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(MAX_SPEECH_MIME_TYPE_CHARS)),
   /** Overrides the configured provider; the settings page uses it to test a key. */
   provider: Schema.optional(SpeechToTextProvider),
 });
@@ -119,7 +122,7 @@ export type SpeechToTextKeyStatus = typeof SpeechToTextKeyStatus.Type;
 export const SpeechToTextSetKeyInput = Schema.Struct({
   provider: SpeechToTextProvider,
   /** Null clears the stored key. */
-  apiKey: Schema.NullOr(TrimmedNonEmptyString),
+  apiKey: Schema.NullOr(TrimmedNonEmptyString.check(Schema.isMaxLength(MAX_SPEECH_API_KEY_CHARS))),
 });
 export type SpeechToTextSetKeyInput = typeof SpeechToTextSetKeyInput.Type;
 

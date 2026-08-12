@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 
@@ -151,32 +152,35 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
+  const writeSemaphore = yield* Semaphore.make(1);
 
   return DesktopClientSettings.of({
     get: readClientSettings(fileSystem, environment.clientSettingsPath).pipe(
       Effect.withSpan("desktop.clientSettings.get"),
     ),
     set: (settings) =>
-      crypto.randomUUIDv4.pipe(
-        Effect.map((uuid) => uuid.replace(/-/g, "")),
-        Effect.mapError(
-          (cause) =>
-            new DesktopClientSettingsWriteError({
-              operation: "create-temporary-file-name",
-              path: environment.clientSettingsPath,
-              cause,
+      writeSemaphore.withPermits(1)(
+        crypto.randomUUIDv4.pipe(
+          Effect.map((uuid) => uuid.replace(/-/g, "")),
+          Effect.mapError(
+            (cause) =>
+              new DesktopClientSettingsWriteError({
+                operation: "create-temporary-file-name",
+                path: environment.clientSettingsPath,
+                cause,
+              }),
+          ),
+          Effect.flatMap((suffix) =>
+            writeClientSettings({
+              fileSystem,
+              path,
+              settingsPath: environment.clientSettingsPath,
+              settings,
+              suffix,
             }),
+          ),
+          Effect.withSpan("desktop.clientSettings.set"),
         ),
-        Effect.flatMap((suffix) =>
-          writeClientSettings({
-            fileSystem,
-            path,
-            settingsPath: environment.clientSettingsPath,
-            settings,
-            suffix,
-          }),
-        ),
-        Effect.withSpan("desktop.clientSettings.set"),
       ),
   });
 });

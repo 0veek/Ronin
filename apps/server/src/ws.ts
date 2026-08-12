@@ -1,6 +1,7 @@
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -306,6 +307,7 @@ const SHELL_RESUME_MAX_GAP = 1_000;
 // hundreds of thousands of events behind have OOM-killed servers on large
 // databases. Past this gap the client is reset with a fresh thread snapshot.
 const THREAD_RESUME_MAX_GAP = 1_000;
+const LIVE_BUFFER_CAPACITY = 1_024;
 
 function toAuthAccessStreamEvent(
   change: PairingGrantStore.BootstrapCredentialChange | SessionStore.SessionCredentialChange,
@@ -717,6 +719,33 @@ const makeWsRpcLayer = (
       type ShellLiveInput =
         | { readonly kind: "event"; readonly event: OrchestrationEvent }
         | { readonly kind: "synchronized" };
+
+      const makeBoundedLiveBuffer = <A>(description: string) =>
+        Effect.gen(function* () {
+          const queue = yield* Queue.dropping<A>(LIVE_BUFFER_CAPACITY);
+          const overflow = yield* Deferred.make<never, OrchestrationGetSnapshotError>();
+          const offer = (item: A) =>
+            Queue.offer(queue, item).pipe(
+              Effect.flatMap((accepted) =>
+                accepted
+                  ? Effect.void
+                  : Deferred.fail(
+                      overflow,
+                      new OrchestrationGetSnapshotError({
+                        message: `${description} live buffer overflowed; reconnect to resynchronize`,
+                        cause: new Error(
+                          `${description} exceeded ${LIVE_BUFFER_CAPACITY} buffered events`,
+                        ),
+                      }),
+                    ).pipe(Effect.asVoid),
+              ),
+            );
+          return {
+            offer,
+            takeAll: Queue.takeAll(queue),
+            stream: Stream.fromQueue(queue).pipe(Stream.interruptWhen(Deferred.await(overflow))),
+          };
+        });
 
       // A completion marker is queued alongside raw live events so it cannot
       // overtake an event still waiting in the coalescing window. Split each
@@ -1192,16 +1221,15 @@ const makeWsRpcLayer = (
               // sequence but the live subscription is not attached yet). Every
               // path below emits from this same buffered live tail. Overlapping
               // events are deduped by sequence on the client.
-              const liveBuffer = yield* Queue.unbounded<ShellLiveInput>();
+              const liveBuffer =
+                yield* makeBoundedLiveBuffer<ShellLiveInput>("Orchestration shell");
               yield* Effect.forkScoped(
                 orchestrationEngine.streamDomainEvents.pipe(
-                  Stream.runForEach((event) =>
-                    Queue.offer(liveBuffer, { kind: "event" as const, event }),
-                  ),
+                  Stream.runForEach((event) => liveBuffer.offer({ kind: "event" as const, event })),
                 ),
                 { startImmediately: true },
               );
-              const bufferedLiveStream = coalesceShellLiveStream(Stream.fromQueue(liveBuffer));
+              const bufferedLiveStream = coalesceShellLiveStream(liveBuffer.stream);
 
               const loadSnapshot = projectionSnapshotQuery.getShellSnapshot().pipe(
                 Effect.tapError((cause) =>
@@ -1223,10 +1251,12 @@ const makeWsRpcLayer = (
                 input.requestCompletionMarker === true
                   ? Stream.concat(
                       Stream.fromEffect(
-                        Queue.offer(liveBuffer, { kind: "synchronized" as const }).pipe(
-                          Effect.andThen(Queue.takeAll(liveBuffer)),
-                          Effect.flatMap(coalesceShellLiveInputs),
-                        ),
+                        liveBuffer
+                          .offer({ kind: "synchronized" as const })
+                          .pipe(
+                            Effect.andThen(liveBuffer.takeAll),
+                            Effect.flatMap(coalesceShellLiveInputs),
+                          ),
                       ).pipe(Stream.flatMap((items) => Stream.fromIterable(items))),
                       bufferedLiveStream,
                     )
@@ -1320,11 +1350,13 @@ const makeWsRpcLayer = (
 
               // Attach live delivery before reading either replay or snapshot state.
               // Otherwise an event published while the snapshot is loading is lost.
-              const liveBuffer = yield* Queue.unbounded<OrchestrationThreadStreamItem>();
-              yield* Effect.forkScoped(
-                liveStream.pipe(Stream.runForEach((item) => Queue.offer(liveBuffer, item))),
+              const liveBuffer = yield* makeBoundedLiveBuffer<OrchestrationThreadStreamItem>(
+                `Orchestration thread ${input.threadId}`,
               );
-              const bufferedLiveStream = Stream.fromQueue(liveBuffer);
+              yield* Effect.forkScoped(liveStream.pipe(Stream.runForEach(liveBuffer.offer)), {
+                startImmediately: true,
+              });
+              const bufferedLiveStream = liveBuffer.stream;
 
               // When the client already loaded the snapshot over HTTP it passes
               // that snapshot's sequence, and we resume the live subscription by
@@ -1373,7 +1405,7 @@ const makeWsRpcLayer = (
                     input.requestCompletionMarker === true
                       ? Stream.concat(
                           Stream.fromEffect(
-                            Queue.offer(liveBuffer, { kind: "synchronized" as const }),
+                            liveBuffer.offer({ kind: "synchronized" as const }),
                           ).pipe(Stream.drain),
                           bufferedLiveStream,
                         )
@@ -1414,9 +1446,9 @@ const makeWsRpcLayer = (
               const afterSnapshot =
                 input.requestCompletionMarker === true
                   ? Stream.concat(
-                      Stream.fromEffect(
-                        Queue.offer(liveBuffer, { kind: "synchronized" as const }),
-                      ).pipe(Stream.drain),
+                      Stream.fromEffect(liveBuffer.offer({ kind: "synchronized" as const })).pipe(
+                        Stream.drain,
+                      ),
                       bufferedLiveStream,
                     )
                   : bufferedLiveStream;
@@ -2297,10 +2329,17 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             ),
           ),
         );
-        return yield* Effect.acquireUseRelease(
-          sessions.markConnected(session.sessionId),
-          () => rpcWebSocketHttpEffect,
-          () => sessions.markDisconnected(session.sessionId),
+        return yield* Effect.scoped(
+          sessions
+            .registerConnection(session.sessionId)
+            .pipe(
+              Effect.flatMap((sessionInvalidated) =>
+                Effect.raceFirst(
+                  rpcWebSocketHttpEffect,
+                  sessionInvalidated.pipe(Effect.andThen(Effect.interrupt)),
+                ),
+              ),
+            ),
         );
       }).pipe(
         Effect.catchTags({

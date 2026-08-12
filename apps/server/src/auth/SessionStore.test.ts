@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -312,6 +313,47 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
       expect(afterReconnect[0]?.connected).toBe(true);
       expect(afterReconnect[0]?.lastConnectedAt).not.toBeNull();
       expect(afterReconnect[0]?.lastConnectedAt?.toString()).not.toBe(firstConnectedAt?.toString());
+    }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
+  );
+
+  it.effect("tracks scoped connections and invalidates them on revocation", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const issued = yield* sessions.issue({ subject: "connected-revocation-test" });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const invalidated = yield* sessions.registerConnection(issued.sessionId);
+          const beforeRevoke = yield* sessions.listActive();
+          const invalidationFiber = yield* Effect.forkChild(invalidated);
+
+          expect(beforeRevoke[0]?.connected).toBe(true);
+          expect(yield* sessions.revoke(issued.sessionId)).toBe(true);
+          yield* Fiber.join(invalidationFiber);
+        }),
+      );
+
+      const afterRevoke = yield* sessions.listActive();
+      expect(afterRevoke).toHaveLength(0);
+    }).pipe(Effect.provide(makeSessionStoreLayer())),
+  );
+
+  it.effect("invalidates scoped connections when their session expires", () =>
+    Effect.gen(function* () {
+      const sessions = yield* SessionStore.SessionStore;
+      const issued = yield* sessions.issue({
+        subject: "connected-expiration-test",
+        ttl: Duration.seconds(1),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const invalidated = yield* sessions.registerConnection(issued.sessionId);
+          const invalidationFiber = yield* Effect.forkChild(invalidated);
+          yield* TestClock.adjust(Duration.seconds(1));
+          yield* Fiber.join(invalidationFiber);
+        }),
+      );
     }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
   );
 });

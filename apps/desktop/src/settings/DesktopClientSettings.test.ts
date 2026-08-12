@@ -118,6 +118,45 @@ describe("DesktopClientSettings", () => {
     ),
   );
 
+  it.effect("serializes concurrent writes in call order", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const firstSettings = { ...clientSettings, timestampFormat: "12-hour" as const };
+        const secondSettings = { ...clientSettings, timestampFormat: "24-hour" as const };
+        const delayingFileSystem = FileSystem.FileSystem.of({
+          ...fileSystem,
+          rename: (from, to) =>
+            fileSystem.readFileString(from).pipe(
+              Effect.flatMap((raw) =>
+                raw.includes('"timestampFormat": "12-hour"')
+                  ? Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow, {
+                      discard: true,
+                    })
+                  : Effect.void,
+              ),
+              Effect.flatMap(() => fileSystem.rename(from, to)),
+            ),
+        });
+        const settings = yield* DesktopClientSettings.make.pipe(
+          Effect.provideService(FileSystem.FileSystem, delayingFileSystem),
+        );
+
+        yield* Effect.all([settings.set(firstSettings), settings.set(secondSettings)], {
+          concurrency: "unbounded",
+        });
+
+        assert.deepEqual(
+          yield* decodeClientSettingsJson(
+            yield* fileSystem.readFileString(environment.clientSettingsPath),
+          ),
+          secondSettings,
+        );
+      }),
+    ),
+  );
+
   it.effect("reports the failed client settings write operation and path", () =>
     withClientSettings(
       Effect.gen(function* () {

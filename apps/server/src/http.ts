@@ -21,6 +21,7 @@ import {
   HttpRouter,
   HttpServerResponse,
   HttpServerRequest,
+  HttpServerError,
   HttpServerRespondable,
 } from "effect/unstable/http";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
@@ -43,6 +44,7 @@ const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+export const HTTP_REQUEST_MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 export function assetResponseHeaders(filePath: string): Record<string, string> {
   return {
@@ -57,6 +59,31 @@ export function assetResponseHeaders(filePath: string): Record<string, string> {
 export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
 });
+
+export const httpRequestBodyLimitLayer = HttpRouter.middleware(
+  (httpEffect) =>
+    Effect.gen(function* () {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const contentLength = Number(request.headers["content-length"]);
+      if (Number.isFinite(contentLength) && contentLength > HTTP_REQUEST_MAX_BODY_BYTES) {
+        return HttpServerResponse.text("Request body too large", { status: 413 });
+      }
+      return yield* httpEffect.pipe(
+        Effect.provideService(
+          HttpServerRequest.MaxBodySize,
+          FileSystem.Size(HTTP_REQUEST_MAX_BODY_BYTES),
+        ),
+        Effect.catchIf(
+          (error) =>
+            error instanceof HttpServerError.RequestParseError &&
+            error.cause instanceof Error &&
+            error.cause.message === "maxBytes exceeded",
+          () => Effect.succeed(HttpServerResponse.text("Request body too large", { status: 413 })),
+        ),
+      );
+    }),
+  { global: true },
+);
 
 export const browserApiCorsLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -135,7 +162,6 @@ export const serverEnvironmentHttpApiLayer = HttpApiBuilder.group(
 
 class DecodeOtlpTraceRecordsError extends Data.TaggedError("DecodeOtlpTraceRecordsError")<{
   readonly cause: unknown;
-  readonly bodyJson: OtlpTracer.TraceData;
 }> {}
 
 export const otlpTracesProxyRouteLayer = HttpRouter.add(
@@ -152,13 +178,12 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
 
     yield* Effect.try({
       try: () => decodeOtlpTraceRecords(bodyJson),
-      catch: (cause) => new DecodeOtlpTraceRecordsError({ cause, bodyJson }),
+      catch: (cause) => new DecodeOtlpTraceRecordsError({ cause }),
     }).pipe(
       Effect.flatMap((records) => browserTraceCollector.record(records)),
       Effect.catch((cause) =>
         Effect.logWarning("Failed to decode browser OTLP traces", {
           cause,
-          bodyJson,
         }),
       ),
     );
@@ -258,6 +283,12 @@ export const staticAndDevRouteLayer = HttpRouter.add(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const staticRoot = path.resolve(staticDir);
+    const canonicalStaticRoot = yield* fileSystem
+      .realPath(staticRoot)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (!canonicalStaticRoot) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
     const staticRequestPath = url.value.pathname === "/" ? "/index.html" : url.value.pathname;
     const rawStaticRelativePath = staticRequestPath.replace(/^[/\\]+/, "");
     const hasRawLeadingParentSegment = rawStaticRelativePath.startsWith("..");
@@ -272,28 +303,45 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       return HttpServerResponse.text("Invalid static file path", { status: 400 });
     }
 
-    const isWithinStaticRoot = (candidate: string) =>
-      candidate === staticRoot ||
-      candidate.startsWith(staticRoot.endsWith(path.sep) ? staticRoot : `${staticRoot}${path.sep}`);
+    const isWithinRoot = (root: string, candidate: string) =>
+      candidate === root ||
+      candidate.startsWith(root.endsWith(path.sep) ? root : `${root}${path.sep}`);
 
     let filePath = path.resolve(staticRoot, staticRelativePath);
-    if (!isWithinStaticRoot(filePath)) {
+    if (!isWithinRoot(staticRoot, filePath)) {
       return HttpServerResponse.text("Invalid static file path", { status: 400 });
     }
 
     const ext = path.extname(filePath);
     if (!ext) {
       filePath = path.resolve(filePath, "index.html");
-      if (!isWithinStaticRoot(filePath)) {
+      if (!isWithinRoot(staticRoot, filePath)) {
         return HttpServerResponse.text("Invalid static file path", { status: 400 });
       }
     }
 
-    const fileInfo = yield* fileSystem.stat(filePath).pipe(Effect.orElseSucceed(() => null));
-    if (!fileInfo || fileInfo.type !== "File") {
+    const canonicalFilePath = yield* fileSystem
+      .realPath(filePath)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (canonicalFilePath && !isWithinRoot(canonicalStaticRoot, canonicalFilePath)) {
+      return HttpServerResponse.text("Invalid static file path", { status: 400 });
+    }
+    const fileInfo = canonicalFilePath
+      ? yield* fileSystem.stat(canonicalFilePath).pipe(Effect.orElseSucceed(() => null))
+      : null;
+    if (!canonicalFilePath || !fileInfo || fileInfo.type !== "File") {
       const indexPath = path.resolve(staticRoot, "index.html");
+      const canonicalIndexPath = yield* fileSystem
+        .realPath(indexPath)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (canonicalIndexPath && !isWithinRoot(canonicalStaticRoot, canonicalIndexPath)) {
+        return HttpServerResponse.text("Invalid static file path", { status: 400 });
+      }
+      if (!canonicalIndexPath) {
+        return HttpServerResponse.text("Not Found", { status: 404 });
+      }
       const indexData = yield* fileSystem
-        .readFile(indexPath)
+        .readFile(canonicalIndexPath)
         .pipe(Effect.orElseSucceed(() => null));
       if (!indexData) {
         return HttpServerResponse.text("Not Found", { status: 404 });
@@ -305,7 +353,9 @@ export const staticAndDevRouteLayer = HttpRouter.add(
     }
 
     const contentType = Mime.getType(filePath) ?? "application/octet-stream";
-    const data = yield* fileSystem.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
+    const data = yield* fileSystem
+      .readFile(canonicalFilePath)
+      .pipe(Effect.orElseSucceed(() => null));
     if (!data) {
       return HttpServerResponse.text("Internal Server Error", { status: 500 });
     }

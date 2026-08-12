@@ -1224,9 +1224,17 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.ipc.on(HUMAN_INPUT_CHANNEL, humanInput);
         wc.setWindowOpenHandler(({ url }) => {
           runFork(
-            attemptPromise({ operation: "openPreviewWindow", tabId, webContentsId: wc.id }, () =>
-              wc.loadURL(url),
-            ).pipe(Effect.ignore),
+            attempt({ operation: "openPreviewWindow.normalizeUrl", tabId }, () =>
+              normalizePreviewUrl(url),
+            ).pipe(
+              Effect.flatMap((normalizedUrl) =>
+                attemptPromise(
+                  { operation: "openPreviewWindow", tabId, webContentsId: wc.id },
+                  () => wc.loadURL(normalizedUrl),
+                ),
+              ),
+              Effect.ignore,
+            ),
           );
           return { action: "deny" };
         });

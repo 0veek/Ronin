@@ -7,11 +7,14 @@ import {
   ProjectSearchContentsInput,
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
+  PROJECT_WRITE_FILE_MAX_CHARS,
+  ProjectWriteFileInput,
   ProjectWriteFileError,
 } from "./project.ts";
 
 const decodeSearchEntriesInput = Schema.decodeUnknownSync(ProjectSearchEntriesInput);
 const decodeSearchContentsInput = Schema.decodeUnknownSync(ProjectSearchContentsInput);
+const decodeWriteFileInput = Schema.decodeUnknownExit(ProjectWriteFileInput);
 
 describe("project search inputs", () => {
   it("allows an empty entries query for bounded frecency browsing", () => {
@@ -34,6 +37,18 @@ describe("project search inputs", () => {
       useRegex: false,
     });
     expect(decoded.query).toBe(" foo ");
+  });
+});
+
+describe("project write inputs", () => {
+  it("rejects file contents above the RPC text budget", () => {
+    const decoded = decodeWriteFileInput({
+      cwd: "/workspace",
+      relativePath: "large.txt",
+      contents: "x".repeat(PROJECT_WRITE_FILE_MAX_CHARS + 1),
+    });
+
+    expect(decoded._tag).toBe("Failure");
   });
 });
 

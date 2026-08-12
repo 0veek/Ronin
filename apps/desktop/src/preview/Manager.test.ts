@@ -347,6 +347,65 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("allows popup navigation only for normalized HTTP URLs", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const loadURL = vi.fn(async () => undefined);
+        let openHandler:
+          | ((details: { readonly url: string }) => { readonly action: "deny" })
+          | undefined;
+        const setWindowOpenHandler = vi.fn(
+          (handler: (details: { readonly url: string }) => { readonly action: "deny" }) => {
+            openHandler = handler;
+          },
+        );
+        fromId.mockReturnValue({
+          id: 42,
+          isDestroyed: () => false,
+          getType: () => "webview",
+          getURL: () => "https://example.com",
+          getTitle: () => "Example",
+          isLoading: () => false,
+          getZoomFactor: () => 1,
+          setZoomFactor: vi.fn(),
+          loadURL,
+          on: vi.fn(),
+          off: vi.fn(),
+          ipc: { on: vi.fn(), off: vi.fn() },
+          send: webviewSend,
+          navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+          setWindowOpenHandler,
+          debugger: {
+            isAttached: () => false,
+            attach: vi.fn(),
+            sendCommand: vi.fn(async () => undefined),
+            on: vi.fn(),
+            off: vi.fn(),
+          },
+        } as never);
+
+        yield* manager.createTab("tab_popup");
+        yield* manager.registerWebview("tab_popup", 42);
+
+        expect(openHandler).toBeDefined();
+        expect(openHandler?.({ url: "https://example.com/popup" })).toEqual({ action: "deny" });
+        yield* Effect.yieldNow;
+        expect(loadURL).toHaveBeenCalledWith("https://example.com/popup");
+
+        for (const url of [
+          "file:///etc/passwd",
+          "data:text/html,<h1>popup</h1>",
+          "javascript:alert(1)",
+        ]) {
+          expect(openHandler?.({ url })).toEqual({ action: "deny" });
+        }
+        yield* Effect.yieldNow;
+
+        expect(loadURL).toHaveBeenCalledTimes(1);
+      }),
+    ),
+  );
+
   effectIt.effect("mirrors Electron's effective zoom across registration and navigation", () =>
     withManager((manager) =>
       Effect.gen(function* () {

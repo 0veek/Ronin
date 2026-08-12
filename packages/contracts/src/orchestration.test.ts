@@ -17,6 +17,8 @@ import {
   OrchestrationSession,
   OrchestrationThread,
   OrchestrationThreadShell,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProjectCreateCommand,
   ThreadMetaUpdatedPayload,
   ThreadTurnStartCommand,
@@ -633,6 +635,54 @@ it.effect("accepts a title seed in thread.turn.start", () =>
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.titleSeed, "Investigate reconnect failures");
+  }),
+);
+
+it.effect("rejects oversized turn text and attachment lists", () =>
+  Effect.gen(function* () {
+    const baseCommand = {
+      type: "thread.turn.start",
+      commandId: "cmd-turn-payload-limit",
+      threadId: "thread-1",
+      message: {
+        messageId: "msg-payload-limit",
+        role: "user",
+        text: "hello",
+        attachments: [],
+      },
+      createdAt: "2026-01-01T00:00:00.000Z",
+    } as const;
+    const oversizedText = yield* Effect.exit(
+      decodeThreadTurnStartCommand({
+        ...baseCommand,
+        message: {
+          ...baseCommand.message,
+          text: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS + 1),
+        },
+      }),
+    );
+    const attachment = {
+      type: "image",
+      id: "image-1",
+      name: "image.png",
+      mimeType: "image/png",
+      sizeBytes: 1,
+    } as const;
+    const oversizedAttachments = yield* Effect.exit(
+      decodeThreadTurnStartCommand({
+        ...baseCommand,
+        message: {
+          ...baseCommand.message,
+          attachments: Array.from(
+            { length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1 },
+            (_unused, index) => ({ ...attachment, id: `image-${index}` }),
+          ),
+        },
+      }),
+    );
+
+    assert.strictEqual(oversizedText._tag, "Failure");
+    assert.strictEqual(oversizedAttachments._tag, "Failure");
   }),
 );
 

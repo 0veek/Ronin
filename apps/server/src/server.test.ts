@@ -93,6 +93,7 @@ const collectQueueUntil = Effect.fn("TransferBudget.collectQueueUntil")(function
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
+import { HTTP_REQUEST_MAX_BODY_BYTES } from "./http.ts";
 import { makeRoutesLayer } from "./server.ts";
 import { isThreadDetailEvent, resolveAvailableEditorsForConfig } from "./ws.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
@@ -1281,6 +1282,92 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("rejects static file symlinks that resolve outside the static root", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-router-static-symlink-",
+      });
+      const outsideDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-router-static-outside-",
+      });
+      const outsideFile = path.join(outsideDir, "secret.txt");
+      yield* fileSystem.writeFileString(path.join(staticDir, "index.html"), "safe index");
+      yield* fileSystem.writeFileString(outsideFile, "must not be served");
+      yield* fileSystem.symlink(outsideFile, path.join(staticDir, "linked-secret.txt"));
+
+      yield* buildAppUnderTest({ config: { staticDir } });
+
+      const response = yield* HttpClient.get("/linked-secret.txt");
+      assert.equal(response.status, 400);
+      assert.notInclude(yield* response.text, "must not be served");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves static symlinks whose canonical target remains inside the root", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-router-static-internal-symlink-",
+      });
+      const target = path.join(staticDir, "target.txt");
+      yield* fileSystem.writeFileString(path.join(staticDir, "index.html"), "safe index");
+      yield* fileSystem.writeFileString(target, "internal target");
+      yield* fileSystem.symlink(target, path.join(staticDir, "linked.txt"));
+
+      yield* buildAppUnderTest({ config: { staticDir } });
+
+      const response = yield* HttpClient.get("/linked.txt");
+      assert.equal(response.status, 200);
+      assert.equal(yield* response.text, "internal target");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves files when the configured static root is itself a symlink", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const parentDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-router-static-root-symlink-",
+      });
+      const actualStaticDir = path.join(parentDir, "actual");
+      const linkedStaticDir = path.join(parentDir, "linked");
+      yield* fileSystem.makeDirectory(actualStaticDir);
+      yield* fileSystem.writeFileString(path.join(actualStaticDir, "index.html"), "linked root");
+      yield* fileSystem.symlink(actualStaticDir, linkedStaticDir);
+
+      yield* buildAppUnderTest({ config: { staticDir: linkedStaticDir } });
+
+      const response = yield* HttpClient.get("/");
+      assert.equal(response.status, 200);
+      assert.equal(yield* response.text, "linked root");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects an SPA fallback index symlink that resolves outside the static root", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-router-static-index-symlink-",
+      });
+      const outsideDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-router-static-index-outside-",
+      });
+      const outsideIndex = path.join(outsideDir, "index.html");
+      yield* fileSystem.writeFileString(outsideIndex, "must not become the SPA");
+      yield* fileSystem.symlink(outsideIndex, path.join(staticDir, "index.html"));
+
+      yield* buildAppUnderTest({ config: { staticDir } });
+
+      const response = yield* HttpClient.get("/some/spa/route");
+      assert.equal(response.status, 400);
+      assert.notInclude(yield* response.text, "must not become the SPA");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("redirects to dev URL when configured", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
@@ -2204,6 +2291,75 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("disconnects an active websocket when its session is revoked", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        config: {
+          host: "0.0.0.0",
+        },
+      });
+
+      const ownerCookie = yield* getAuthenticatedSessionCookieHeader();
+      const pairingResponse = yield* HttpClient.post("/api/auth/pairing-token", {
+        headers: {
+          cookie: ownerCookie,
+        },
+        body: yield* HttpBody.json({}),
+      });
+      const pairingBody = (yield* pairingResponse.json) as {
+        readonly credential: string;
+      };
+      const pairedCookie = yield* getAuthenticatedSessionCookieHeader(pairingBody.credential);
+      const clientsResponse = yield* HttpClient.get("/api/auth/clients", {
+        headers: {
+          cookie: ownerCookie,
+        },
+      });
+      const clients = (yield* clientsResponse.json) as ReadonlyArray<{
+        readonly sessionId: string;
+        readonly current: boolean;
+      }>;
+      const pairedSessionId = clients.find((entry) => !entry.current)?.sessionId;
+      assert.isDefined(pairedSessionId);
+
+      const clientReady = yield* Deferred.make<void>();
+      const revocationCompleted = yield* Deferred.make<void>();
+      const pairedWsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        pairedCookie,
+      );
+      const clientFiber = yield* Effect.scoped(
+        withWsRpcClient(pairedWsUrl, (client) =>
+          Effect.gen(function* () {
+            yield* client[WS_METHODS.serverGetConfig]({});
+            yield* Deferred.succeed(clientReady, undefined);
+            yield* Deferred.await(revocationCompleted);
+            return yield* client[WS_METHODS.serverGetConfig]({}).pipe(Effect.result);
+          }),
+        ),
+      ).pipe(Effect.forkChild);
+
+      yield* Deferred.await(clientReady);
+      const revokeResponse = yield* HttpClient.post("/api/auth/clients/revoke", {
+        headers: {
+          cookie: ownerCookie,
+          "content-type": "application/json",
+        },
+        body: HttpBody.text(jsonRequestBody({ sessionId: pairedSessionId }), "application/json"),
+      });
+      yield* Deferred.succeed(revocationCompleted, undefined);
+      const clientResult = yield* Fiber.join(clientFiber).pipe(
+        Effect.timeoutOrElse({
+          duration: "2 seconds",
+          orElse: () => Effect.die(new Error("Revoked websocket remained usable.")),
+        }),
+      );
+
+      assert.equal(revokeResponse.status, 200);
+      assert.equal(clientResult._tag, "Failure");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("does not block server config when editor discovery never resolves", () =>
     Effect.gen(function* () {
       const discoveryInterrupted = yield* Deferred.make<void>();
@@ -2453,6 +2609,37 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           contentType: "application/json",
         },
       ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("rejects oversized HTTP request bodies before JSON decoding", () =>
+    Effect.gen(function* () {
+      let recorded = false;
+      yield* buildAppUnderTest({
+        layers: {
+          browserTraceCollector: {
+            record: () =>
+              Effect.sync(() => {
+                recorded = true;
+              }),
+          },
+        },
+      });
+
+      const response = yield* HttpClient.post("/api/observability/v1/traces", {
+        headers: {
+          cookie: yield* getAuthenticatedSessionCookieHeader(),
+          "content-type": "application/json",
+        },
+        body: HttpBody.text(
+          // @effect-diagnostics-next-line preferSchemaOverJson:off
+          JSON.stringify({ padding: "x".repeat(HTTP_REQUEST_MAX_BODY_BYTES) }),
+          "application/json",
+        ),
+      });
+
+      assert.equal(response.status, 413);
+      assert.isFalse(recorded);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -4332,6 +4519,75 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(items[0]?.kind, "snapshot");
       assert.equal(items[1]?.kind, "event");
       assert.equal(items[1]?.kind === "event" ? items[1].event.sequence : null, 2);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
+  it.effect("fails a thread subscription that exceeds its live catch-up buffer", () =>
+    Effect.gen(function* () {
+      const thread = makeDefaultOrchestrationReadModel().threads[0]!;
+      const liveEvents = yield* PubSub.unbounded<OrchestrationEvent>();
+      const snapshotStarted = yield* Deferred.make<void>();
+      const releaseSnapshot = yield* Deferred.make<void>();
+      const messageEvent = {
+        sequence: 2,
+        eventId: EventId.make("event-buffer-overflow"),
+        aggregateKind: "thread",
+        aggregateId: defaultThreadId,
+        occurredAt: "2026-01-01T00:00:01.000Z",
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "thread.message-sent",
+        payload: {
+          threadId: defaultThreadId,
+          messageId: MessageId.make("message-buffer-overflow"),
+          role: "assistant",
+          text: "Buffered message",
+          turnId: null,
+          streaming: true,
+          createdAt: "2026-01-01T00:00:01.000Z",
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        },
+      } satisfies Extract<OrchestrationEvent, { type: "thread.message-sent" }>;
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            streamDomainEvents: Stream.fromPubSub(liveEvents),
+          },
+          projectionSnapshotQuery: {
+            getThreadDetailSnapshot: () =>
+              Deferred.succeed(snapshotStarted, undefined).pipe(
+                Effect.andThen(Deferred.await(releaseSnapshot)),
+                Effect.as(Option.some({ snapshotSequence: 1, thread })),
+              ),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const result = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const subscription = yield* withWsRpcClient(wsUrl, (client) =>
+            client[ORCHESTRATION_WS_METHODS.subscribeThread]({
+              threadId: defaultThreadId,
+            }).pipe(Stream.runCollect, Effect.result),
+          ).pipe(Effect.forkScoped);
+
+          yield* Deferred.await(snapshotStarted);
+          yield* Effect.forEach(Array.from({ length: 1_025 }), () =>
+            PubSub.publish(liveEvents, messageEvent),
+          );
+          yield* Effect.sleep("25 millis");
+          yield* Deferred.succeed(releaseSnapshot, undefined);
+          return yield* Fiber.join(subscription);
+        }),
+      ).pipe(Effect.timeout("2 seconds"));
+
+      assertTrue(result._tag === "Failure");
+      assertTrue(result.failure._tag === "OrchestrationGetSnapshotError");
+      assert.include(result.failure.message, "live buffer overflowed");
     }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 

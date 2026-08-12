@@ -90,6 +90,7 @@ interface ActiveRecording {
   readonly canvas: HTMLCanvasElement;
   readonly context: CanvasRenderingContext2D;
   readonly chunks: Blob[];
+  encodedBytes: number;
   readonly startedAt: string;
   readonly startupSettled: Promise<void>;
   readonly firstFrameSize: Promise<"frame" | "cancelled">;
@@ -120,10 +121,61 @@ export function useActiveBrowserRecordingTabIds(): ReadonlySet<string> {
 }
 
 const activeRecordings = new Map<string, ActiveRecording>();
+interface AutoStoppedRecording {
+  readonly artifact: DesktopPreviewRecordingArtifact;
+  readonly serverTabId: string;
+  readonly threadRef: ScopedThreadRef | null;
+}
+
+const autoStoppedRecordings = new Map<string, AutoStoppedRecording>();
+const autoStopListeners = new Set<(event: BrowserRecordingAutoStoppedEvent) => void>();
+const MAX_CACHED_AUTO_STOPPED_RECORDINGS = 32;
 let unsubscribeFrames: (() => void) | null = null;
 
 export const BROWSER_RECORDING_STARTUP_SETTLE_TIMEOUT_MS = 5_000;
 export const BROWSER_RECORDING_FIRST_FRAME_SIZE_TIMEOUT_MS = 5_000;
+export const BROWSER_RECORDING_MAX_BYTES = 128 * 1024 * 1024;
+
+export type BrowserRecordingAutoStoppedEvent =
+  | {
+      readonly tabId: string;
+      readonly reason: "size-limit";
+      readonly maxBytes: number;
+      readonly artifact: DesktopPreviewRecordingArtifact;
+    }
+  | {
+      readonly tabId: string;
+      readonly reason: "size-limit";
+      readonly maxBytes: number;
+      readonly error: unknown;
+    };
+
+export function subscribeBrowserRecordingAutoStopped(
+  listener: (event: BrowserRecordingAutoStoppedEvent) => void,
+): () => void {
+  autoStopListeners.add(listener);
+  return () => autoStopListeners.delete(listener);
+}
+
+const publishBrowserRecordingAutoStopped = (event: BrowserRecordingAutoStoppedEvent): void => {
+  for (const listener of autoStopListeners) {
+    try {
+      listener(event);
+    } catch {
+      // A UI notification listener must not affect recording cleanup.
+    }
+  }
+};
+
+const cacheAutoStoppedRecording = (tabId: string, recording: AutoStoppedRecording): void => {
+  autoStoppedRecordings.delete(tabId);
+  autoStoppedRecordings.set(tabId, recording);
+  while (autoStoppedRecordings.size > MAX_CACHED_AUTO_STOPPED_RECORDINGS) {
+    const oldestTabId = autoStoppedRecordings.keys().next().value;
+    if (oldestTabId === undefined) break;
+    autoStoppedRecordings.delete(oldestTabId);
+  }
+};
 
 export function readActiveBrowserRecordingTabIds(threadRef?: ScopedThreadRef): ReadonlySet<string> {
   const tabIds = new Set<string>();
@@ -148,6 +200,25 @@ export function readActiveBrowserRecordingTargets(
       ? [{ runtimeTabId: recording.tabId, serverTabId: recording.serverTabId }]
       : [],
   );
+}
+
+export function readStoppableBrowserRecordingTargets(
+  threadRef: ScopedThreadRef,
+): ReadonlyArray<ActiveBrowserRecordingTarget> {
+  const targets = [...readActiveBrowserRecordingTargets(threadRef)];
+  const serverTabIds = new Set(targets.map((target) => target.serverTabId));
+  for (const [runtimeTabId, recording] of autoStoppedRecordings) {
+    if (
+      recording.threadRef?.environmentId !== threadRef.environmentId ||
+      recording.threadRef.threadId !== threadRef.threadId ||
+      serverTabIds.has(recording.serverTabId)
+    ) {
+      continue;
+    }
+    targets.push({ runtimeTabId, serverTabId: recording.serverTabId });
+    serverTabIds.add(recording.serverTabId);
+  }
+  return targets;
 }
 
 export function findActiveBrowserRecordingRuntimeTabId(
@@ -335,6 +406,7 @@ export async function startBrowserRecording(
       activeTabId: activeLogicalRecording,
     });
   }
+  autoStoppedRecordings.delete(tabId);
   const surface = useBrowserSurfaceStore.getState().byTabId[tabId];
   const recordingSize = surface?.content ?? surface?.rect;
   const canvas = document.createElement("canvas");
@@ -365,6 +437,7 @@ export async function startBrowserRecording(
     canvas,
     context,
     chunks,
+    encodedBytes: 0,
     startedAt,
     startupSettled,
     firstFrameSize,
@@ -450,7 +523,37 @@ export async function startBrowserRecording(
       recording.mimeType = mimeType;
       recording.recorder = recorder;
       recorder.addEventListener("dataavailable", (event) => {
-        if (event.data.size > 0) chunks.push(event.data);
+        if (event.data.size <= 0) return;
+        if (recording.encodedBytes + event.data.size > BROWSER_RECORDING_MAX_BYTES) {
+          if (recording.lifecycle.phase !== "stopping") {
+            void stopBrowserRecording(tabId).then(
+              (artifact) => {
+                if (!artifact) return;
+                cacheAutoStoppedRecording(tabId, {
+                  artifact,
+                  serverTabId: recording.serverTabId,
+                  threadRef: recording.threadRef,
+                });
+                publishBrowserRecordingAutoStopped({
+                  tabId,
+                  reason: "size-limit",
+                  maxBytes: BROWSER_RECORDING_MAX_BYTES,
+                  artifact,
+                });
+              },
+              (error) =>
+                publishBrowserRecordingAutoStopped({
+                  tabId,
+                  reason: "size-limit",
+                  maxBytes: BROWSER_RECORDING_MAX_BYTES,
+                  error,
+                }),
+            );
+          }
+          return;
+        }
+        recording.encodedBytes += event.data.size;
+        chunks.push(event.data);
       });
     } catch (cause) {
       const cleanupCause = await cleanupFailedRecordingStart(bridge, recording);
@@ -607,7 +710,12 @@ export function stopBrowserRecording(
 ): Promise<DesktopPreviewRecordingArtifact | null> {
   const bridge = previewBridge;
   const recording = activeRecordings.get(tabId);
-  if (!bridge || !recording) return Promise.resolve(null);
+  if (!recording) {
+    const completed = autoStoppedRecordings.get(tabId);
+    autoStoppedRecordings.delete(tabId);
+    return Promise.resolve(completed?.artifact ?? null);
+  }
+  if (!bridge) return Promise.resolve(null);
   if (recording.lifecycle.phase === "stopping") return recording.lifecycle.stopPromise;
 
   const stopPromise = Promise.resolve()

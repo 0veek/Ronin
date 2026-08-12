@@ -10,12 +10,14 @@ import {
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Option from "effect/Option";
 
@@ -391,6 +393,10 @@ export class SessionStore extends Context.Service<
     readonly revokeAllExcept: (
       sessionId: AuthSessionId,
     ) => Effect.Effect<number, SessionCredentialInternalError>;
+    /** Register a live connection and return an effect that completes if its session is invalidated. */
+    readonly registerConnection: (
+      sessionId: AuthSessionId,
+    ) => Effect.Effect<Effect.Effect<void>, never, Scope.Scope>;
     readonly markConnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
     readonly markDisconnected: (sessionId: AuthSessionId) => Effect.Effect<void, never>;
   }
@@ -462,6 +468,9 @@ export const make = Effect.gen(function* () {
   const authSessions = yield* AuthSessions.AuthSessionRepository;
   const signingSecret = yield* secretStore.getOrCreateRandom(SIGNING_SECRET_NAME, 32);
   const connectedSessionsRef = yield* Ref.make(new Map<string, number>());
+  const connectionInvalidationWaitersRef = yield* Ref.make(
+    new Map<string, ReadonlySet<Deferred.Deferred<void>>>(),
+  );
   const changesPubSub = yield* PubSub.unbounded<SessionCredentialChange>();
   const cookieName = resolveSessionCookieName({
     mode: serverConfig.mode,
@@ -565,6 +574,87 @@ export const make = Effect.gen(function* () {
       ),
       Effect.withSpan("SessionStore.markDisconnected"),
     );
+
+  const signalConnectionInvalidation = Effect.fn("SessionStore.signalConnectionInvalidation")(
+    function* (sessionId: AuthSessionId) {
+      const waiters = yield* Ref.modify(connectionInvalidationWaitersRef, (current) => {
+        const next = new Map(current);
+        const registered = next.get(sessionId) ?? new Set<Deferred.Deferred<void>>();
+        next.delete(sessionId);
+        return [registered, next] as const;
+      });
+      yield* Effect.forEach(waiters, (waiter) => Deferred.succeed(waiter, undefined), {
+        concurrency: "unbounded",
+        discard: true,
+      });
+    },
+  );
+
+  const registerConnection: SessionStore["Service"]["registerConnection"] = (sessionId) =>
+    Effect.acquireRelease(
+      Effect.gen(function* () {
+        const invalidated = yield* Deferred.make<void>();
+        yield* Ref.update(connectionInvalidationWaitersRef, (current) => {
+          const next = new Map(current);
+          const waiters = new Set(next.get(sessionId) ?? []);
+          waiters.add(invalidated);
+          next.set(sessionId, waiters);
+          return next;
+        });
+
+        const expiresAt = yield* authSessions.getById({ sessionId }).pipe(
+          Effect.matchCauseEffect({
+            onFailure: (cause) =>
+              Effect.logError("Failed to revalidate websocket session registration.").pipe(
+                Effect.annotateLogs({ sessionId, cause }),
+                Effect.andThen(Deferred.succeed(invalidated, undefined)),
+                Effect.as(null),
+              ),
+            onSuccess: (row) => {
+              if (Option.isNone(row) || row.value.revokedAt !== null) {
+                return Deferred.succeed(invalidated, undefined).pipe(Effect.as(null));
+              }
+              return Effect.succeed(row.value.expiresAt);
+            },
+          }),
+        );
+        yield* markConnected(sessionId);
+
+        const revoked = Deferred.await(invalidated);
+        return {
+          invalidated,
+          awaitInvalidation:
+            expiresAt === null
+              ? revoked
+              : DateTime.now.pipe(
+                  Effect.flatMap((now) =>
+                    Effect.raceFirst(
+                      revoked,
+                      Effect.sleep(
+                        Duration.millis(
+                          Math.max(0, expiresAt.epochMilliseconds - now.epochMilliseconds),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+        };
+      }),
+      ({ invalidated }) =>
+        Ref.update(connectionInvalidationWaitersRef, (current) => {
+          const next = new Map(current);
+          const waiters = next.get(sessionId);
+          if (!waiters) return next;
+          const remaining = new Set(waiters);
+          remaining.delete(invalidated);
+          if (remaining.size === 0) {
+            next.delete(sessionId);
+          } else {
+            next.set(sessionId, remaining);
+          }
+          return next;
+        }).pipe(Effect.andThen(markDisconnected(sessionId))),
+    ).pipe(Effect.map(({ awaitInvalidation }) => awaitInvalidation));
 
   const encodeClaims = Schema.encodeEffect(Schema.fromJsonString(SessionClaims));
   const issue: SessionStore["Service"]["issue"] = Effect.fn("SessionStore.issue")(
@@ -846,6 +936,7 @@ export const make = Effect.gen(function* () {
         })
         .pipe(Effect.mapError((cause) => new SessionRevocationError({ sessionId, cause })));
       if (revoked) {
+        yield* signalConnectionInvalidation(sessionId);
         yield* Ref.update(connectedSessionsRef, (current) => {
           const next = new Map(current);
           next.delete(sessionId);
@@ -872,6 +963,10 @@ export const make = Effect.gen(function* () {
         ),
       );
     if (revokedSessionIds.length > 0) {
+      yield* Effect.forEach(revokedSessionIds, signalConnectionInvalidation, {
+        concurrency: "unbounded",
+        discard: true,
+      });
       yield* Ref.update(connectedSessionsRef, (current) => {
         const next = new Map(current);
         for (const revokedSessionId of revokedSessionIds) {
@@ -903,6 +998,7 @@ export const make = Effect.gen(function* () {
     },
     revoke,
     revokeAllExcept,
+    registerConnection,
     markConnected,
     markDisconnected,
   });

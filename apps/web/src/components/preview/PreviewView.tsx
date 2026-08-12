@@ -58,6 +58,7 @@ import {
   findActiveBrowserRecordingRuntimeTabId,
   startBrowserRecording,
   stopBrowserRecording,
+  subscribeBrowserRecordingAutoStopped,
   useActiveBrowserRecordingTabIds,
 } from "~/browser/browserRecording";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -131,6 +132,38 @@ export function PreviewView({
         ? runtimeTabId
         : findActiveBrowserRecordingRuntimeTabId(threadRef, tabId)
       : null;
+
+  useEffect(() => {
+    if (!runtimeTabId) return;
+    return subscribeBrowserRecordingAutoStopped((event) => {
+      if (event.tabId !== runtimeTabId) return;
+      if ("error" in event) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to save size-limited recording",
+          description: event.error instanceof Error ? event.error.message : "An error occurred.",
+        });
+        return;
+      }
+      const bridge = previewBridge;
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Recording saved at size limit",
+          description: `Recording stopped automatically at ${Math.round(event.maxBytes / 1024 / 1024)} MB.`,
+          ...(bridge
+            ? {
+                actionProps: {
+                  children: revealInFileExplorerLabel(navigator.platform),
+                  onClick: () => void bridge.revealArtifact(event.artifact.path),
+                },
+              }
+            : {}),
+        }),
+      );
+    });
+  }, [runtimeTabId]);
+
   const snapshot = tabId ? (previewState.sessions[tabId] ?? null) : null;
   const desktopOverlay = tabId ? (previewState.desktopByTabId[tabId] ?? null) : null;
   const navStatus = snapshot?.navStatus ?? { _tag: "Idle" as const };

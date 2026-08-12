@@ -22,6 +22,7 @@ import {
   ProviderInstanceId,
   ServerSettings,
   ServerSettingsError,
+  type ServerSettingsOperation,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
@@ -95,6 +96,19 @@ function redactProviderEnvironmentVariable(
     value: "",
     ...(variable.value.length > 0 || variable.valueRedacted ? { valueRedacted: true } : {}),
   };
+}
+
+interface ProviderEnvironmentSecretMutation {
+  readonly secretName: string;
+  readonly instanceId: string;
+  readonly environmentVariable: string;
+  readonly operation: "remove-secret" | "remove-stale-secret" | "write-secret";
+  readonly value: Uint8Array | null;
+}
+
+interface ProviderEnvironmentSecretPlan {
+  readonly settings: ServerSettings;
+  readonly mutations: ReadonlyArray<ProviderEnvironmentSecretMutation>;
 }
 
 export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings {
@@ -375,106 +389,199 @@ const make = Effect.gen(function* () {
       Stream.map(resolveTextGenerationProvider),
     );
 
-  const persistProviderEnvironmentSecrets = (
+  const planProviderEnvironmentSecrets = (
     current: ServerSettings,
     next: ServerSettings,
-  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
-    Effect.gen(function* () {
-      const providerInstances: Record<string, ProviderInstanceConfig> = {
-        ...next.providerInstances,
-      };
+  ): ProviderEnvironmentSecretPlan => {
+    const providerInstances: Record<string, ProviderInstanceConfig> = {
+      ...next.providerInstances,
+    };
+    const mutations = new Map<string, ProviderEnvironmentSecretMutation>();
 
-      const nextSecretKeys = new Set<string>();
-      for (const [instanceId, instance] of Object.entries(next.providerInstances)) {
-        if (!instance.environment) continue;
-        const environment: ProviderInstanceEnvironmentVariable[] = [];
-        for (const variable of instance.environment) {
-          const secretName = providerEnvironmentSecretName({ instanceId, name: variable.name });
-          if (!variable.sensitive) {
-            yield* secretStore.remove(secretName).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new ServerSettingsError({
-                    settingsPath,
-                    operation: "remove-secret",
-                    providerInstanceId: instanceId,
-                    environmentVariable: variable.name,
-                    cause,
-                  }),
-              ),
-            );
-            environment.push(redactProviderEnvironmentVariable(variable));
-            continue;
-          }
-
-          nextSecretKeys.add(secretName);
-          if (!variable.valueRedacted) {
-            if (variable.value.length > 0) {
-              yield* secretStore.set(secretName, textEncoder.encode(variable.value)).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ServerSettingsError({
-                      settingsPath,
-                      operation: "write-secret",
-                      providerInstanceId: instanceId,
-                      environmentVariable: variable.name,
-                      cause,
-                    }),
-                ),
-              );
-              environment.push({ ...variable, value: "", valueRedacted: true });
-            } else {
-              yield* secretStore.remove(secretName).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new ServerSettingsError({
-                      settingsPath,
-                      operation: "remove-secret",
-                      providerInstanceId: instanceId,
-                      environmentVariable: variable.name,
-                      cause,
-                    }),
-                ),
-              );
-              const { valueRedacted: _omit, ...rest } = variable;
-              environment.push(rest);
-            }
-            continue;
-          }
-
+    const nextSecretKeys = new Set<string>();
+    for (const [instanceId, instance] of Object.entries(next.providerInstances)) {
+      if (!instance.environment) continue;
+      const environment: ProviderInstanceEnvironmentVariable[] = [];
+      for (const variable of instance.environment) {
+        const secretName = providerEnvironmentSecretName({ instanceId, name: variable.name });
+        if (!variable.sensitive) {
+          mutations.set(secretName, {
+            secretName,
+            instanceId,
+            environmentVariable: variable.name,
+            operation: "remove-secret",
+            value: null,
+          });
           environment.push(redactProviderEnvironmentVariable(variable));
+          continue;
         }
-        providerInstances[instanceId] = {
-          ...instance,
-          environment,
-        } satisfies ProviderInstanceConfig;
-      }
 
-      for (const [instanceId, instance] of Object.entries(current.providerInstances)) {
-        for (const variable of instance.environment ?? []) {
-          if (!variable.sensitive) continue;
-          const secretName = providerEnvironmentSecretName({ instanceId, name: variable.name });
-          if (nextSecretKeys.has(secretName)) continue;
-          yield* secretStore.remove(secretName).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ServerSettingsError({
-                  settingsPath,
-                  operation: "remove-stale-secret",
-                  providerInstanceId: instanceId,
-                  environmentVariable: variable.name,
-                  cause,
-                }),
-            ),
-          );
+        nextSecretKeys.add(secretName);
+        if (!variable.valueRedacted) {
+          if (variable.value.length > 0) {
+            mutations.set(secretName, {
+              secretName,
+              instanceId,
+              environmentVariable: variable.name,
+              operation: "write-secret",
+              value: textEncoder.encode(variable.value),
+            });
+            environment.push({ ...variable, value: "", valueRedacted: true });
+          } else {
+            mutations.set(secretName, {
+              secretName,
+              instanceId,
+              environmentVariable: variable.name,
+              operation: "remove-secret",
+              value: null,
+            });
+            const { valueRedacted: _omit, ...rest } = variable;
+            environment.push(rest);
+          }
+          continue;
         }
-      }
 
-      return {
+        environment.push(redactProviderEnvironmentVariable(variable));
+      }
+      providerInstances[instanceId] = {
+        ...instance,
+        environment,
+      } satisfies ProviderInstanceConfig;
+    }
+
+    for (const [instanceId, instance] of Object.entries(current.providerInstances)) {
+      for (const variable of instance.environment ?? []) {
+        if (!variable.sensitive) continue;
+        const secretName = providerEnvironmentSecretName({ instanceId, name: variable.name });
+        if (nextSecretKeys.has(secretName)) continue;
+        mutations.set(secretName, {
+          secretName,
+          instanceId,
+          environmentVariable: variable.name,
+          operation: "remove-stale-secret",
+          value: null,
+        });
+      }
+    }
+
+    return {
+      settings: {
         ...next,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
-      };
+      },
+      mutations: [...mutations.values()],
+    };
+  };
+
+  const secretMutationError = (
+    mutation: ProviderEnvironmentSecretMutation,
+    cause: ServerSecretStore.SecretStoreError,
+    operation: ServerSettingsOperation = mutation.operation,
+  ) =>
+    new ServerSettingsError({
+      settingsPath,
+      operation,
+      providerInstanceId: mutation.instanceId,
+      environmentVariable: mutation.environmentVariable,
+      cause,
     });
+
+  const readSecretBeforeMutation = Effect.fnUntraced(function* (
+    mutation: ProviderEnvironmentSecretMutation,
+  ) {
+    return yield* secretStore
+      .get(mutation.secretName)
+      .pipe(Effect.mapError((cause) => secretMutationError(mutation, cause, "read-secret")));
+  });
+
+  const applySecretMutation = Effect.fnUntraced(function* (
+    mutation: ProviderEnvironmentSecretMutation,
+  ) {
+    const effect =
+      mutation.value === null
+        ? secretStore.remove(mutation.secretName)
+        : secretStore.set(mutation.secretName, mutation.value);
+    yield* effect.pipe(Effect.mapError((cause) => secretMutationError(mutation, cause)));
+  });
+
+  const rollbackSecretMutation = Effect.fnUntraced(function* (
+    mutation: ProviderEnvironmentSecretMutation,
+    previous: Option.Option<Uint8Array>,
+  ) {
+    const effect = Option.isSome(previous)
+      ? secretStore.set(mutation.secretName, previous.value)
+      : secretStore.remove(mutation.secretName);
+    yield* effect.pipe(
+      Effect.mapError((cause) => secretMutationError(mutation, cause, "rollback-secret")),
+    );
+  });
+
+  const commitProviderEnvironmentSecretPlan = Effect.fnUntraced(function* (
+    plan: ProviderEnvironmentSecretPlan,
+  ) {
+    const previousSecrets = new Map<string, Option.Option<Uint8Array>>();
+    for (const mutation of plan.mutations) {
+      previousSecrets.set(mutation.secretName, yield* readSecretBeforeMutation(mutation));
+    }
+
+    const appliedMutations: ProviderEnvironmentSecretMutation[] = [];
+    const commitExit = yield* Effect.exit(
+      Effect.gen(function* () {
+        yield* Effect.forEach(
+          plan.mutations,
+          (mutation) =>
+            applySecretMutation(mutation).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  appliedMutations.push(mutation);
+                }),
+              ),
+            ),
+          { concurrency: 1, discard: true },
+        );
+        const materialized = yield* materializeProviderEnvironmentSecrets(plan.settings);
+        yield* writeSettingsAtomically(plan.settings);
+        return materialized;
+      }),
+    );
+    if (Exit.isSuccess(commitExit)) return commitExit.value;
+
+    const rollbackExits = yield* Effect.forEach(
+      appliedMutations.toReversed(),
+      (mutation) =>
+        Effect.exit(
+          rollbackSecretMutation(
+            mutation,
+            previousSecrets.get(mutation.secretName) ?? Option.none(),
+          ),
+        ),
+      { concurrency: 1 },
+    );
+    const rollbackFailures = rollbackExits.filter(Exit.isFailure);
+    if (rollbackFailures.length > 0) {
+      const mutation = appliedMutations.at(-1);
+      return yield* new ServerSettingsError({
+        settingsPath,
+        operation: "rollback-secret",
+        ...(mutation
+          ? {
+              providerInstanceId: mutation.instanceId,
+              environmentVariable: mutation.environmentVariable,
+            }
+          : {}),
+        cause: new AggregateError(
+          [
+            Cause.squash(commitExit.cause),
+            ...rollbackFailures.map((failure) => Cause.squash(failure.cause)),
+          ],
+          "Settings update and provider environment secret rollback both failed.",
+          { cause: Cause.squash(commitExit.cause) },
+        ),
+      });
+    }
+
+    return yield* Effect.failCause(commitExit.cause);
+  });
 
   const writeSettingsAtomically = Effect.fnUntraced(
     function* (settings: ServerSettings) {
@@ -579,15 +686,15 @@ const make = Effect.gen(function* () {
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* getSettingsFromCache;
-          const nextPersisted = yield* persistProviderEnvironmentSecrets(
-            current,
-            applyServerSettingsPatch(current, patch),
-          );
-          const next = yield* normalizeServerSettings(nextPersisted);
-          yield* writeSettingsAtomically(next);
+          const proposed = yield* normalizeServerSettings(applyServerSettingsPatch(current, patch));
+          const plan = planProviderEnvironmentSecrets(current, proposed);
+          const next = yield* normalizeServerSettings(plan.settings);
+          const materialized = yield* commitProviderEnvironmentSecretPlan({
+            ...plan,
+            settings: next,
+          });
           yield* Cache.set(settingsCache, cacheKey, next);
           yield* emitChange(next);
-          const materialized = yield* materializeProviderEnvironmentSecrets(next);
           return resolveTextGenerationProvider(materialized);
         }),
       ),

@@ -87,6 +87,7 @@ vi.mock("./browserSurfaceStore", () => ({
 
 import {
   BROWSER_RECORDING_FIRST_FRAME_SIZE_TIMEOUT_MS,
+  BROWSER_RECORDING_MAX_BYTES,
   BROWSER_RECORDING_STARTUP_SETTLE_TIMEOUT_MS,
   BrowserRecordingConflictError,
   findActiveBrowserRecordingRuntimeTabId,
@@ -98,12 +99,18 @@ import {
 import { previewRuntimeTabId } from "./previewRuntimeTabId";
 
 class FakeMediaRecorder {
+  static readonly instances: FakeMediaRecorder[] = [];
+
   static isTypeSupported(): boolean {
     return true;
   }
 
   state: RecordingState = "inactive";
   private readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+
+  constructor() {
+    FakeMediaRecorder.instances.push(this);
+  }
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
     const listeners = this.listeners.get(type) ?? new Set();
@@ -122,6 +129,14 @@ class FakeMediaRecorder {
       else listener.handleEvent(new Event("stop"));
     }
   }
+
+  emitData(data: Blob): void {
+    const event = { data } as BlobEvent;
+    for (const listener of this.listeners.get("dataavailable") ?? []) {
+      if (typeof listener === "function") listener(event);
+      else listener.handleEvent(event);
+    }
+  }
 }
 
 const emitRecordingFrame = () => {
@@ -136,6 +151,7 @@ const emitRecordingFrame = () => {
 
 describe("browser recording", () => {
   beforeEach(() => {
+    FakeMediaRecorder.instances.length = 0;
     events.length = 0;
     frameSubscription.listener = null;
     surfaceState.byTabId = {
@@ -183,6 +199,21 @@ describe("browser recording", () => {
     expect(events).toEqual(["start-screencast", "publish:recording-tab"]);
 
     await stopBrowserRecording("recording-tab");
+  });
+
+  it("automatically saves and releases recordings before encoded data exceeds the limit", async () => {
+    await startBrowserRecording("recording-tab");
+    const recorder = FakeMediaRecorder.instances[0];
+    expect(recorder).toBeDefined();
+
+    recorder?.emitData({ size: BROWSER_RECORDING_MAX_BYTES + 1 } as Blob);
+
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(readActiveBrowserRecordingTabIds()).toEqual(new Set());
+    await expect(stopBrowserRecording("recording-tab")).resolves.toMatchObject({
+      tabId: "recording-tab",
+    });
+    await expect(stopBrowserRecording("recording-tab")).resolves.toBeNull();
   });
 
   it("records a hidden tab without requiring it to become visible", async () => {

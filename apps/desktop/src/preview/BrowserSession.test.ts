@@ -63,7 +63,7 @@ describe("BrowserSession", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("grants clipboard-sanitized-write through both the request and check handlers", () =>
+  it.effect("only grants sanitized clipboard writes to untrusted preview content", () =>
     Effect.gen(function* () {
       const browserSessions = yield* BrowserSession.BrowserSession;
       const partition = yield* browserSessions.getPartition("scope-a");
@@ -86,23 +86,20 @@ describe("BrowserSession", () => {
         return granted;
       };
 
-      for (const permission of [
-        "clipboard-read",
-        "clipboard-sanitized-write",
-        "notifications",
-        "geolocation",
-      ]) {
-        assert.isTrue(requestAllows(permission), `request handler should allow ${permission}`);
-        assert.isTrue(
-          checkHandler(null, permission) as boolean,
-          `check handler should allow ${permission}`,
-        );
-      }
+      assert.isTrue(requestAllows("clipboard-sanitized-write"));
+      assert.isTrue(checkHandler(null, "clipboard-sanitized-write") as boolean);
 
       // `clipboard-write` is not a real Electron permission — the async write API
-      // uses `clipboard-sanitized-write` — so the stale name must not be granted,
-      // and unrelated permissions stay denied.
-      for (const permission of ["clipboard-write", "midi"]) {
+      // uses `clipboard-sanitized-write` — so the stale name must not be granted.
+      // Sensitive read, location, and notification capabilities also stay denied
+      // because previews intentionally host arbitrary web content.
+      for (const permission of [
+        "clipboard-read",
+        "clipboard-write",
+        "notifications",
+        "geolocation",
+        "midi",
+      ]) {
         assert.isFalse(requestAllows(permission), `request handler should deny ${permission}`);
         assert.isFalse(
           checkHandler(null, permission) as boolean,

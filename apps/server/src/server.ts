@@ -15,6 +15,7 @@ import {
   staticAndDevRouteLayer,
   browserApiCorsLayer,
   httpCompressionLayer,
+  httpRequestBodyLimitLayer,
 } from "./http.ts";
 import { fixPath } from "./os-jank.ts";
 import { websocketRpcRouteLayer } from "./ws.ts";
@@ -108,6 +109,7 @@ import { ServerActivation } from "./serverActivation.ts";
 // already closes the websocket gracefully. Do not add an artificial drain before
 // those finalizers get a chance to run.
 const HTTP_PREEMPTIVE_SHUTDOWN_GRACE_MS = 0;
+export const WEBSOCKET_MAX_PAYLOAD_BYTES = 64 * 1024 * 1024;
 const ResourceAttributionLayerLive = ResourceAttribution.layer;
 const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
@@ -189,6 +191,7 @@ const HttpServerLive = Layer.unwrap(
             compress: "dedicated",
             decompress: "shared",
           },
+          maxPayloadLength: WEBSOCKET_MAX_PAYLOAD_BYTES,
         },
       });
     } else {
@@ -206,7 +209,10 @@ const HttpServerLive = Layer.unwrap(
         // window is shared across frames — that also makes small frames cheap
         // to compress, so no size threshold is set (ws only honors
         // `threshold` when context takeover is disabled).
-        websocket: { perMessageDeflate: true },
+        websocket: {
+          perMessageDeflate: true,
+          maxPayload: WEBSOCKET_MAX_PAYLOAD_BYTES,
+        },
       });
     }
   }),
@@ -433,6 +439,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(ServerSelfUpdate.layer),
   Layer.provide(commandReadinessLayer),
   Layer.provide(browserApiCorsLayer),
+  Layer.provide(httpRequestBodyLimitLayer),
   Layer.provide(httpCompressionLayer),
 );
 

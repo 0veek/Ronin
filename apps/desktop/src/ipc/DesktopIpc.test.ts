@@ -28,6 +28,124 @@ function makeIpcMain(
 }
 
 describe("DesktopIpc", () => {
+  it("accepts only the top frame of an owned Ronin application window", () => {
+    const mainFrame = { url: "t3code://app/settings" };
+    const sender: DesktopIpc.DesktopIpcWebContents = {
+      mainFrame,
+      getURL: () => mainFrame.url,
+      isDestroyed: () => false,
+    };
+    const owner: DesktopIpc.DesktopIpcOwnerWindow = {
+      webContents: sender,
+      isDestroyed: () => false,
+    };
+    const resolveOwner = () => owner;
+
+    assert.isTrue(
+      DesktopIpc.isTrustedDesktopIpcSender({
+        event: { sender, senderFrame: mainFrame },
+        resolveOwner,
+      }),
+    );
+    assert.isFalse(
+      DesktopIpc.isTrustedDesktopIpcSender({
+        event: { sender, senderFrame: { url: "t3code://app/embedded" } },
+        resolveOwner,
+      }),
+    );
+    assert.isFalse(
+      DesktopIpc.isTrustedDesktopIpcSender({
+        event: { sender, senderFrame: mainFrame },
+        resolveOwner: () => null,
+      }),
+    );
+
+    const foreignFrame = { url: "https://attacker.test" };
+    const foreignSender: DesktopIpc.DesktopIpcWebContents = {
+      mainFrame: foreignFrame,
+      getURL: () => foreignFrame.url,
+      isDestroyed: () => false,
+    };
+    assert.isFalse(
+      DesktopIpc.isTrustedDesktopIpcSender({
+        event: { sender: foreignSender, senderFrame: foreignFrame },
+        resolveOwner: () => ({
+          webContents: foreignSender,
+          isDestroyed: () => false,
+        }),
+      }),
+    );
+  });
+
+  it.effect("rejects an untrusted invoke sender before running the method", () =>
+    Effect.gen(function* () {
+      let listener: DesktopIpc.DesktopIpcHandleListener | undefined;
+      let handled = false;
+      const ipcMain = makeIpcMain({
+        handle: (_channel, registered) => {
+          listener = registered;
+        },
+      });
+      const ipc = DesktopIpc.make(ipcMain, () => false);
+
+      const exit = yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* ipc.handle({
+            ...invokeMethod,
+            handler: () =>
+              Effect.sync(() => {
+                handled = true;
+              }),
+          });
+          const registered = listener;
+          if (!registered) return yield* Effect.die("invoke listener was not registered");
+          return yield* Effect.exit(
+            Effect.promise(() => Promise.resolve(registered({}, undefined))),
+          );
+        }),
+      );
+
+      assert.isTrue(exit._tag === "Failure");
+      assert.isFalse(handled);
+      if (exit._tag === "Failure") {
+        assert.include(String(Cause.squash(exit.cause)), "Rejected unauthorized IPC sender");
+      }
+    }),
+  );
+
+  it.effect("rejects an untrusted sync sender before running the method", () =>
+    Effect.gen(function* () {
+      let listener: DesktopIpc.DesktopIpcSyncListener | undefined;
+      let handled = false;
+      const ipcMain = makeIpcMain({
+        on: (_channel, registered) => {
+          listener = registered;
+        },
+      });
+      const ipc = DesktopIpc.make(ipcMain, () => false);
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* ipc.handleSync({
+            ...syncMethod,
+            handler: () =>
+              Effect.sync(() => {
+                handled = true;
+              }),
+          });
+          const registered = listener;
+          if (!registered) return yield* Effect.die("sync listener was not registered");
+          assert.throws(
+            () => registered({ returnValue: undefined }),
+            /Rejected unauthorized IPC sender/,
+          );
+        }),
+      );
+
+      assert.isFalse(handled);
+    }),
+  );
+
   it.effect("preserves invoke registration context and cause", () =>
     Effect.gen(function* () {
       const cause = new Error("invoke registration failed");

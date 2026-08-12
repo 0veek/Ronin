@@ -460,7 +460,10 @@ export const make = Effect.gen(function* () {
   ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
     const cookieToken = request.cookies[sessions.cookieName];
     const bearerToken = parseBearerToken(request);
-    const credential = cookieToken ?? bearerToken;
+    // Authorization is explicit per request; an ambient browser cookie may be
+    // stale or belong to a different local server. Never let it override the
+    // caller's bearer credential.
+    const credential = bearerToken ?? cookieToken;
     if (!credential) {
       return Effect.fail(new ServerAuthMissingCredentialError({}));
     }

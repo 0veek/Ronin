@@ -2170,6 +2170,29 @@ describe("ClaudeAdapterLive", () => {
         },
         {
           type: "system",
+          subtype: "control_request_progress",
+          request_id: "side-question-1",
+          status: "started",
+          session_id: "session",
+          uuid: "control-progress",
+        },
+        {
+          type: "system",
+          subtype: "worker_shutting_down",
+          reason: "host_exit",
+          session_id: "session",
+          uuid: "worker-shutdown",
+        },
+        {
+          type: "system",
+          subtype: "informational",
+          content: "transcript-only detail",
+          level: "info",
+          session_id: "session",
+          uuid: "info",
+        },
+        {
+          type: "system",
           subtype: "vcs_state_changed",
           kind: "push",
           cwd: "/tmp/worktree",
@@ -2223,6 +2246,24 @@ describe("ClaudeAdapterLive", () => {
         session_id: "session",
         uuid: "notif-high",
       } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "informational",
+        content: "A hook stopped continuation.",
+        level: "warning",
+        prevent_continuation: true,
+        session_id: "session",
+        uuid: "info-warning",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "model_refusal_no_fallback",
+        original_model: "claude-test",
+        request_id: null,
+        content: "Claude refused this request and no fallback is available.",
+        session_id: "session",
+        uuid: "refusal",
+      } as unknown as SDKMessage);
       // session_state_changed maps to the matching session states.
       for (const [state, uuid] of [
         ["running", "ssc-run"],
@@ -2253,10 +2294,13 @@ describe("ClaudeAdapterLive", () => {
       yield* Effect.yieldNow;
 
       const warnings = runtimeEvents.filter((event) => event.type === "runtime.warning");
-      // Exactly one warning: the high-priority notification. Nothing else.
       assert.deepEqual(
         warnings.map((event) => event.payload.message),
-        ["context window nearly full"],
+        [
+          "context window nearly full",
+          "A hook stopped continuation.",
+          "Claude refused this request and no fallback is available.",
+        ],
       );
       const sessionStates = runtimeEvents
         .filter((event) => event.type === "session.state.changed")
@@ -3230,6 +3274,7 @@ describe("ClaudeAdapterLive", () => {
         "Bash",
         { command: "pwd" },
         {
+          requestId: "request-bash-1",
           signal: new AbortController().signal,
           suggestions: [
             {
@@ -3313,6 +3358,7 @@ describe("ClaudeAdapterLive", () => {
         "Agent",
         {},
         {
+          requestId: "request-agent-1",
           signal: new AbortController().signal,
           toolUseID: "tool-agent-1",
         },
@@ -3337,6 +3383,7 @@ describe("ClaudeAdapterLive", () => {
         "Grep",
         { pattern: "foo", path: "src" },
         {
+          requestId: "request-grep-1",
           signal: new AbortController().signal,
           toolUseID: "tool-grep-approval-1",
         },
@@ -3600,6 +3647,65 @@ describe("ClaudeAdapterLive", () => {
       );
     },
   );
+
+  it.effect("resets Claude transcript state and resume identity on conversation_reset", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "before reset",
+        attachments: [],
+      });
+      const completedFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runHead, Effect.forkChild);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "550e8400-e29b-41d4-a716-446655440000",
+        uuid: "result-before-reset",
+      } as unknown as SDKMessage);
+      yield* Fiber.join(completedFiber);
+      assert.equal((yield* adapter.readThread(session.threadId)).turns.length, 1);
+
+      const newConversationId = "7368d0c7-40a3-4d8a-bcc1-ac80c49f2719";
+      const resetThreadStartedFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) =>
+          event.type === "thread.started" && event.payload.providerThreadId === newConversationId,
+      ).pipe(Stream.runHead, Effect.forkChild);
+      harness.query.emit({
+        type: "conversation_reset",
+        new_conversation_id: newConversationId,
+        session_id: "550e8400-e29b-41d4-a716-446655440000",
+        uuid: "conversation-reset-1",
+      } as unknown as SDKMessage);
+      const resetThreadStarted = yield* Fiber.join(resetThreadStartedFiber);
+
+      assert.equal(resetThreadStarted._tag, "Some");
+      assert.equal((yield* adapter.readThread(session.threadId)).turns.length, 0);
+      const activeSession = (yield* adapter.listSessions())[0];
+      assert.equal(activeSession?.status, "ready");
+      assert.deepEqual(activeSession?.resumeCursor, {
+        threadId: session.threadId,
+        resume: newConversationId,
+        turnCount: 0,
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
 
   it.effect("updates model on sendTurn when model override is provided", () => {
     const harness = makeHarness();
@@ -3874,6 +3980,7 @@ describe("ClaudeAdapterLive", () => {
           allowedPrompts: [{ tool: "Bash", prompt: "run tests" }],
         },
         {
+          requestId: "request-exit-plan-1",
           signal: new AbortController().signal,
           toolUseID: "tool-exit-1",
         },
@@ -4040,6 +4147,7 @@ describe("ClaudeAdapterLive", () => {
       };
 
       const permissionPromise = canUseTool("AskUserQuestion", askInput, {
+        requestId: "request-ask-1",
         signal: new AbortController().signal,
         toolUseID: "tool-ask-1",
       });
@@ -4166,6 +4274,7 @@ describe("ClaudeAdapterLive", () => {
       };
 
       const permissionPromise = canUseTool("AskUserQuestion", askInput, {
+        requestId: "request-ask-2",
         signal: new AbortController().signal,
         toolUseID: "tool-ask-2",
       });
@@ -4231,6 +4340,7 @@ describe("ClaudeAdapterLive", () => {
           ],
         },
         {
+          requestId: "request-ask-abort",
           signal: controller.signal,
           toolUseID: "tool-ask-abort",
         },

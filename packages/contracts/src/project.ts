@@ -10,6 +10,7 @@ const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
+export const PROJECT_WRITE_FILE_MAX_CHARS = 4 * 1024 * 1024;
 
 export const ProjectEntryKind = Schema.Literals(["file", "directory"]);
 export type ProjectEntryKind = typeof ProjectEntryKind.Type;
@@ -265,7 +266,7 @@ export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFil
 export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
-  contents: Schema.String,
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_WRITE_FILE_MAX_CHARS)),
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 

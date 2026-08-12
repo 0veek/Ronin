@@ -103,6 +103,15 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
   }),
 );
 
+const isTrustedDesktopIpcSender: DesktopIpc.DesktopIpcSenderAuthorizer = (event) =>
+  DesktopIpc.isTrustedDesktopIpcSender({
+    event,
+    resolveOwner: (sender) =>
+      Electron.BrowserWindow.fromWebContents(
+        sender as unknown as Electron.WebContents,
+      ) as DesktopIpc.DesktopIpcOwnerWindow | null,
+  });
+
 const electronLayer = Layer.mergeAll(
   ElectronApp.layer,
   ElectronDialog.layer,
@@ -113,7 +122,7 @@ const electronLayer = Layer.mergeAll(
   ElectronShell.layer,
   ElectronTheme.layer,
   ElectronWindow.layer,
-  DesktopIpc.layer(Electron.ipcMain),
+  DesktopIpc.layer(Electron.ipcMain, isTrustedDesktopIpcSender),
 );
 
 const desktopFoundationLayer = Layer.mergeAll(

@@ -32,7 +32,7 @@ import {
 import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { resolveBrowserNavigationTarget } from "~/browser/browserTargetResolver";
 import {
-  readActiveBrowserRecordingTargets,
+  readStoppableBrowserRecordingTargets,
   startBrowserRecording,
   stopBrowserRecording,
 } from "~/browser/browserRecording";
@@ -635,7 +635,7 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
             };
           }
           case "recordingStop": {
-            const activeRecordings = readActiveBrowserRecordingTargets(threadRef);
+            const activeRecordings = readStoppableBrowserRecordingTargets(threadRef);
             const activeTabIds = new Set(
               activeRecordings.map((recording) => recording.serverTabId),
             );
