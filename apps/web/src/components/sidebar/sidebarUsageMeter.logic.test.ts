@@ -161,20 +161,29 @@ describe("formatResetCountdown", () => {
 
   it("counts down in minutes inside the first hour", () => {
     expect(formatResetCountdown(inMinutes(1), now)).toBe("1m");
-    expect(formatResetCountdown(inMinutes(42), now)).toBe("42m");
+    expect(formatResetCountdown(inMinutes(46), now)).toBe("46m");
     expect(formatResetCountdown(inMinutes(59), now)).toBe("59m");
   });
 
-  it("switches to hours, then days", () => {
+  it("keeps the minutes alongside the hours", () => {
+    // The bug this replaced: a single rounded unit showed 4h46m of a
+    // five-hour window as "5h", i.e. a window that had not started.
+    expect(formatResetCountdown(inMinutes(4 * 60 + 46), now)).toBe("4h 46m");
     expect(formatResetCountdown(inMinutes(60), now)).toBe("1h");
-    expect(formatResetCountdown(inMinutes(134), now)).toBe("2h");
-    expect(formatResetCountdown(inMinutes(60 * 5), now)).toBe("5h");
-    expect(formatResetCountdown(inMinutes(60 * 24 * 3), now)).toBe("3d");
+    expect(formatResetCountdown(inMinutes(134), now)).toBe("2h 14m");
   });
 
-  it("promotes across a boundary rather than reading 24h", () => {
-    // 23h40m rounds to 24 hours, which must present as a day.
-    expect(formatResetCountdown(inMinutes(23 * 60 + 40), now)).toBe("1d");
+  it("keeps the hours alongside the days", () => {
+    expect(formatResetCountdown(inMinutes(60 * 24), now)).toBe("1d");
+    expect(formatResetCountdown(inMinutes(60 * 24 * 3 + 60 * 4), now)).toBe("3d 4h");
+    expect(formatResetCountdown(inMinutes(60 * 24 * 6 + 60 * 23), now)).toBe("6d 23h");
+  });
+
+  it("never rounds up past a boundary", () => {
+    // Truncating means these can only ever read as less time than remains.
+    expect(formatResetCountdown(inMinutes(23 * 60 + 59), now)).toBe("23h 59m");
+    expect(formatResetCountdown(inMinutes(59), now)).toBe("59m");
+    expect(formatResetCountdown(inMinutes(60 * 24 * 30 - 1), now)).toBe("29d 23h");
   });
 
   it("treats an elapsed window as resetting, not as negative time", () => {

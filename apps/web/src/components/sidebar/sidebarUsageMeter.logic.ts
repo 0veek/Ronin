@@ -104,15 +104,18 @@ export function buildUsageRows(
 }
 
 /**
- * How long until a window rolls over, phrased for peripheral vision.
+ * How long until a window rolls over.
  *
- * Relative rather than absolute ("2h", not "3:20 PM") because the question the
- * meter answers is "can I keep working", and a clock time makes the reader do
- * the subtraction. Coarse for the same reason: this sits in the corner of the
- * eye, so minute-level precision past the first hour is noise.
+ * Relative rather than absolute ("4h 46m", not "3:20 PM") because the question
+ * the meter answers is "can I keep working", and a clock time makes the reader
+ * do the subtraction.
  *
- * Rounds rather than truncating, and promotes across each boundary, so 23h40m
- * reads "1d" instead of "24h".
+ * Two units, and truncated rather than rounded. A single rounded unit reported
+ * 4h46m of a five-hour window as "5h", which reads as a window that has not
+ * started — the one number the row must not get wrong, since the whole point
+ * is knowing how long the wait is. Truncating also means the value never
+ * claims more time than remains, and removes the need to promote across
+ * boundaries: 23h59m is "23h 59m", never "24h".
  */
 export function formatResetCountdown(
   resetsAt: string | null,
@@ -122,14 +125,19 @@ export function formatResetCountdown(
   const parsed = Date.parse(resetsAt);
   if (Number.isNaN(parsed)) return null;
 
-  const minutes = Math.round((parsed - nowMs) / 60_000);
+  const totalMinutes = Math.floor((parsed - nowMs) / 60_000);
   // Already elapsed. Providers keep serving a stale `resetsAt` for a beat after
   // the window turns over, so this is a normal state, not a bad value.
-  if (minutes <= 0) return "now";
-  if (minutes < 60) return `${minutes}m`;
+  if (totalMinutes <= 0) return "now";
+  if (totalMinutes < 60) return `${totalMinutes}m`;
 
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h`;
+  const totalHours = Math.floor(totalMinutes / 60);
+  if (totalHours < 24) {
+    const minutes = totalMinutes % 60;
+    return minutes === 0 ? `${totalHours}h` : `${totalHours}h ${minutes}m`;
+  }
 
-  return `${Math.round(hours / 24)}d`;
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  return hours === 0 ? `${days}d` : `${days}d ${hours}h`;
 }
