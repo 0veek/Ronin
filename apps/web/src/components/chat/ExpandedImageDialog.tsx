@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
+import { FallbackImage, MissingMediaBlock } from "../MissingMedia";
 
 interface ExpandedImageDialogProps {
   preview: ExpandedImagePreview;
@@ -82,11 +83,17 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         >
           <XIcon />
         </Button>
-        <img
+        <FallbackImage
           src={item.src}
           alt={item.name}
           className="max-h-[86vh] max-w-[92vw] select-none rounded-(--radius) border border-border bg-background object-contain"
           draggable={false}
+          fallback={
+            <MissingMediaBlock
+              label={item.name}
+              className="size-72 rounded-(--radius) border border-border border-dashed bg-background"
+            />
+          }
         />
         <p className="mt-2 max-w-[92vw] truncate text-center text-xs text-muted-foreground/80">
           {item.name}

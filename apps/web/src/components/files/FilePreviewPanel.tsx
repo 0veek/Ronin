@@ -63,6 +63,7 @@ import {
   setProjectFileQueryData,
   useProjectFileQuery,
 } from "./projectFilesQueryState";
+import { MissingMediaBlock } from "../MissingMedia";
 
 interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
@@ -141,11 +142,7 @@ function WorkspaceImagePreview(props: {
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
 
   if (assetUrl._tag === "Failure" || (assetUrl._tag === "Success" && failedUrl === assetUrl.url)) {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
-        Unable to load workspace image.
-      </div>
-    );
+    return <MissingMediaBlock label="Unable to load workspace image." />;
   }
 
   return assetUrl._tag === "Success" ? (

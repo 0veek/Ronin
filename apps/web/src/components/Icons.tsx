@@ -833,3 +833,59 @@ export const PiAgentIcon: Icon = ({ className, ...props }) => (
     <path fill="#fff" d="M517.36 400H634.72V634.72H517.36Z" />
   </svg>
 );
+
+/**
+ * Placeholder for an image the client could not load — a screenshot written
+ * outside the workspace, a deleted attachment, a favicon that 404s.
+ *
+ * Drawn on the 24-unit grid lucide-react uses so it lines up with the icons it
+ * sits beside, and stroked in `currentColor` so callers set the tone. The torn
+ * corner and the break through the frame read as "missing" at 16px, where a
+ * plain photo glyph would look like a real image that simply had not decoded.
+ */
+export const BrokenImageIcon: Icon = ({ className, ...props }) => (
+  <svg
+    {...props}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={cn("size-full", className)}
+  >
+    {/* Frame in two pieces, parted at top and bottom to let the tear through. */}
+    <path d="M12.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h4.5" />
+    <path d="M14 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-8" />
+    {/* The tear itself, offset at the waist so the halves read as displaced. */}
+    <path d="M13.25 3 10.5 9.5l3.5 2L10.25 21" />
+    {/* The one bit of photo left: an aperture. A horizon line as well turns to
+        mush at the 14px the inline chip uses. */}
+    <circle cx="7.4" cy="8" r="1.15" />
+  </svg>
+);
+
+/**
+ * Companion to [BrokenImageIcon] for non-image media that failed to resolve —
+ * a video or PDF the preview pipeline could not reach.
+ */
+export const BrokenFileIcon: Icon = ({ className, ...props }) => (
+  <svg
+    {...props}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.75"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className={cn("size-full", className)}
+  >
+    <path d="M14 2.5H7a2 2 0 0 0-2 2v5" />
+    <path d="M5 14.5v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" />
+    <path d="M19 9.5V8l-5-5.5" />
+    <path d="M13.5 2.5V7a1.5 1.5 0 0 0 1.5 1.5h4" />
+    <path d="M3.5 12h4.2" />
+    <path d="M11 12h2" />
+    <path d="M16.3 12h4.2" />
+  </svg>
+);

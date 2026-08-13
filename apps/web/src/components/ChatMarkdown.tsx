@@ -81,6 +81,9 @@ import {
   type MarkdownFileLinkMeta,
 } from "../markdown-links";
 import { readLocalApi } from "../localApi";
+import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { useAssetUrlState } from "~/assets/assetUrls";
+import { MissingMediaChip } from "./MissingMedia";
 import { cn } from "../lib/utils";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useActiveEnvironmentId } from "../state/entities";
@@ -889,6 +892,137 @@ function normalizeMarkdownLinkHrefKey(href: string): string {
   return rewriteMarkdownFileUriHref(normalizedHref) ?? normalizedHref;
 }
 
+/**
+ * Whether a markdown image source points at the local filesystem rather than
+ * somewhere the browser can fetch on its own.
+ *
+ * Agents routinely embed screenshots they just wrote to disk
+ * (`![audit](/tmp/run/contact-sheet.png)`). Left alone the browser resolves
+ * that against the web origin, 404s, and paints its broken-image glyph.
+ */
+export function isLocalImageSource(src: string): boolean {
+  if (/^[a-z][a-z0-9+.-]*:/i.test(src)) {
+    return src.toLowerCase().startsWith("file:");
+  }
+  // Protocol-relative URLs are remote; everything else is a path.
+  return !src.startsWith("//");
+}
+
+export function localImagePathFromSource(src: string): string | null {
+  if (src.toLowerCase().startsWith("file:")) {
+    try {
+      const pathname = decodeURIComponent(new URL(src).pathname);
+      // `file://` alone parses to "/", a directory rather than a file. Asking
+      // the asset endpoint for it would be a guaranteed round trip to nowhere.
+      return pathname && pathname !== "/" ? pathname : null;
+    } catch {
+      return null;
+    }
+  }
+  return src || null;
+}
+
+/**
+ * A markdown `![...]()` embed.
+ *
+ * Remote sources render directly. Local ones are routed through the workspace
+ * asset endpoint, which is the only way the browser can read a file off the
+ * agent's disk — and which deliberately refuses anything outside the workspace
+ * root, so a screenshot parked in `/tmp` resolves to nothing. Either way a
+ * failure lands on [MissingMediaChip] rather than the browser's broken glyph.
+ */
+const MARKDOWN_IMAGE_CLASS_NAME = "h-auto max-w-full rounded-md";
+
+function LoadableMarkdownImage({
+  src,
+  alt,
+  title,
+  fallbackTitle,
+}: {
+  readonly src: string;
+  readonly alt: string | undefined;
+  readonly title: string | undefined;
+  readonly fallbackTitle: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return <MissingMediaChip label={alt} title={fallbackTitle} />;
+  }
+  return (
+    <img
+      src={src}
+      alt={alt ?? ""}
+      {...(title ? { title } : {})}
+      loading="lazy"
+      className={MARKDOWN_IMAGE_CLASS_NAME}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
+/** Local file, resolved through the signed workspace-asset URL. */
+function WorkspaceMarkdownImage({
+  path,
+  threadRef,
+  alt,
+  title,
+  source,
+}: {
+  readonly path: string;
+  readonly threadRef: ScopedThreadRef;
+  readonly alt: string | undefined;
+  readonly title: string | undefined;
+  readonly source: string;
+}) {
+  const assetUrl = useAssetUrlState(threadRef.environmentId, {
+    _tag: "workspace-file",
+    threadId: threadRef.threadId,
+    path,
+  });
+  if (assetUrl._tag === "Failure") {
+    return <MissingMediaChip label={alt} title={source} />;
+  }
+  if (assetUrl._tag !== "Success") {
+    return <MissingMediaChip label={alt} title={source} className="animate-pulse" />;
+  }
+  return (
+    <LoadableMarkdownImage src={assetUrl.url} alt={alt} title={title} fallbackTitle={source} />
+  );
+}
+
+const MarkdownImage = memo(function MarkdownImage({
+  src,
+  alt,
+  title,
+  threadRef,
+}: {
+  readonly src: string;
+  readonly alt: string | undefined;
+  readonly title: string | undefined;
+  readonly threadRef: ScopedThreadRef | undefined;
+}) {
+  if (!isLocalImageSource(src)) {
+    return <LoadableMarkdownImage src={src} alt={alt} title={title} fallbackTitle={src} />;
+  }
+
+  const localPath = localImagePathFromSource(src);
+  // No thread to scope the asset to, an unsupported extension, or a path the
+  // workspace endpoint will refuse: a dead end, so skip the request entirely
+  // and show the placeholder rather than a spinner that never resolves.
+  if (localPath === null || !threadRef || !isWorkspaceImagePreviewPath(localPath)) {
+    return <MissingMediaChip label={alt} title={src} />;
+  }
+  return (
+    <WorkspaceMarkdownImage
+      path={localPath}
+      threadRef={threadRef}
+      alt={alt}
+      title={title}
+      source={src}
+    />
+  );
+});
+
 const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
 
 /** Hosts whose favicon request already failed this session — skip straight to the globe. */
@@ -1641,6 +1775,16 @@ function ChatMarkdown({
           <code {...props} className={className}>
             {children}
           </code>
+        );
+      },
+      img({ node: _node, src, alt, title }) {
+        return (
+          <MarkdownImage
+            src={typeof src === "string" ? src : ""}
+            alt={alt}
+            title={title}
+            threadRef={threadRef}
+          />
         );
       },
       table({ node: _node, ...props }) {

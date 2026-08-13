@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import type { ComposerImageAttachment } from "~/composerDraftStore";
 import { formatElementContextLabel, normalizeElementContextSelection } from "~/lib/elementContext";
 import { cn } from "~/lib/utils";
+import { FallbackImage, MissingMediaBlock } from "../MissingMedia";
 
 interface ComposerPreviewAnnotationCardsProps {
   annotations: ReadonlyArray<PreviewAnnotationPayload>;
@@ -56,10 +57,11 @@ export function ComposerPreviewAnnotationCards({
                 className="size-14 shrink-0 cursor-zoom-in overflow-hidden border-r border-border/70 bg-muted"
                 onClick={() => onExpandImage(image.id)}
               >
-                <img
+                <FallbackImage
                   src={image.previewUrl}
                   alt="Annotated preview crop"
                   className="size-full object-cover transition duration-(--duration-base) group-hover/preview-annotation:scale-[1.03]"
+                  fallback={<MissingMediaBlock label="" className="size-full p-1" />}
                 />
               </button>
             ) : (

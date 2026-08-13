@@ -122,6 +122,7 @@ import {
   parseReviewCommentMessageSegments,
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
+import { FallbackImage, MissingMediaBlock } from "../MissingMedia";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -997,10 +998,13 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                       ctx.onImageExpand(preview);
                     }}
                   >
-                    <img
+                    <FallbackImage
                       src={image.previewUrl}
                       alt={image.name}
                       className="block h-auto max-h-[220px] w-full object-cover"
+                      fallback={
+                        <MissingMediaBlock label={image.name} className="min-h-[72px] px-2 py-3" />
+                      }
                     />
                   </button>
                 ) : (
@@ -1543,10 +1547,11 @@ function UserMessagePreviewAnnotationCard(props: {
             if (preview) ctx.onImageExpand(preview);
           }}
         >
-          <img
+          <FallbackImage
             src={props.image.previewUrl}
             alt="Annotated preview crop"
             className="size-full object-cover"
+            fallback={<MissingMediaBlock label="" className="size-full p-1" />}
           />
         </button>
       ) : null}
