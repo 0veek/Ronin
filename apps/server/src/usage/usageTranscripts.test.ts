@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  EMPTY_TOTALS,
   initialCodexScanState,
   parseClaudeLine,
   parseCodexLine,
+  parseGrokLine,
   totalTokens,
 } from "./usageTranscripts.ts";
 
@@ -59,6 +61,33 @@ describe("parseClaudeLine", () => {
 
     expect(text?.dedupeKey).toBe(toolUse?.dedupeKey);
     expect(text?.totals).toEqual(toolUse?.totals);
+  });
+
+  it("drops the local notices Claude Code files under <synthetic>", () => {
+    // Rate-limit and API-error messages are written as assistant records with
+    // an all-zero usage block. Counting them put a $0.00 / 0 token row in the
+    // model breakdown for work that never left the machine.
+    const line = JSON.stringify({
+      type: "assistant",
+      timestamp: "2026-08-12T21:42:58.436Z",
+      sessionId: "ff2fd7ad-8151-4b97-a1e3-29f181914d2b",
+      requestId: "req_011CdyaoBgi9E2J4hpEqPWGr",
+      isApiErrorMessage: true,
+      message: {
+        id: "9d13e9fe-cef9-4ea1-9e76-b65731725eb6",
+        role: "assistant",
+        model: "<synthetic>",
+        content: [{ type: "text", text: "You've hit your session limit" }],
+        usage: {
+          input_tokens: 0,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 0,
+        },
+      },
+    });
+
+    expect(parseClaudeLine(line)).toBeNull();
   });
 
   it("ignores records that are not assistant messages", () => {
@@ -233,6 +262,135 @@ describe("parseCodexLine", () => {
       );
       expect(record).not.toBeNull();
     });
+  });
+});
+
+/** Shaped after a real Grok CLI `updates.jsonl` turn. */
+function grokLine(overrides: {
+  readonly promptId?: string;
+  readonly sessionId?: string;
+  readonly modelUsage?: Record<string, Record<string, number>> | null;
+  readonly agentTimestampMs?: number | null;
+}): string {
+  const modelUsage =
+    overrides.modelUsage === undefined
+      ? {
+          "grok-4.5-build": {
+            inputTokens: 158057,
+            outputTokens: 2414,
+            totalTokens: 160471,
+            cachedReadTokens: 151040,
+            cacheCreationTokens: 0,
+            reasoningTokens: 1306,
+            costUsdTicks: 738300000,
+          },
+        }
+      : overrides.modelUsage;
+
+  return JSON.stringify({
+    timestamp: 1786293444,
+    method: "_x.ai/session/update",
+    params: {
+      sessionId: overrides.sessionId ?? "019fe760-1c7e-7170-a5d5-5e2390002cd7",
+      update: {
+        sessionUpdate: "turn_completed",
+        prompt_id: overrides.promptId ?? "83885ed7-7dbc-4f09-9fd8-1d8b5ff077be",
+        stop_reason: "end_turn",
+        usage: {
+          inputTokens: 158057,
+          outputTokens: 2414,
+          cachedReadTokens: 151040,
+          cacheCreationTokens: 0,
+          reasoningTokens: 1306,
+          costUsdTicks: 738300000,
+          ...(modelUsage === null ? {} : { modelUsage }),
+        },
+      },
+      _meta: {
+        eventId: "019fe760-1c7e-7170-a5d5-5e2390002cd7-787",
+        ...(overrides.agentTimestampMs === null
+          ? {}
+          : { agentTimestampMs: overrides.agentTimestampMs ?? 1786293444933 }),
+      },
+    },
+  });
+}
+
+describe("parseGrokLine", () => {
+  it("splits the turn's tokens out of the cached total and keeps reasoning inside output", () => {
+    const [record, ...rest] = parseGrokLine(grokLine({}));
+
+    expect(rest).toEqual([]);
+    expect(record?.provider).toBe("grok");
+    expect(record?.model).toBe("grok-4.5-build");
+    expect(record?.totals).toEqual({
+      // inputTokens is inclusive of the cached read, as it is for Codex.
+      uncachedInputTokens: 7017,
+      cachedInputTokens: 151040,
+      cacheCreationTokens: 0,
+      outputTokens: 2414,
+      reasoningTokens: 1306,
+    });
+    expect(totalTokens(record?.totals ?? EMPTY_TOTALS)).toBe(160471);
+  });
+
+  it("reads cost as ticks of 1e-10 USD", () => {
+    const [record] = parseGrokLine(grokLine({}));
+
+    // 7,017 uncached at $2/M + 151,040 cache reads at $0.30/M + 2,414 output at
+    // $6/M, which is LiteLLM's published xai/grok-4.5 rate card.
+    expect(record?.reportedCostUsd).toBeCloseTo(0.07383, 8);
+  });
+
+  it("keys de-duplication by session, prompt and model", () => {
+    const [first] = parseGrokLine(grokLine({}));
+    const [copy] = parseGrokLine(grokLine({}));
+    const [other] = parseGrokLine(grokLine({ promptId: "a-different-prompt" }));
+
+    expect(first?.dedupeKey).toBe(copy?.dedupeKey);
+    expect(first?.dedupeKey).not.toBe(other?.dedupeKey);
+  });
+
+  it("emits one record per model a turn called", () => {
+    const records = parseGrokLine(
+      grokLine({
+        modelUsage: {
+          "grok-4.6-build": { inputTokens: 100, outputTokens: 10, costUsdTicks: 20 },
+          "grok-4.5-build": { inputTokens: 50, outputTokens: 5, costUsdTicks: 10 },
+        },
+      }),
+    );
+
+    expect(records.map((record) => record.model)).toEqual(["grok-4.6-build", "grok-4.5-build"]);
+    expect(new Set(records.map((record) => record.dedupeKey)).size).toBe(2);
+  });
+
+  it("falls back to the turn total when no per-model split is reported", () => {
+    const records = parseGrokLine(grokLine({ modelUsage: null }));
+
+    expect(records).toHaveLength(1);
+    expect(records[0]?.model).toBe("grok");
+    expect(records[0]?.totals.outputTokens).toBe(2414);
+  });
+
+  it("prefers the millisecond agent stamp over the whole-second wrapper", () => {
+    const [precise] = parseGrokLine(grokLine({}));
+    const [coarse] = parseGrokLine(grokLine({ agentTimestampMs: null }));
+
+    expect(precise?.timestampMs).toBe(1786293444933);
+    expect(coarse?.timestampMs).toBe(1786293444000);
+  });
+
+  it("ignores updates that are not a completed turn", () => {
+    const line = JSON.stringify({
+      timestamp: 1786293444,
+      params: {
+        sessionId: "s",
+        update: { sessionUpdate: "agent_message_chunk", content: { text: "hi" } },
+      },
+    });
+
+    expect(parseGrokLine(line)).toEqual([]);
   });
 });
 

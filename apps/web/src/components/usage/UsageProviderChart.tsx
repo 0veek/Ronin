@@ -1,5 +1,5 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useId, useMemo, useRef, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 import {
@@ -9,12 +9,14 @@ import {
   formatTokens,
   formatUsd,
 } from "@t3tools/shared/usageFormat";
-import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_MARK, PROVIDER_ORDER } from "./usageProviders";
+import { cn } from "../../lib/utils";
+import { ProviderMark } from "./ProviderMark";
+import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_ORDER } from "./usageProviders";
 
-const VIEW_WIDTH = 960;
-const VIEW_HEIGHT = 260;
+const VIEW_WIDTH = 1000;
+const VIEW_HEIGHT = 280;
 const TICK_COUNT = 4;
-const PLOT_TOP = 8;
+const PLOT_TOP = 10;
 
 export type UsageChartMetric = "tokens" | "cost";
 
@@ -29,7 +31,7 @@ interface UsageProviderChartProps {
   readonly timeZone: string;
 }
 
-/** One day's per-provider values, shared by the paths and the hover readout. */
+/** One period's per-provider values, shared by the paths and the hover readout. */
 export interface DayColumn {
   readonly bands: readonly {
     readonly provider: UsageProviderKind;
@@ -181,7 +183,7 @@ export function niceScale(peak: number, count: number): { max: number; ticks: re
  *
  * Values are absolute, not cumulative: the series are layered from a shared
  * zero baseline rather than stacked. A stacked chart puts whichever provider is
- * drawn last permanently above the other, which reads as "that one is bigger"
+ * drawn last permanently above the others, which reads as "that one is bigger"
  * even on days where it is not.
  *
  * The chart paths and the hover readout both consume this, so the number under
@@ -206,6 +208,7 @@ export function UsageProviderChart({
   resolution,
   timeZone,
 }: UsageProviderChartProps) {
+  const gradientPrefix = useId();
   const periods = resolution === "hour" ? hours : days;
   const byPeriod = useMemo(
     () =>
@@ -217,20 +220,20 @@ export function UsageProviderChart({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const plotRef = useRef<HTMLDivElement | null>(null);
 
-  const { paths, ticks, stepX, toY, series } = useMemo(() => {
+  const { paths, ticks, toY, series, hasData } = useMemo(() => {
     if (periods.length === 0) {
       return {
         paths: [],
         ticks: [0] as readonly number[],
-        stepX: 0,
         toY: () => VIEW_HEIGHT,
         series: [] as readonly DayColumn[],
+        hasData: false,
       };
     }
 
     const columns = buildPeriodColumns(periods, byPeriod, metric);
 
-    // The scale tops out at the largest single provider-day, not the largest
+    // The scale tops out at the largest single provider-period, not the largest
     // sum: layered series each measure from zero, so a combined peak would
     // leave the plot permanently half empty.
     const peak = columns.reduce(
@@ -246,8 +249,8 @@ export function UsageProviderChart({
 
     const built = PROVIDER_ORDER.map((provider, providerIndex) => {
       const curve = smoothCurve(
-        columns.map((column, dayIndex) => ({
-          x: dayIndex * step,
+        columns.map((column, periodIndex) => ({
+          x: periodIndex * step,
           y: toY(column.bands[providerIndex]?.value ?? 0),
         })),
       );
@@ -261,17 +264,23 @@ export function UsageProviderChart({
     });
 
     // Paint the heavier series first so the lighter one is never buried under
-    // it. The fills are faint enough that the order barely shows, but the
+    // it. The washes are faint enough that the order barely shows, but the
     // strokes are drawn in a second pass regardless, so neither can be hidden.
     const ordered = [...built].sort((a, b) => b.total - a.total);
 
-    return { paths: ordered, ticks: tickValues, stepX: step, toY, series: columns };
+    return {
+      paths: ordered,
+      ticks: tickValues,
+      toY,
+      series: columns,
+      hasData: max > 0,
+    };
   }, [byPeriod, metric, periods]);
 
   const format = metric === "tokens" ? formatTokens : formatUsd;
 
   const handleMove = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>) => {
+    (event: React.PointerEvent<HTMLDivElement>) => {
       const bounds = plotRef.current?.getBoundingClientRect();
       if (bounds === undefined || bounds.width === 0 || periods.length === 0) return;
       const fraction = (event.clientX - bounds.left) / bounds.width;
@@ -292,14 +301,14 @@ export function UsageProviderChart({
       : formatPeriod(period);
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex gap-2">
+    <div className="flex flex-col gap-1.5">
+      <div className="flex gap-3">
         {/* Axis labels sit outside the plot so they stay aligned to gridlines. */}
-        <div className="relative h-56 w-14 shrink-0">
+        <div className="relative h-64 w-12 shrink-0">
           {ticks.map((tick) => (
             <span
               key={tick}
-              className="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground tabular-nums"
+              className="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground/70 tabular-nums"
               style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
             >
               {tick === 0 ? "0" : format(tick)}
@@ -309,9 +318,9 @@ export function UsageProviderChart({
 
         <div
           ref={plotRef}
-          className="relative h-56 flex-1"
-          onMouseMove={handleMove}
-          onMouseLeave={() => setHoverIndex(null)}
+          className="relative h-64 flex-1 touch-none"
+          onPointerMove={handleMove}
+          onPointerLeave={() => setHoverIndex(null)}
         >
           <svg
             className="h-full w-full"
@@ -320,6 +329,33 @@ export function UsageProviderChart({
             role="img"
             aria-label={`${resolution === "hour" ? "Hourly" : "Daily"} ${metric === "tokens" ? "processed tokens" : "cost"} by provider`}
           >
+            <defs>
+              {/* The wash is a ramp off each series' own colour token, so it
+                  follows the theme without a second set of literals. */}
+              {PROVIDER_ORDER.map((provider) => (
+                <linearGradient
+                  key={provider}
+                  id={`${gradientPrefix}-${provider}`}
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="0%"
+                    style={{
+                      stopColor: PROVIDER_COLOR[provider],
+                      stopOpacity: "var(--provider-area-opacity)",
+                    }}
+                  />
+                  <stop
+                    offset="100%"
+                    style={{ stopColor: PROVIDER_COLOR[provider], stopOpacity: 0 }}
+                  />
+                </linearGradient>
+              ))}
+            </defs>
+
             {ticks.map((tick) => {
               const y = toY(tick);
               return (
@@ -329,80 +365,107 @@ export function UsageProviderChart({
                   x2={VIEW_WIDTH}
                   y1={y}
                   y2={y}
-                  stroke="currentColor"
                   strokeWidth={1}
-                  className="text-border"
+                  className={tick === 0 ? "stroke-border" : "stroke-border/60"}
                   vectorEffect="non-scaling-stroke"
                 />
               );
             })}
 
-            {/* Fills first, then every stroke, so no series covers another's line. */}
+            {/* Washes first, then every stroke, so no series covers another's line. */}
             {paths.map(({ provider, area }) => (
-              <path key={provider} d={area} fill={PROVIDER_COLOR[provider]} fillOpacity={0.12} />
+              <path key={provider} d={area} fill={`url(#${gradientPrefix}-${provider})`} />
             ))}
             {paths.map(({ provider, line }) => (
               <path
                 key={provider}
                 d={line}
                 fill="none"
-                stroke={PROVIDER_COLOR[provider]}
+                style={{ stroke: PROVIDER_COLOR[provider] }}
                 strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 vectorEffect="non-scaling-stroke"
               />
             ))}
-
-            {hoverIndex === null ? null : (
-              <line
-                x1={hoverIndex * stepX}
-                x2={hoverIndex * stepX}
-                y1={PLOT_TOP}
-                y2={VIEW_HEIGHT}
-                stroke="currentColor"
-                strokeWidth={1}
-                className="text-muted-foreground"
-                vectorEffect="non-scaling-stroke"
-              />
-            )}
           </svg>
 
-          {hoveredPeriod === undefined ? null : (
-            <div
-              className="pointer-events-none absolute top-0 z-10 min-w-36 border border-border bg-background/95 px-2 py-1.5 text-xs"
-              style={{
-                left: `${hoverLeft}%`,
-                transform: hoverLeft > 60 ? "translateX(-100%)" : "translateX(0)",
-              }}
-            >
-              <div className="mb-1 text-muted-foreground">{formatTooltipPeriod(hoveredPeriod)}</div>
+          {hasData ? null : (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <span className="text-xs text-muted-foreground">No activity in this window.</span>
+            </div>
+          )}
+
+          {/* The crosshair and its markers are drawn in HTML rather than in the
+              SVG: the viewBox is stretched to the container, so a circle in
+              user space would render as an ellipse at every width but one. */}
+          {hoveredPeriod === undefined || !hasData ? null : (
+            <>
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-y-0 w-px bg-foreground/15"
+                style={{ left: `${hoverLeft}%` }}
+              />
               {PROVIDER_ORDER.map((provider) => {
-                const Mark = PROVIDER_MARK[provider];
+                const value =
+                  hoveredColumn?.bands.find((band) => band.provider === provider)?.value ?? 0;
+                if (value <= 0) return null;
                 return (
-                  <div key={provider} className="flex items-center justify-between gap-3">
-                    <span className="flex items-center gap-1.5 text-muted-foreground">
-                      <Mark className="size-3 shrink-0" aria-hidden />
-                      {PROVIDER_LABEL[provider]}
-                    </span>
-                    <span className="text-foreground tabular-nums">
-                      {format(
-                        hoveredColumn?.bands.find((band) => band.provider === provider)?.value ?? 0,
-                      )}
-                    </span>
-                  </div>
+                  <span
+                    key={provider}
+                    aria-hidden
+                    className="pointer-events-none absolute size-2 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-background"
+                    style={{
+                      left: `${hoverLeft}%`,
+                      top: `${(toY(value) / VIEW_HEIGHT) * 100}%`,
+                      backgroundColor: PROVIDER_COLOR[provider],
+                    }}
+                  />
                 );
               })}
-              <div className="mt-1 flex items-center justify-between gap-3 border-t border-border pt-1">
-                <span className="text-muted-foreground">Total</span>
-                <span className="text-foreground tabular-nums">
-                  {format(hoveredColumn?.total ?? 0)}
-                </span>
+
+              <div
+                className={cn(
+                  "pointer-events-none absolute top-1 z-10 min-w-44 rounded-md border border-border bg-popover/95 px-2.5 py-2 text-xs shadow-popover backdrop-blur-sm",
+                  hoverLeft > 55 ? "-translate-x-[calc(100%+0.5rem)]" : "translate-x-2",
+                )}
+                style={{ left: `${hoverLeft}%` }}
+              >
+                <div className="label-meta mb-1.5 text-muted-foreground">
+                  {formatTooltipPeriod(hoveredPeriod)}
+                </div>
+                {PROVIDER_ORDER.map((provider) => {
+                  const value =
+                    hoveredColumn?.bands.find((band) => band.provider === provider)?.value ?? 0;
+                  return (
+                    <div
+                      key={provider}
+                      className={cn(
+                        "flex items-center justify-between gap-4 py-px",
+                        value <= 0 && "opacity-45",
+                      )}
+                    >
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <ProviderMark provider={provider} className="size-3" tinted />
+                        {PROVIDER_LABEL[provider]}
+                      </span>
+                      <span className="text-foreground tabular-nums">{format(value)}</span>
+                    </div>
+                  );
+                })}
+                <div className="mt-1.5 flex items-center justify-between gap-4 border-t border-border pt-1.5">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-medium text-foreground tabular-nums">
+                    {format(hoveredColumn?.total ?? 0)}
+                  </span>
+                </div>
               </div>
-            </div>
+            </>
           )}
         </div>
       </div>
 
-      <div className="flex justify-between pl-16 text-[10px] text-muted-foreground uppercase">
+      <div className="label-meta flex justify-between pl-15 text-muted-foreground/60">
         <span>{periods[0] === undefined ? "" : formatPeriod(periods[0])}</span>
         <span>
           {periods[Math.floor(periods.length / 2)] === undefined
@@ -419,20 +482,22 @@ export function UsageProviderChart({
   );
 }
 
+/**
+ * Identity key for the plot.
+ *
+ * Always rendered, never optional: three layered series can only be told apart
+ * by colour in the plot itself, so the mapping has to be stated somewhere that
+ * does not require hovering.
+ */
 export function UsageChartLegend() {
   return (
-    <div className="flex items-center gap-4">
-      {PROVIDER_ORDER.map((provider) => {
-        // The marks carry the same fills as the bands, so they key the chart
-        // just as a colour swatch would.
-        const Mark = PROVIDER_MARK[provider];
-        return (
-          <span key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Mark className="size-3.5 shrink-0" aria-hidden />
-            {PROVIDER_LABEL[provider]}
-          </span>
-        );
-      })}
+    <div className="flex items-center gap-3.5">
+      {PROVIDER_ORDER.map((provider) => (
+        <span key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <ProviderMark provider={provider} className="size-3.5" tinted />
+          {PROVIDER_LABEL[provider]}
+        </span>
+      ))}
     </div>
   );
 }

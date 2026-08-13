@@ -22,6 +22,7 @@ import {
   mightCarryUsage,
   parseClaudeLine,
   parseCodexLine,
+  parseGrokLine,
   type UsageRecord,
 } from "./usageTranscripts.ts";
 
@@ -34,6 +35,11 @@ export interface TranscriptFile {
 /**
  * Lists `.jsonl` transcripts under `root` last modified at or after `sinceMs`.
  *
+ * `fileName` narrows the walk to one basename. Grok keeps four `.jsonl` files
+ * per session and only `updates.jsonl` carries usage; without the filter every
+ * scan would also stream the chat history, which is the bulk of the bytes and
+ * none of the answer.
+ *
  * Errors on individual entries are swallowed: session files rotate and get
  * removed while the walk is in flight, and a partial listing is far better than
  * failing the page.
@@ -41,6 +47,7 @@ export interface TranscriptFile {
 export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
+  fileName?: string,
 ): Promise<readonly TranscriptFile[]> {
   const found: TranscriptFile[] = [];
 
@@ -57,7 +64,9 @@ export async function listTranscriptFiles(
         await walk(child);
         continue;
       }
-      if (!entry.name.endsWith(".jsonl")) continue;
+      if (fileName === undefined ? !entry.name.endsWith(".jsonl") : entry.name !== fileName) {
+        continue;
+      }
       try {
         const stats = await NodeFSP.stat(child);
         if (stats.mtimeMs >= sinceMs) {
@@ -100,7 +109,9 @@ export async function readDirectoryVolumeId(path: string): Promise<string> {
  *
  * Codex carries the active model on `turn_context` lines that hold no usage of
  * their own, so those still have to pass through the reducer to keep model
- * attribution correct.
+ * attribution correct. Claude and Grok lines are each self-contained, so they
+ * need no rolling state; a Grok turn can name several models at once and so
+ * yields a record per model.
  */
 export async function readTranscriptRecords(
   filePath: string,
@@ -130,6 +141,12 @@ export async function readTranscriptRecords(
       }
 
       if (!mightCarryUsage(line, provider)) continue;
+
+      if (provider === "grok") {
+        records.push(...parseGrokLine(line));
+        continue;
+      }
+
       const record = parseClaudeLine(line);
       if (record !== null) records.push(record);
     }

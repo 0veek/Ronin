@@ -98,10 +98,24 @@ const UNPRICEABLE_MODELS = new Set([
   "fable",
 ]);
 
+/**
+ * The Grok CLI runs harness-tuned variants (`grok-4.5-build`) that the rate
+ * table only publishes under their base id (`grok-4.5`). The variant is what
+ * the transcript records and what we display, so the alias applies to the
+ * lookup alone. Cost itself comes from Grok's own reported figure; this is what
+ * lets cache savings be computed for it at all.
+ */
+function aliasModelName(normalized: string): string | null {
+  return normalized.endsWith("-build") ? normalized.slice(0, -"-build".length) : null;
+}
+
 export function lookupRate(table: RateTable, model: string): ModelRate | null {
   const normalized = normalizeModelName(model);
   if (normalized.length === 0 || UNPRICEABLE_MODELS.has(normalized)) return null;
-  return table.get(normalized) ?? null;
+  const exact = table.get(normalized);
+  if (exact !== undefined) return exact;
+  const alias = aliasModelName(normalized);
+  return alias === null ? null : (table.get(alias) ?? null);
 }
 
 export interface PricedUsage {

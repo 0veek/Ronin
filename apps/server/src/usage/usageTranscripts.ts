@@ -68,7 +68,9 @@ export function totalTokens(totals: UsageTokenTotals): number {
  * an order of magnitude.
  */
 export function mightCarryUsage(line: string, provider: UsageProviderKind): boolean {
-  return provider === "claude" ? line.includes('"usage"') : line.includes('"token_count"');
+  if (provider === "claude") return line.includes('"usage"');
+  if (provider === "grok") return line.includes('"turn_completed"');
+  return line.includes('"token_count"');
 }
 
 /* -------------------------------------------------------------------------- */
@@ -118,19 +120,29 @@ export function parseClaudeLine(line: string): UsageRecord | null {
 
   const cost = record["costUSD"];
 
+  const totals: UsageTokenTotals = {
+    uncachedInputTokens: int(usageRecord["input_tokens"]),
+    cachedInputTokens: int(usageRecord["cache_read_input_tokens"]),
+    cacheCreationTokens: int(usageRecord["cache_creation_input_tokens"]),
+    outputTokens: int(usageRecord["output_tokens"]),
+    // Anthropic folds thinking tokens into output and does not break them out.
+    reasoningTokens: 0,
+  };
+
+  // Claude Code writes its own local notices ("You've hit your session limit",
+  // API errors) as assistant records under the `<synthetic>` model, with an
+  // all-zero usage block. Nothing was sent and nothing was billed, so counting
+  // them puts a permanent $0.00 / 0 tokens row in the model breakdown and
+  // inflates the record and session counts. The other two parsers already drop
+  // a tokenless event; this makes all three agree.
+  if (totalTokens(totals) === 0) return null;
+
   return {
     provider: "claude",
     timestampMs,
     model,
     sessionId: typeof record["sessionId"] === "string" ? record["sessionId"] : "",
-    totals: {
-      uncachedInputTokens: int(usageRecord["input_tokens"]),
-      cachedInputTokens: int(usageRecord["cache_read_input_tokens"]),
-      cacheCreationTokens: int(usageRecord["cache_creation_input_tokens"]),
-      outputTokens: int(usageRecord["output_tokens"]),
-      // Anthropic folds thinking tokens into output and does not break them out.
-      reasoningTokens: 0,
-    },
+    totals,
     reportedCostUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
     dedupeKey,
   };
@@ -295,6 +307,130 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
     // rollout, so they need no global dedup.
     dedupeKey: null,
   };
+}
+
+/* -------------------------------------------------------------------------- */
+/* Grok                                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Ticks per US dollar in a Grok `costUsdTicks` field.
+ *
+ * The CLI reports cost as an integer tick count rather than a float. Solving
+ * the per-token rates out of real transcripts lands on 20,000 / 3,000 / 60,000
+ * ticks for uncached input, cache reads and output on `grok-4.5-build`, which
+ * is exactly LiteLLM's published `xai/grok-4.5` table ($2.00 / $0.30 / $6.00
+ * per million) at this scale. That agreement is what fixes the divisor; every
+ * neighbouring power of ten puts Grok an order of magnitude off its own
+ * published rates.
+ */
+const GROK_COST_TICKS_PER_USD = 1e10;
+
+function grokTotals(usage: Record<string, unknown>): UsageTokenTotals {
+  const inputTokens = int(usage["inputTokens"]);
+  const cachedInputTokens = int(usage["cachedReadTokens"]);
+  const cacheCreationTokens = int(usage["cacheCreationTokens"]);
+  const outputTokens = int(usage["outputTokens"]);
+
+  return {
+    // Like Codex, Grok reports `inputTokens` inclusive of the cached portion.
+    uncachedInputTokens: Math.max(0, inputTokens - cachedInputTokens - cacheCreationTokens),
+    cachedInputTokens,
+    cacheCreationTokens,
+    outputTokens,
+    // Reported inside outputTokens, surfaced separately for the token mix.
+    reasoningTokens: Math.min(outputTokens, int(usage["reasoningTokens"])),
+  };
+}
+
+function grokReportedCostUsd(usage: Record<string, unknown>): number | null {
+  const ticks = usage["costUsdTicks"];
+  if (typeof ticks !== "number" || !Number.isFinite(ticks)) return null;
+  return ticks / GROK_COST_TICKS_PER_USD;
+}
+
+/**
+ * Parses one line of a Grok CLI `updates.jsonl`.
+ *
+ * Grok emits a single `turn_completed` update per prompt carrying that turn's
+ * complete usage, so unlike the other two providers there is no delta
+ * arithmetic and no burst of repeats to collapse. The turn's `modelUsage` map
+ * splits the totals per model, which is the only place the model name appears
+ * in this stream, so a turn yields one record per model it actually called.
+ *
+ * `(sessionId, prompt_id, model)` is unique across every transcript on disk and
+ * survives a session being copied or resumed, so it is the dedupe key.
+ */
+export function parseGrokLine(line: string): readonly UsageRecord[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    return [];
+  }
+  if (typeof parsed !== "object" || parsed === null) return [];
+
+  const params = (parsed as Record<string, unknown>)["params"];
+  if (typeof params !== "object" || params === null) return [];
+  const paramsRecord = params as Record<string, unknown>;
+
+  const update = paramsRecord["update"];
+  if (typeof update !== "object" || update === null) return [];
+  const updateRecord = update as Record<string, unknown>;
+  if (updateRecord["sessionUpdate"] !== "turn_completed") return [];
+
+  const usage = updateRecord["usage"];
+  if (typeof usage !== "object" || usage === null) return [];
+  const usageRecord = usage as Record<string, unknown>;
+
+  // The wrapper's `timestamp` is whole seconds; the agent stamp beside the
+  // event id is milliseconds and is what the hourly buckets need.
+  const meta = paramsRecord["_meta"];
+  const metaRecord =
+    typeof meta === "object" && meta !== null ? (meta as Record<string, unknown>) : {};
+  const agentTimestampMs = metaRecord["agentTimestampMs"];
+  const seconds = (parsed as Record<string, unknown>)["timestamp"];
+  const timestampMs =
+    typeof agentTimestampMs === "number" && Number.isFinite(agentTimestampMs)
+      ? agentTimestampMs
+      : typeof seconds === "number" && Number.isFinite(seconds)
+        ? seconds * 1000
+        : parseTimestampMs(seconds);
+  if (timestampMs === null) return [];
+
+  const sessionId = typeof paramsRecord["sessionId"] === "string" ? paramsRecord["sessionId"] : "";
+  const promptId = typeof updateRecord["prompt_id"] === "string" ? updateRecord["prompt_id"] : "";
+
+  const modelUsage = usageRecord["modelUsage"];
+  const perModel =
+    typeof modelUsage === "object" && modelUsage !== null
+      ? Object.entries(modelUsage as Record<string, unknown>).flatMap(([model, raw]) =>
+          typeof raw === "object" && raw !== null
+            ? [[model, raw as Record<string, unknown>] as const]
+            : [],
+        )
+      : [];
+
+  // A turn with no per-model split still has to be counted; it lands under the
+  // bare family name, which prices as unpriced but keeps the tokens honest.
+  const entries: readonly (readonly [string, Record<string, unknown>])[] =
+    perModel.length === 0 ? [["grok", usageRecord] as const] : perModel;
+
+  const records: UsageRecord[] = [];
+  for (const [model, raw] of entries) {
+    const totals = grokTotals(raw);
+    if (totalTokens(totals) === 0) continue;
+    records.push({
+      provider: "grok",
+      timestampMs,
+      model,
+      sessionId,
+      totals,
+      reportedCostUsd: grokReportedCostUsd(raw),
+      dedupeKey: promptId === "" ? null : `${sessionId}:${promptId}:${model}`,
+    });
+  }
+  return records;
 }
 
 export { EMPTY_TOTALS };

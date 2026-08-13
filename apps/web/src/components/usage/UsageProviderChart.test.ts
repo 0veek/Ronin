@@ -83,8 +83,11 @@ describe("buildDayColumns", () => {
     const [first] = buildDayColumns(days, byDay, "cost");
 
     expect(first?.bands).toEqual([
-      { provider: "codex", value: 10 },
       { provider: "claude", value: 20 },
+      { provider: "codex", value: 10 },
+      // A provider that did not run in the window still gets a band, so the
+      // series index a path is built from stays the palette slot.
+      { provider: "grok", value: 0 },
     ]);
   });
 
