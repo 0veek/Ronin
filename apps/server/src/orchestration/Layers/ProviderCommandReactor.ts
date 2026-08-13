@@ -35,8 +35,10 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import {
+  handoffWrapOverhead,
   renderProviderHandoffBrief,
   selectHandoffMessages,
+  wrapProviderHandoffInput,
   type ProviderHandoffBriefMessage,
 } from "../providerHandoffBrief.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
@@ -102,12 +104,11 @@ const PROVIDER_SWITCH_ACTIVITY_KIND = "provider.switched";
 const PROVIDER_HANDOFF_ACTIVITY_KIND = "provider.handoff";
 
 /**
- * Characters of reconstructed conversation a handoff may carry.
- *
- * The brief is prepended to the user's message, so it has to leave room for
- * that message and for the skill instructions the same turn may inject.
+ * Slack left after the envelope and the user's message are accounted for.
+ * Skills are already folded into that message; this is only for the few
+ * characters a provider may add around the turn.
  */
-const PROVIDER_HANDOFF_BRIEF_RESERVED_CHARS = 8_192;
+const PROVIDER_HANDOFF_BRIEF_RESERVED_CHARS = 256;
 
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
@@ -1060,7 +1061,7 @@ const make = Effect.gen(function* () {
       maxChars: Math.max(
         0,
         PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
-          messageWithSkills.length -
+          handoffWrapOverhead(messageWithSkills) -
           PROVIDER_HANDOFF_BRIEF_RESERVED_CHARS,
       ),
     });
@@ -1105,7 +1106,10 @@ const make = Effect.gen(function* () {
     const messageWithHandoff =
       handoffBrief === undefined
         ? messageWithSkills
-        : `${handoffBrief.text}\n\n---\n\n## Continue the conversation\n\n${messageWithSkills}`;
+        : wrapProviderHandoffInput({
+            contextText: handoffBrief.text,
+            messageText: messageWithSkills,
+          });
     const normalizedInput = toNonEmptyProviderInput(messageWithHandoff);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService

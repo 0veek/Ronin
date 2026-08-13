@@ -6,7 +6,10 @@
  * When the incoming provider has native resume state of its own it resumes and
  * only needs the delta it missed; when it has none it needs the whole story.
  * Both cases produce a brief here — the difference is only which messages go
- * into it, which `selectHandoffMessages` decides.
+ * into it, which `selectHandoffMessages` decides. Recent turns stay in full;
+ * older ones collapse to one-line bullets. The caller wraps the result with
+ * `wrapProviderHandoffInput` so the incoming model can tell the brief from the
+ * user's latest message.
  *
  * Everything in this module is pure and deterministic. The caller supplies the
  * read-model data it already has in hand, so building a brief costs no queries
@@ -68,6 +71,36 @@ export interface ProviderHandoffBrief {
 /** Below this a per-message budget stops being worth spending characters on. */
 const MIN_MESSAGE_BUDGET_CHARS = 240;
 const MAX_CHANGED_FILES = 40;
+/** Recent turns stay in full; everything older collapses to one-line bullets. */
+const RECENT_MESSAGE_COUNT = 6;
+const RECENT_MESSAGE_CHAR_LIMIT = 2_400;
+const EARLIER_MESSAGE_CHAR_LIMIT = 320;
+
+const HANDOFF_CONTEXT_TAG = "handoff_context";
+const LATEST_USER_MESSAGE_TAG = "latest_user_message";
+
+/**
+ * Wrap a reconstructed brief and the user's actual request so the incoming
+ * provider can tell background from the thing it has to answer.
+ *
+ * Synara's handoff does this with the same two tags. A markdown "continue the
+ * conversation" header mixed the two together and the model sometimes treated
+ * the transcript as the current ask.
+ */
+export function wrapProviderHandoffInput(input: {
+  readonly contextText: string;
+  readonly messageText: string;
+}): string {
+  return (
+    `<${HANDOFF_CONTEXT_TAG}>\n${input.contextText}\n</${HANDOFF_CONTEXT_TAG}>\n\n` +
+    `<${LATEST_USER_MESSAGE_TAG}>\n${input.messageText}\n</${LATEST_USER_MESSAGE_TAG}>`
+  );
+}
+
+/** Characters the envelope itself consumes for a given user message. */
+export function handoffWrapOverhead(messageText: string): number {
+  return wrapProviderHandoffInput({ contextText: "", messageText }).length;
+}
 
 function truncateBody(text: string, budget: number): { text: string; truncated: boolean } {
   if (text.length <= budget) {
@@ -191,46 +224,118 @@ function renderMessages(
   return { text: blocks.join("\n\n"), truncated };
 }
 
+function sliceForSummary(text: string, budget: number): string {
+  const normalized = text
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (normalized.length <= budget) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, budget - 3)).trimEnd()}...`;
+}
+
+function earlierSummaryLine(message: ProviderHandoffBriefMessage): string {
+  return `- ${speakerLabel(message)}: ${sliceForSummary(message.text, EARLIER_MESSAGE_CHAR_LIMIT)}`;
+}
+
+function renderEarlierSummary(
+  messages: ReadonlyArray<ProviderHandoffBriefMessage>,
+  omittedCount: number,
+): string {
+  if (messages.length === 0 && omittedCount === 0) {
+    return "";
+  }
+  const omitted =
+    omittedCount > 0
+      ? ` (${omittedCount} older message${omittedCount === 1 ? "" : "s"} omitted to fit the context budget)`
+      : "";
+  const lines = messages.map(earlierSummaryLine);
+  return [`## Earlier conversation summary${omitted}`, ...lines].join("\n");
+}
+
 function assemble(input: {
   readonly header: string;
   readonly workspace: string;
   readonly changedFiles: string;
-  readonly droppedNotice: string;
+  readonly earlier: string;
   readonly transcript: string;
 }): string {
   return [
     input.header,
     input.workspace,
     input.changedFiles,
-    input.droppedNotice,
+    input.earlier,
     input.transcript ? `## Transcript\n\n${input.transcript}` : "",
   ]
     .filter((section) => section.length > 0)
     .join("\n\n");
 }
 
+function splitRecent(messages: ReadonlyArray<ProviderHandoffBriefMessage>): {
+  readonly earlier: ReadonlyArray<ProviderHandoffBriefMessage>;
+  readonly recent: ReadonlyArray<ProviderHandoffBriefMessage>;
+} {
+  if (messages.length <= RECENT_MESSAGE_COUNT) {
+    return { earlier: [], recent: messages };
+  }
+  return {
+    earlier: messages.slice(0, messages.length - RECENT_MESSAGE_COUNT),
+    recent: messages.slice(-RECENT_MESSAGE_COUNT),
+  };
+}
+
+function packEarlier(
+  earlier: ReadonlyArray<ProviderHandoffBriefMessage>,
+  budget: number,
+): {
+  readonly kept: ReadonlyArray<ProviderHandoffBriefMessage>;
+  readonly omittedCount: number;
+} {
+  if (earlier.length === 0) {
+    return { kept: [], omittedCount: 0 };
+  }
+  const kept: Array<ProviderHandoffBriefMessage> = [];
+  let remaining = budget;
+  for (let index = earlier.length - 1; index >= 0; index -= 1) {
+    const message = earlier[index];
+    if (message === undefined) {
+      continue;
+    }
+    const line = earlierSummaryLine(message);
+    if (remaining < line.length + 1) {
+      break;
+    }
+    remaining -= line.length + 1;
+    kept.unshift(message);
+  }
+  return { kept, omittedCount: earlier.length - kept.length };
+}
+
 /**
  * Render the brief, fitting it into `maxChars`.
  *
- * Under budget pressure the renderer truncates message bodies before it drops
- * whole messages: a shortened turn still tells the incoming provider that the
- * turn happened and roughly what it was about, while a dropped one is invisible.
- * Only when even minimally-sized messages will not fit does it drop the oldest,
- * and it says how many it dropped.
+ * The last few turns stay in full so the incoming provider can act on them.
+ * Everything older collapses to one-line bullets rather than disappearing —
+ * a sketch of the earlier conversation is more useful than a hole. Under
+ * harder budget pressure the renderer shortens recent bodies, then drops the
+ * oldest bullets, then (only if even the recent turns will not fit) drops the
+ * oldest recent messages.
  */
 export function renderProviderHandoffBrief(input: ProviderHandoffBriefInput): ProviderHandoffBrief {
   const header = renderHeader(input);
   const workspace = renderWorkspaceSection(input.workspace);
   const changedFiles = renderChangedFilesSection(input.changedFiles);
   const messages = input.messages.filter((message) => message.text.trim().length > 0);
+  const { earlier, recent } = splitRecent(messages);
 
-  const full = renderMessages(messages, Number.POSITIVE_INFINITY);
+  const fullRecent = renderMessages(recent, Number.POSITIVE_INFINITY);
   const fullText = assemble({
     header,
     workspace,
     changedFiles,
-    droppedNotice: "",
-    transcript: full.text,
+    earlier: renderEarlierSummary(earlier, 0),
+    transcript: fullRecent.text,
   });
   if (fullText.length <= input.maxChars) {
     return {
@@ -241,45 +346,70 @@ export function renderProviderHandoffBrief(input: ProviderHandoffBriefInput): Pr
     };
   }
 
-  // Fixed cost of everything that is not transcript, plus the separators the
-  // assembler adds. Whatever remains is what the messages get to share.
-  const scaffold = assemble({
-    header,
-    workspace,
-    changedFiles,
-    droppedNotice: "",
-    transcript: "x",
-  }).length;
-  const transcriptBudget = Math.max(0, input.maxChars - scaffold);
+  const fitRecent = (
+    recentKept: ReadonlyArray<ProviderHandoffBriefMessage>,
+    perMessage: number,
+    earlierKept: ReadonlyArray<ProviderHandoffBriefMessage>,
+    omittedCount: number,
+  ): ProviderHandoffBrief => {
+    const rendered = renderMessages(recentKept, Math.max(0, perMessage));
+    const text = assemble({
+      header,
+      workspace,
+      changedFiles,
+      earlier: renderEarlierSummary(earlierKept, omittedCount),
+      transcript: rendered.text,
+    });
+    return {
+      text: text.slice(0, input.maxChars),
+      chars: Math.min(text.length, input.maxChars),
+      compressed: true,
+      messageCount: recentKept.length + earlierKept.length,
+    };
+  };
 
-  let kept = messages;
-  let droppedCount = 0;
+  // Keep the recent turns at a useful size, then spend whatever is left on
+  // earlier bullets (newest of those first). That is the shape Synara uses
+  // and the one that preserves the most history under a tight cap.
+  let recentKept = recent;
+  let recentOmitted = 0;
   for (;;) {
     const perMessage =
-      kept.length === 0 ? 0 : Math.floor(transcriptBudget / kept.length) - 64; /* speaker line */
-    if (kept.length === 0 || perMessage >= MIN_MESSAGE_BUDGET_CHARS) {
-      const rendered = renderMessages(kept, Math.max(0, perMessage));
-      const droppedNotice =
-        droppedCount > 0
-          ? `_${droppedCount} earlier message${droppedCount === 1 ? "" : "s"} omitted to fit the context budget._`
-          : "";
-      const text = assemble({
-        header,
-        workspace,
-        changedFiles,
-        droppedNotice,
-        transcript: rendered.text,
-      });
-      return {
-        text: text.slice(0, input.maxChars),
-        chars: Math.min(text.length, input.maxChars),
-        compressed: true,
-        messageCount: kept.length,
-      };
+      recentKept.length === 0
+        ? 0
+        : Math.min(
+            RECENT_MESSAGE_CHAR_LIMIT,
+            Math.floor(
+              Math.max(
+                0,
+                input.maxChars -
+                  assemble({
+                    header,
+                    workspace,
+                    changedFiles,
+                    earlier: "",
+                    transcript: "x",
+                  }).length,
+              ) / recentKept.length,
+            ) - 64,
+          );
+    if (recentKept.length === 0 || perMessage >= MIN_MESSAGE_BUDGET_CHARS) {
+      const recentRendered = renderMessages(recentKept, Math.max(0, perMessage));
+      const earlierBudget = Math.max(
+        0,
+        input.maxChars -
+          assemble({
+            header,
+            workspace,
+            changedFiles,
+            earlier: renderEarlierSummary([], earlier.length + recentOmitted),
+            transcript: recentRendered.text,
+          }).length,
+      );
+      const packed = packEarlier(earlier, earlierBudget);
+      return fitRecent(recentKept, perMessage, packed.kept, packed.omittedCount + recentOmitted);
     }
-    // Too many messages to give each a useful share: drop the oldest and retry.
-    // The most recent exchanges are the ones the provider has to act on.
-    kept = kept.slice(1);
-    droppedCount += 1;
+    recentKept = recentKept.slice(1);
+    recentOmitted += 1;
   }
 }

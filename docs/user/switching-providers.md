@@ -16,9 +16,10 @@ It depends on whether that provider has worked on this thread before.
 - **It is new to the thread.** It starts fresh and reads a brief written from the thread itself: the
   conversation so far, who said what, the working directory and branch, and the files changed.
 
-Either way the handover line tells you which one happened. Very long conversations may be trimmed to
-fit the new provider's input limit — older messages are shortened or dropped, newest first kept —
-and the line says so when that happens.
+Either way the handover line tells you which one happened. Very long conversations are compressed to
+fit the new provider's input limit: the latest turns stay in full, older ones shrink to a one-line
+summary, and only when even that will not fit are the oldest dropped. The line says so when that
+happens.
 
 Switching back later is fine. Each provider keeps its own place in the thread, so returning to one
 you used earlier resumes its session rather than re-briefing it.

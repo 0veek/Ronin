@@ -2,8 +2,10 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  handoffWrapOverhead,
   renderProviderHandoffBrief,
   selectHandoffMessages,
+  wrapProviderHandoffInput,
   type ProviderHandoffBriefInput,
   type ProviderHandoffBriefMessage,
 } from "./providerHandoffBrief.ts";
@@ -193,7 +195,22 @@ describe("renderProviderHandoffBrief", () => {
     expect(brief.text).toContain("CCC");
   });
 
-  it("drops the oldest messages only when truncation alone cannot fit them", () => {
+  it("keeps earlier turns as a one-line summary instead of dropping them", () => {
+    const messages = Array.from({ length: 10 }, (_unused, index) => user(`turn ${index}`));
+
+    const brief = renderProviderHandoffBrief({ ...baseInput, messages });
+
+    expect(brief.compressed).toBe(false);
+    expect(brief.messageCount).toBe(10);
+    expect(brief.text).toContain("## Earlier conversation summary");
+    expect(brief.text).toContain("- User: turn 0");
+    expect(brief.text).toContain("### User\nturn 9");
+    // The six most recent stays in the full transcript, not the summary.
+    expect(brief.text).not.toContain("- User: turn 9");
+    expect(brief.text).not.toContain("### User\nturn 0");
+  });
+
+  it("drops the oldest summary lines only when even bullets will not fit", () => {
     const messages = Array.from({ length: 60 }, (_unused, index) =>
       user(`message ${index} ${"x".repeat(500)}`),
     );
@@ -203,7 +220,8 @@ describe("renderProviderHandoffBrief", () => {
     expect(brief.compressed).toBe(true);
     expect(brief.messageCount).toBeLessThan(60);
     expect(brief.chars).toBeLessThanOrEqual(3_000);
-    expect(brief.text).toContain("earlier messages omitted");
+    expect(brief.text).toContain("Earlier conversation summary");
+    expect(brief.text).toContain("omitted to fit the context budget");
     // The most recent exchange is the one the provider has to act on.
     expect(brief.text).toContain("message 59");
     expect(brief.text).not.toContain("message 0 ");
@@ -228,5 +246,32 @@ describe("renderProviderHandoffBrief", () => {
 
     expect(brief.messageCount).toBe(1);
     expect(brief.text).not.toContain("### Assistant");
+  });
+});
+
+describe("wrapProviderHandoffInput", () => {
+  it("keeps the reconstructed brief out of the user's latest message", () => {
+    const wrapped = wrapProviderHandoffInput({
+      contextText: "# Handoff: taking over\n\nYou are taking over.",
+      messageText: "keep going from the tests",
+    });
+
+    expect(wrapped).toContain("<handoff_context>");
+    expect(wrapped).toContain("# Handoff: taking over");
+    expect(wrapped).toContain("</handoff_context>");
+    expect(wrapped).toContain(
+      "<latest_user_message>\nkeep going from the tests\n</latest_user_message>",
+    );
+  });
+
+  it("charges the envelope against the brief budget, not the user's message", () => {
+    const message = "continue";
+    const overhead = handoffWrapOverhead(message);
+    const wrapped = wrapProviderHandoffInput({ contextText: "brief", messageText: message });
+
+    expect(overhead).toBe(
+      wrapProviderHandoffInput({ contextText: "", messageText: message }).length,
+    );
+    expect(wrapped.length).toBe(overhead + "brief".length);
   });
 });

@@ -106,7 +106,7 @@ The set of provider instances that can resume each other's sessions on a thread,
 
 #### Handoff brief
 
-The conversation summary given to a provider picking up a thread it did not start: the transcript (or only the part it missed, if it resumed its own session), the workspace, and the files changed so far. Built purely from the thread's own record in [providerHandoffBrief.ts][26], so it costs no queries and no model call and rebuilds identically on a retry. See [providers.md][16].
+The conversation summary given to a provider picking up a thread it did not start: the transcript (or only the part it missed, if it resumed its own session), the workspace, and the files changed so far. Recent turns stay in full; older ones collapse to one-line bullets. The brief is wrapped in `<handoff_context>` so it does not mix with the user's latest message. Built purely from the thread's own record in [providerHandoffBrief.ts][26], so it costs no queries and no model call and rebuilds identically on a retry. See [providers.md][16].
 
 #### Runtime mode
 

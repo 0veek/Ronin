@@ -107,10 +107,12 @@ where `ensureSessionForThread` resolves one of three continuities:
 an interrupted or retried turn rebuilds the same brief. `selectHandoffMessages` cuts a resumed
 provider's brief at the last message authored by its own group, and replays everything when the
 thread has no message it can claim — seeing a turn twice is recoverable, never seeing it is not. The
-brief is prepended to the user's message within `PROVIDER_SEND_TURN_MAX_INPUT_CHARS`, and a
-`provider.handoff` activity records `resumed` vs `briefed` along with the brief size and whether it
-had to be trimmed. Both activities carry `turnId: null` so they render as transcript boundaries
-rather than folding into a turn's work log.
+last six turns stay in full; everything older collapses to one-line bullets so a long thread keeps a
+sketch of how it got here instead of a hole. The brief is wrapped in `<handoff_context>` and the
+user's actual request in `<latest_user_message>` so the incoming model can tell background from the
+thing it has to answer. A `provider.handoff` activity records `resumed` vs `briefed` along with the
+brief size and whether it had to be trimmed. Both activities carry `turnId: null` so they render as
+transcript boundaries rather than folding into a turn's work log.
 
 ## Server-side workers
 

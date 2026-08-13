@@ -842,9 +842,10 @@ export const ProviderHandoffActivityPayload = Schema.Struct({
   // for the "carried N of the conversation" affordance. Zero for a resume that
   // needed no replay.
   briefChars: NonNegativeInt,
-  // True when the brief had to be trimmed to fit the input budget: message
-  // bodies elided, or older messages dropped entirely. Surfaced so the user
-  // knows the conversation was carried in part rather than whole.
+  // True when the brief had to be trimmed to fit the input budget: older
+  // turns collapsed to one-line bullets, bodies shortened, or the oldest
+  // dropped. Surfaced so the user knows the conversation was carried in part
+  // rather than whole.
   briefCompressed: Schema.Boolean,
 });
 export type ProviderHandoffActivityPayload = typeof ProviderHandoffActivityPayload.Type;

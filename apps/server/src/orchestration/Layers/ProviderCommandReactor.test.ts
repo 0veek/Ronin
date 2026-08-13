@@ -2400,10 +2400,13 @@ describe("ProviderCommandReactor", () => {
     expect(harness.startSession.mock.calls[1]?.[1]).not.toHaveProperty("resumeCursor");
 
     const secondTurn = harness.sendTurn.mock.calls[1]?.[0] as { input?: string } | undefined;
+    expect(secondTurn?.input).toContain("<handoff_context>");
     expect(secondTurn?.input).toContain("# Handoff: taking over");
     expect(secondTurn?.input).toContain("first");
-    expect(secondTurn?.input).toContain("## Continue the conversation");
+    expect(secondTurn?.input).toContain("</handoff_context>");
+    expect(secondTurn?.input).toContain("<latest_user_message>");
     expect(secondTurn?.input).toContain("second");
+    expect(secondTurn?.input).not.toContain("## Continue the conversation");
 
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
