@@ -107,7 +107,7 @@ function themePreviewLine(mode: ThemeAppearance): string {
   return mode === "dark" ? "rgb(255 255 255 / 0.16)" : "rgb(0 0 0 / 0.12)";
 }
 
-function ThemePreviewSwatch({
+export function ThemePreviewSwatch({
   colors,
   mode,
 }: {
