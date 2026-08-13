@@ -186,13 +186,18 @@ contextBridge.exposeInMainWorld("desktopBridge", {
         ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_STATUS_CHANNEL, { tabId }),
       snapshot: (tabId) =>
         ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SNAPSHOT_CHANNEL, { tabId }),
-      // Playwright-injected automation actions removed from the desktop host.
-      click: () => Promise.reject(new Error("Preview automation click is not supported.")),
-      type: () => Promise.reject(new Error("Preview automation type is not supported.")),
-      press: () => Promise.reject(new Error("Preview automation press is not supported.")),
-      scroll: () => Promise.reject(new Error("Preview automation scroll is not supported.")),
-      evaluate: () => Promise.reject(new Error("Preview automation evaluate is not supported.")),
-      waitFor: () => Promise.reject(new Error("Preview automation waitFor is not supported.")),
+      click: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_CLICK_CHANNEL, { tabId, input }),
+      type: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_TYPE_CHANNEL, { tabId, input }),
+      press: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_PRESS_CHANNEL, { tabId, input }),
+      scroll: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_SCROLL_CHANNEL, { tabId, input }),
+      evaluate: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_EVALUATE_CHANNEL, { tabId, input }),
+      waitFor: (tabId, input) =>
+        ipcRenderer.invoke(IpcChannels.PREVIEW_AUTOMATION_WAIT_FOR_CHANNEL, { tabId, input }),
     },
     onStateChange: (listener) => {
       const wrappedListener = (

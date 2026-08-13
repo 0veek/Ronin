@@ -1,5 +1,5 @@
 diff --git a/dist/unstable/ai/McpServer.js b/dist/unstable/ai/McpServer.js
-index 755e41c..dc431aa 100644
+index 755e41c143ace01604487266c91b6ca331e35e71..3b99e1c0a966e18bc6ef7c45bc81f1b5524787f1 100644
 --- a/dist/unstable/ai/McpServer.js
 +++ b/dist/unstable/ai/McpServer.js
 @@ -262,6 +262,26 @@ const runWithProtocolState = /*#__PURE__*/Effect.fnUntraced(function* (options,
@@ -38,8 +38,17 @@ index 755e41c..dc431aa 100644
    return Layer.merge(layerWithProtocolState(options), routes).pipe(Layer.provide(layerMcpProtocolHttp(options)), Layer.provide(protocolState), Layer.provide(RpcSerialization.layerJsonRpc()));
  };
  const layerMcpProtocolHttp = options => Layer.effect(RpcServer.Protocol)(Effect.gen(function* () {
+@@ -900,7 +920,7 @@ export const registerToolkit = /*#__PURE__*/Effect.fnUntraced(function* (toolkit
+       handle(payload) {
+         return built.handle(tool.name, payload).pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption), Effect.provideContext(services), Effect.map(result => new CallToolResult({
+           isError: false,
+-          structuredContent: typeof result.encodedResult === "object" ? result.encodedResult : undefined,
++          structuredContent: typeof result.encodedResult === "object" && result.encodedResult !== null ? result.encodedResult : undefined,
+           content: [{
+             type: "text",
+             text: JSON.stringify(result.encodedResult)
 diff --git a/dist/unstable/rpc/RpcClient.d.ts b/dist/unstable/rpc/RpcClient.d.ts
-index aba2779..581d267 100644
+index aba2779fb0703c06e476bd3c30a1156ea4b35dbb..581d267eb13d3c34fae2f98bc523f188f921a9be 100644
 --- a/dist/unstable/rpc/RpcClient.d.ts
 +++ b/dist/unstable/rpc/RpcClient.d.ts
 @@ -2,6 +2,7 @@ import * as Cause from "../../Cause.ts";
@@ -92,7 +101,7 @@ index aba2779..581d267 100644
  /**
   * Represents optional client protocol hooks that run when a transport connects
 diff --git a/dist/unstable/rpc/RpcClient.js b/dist/unstable/rpc/RpcClient.js
-index b536d0a..12ffac0 100644
+index b536d0a720c13678ccfc2c55c612ee6b61fbedaa..2b0cbb3873cab351134c66c90c57f1045ae7fa7d 100644
 --- a/dist/unstable/rpc/RpcClient.js
 +++ b/dist/unstable/rpc/RpcClient.js
 @@ -47,6 +47,7 @@ export const makeNoSerialization = /*#__PURE__*/Effect.fnUntraced(function* (gro
@@ -293,22 +302,20 @@ index b536d0a..12ffac0 100644
      latch.closeUnsafe();
    };
 -  const onPong = () => {
--    recievedPong = true;
--  };
 +  const onPong = Effect.sync(() => {
-+    recievedPong = true;
+     recievedPong = true;
+-  };
 +    missedPongs = 0;
 +  }).pipe(Effect.andThen(hooks?.onPong ?? Effect.void));
    yield* Effect.suspend(() => {
 -    if (!recievedPong) return latch.open;
--    recievedPong = false;
--    return writePing;
 +    if (!recievedPong) {
 +      missedPongs += 1;
 +      if (missedPongs >= 3) return latch.open;
 +      return (hooks?.onPing ?? Effect.void).pipe(Effect.andThen(writePing));
 +    }
-+    recievedPong = false;
+     recievedPong = false;
+-    return writePing;
 +    missedPongs = 0;
 +    return (hooks?.onPing ?? Effect.void).pipe(Effect.andThen(writePing));
    }).pipe(Effect.delay("5 seconds"), Effect.ignore, Effect.forever, Effect.interruptible, Effect.forkScoped);

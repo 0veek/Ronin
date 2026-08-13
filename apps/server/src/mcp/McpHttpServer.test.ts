@@ -267,7 +267,10 @@ it.effect("registers annotated tools and preserves authenticated request context
           Effect.provideService(McpSchema.McpServerClient, client),
         );
       expect(press.isError).toBe(false);
-      expect(press.structuredContent).toBeNull();
+      // MCP clients validate structuredContent as a record when it is present, so
+      // void-returning tools must omit it rather than send null. The tool advertises
+      // no outputSchema, so the text content carries the result on its own.
+      expect(press.structuredContent).toBeUndefined();
       expect(press.content).toEqual([{ type: "text", text: "null" }]);
     }),
   ).pipe(Effect.provide(TestLayer)),

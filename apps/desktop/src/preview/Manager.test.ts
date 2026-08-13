@@ -188,6 +188,44 @@ const makeTestPreviewWebContents = (
     capturePage,
   }) as never;
 
+type TestHumanInputListener = (event: unknown, signal: unknown) => void;
+
+const makeAutomationWebContents = (
+  sendCommand: (method: string, params?: Record<string, unknown>) => Promise<unknown>,
+  onHumanInput?: (listener: TestHumanInputListener | undefined) => void,
+  overrides: Record<string, unknown> = {},
+) =>
+  ({
+    id: 42,
+    isDestroyed: () => false,
+    getType: () => "webview",
+    getURL: () => "https://example.com",
+    getTitle: () => "Example",
+    isLoading: () => false,
+    isDevToolsOpened: () => false,
+    getZoomFactor: () => 1,
+    setZoomFactor: vi.fn(),
+    on: vi.fn(),
+    off: vi.fn(),
+    ipc: {
+      on: vi.fn((channel: string, listener: TestHumanInputListener) => {
+        if (channel === "preview:human-input") onHumanInput?.(listener);
+      }),
+      off: vi.fn(),
+    },
+    send: webviewSend,
+    navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+    setWindowOpenHandler: vi.fn(),
+    debugger: {
+      isAttached: () => false,
+      attach: vi.fn(),
+      sendCommand,
+      on: vi.fn(),
+      off: vi.fn(),
+    },
+    ...overrides,
+  }) as never;
+
 describe("PreviewManager", () => {
   beforeEach(() => {
     browserWindowConstructor.mockReset();
@@ -1129,6 +1167,319 @@ describe("PreviewManager", () => {
         expect(Option.getOrThrow(Cause.findErrorOption(invalidImageExit.cause))).toMatchObject({
           _tag: "PreviewArtifactImageLoadError",
           artifactPath,
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("emits the resolved pointer target before dispatching an automation click", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+        const activity: string[] = [];
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+          if (method === "Runtime.evaluate") {
+            return {
+              result: {
+                value: { width: 800, height: 600 },
+              },
+            };
+          }
+          if (method === "Input.dispatchMouseEvent" && params?.type === "mousePressed") {
+            activity.push("mousePressed");
+            humanInput?.({}, { kind: "pointer", x: params.x, y: params.y, button: 0 });
+          }
+          return undefined;
+        });
+        fromId.mockReturnValue(
+          makeAutomationWebContents(sendCommand, (listener) => {
+            humanInput = listener;
+          }),
+        );
+
+        yield* manager.subscribePointerEvents((event) =>
+          Effect.sync(() => {
+            activity.push(event.phase);
+          }),
+        );
+        yield* manager.createTab("tab_1");
+        yield* manager.registerWebview("tab_1", 42);
+        const click = yield* manager
+          .automationClick("tab_1", { x: 120, y: 80 })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(200);
+        yield* Fiber.join(click);
+
+        expect(activity).toEqual(["move", "click", "mousePressed"]);
+        expect(sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+          type: "mousePressed",
+          x: 120,
+          y: 80,
+          button: "left",
+          clickCount: 1,
+        });
+        expect(sendCommand).toHaveBeenCalledWith("Input.dispatchMouseEvent", {
+          type: "mouseReleased",
+          x: 120,
+          y: 80,
+          button: "left",
+          clickCount: 1,
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("types in background webviews and enables native key input", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let failKeyDown = false;
+        let humanInput: ((_event: unknown, signal: unknown) => void) | undefined;
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+          if (
+            failKeyDown &&
+            method === "Input.dispatchKeyEvent" &&
+            (params?.["type"] === "keyDown" || params?.["type"] === "rawKeyDown")
+          ) {
+            throw new Error("key dispatch failed");
+          }
+          if (
+            method === "Input.dispatchKeyEvent" &&
+            (params?.["type"] === "keyDown" || params?.["type"] === "rawKeyDown")
+          ) {
+            humanInput?.(
+              {},
+              {
+                kind: "key",
+                key: params["key"],
+                code: params["code"] ?? "Digit1",
+              },
+            );
+          }
+          return method === "Runtime.evaluate" ? { result: { value: { ok: true } } } : undefined;
+        });
+        const restoreFocus = vi.fn();
+        const focus = vi.fn();
+        getFocusedWebContents.mockReturnValue({
+          id: 7,
+          isDestroyed: () => false,
+          focus: restoreFocus,
+        } as never);
+        fromId.mockReturnValue(
+          makeAutomationWebContents(
+            sendCommand,
+            (listener) => {
+              humanInput = listener;
+            },
+            { focus },
+          ),
+        );
+
+        yield* manager.createTab("tab_input");
+        yield* manager.registerWebview("tab_input", 42);
+        yield* manager.automationType("tab_input", { text: "hello", clear: true });
+        yield* manager.automationType("tab_input", { text: "", clear: true });
+        yield* manager.automationPress("tab_input", { key: "x" });
+
+        const calls = sendCommand.mock.calls;
+        const methods = calls.map(([method]) => method);
+        const enableIndex = methods.indexOf("Input.setIgnoreInputEvents");
+        const focusOnIndex = calls.findIndex(
+          ([method, params]) =>
+            method === "Emulation.setFocusEmulationEnabled" && params?.["enabled"] === true,
+        );
+        const keyDownIndex = calls.findIndex(
+          ([method, params]) =>
+            method === "Input.dispatchKeyEvent" && params?.["type"] === "keyDown",
+        );
+        const keyUpIndex = calls.findIndex(
+          ([method, params]) => method === "Input.dispatchKeyEvent" && params?.["type"] === "keyUp",
+        );
+        const focusOffIndex = calls.findIndex(
+          ([method, params]) =>
+            method === "Emulation.setFocusEmulationEnabled" && params?.["enabled"] === false,
+        );
+        const typeEvaluation = sendCommand.mock.calls.find(
+          ([method, params]) =>
+            method === "Runtime.evaluate" &&
+            typeof params === "object" &&
+            params !== null &&
+            "expression" in params &&
+            typeof params.expression === "string" &&
+            params.expression.includes('document.execCommand("insertText"'),
+        );
+        expect(typeEvaluation).toBeDefined();
+        const clearOnlyEvaluation = sendCommand.mock.calls.find(
+          ([method, params]) =>
+            method === "Runtime.evaluate" &&
+            typeof params === "object" &&
+            params !== null &&
+            "expression" in params &&
+            typeof params.expression === "string" &&
+            params.expression.includes('const text = ""') &&
+            params.expression.includes("Object.getOwnPropertyDescriptor"),
+        );
+        expect(clearOnlyEvaluation).toBeDefined();
+        expect(methods).not.toContain("Input.insertText");
+        expect(enableIndex).toBeGreaterThanOrEqual(0);
+        expect(focus).toHaveBeenCalledOnce();
+        expect(restoreFocus).toHaveBeenCalledOnce();
+        expect(methods).toContain("Page.bringToFront");
+        expect(enableIndex).toBeLessThan(focusOnIndex);
+        expect(focusOnIndex).toBeLessThan(keyDownIndex);
+        expect(keyDownIndex).toBeLessThan(keyUpIndex);
+        expect(keyUpIndex).toBeLessThan(focusOffIndex);
+        expect(
+          calls.filter(
+            ([method, params]) =>
+              method === "Input.dispatchKeyEvent" && params?.["type"] === "keyUp",
+          ),
+        ).toHaveLength(1);
+        expect(sendCommand).toHaveBeenCalledWith("Input.setIgnoreInputEvents", { ignore: false });
+
+        sendCommand.mockClear();
+        failKeyDown = true;
+        const failedPress = yield* Effect.exit(manager.automationPress("tab_input", { key: "y" }));
+
+        expect(Exit.isFailure(failedPress)).toBe(true);
+        expect(sendCommand).toHaveBeenCalledWith("Input.dispatchKeyEvent", {
+          type: "keyUp",
+          key: "y",
+          code: "KeyY",
+          modifiers: 0,
+          windowsVirtualKeyCode: 89,
+          location: 0,
+          isKeypad: false,
+        });
+        expect(sendCommand).toHaveBeenCalledWith("Emulation.setFocusEmulationEnabled", {
+          enabled: false,
+        });
+        expect(restoreFocus).toHaveBeenCalledTimes(2);
+        expect(
+          sendCommand.mock.calls.filter(
+            ([method, params]) =>
+              method === "Input.dispatchKeyEvent" && params?.["type"] === "keyUp",
+          ),
+        ).toHaveLength(1);
+
+        sendCommand.mockClear();
+        failKeyDown = false;
+        yield* manager.automationPress("tab_input", { key: "!" });
+        expect(sendCommand).toHaveBeenCalledWith("Input.dispatchKeyEvent", {
+          type: "keyDown",
+          key: "!",
+          code: "Digit1",
+          modifiers: 0,
+          windowsVirtualKeyCode: 49,
+          location: 0,
+          isKeypad: false,
+          text: "!",
+          unmodifiedText: "!",
+        });
+        expect(restoreFocus).toHaveBeenCalledTimes(3);
+      }),
+    ),
+  );
+
+  effectIt.effect("resolves locator targets through the injected Playwright runtime", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const expressions: string[] = [];
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+          if (method !== "Runtime.evaluate") return undefined;
+          const expression = String(params?.["expression"] ?? "");
+          expressions.push(expression);
+          if (expression.includes("Boolean(globalThis.__t3PlaywrightInjected)")) {
+            return { result: { value: false } };
+          }
+          return { result: { value: { ok: true } } };
+        });
+        fromId.mockReturnValue(makeAutomationWebContents(sendCommand));
+
+        yield* manager.createTab("tab_locator");
+        yield* manager.registerWebview("tab_locator", 42);
+        yield* manager.automationScroll("tab_locator", {
+          locator: "role=list[name='Results']",
+          deltaY: 240,
+        });
+
+        // The install expression is only evaluated once the page reports no runtime,
+        // and the locator is passed through Playwright's selector parser rather than
+        // being interpolated into a querySelector call.
+        expect(expressions.some((each) => each.includes("module.exports.InjectedScript()"))).toBe(
+          true,
+        );
+        const scrollExpression = expressions.find((each) => each.includes("scrollBy"));
+        expect(scrollExpression).toBeDefined();
+        expect(scrollExpression).toContain("injected.parseSelector(\"role=list[name='Results']\")");
+        expect(scrollExpression).toContain("top: 240");
+      }),
+    ),
+  );
+
+  effectIt.effect("returns evaluated page values and rejects oversized results", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let value: unknown = { href: "https://example.com/" };
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate" ? { result: { value } } : undefined,
+        );
+        fromId.mockReturnValue(makeAutomationWebContents(sendCommand));
+
+        yield* manager.createTab("tab_evaluate");
+        yield* manager.registerWebview("tab_evaluate", 42);
+
+        const evaluated = yield* manager.automationEvaluate("tab_evaluate", {
+          expression: "({ href: location.href })",
+        });
+        expect(evaluated).toEqual({ href: "https://example.com/" });
+
+        value = "x".repeat(64_001);
+        const oversized = yield* Effect.exit(
+          manager.automationEvaluate("tab_evaluate", { expression: "big" }),
+        );
+        expect(Exit.isFailure(oversized)).toBe(true);
+        if (Exit.isSuccess(oversized)) return;
+        expect(Option.getOrThrow(Cause.findErrorOption(oversized.cause))).toMatchObject({
+          _tag: "PreviewAutomationResultTooLargeError",
+          tabId: "tab_evaluate",
+          maximumBytes: 64_000,
+        });
+      }),
+    ),
+  );
+
+  effectIt.effect("polls waitFor conditions and times out when they never match", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        let matched = false;
+        const sendCommand = vi.fn(async (method: string) =>
+          method === "Runtime.evaluate" ? { result: { value: { matched } } } : undefined,
+        );
+        fromId.mockReturnValue(makeAutomationWebContents(sendCommand));
+
+        yield* manager.createTab("tab_wait");
+        yield* manager.registerWebview("tab_wait", 42);
+
+        const pending = yield* manager
+          .automationWaitFor("tab_wait", { text: "Ready", timeoutMs: 1_000 })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(300);
+        matched = true;
+        yield* TestClock.adjust(200);
+        yield* Fiber.join(pending);
+
+        matched = false;
+        const timedOutFiber = yield* manager
+          .automationWaitFor("tab_wait", { text: "Never", timeoutMs: 500 })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(1_000);
+        const timedOut = yield* Fiber.await(timedOutFiber);
+        expect(Exit.isFailure(timedOut)).toBe(true);
+        if (Exit.isSuccess(timedOut)) return;
+        expect(Option.getOrThrow(Cause.findErrorOption(timedOut.cause))).toMatchObject({
+          _tag: "PreviewAutomationTimeoutError",
+          tabId: "tab_wait",
+          timeoutMs: 500,
         });
       }),
     ),
