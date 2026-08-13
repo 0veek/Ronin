@@ -38,6 +38,16 @@ const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnErro
 
 const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 
+/**
+ * Identifies this client to the Codex app-server during `initialize`.
+ *
+ * Codex forwards it as the `originator` header on its calls to the OpenAI
+ * backend, so it is this product's identity there rather than a display
+ * string — the human-readable one is the sibling `title`. Codex validates it
+ * only as a legal HTTP header value.
+ */
+const CODEX_CLIENT_NAME = "ronin_desktop";
+
 const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
@@ -309,7 +319,7 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
 export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
-      name: "t3code_desktop",
+      name: CODEX_CLIENT_NAME,
       title: "Ronin Desktop",
       version: packageJson.version,
     },
@@ -371,7 +381,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
 
   const initialize = yield* client.request("initialize", {
     clientInfo: {
-      name: "t3code_desktop",
+      name: CODEX_CLIENT_NAME,
       title: "Ronin Desktop",
       version: "0.1.0",
     },
