@@ -157,6 +157,173 @@ it.effect("discovers editors through the service API", () =>
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+// Installing an editor and never seeing it offered is the common complaint, and
+// PATH alone does not explain it: Zed's Linux installer only symlinks into
+// ~/.local/bin, which a desktop-launched app can inherit a PATH without.
+it.effect("discovers a Linux editor installed under the home directory", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-home-" });
+    const zedBin = path.join(home, ".local", "zed.app", "bin", "zed");
+    yield* fileSystem.makeDirectory(path.dirname(zedBin), { recursive: true });
+    yield* fileSystem.writeFileString(zedBin, "#!/bin/sh\n");
+    yield* fileSystem.chmod(zedBin, 0o755);
+
+    let spawned: ChildProcess.StandardCommand | undefined;
+    const editors = yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      const discovered = yield* launcher.resolveAvailableEditors();
+      yield* launcher.launchEditor({ editor: "zed", cwd: "/work/src/index.ts:12:4" });
+      return discovered;
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "linux",
+          // No PATH at all, so only the install-path probe can find anything.
+          env: { HOME: home },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+
+    assert.equal(editors.includes("zed"), true);
+    assert.ok(spawned);
+    assert.equal(spawned.command, zedBin);
+    // Zed takes `path:line:column` directly rather than through --goto.
+    assert.deepEqual(spawned.args, ["/work/src/index.ts:12:4"]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("discovers a Flatpak editor through its exported launcher", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-home-" });
+    const exported = path.join(
+      home,
+      ".local",
+      "share",
+      "flatpak",
+      "exports",
+      "bin",
+      "com.visualstudio.code",
+    );
+    yield* fileSystem.makeDirectory(path.dirname(exported), { recursive: true });
+    yield* fileSystem.writeFileString(exported, "#!/bin/sh\n");
+    yield* fileSystem.chmod(exported, 0o755);
+
+    const editors = yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      return yield* launcher.resolveAvailableEditors();
+    }).pipe(Effect.provide(testLayer({ platform: "linux", env: { HOME: home } })));
+
+    assert.equal(editors.includes("vscode"), true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+// A shim the user put on PATH is the one they configured, so it has to win over
+// whatever the install-path table guesses.
+it.effect("prefers a PATH shim over the macOS app bundle shim", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-home-" });
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-bin-" });
+
+    const bundleShim = path.join(
+      home,
+      "Applications",
+      "Visual Studio Code.app",
+      "Contents",
+      "Resources",
+      "app",
+      "bin",
+      "code",
+    );
+    const pathShim = path.join(binDir, "code");
+    for (const shim of [bundleShim, pathShim]) {
+      yield* fileSystem.makeDirectory(path.dirname(shim), { recursive: true });
+      yield* fileSystem.writeFileString(shim, "#!/bin/sh\n");
+      yield* fileSystem.chmod(shim, 0o755);
+    }
+
+    let spawned: ChildProcess.StandardCommand | undefined;
+    const editors = yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      const discovered = yield* launcher.resolveAvailableEditors();
+      yield* launcher.launchEditor({ editor: "vscode", cwd: "/work/src/index.ts:12:4" });
+      return discovered;
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          platform: "darwin",
+          env: { HOME: home, PATH: binDir },
+          onSpawn: (command) => {
+            spawned = command;
+          },
+        }),
+      ),
+    );
+
+    assert.equal(editors.includes("vscode"), true);
+    assert.ok(spawned);
+    // A PATH hit stays a bare command for spawn to resolve; only an install-path
+    // hit becomes absolute, so the bundle shim losing shows up as the bare name.
+    assert.equal(spawned.command, "code");
+    assert.notEqual(spawned.command, bundleShim);
+    assert.deepEqual(spawned.args, ["--goto", "/work/src/index.ts:12:4"]);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("discovers a Windows editor installed outside PATH", () => {
+  const localAppData = "C:\\Users\\dev\\AppData\\Local";
+  const installedShim = `${localAppData}\\Programs\\Microsoft VS Code\\bin\\code.cmd`;
+  const launcherLayer = ExternalLauncher.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        FileSystem.layerNoop({
+          // Only the installed shim is a file; every other probe lands on a
+          // directory, which the executable check rejects.
+          stat: (probed) =>
+            Effect.succeed({
+              type: probed === installedShim ? "File" : "Directory",
+            } as FileSystem.File.Info),
+        }),
+        Path.layer,
+        Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() => Effect.sync(() => makeMockDetachedHandle())),
+        ),
+      ),
+    ),
+  );
+
+  return Effect.gen(function* () {
+    const launcher = yield* ExternalLauncher.ExternalLauncher;
+    const editors = yield* launcher.resolveAvailableEditors();
+    assert.equal(editors.includes("vscode"), true);
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        launcherLayer,
+        Layer.succeed(HostProcessPlatform, "win32"),
+        ConfigProvider.layer(
+          ConfigProvider.fromEnv({
+            env: {
+              PATH: "C:\\nothing-here",
+              PATHEXT: ".COM;.EXE;.BAT;.CMD",
+              LOCALAPPDATA: localAppData,
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
 it.effect("memoizes editor discovery and refreshes after the cache window", () => {
   let statCalls = 0;
   const fileInfo = { type: "File" } as FileSystem.File.Info;

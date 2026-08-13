@@ -101,11 +101,20 @@ const BrowserLaunchEnvConfig = Config.all({
   container: Config.string("container").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
+// PATH and PATHEXT resolve bare editor commands. The home and program-directory
+// variables resolve the well-known install paths probed when PATH comes up
+// empty; `isCommandAvailable` ignores keys it does not use, so they ride along
+// on the same env rather than costing a second config read per lookup.
 const CommandLookupEnvConfig = Config.all({
   PATH: Config.string("PATH").pipe(Config.option),
   Path: Config.string("Path").pipe(Config.option),
   path: Config.string("path").pipe(Config.option),
   PATHEXT: Config.string("PATHEXT").pipe(Config.option),
+  HOME: Config.string("HOME").pipe(Config.option),
+  USERPROFILE: Config.string("USERPROFILE").pipe(Config.option),
+  LOCALAPPDATA: Config.string("LOCALAPPDATA").pipe(Config.option),
+  ProgramFiles: Config.string("ProgramFiles").pipe(Config.option),
+  PROGRAMFILES: Config.string("PROGRAMFILES").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
 const readBrowserLaunchEnv = BrowserLaunchEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
@@ -157,6 +166,139 @@ function resolveEditorArgs(
 ): ReadonlyArray<string> {
   const baseArgs = "baseArgs" in editor ? editor.baseArgs : [];
   return [...baseArgs, ...resolveCommandEditorArgs(editor, target)];
+}
+
+/**
+ * Well-known install locations for editors whose GUI install leaves no CLI shim
+ * on PATH.
+ *
+ * Installing an editor and never seeing it in the picker is the common failure
+ * here, and it is rarely the user's fault: macOS buries the shim inside the .app
+ * bundle, Flatpak exports a wrapper into a directory desktop sessions do not add
+ * to PATH, Zed's Linux installer keeps its binary under ~/.local, and an app
+ * launched from a .desktop entry inherits a trimmed PATH that can miss even
+ * ~/.local/bin. Each candidate is one stat against an absolute path -- no spawn,
+ * no PATH walk -- and discovery is memoized for a minute, so probing costs
+ * far less than the PATH scan it backs up.
+ *
+ * Only editors that actually ship this way are listed. JetBrains IDEs are absent
+ * on purpose: Toolbox writes its shims to a directory it also puts on PATH.
+ */
+type InstallPathResolver = (env: NodeJS.ProcessEnv) => ReadonlyArray<string>;
+
+type InstallPathPlatform = "darwin" | "linux" | "win32";
+
+function homeDirectory(env: NodeJS.ProcessEnv): string | undefined {
+  return env.HOME ?? env.USERPROFILE;
+}
+
+/** The CLI shim inside a macOS .app bundle, in both install roots. */
+function macAppPaths(relativePath: string): InstallPathResolver {
+  return (env) => {
+    const home = homeDirectory(env);
+    const roots = ["/Applications", ...(home ? [`${home}/Applications`] : [])];
+    return roots.map((root) => `${root}/${relativePath}`);
+  };
+}
+
+/** Flatpak's exported launcher wrapper, for both system and per-user installs. */
+function flatpakPaths(appId: string): ReadonlyArray<string> {
+  return [`/var/lib/flatpak/exports/bin/${appId}`];
+}
+
+function userFlatpakPaths(env: NodeJS.ProcessEnv, appId: string): ReadonlyArray<string> {
+  const home = homeDirectory(env);
+  return home ? [`${home}/.local/share/flatpak/exports/bin/${appId}`] : [];
+}
+
+function windowsProgramPaths(relativePath: string): InstallPathResolver {
+  return (env) => {
+    const programFiles = env.ProgramFiles ?? env.PROGRAMFILES;
+    return [
+      ...(env.LOCALAPPDATA ? [`${env.LOCALAPPDATA}\\Programs\\${relativePath}`] : []),
+      ...(programFiles ? [`${programFiles}\\${relativePath}`] : []),
+    ];
+  };
+}
+
+const EDITOR_INSTALL_PATHS: Partial<
+  Record<EditorId, Partial<Record<InstallPathPlatform, InstallPathResolver>>>
+> = {
+  cursor: {
+    darwin: macAppPaths("Cursor.app/Contents/Resources/app/bin/cursor"),
+    // Cursor ships an AppImage on Linux rather than a Flatpak, so there is no
+    // exported launcher to probe -- only the unpacked install roots.
+    linux: () => ["/opt/cursor/bin/cursor", "/usr/share/cursor/bin/cursor"],
+    win32: windowsProgramPaths("cursor\\resources\\app\\bin\\cursor.cmd"),
+  },
+  vscode: {
+    darwin: macAppPaths("Visual Studio Code.app/Contents/Resources/app/bin/code"),
+    linux: (env) => [
+      "/usr/share/code/bin/code",
+      "/opt/visual-studio-code/bin/code",
+      "/snap/bin/code",
+      ...flatpakPaths("com.visualstudio.code"),
+      ...userFlatpakPaths(env, "com.visualstudio.code"),
+    ],
+    win32: windowsProgramPaths("Microsoft VS Code\\bin\\code.cmd"),
+  },
+  "vscode-insiders": {
+    darwin: macAppPaths(
+      "Visual Studio Code - Insiders.app/Contents/Resources/app/bin/code-insiders",
+    ),
+    linux: (env) => [
+      "/usr/share/code-insiders/bin/code-insiders",
+      "/opt/visual-studio-code-insiders/bin/code-insiders",
+      "/snap/bin/code-insiders",
+      ...flatpakPaths("com.visualstudio.code.insiders"),
+      ...userFlatpakPaths(env, "com.visualstudio.code.insiders"),
+    ],
+    win32: windowsProgramPaths("Microsoft VS Code Insiders\\bin\\code-insiders.cmd"),
+  },
+  vscodium: {
+    darwin: macAppPaths("VSCodium.app/Contents/Resources/app/bin/codium"),
+    linux: (env) => [
+      "/usr/share/codium/bin/codium",
+      "/opt/vscodium/bin/codium",
+      ...flatpakPaths("com.vscodium.codium"),
+      ...userFlatpakPaths(env, "com.vscodium.codium"),
+    ],
+    win32: windowsProgramPaths("VSCodium\\bin\\codium.cmd"),
+  },
+  zed: {
+    // Zed's macOS shim is the bundle's `cli` binary, not a name-matching one.
+    darwin: macAppPaths("Zed.app/Contents/MacOS/cli"),
+    linux: (env) => {
+      const home = homeDirectory(env);
+      return [
+        // The official install script drops the app here and only symlinks into
+        // ~/.local/bin, which a trimmed desktop PATH often misses.
+        ...(home ? [`${home}/.local/zed.app/bin/zed`, `${home}/.local/bin/zed`] : []),
+        "/usr/lib/zed/zed-editor",
+        ...flatpakPaths("dev.zed.Zed"),
+        ...userFlatpakPaths(env, "dev.zed.Zed"),
+      ];
+    },
+  },
+};
+
+function installPathPlatform(platform: NodeJS.Platform): InstallPathPlatform {
+  if (platform === "darwin") return "darwin";
+  if (platform === "win32") return "win32";
+  return "linux";
+}
+
+/**
+ * Every command worth probing for an editor: its PATH names first, so a shim the
+ * user put on PATH still wins, then the well-known install paths.
+ */
+function editorCommandCandidates(
+  editor: (typeof EDITORS)[number],
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): ReadonlyArray<string> {
+  const resolveInstallPaths = EDITOR_INSTALL_PATHS[editor.id]?.[installPathPlatform(platform)];
+  return [...(editor.commands ?? []), ...(resolveInstallPaths?.(env) ?? [])];
 }
 
 const resolveAvailableCommand = Effect.fn("externalLauncher.resolveAvailableCommand")(function* (
@@ -277,7 +419,10 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
       continue;
     }
 
-    const command = yield* resolveAvailableCommand(editor.commands, env);
+    const command = yield* resolveAvailableCommand(
+      editorCommandCandidates(editor, platform, env),
+      env,
+    );
     if (Option.isSome(command)) {
       available.push(editor.id);
     }
@@ -361,7 +506,7 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
 
   if (editorDef.commands) {
     const command = Option.getOrElse(
-      yield* resolveAvailableCommand(editorDef.commands, env),
+      yield* resolveAvailableCommand(editorCommandCandidates(editorDef, platform, env), env),
       () => editorDef.commands[0],
     );
     return {
