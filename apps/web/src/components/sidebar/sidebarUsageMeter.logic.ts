@@ -102,3 +102,34 @@ export function buildUsageRows(
     },
   );
 }
+
+/**
+ * How long until a window rolls over, phrased for peripheral vision.
+ *
+ * Relative rather than absolute ("2h", not "3:20 PM") because the question the
+ * meter answers is "can I keep working", and a clock time makes the reader do
+ * the subtraction. Coarse for the same reason: this sits in the corner of the
+ * eye, so minute-level precision past the first hour is noise.
+ *
+ * Rounds rather than truncating, and promotes across each boundary, so 23h40m
+ * reads "1d" instead of "24h".
+ */
+export function formatResetCountdown(
+  resetsAt: string | null,
+  nowMs: number = Date.now(),
+): string | null {
+  if (resetsAt === null) return null;
+  const parsed = Date.parse(resetsAt);
+  if (Number.isNaN(parsed)) return null;
+
+  const minutes = Math.round((parsed - nowMs) / 60_000);
+  // Already elapsed. Providers keep serving a stale `resetsAt` for a beat after
+  // the window turns over, so this is a normal state, not a bad value.
+  if (minutes <= 0) return "now";
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+
+  return `${Math.round(hours / 24)}d`;
+}

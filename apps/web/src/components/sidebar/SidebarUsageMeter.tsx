@@ -1,12 +1,16 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ProviderRateLimits, RateLimitWindow } from "@t3tools/contracts";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";
 import { useProviderRateLimits } from "../../state/rateLimits";
 import { primaryServerProvidersAtom } from "../../state/server";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { buildUsageRows, type UsageMeterRow } from "./sidebarUsageMeter.logic";
+import {
+  buildUsageRows,
+  formatResetCountdown,
+  type UsageMeterRow,
+} from "./sidebarUsageMeter.logic";
 
 /**
  * How much of each provider's subscription window is gone.
@@ -68,10 +72,11 @@ function tooltipFor(entry: ProviderRateLimits, window: RateLimitWindow | null): 
   return `${Math.round(window.usedPercent)}% of the ${WINDOW_SCOPE[window.kind]} used${suffix}${plan}`;
 }
 
-function UsageRow({ row }: { row: UsageMeterRow }) {
+function UsageRow({ row, nowMs }: { row: UsageMeterRow; nowMs: number }) {
   const { entry, window } = row;
   const percent = window === null ? null : Math.round(window.usedPercent);
   const isCritical = percent !== null && percent >= CRITICAL_PERCENT;
+  const countdown = window === null ? null : formatResetCountdown(window.resetsAt, nowMs);
 
   return (
     <Tooltip>
@@ -94,8 +99,28 @@ function UsageRow({ row }: { row: UsageMeterRow }) {
               >
                 {PROVIDER_LABEL[entry.provider]}
               </span>
-              <span className="label-meta min-w-0 flex-1 truncate text-muted-foreground/55">
-                {window === null ? "—" : WINDOW_LABEL[window.kind]}
+              {/* Window tag and its countdown share one column: the tag names
+                  the bucket, the countdown says when it refills.
+
+                  The countdown drops out of `label-meta` deliberately. Mono
+                  caps at this tracking is wide enough that "WEEK · RESETS IN
+                  3D" overruns the 136px this column gets at the 16rem sidebar
+                  width, and setting the countdown in small sans separates the
+                  reading — the tag is a label, the countdown is a value — for
+                  the same reason the tag is mono in the first place.
+
+                  Spelled "resets in" rather than a bare duration: a lone "2h"
+                  next to a percentage reads as quota remaining. */}
+              <span className="min-w-0 flex-1 truncate">
+                <span className="label-meta text-muted-foreground/55">
+                  {window === null ? "—" : WINDOW_LABEL[window.kind]}
+                </span>
+                {countdown === null ? null : (
+                  <span className="text-[10px] text-muted-foreground/45">
+                    {" · "}
+                    {countdown === "now" ? "resetting" : `resets in ${countdown}`}
+                  </span>
+                )}
               </span>
               <span
                 className={cn(
@@ -132,9 +157,24 @@ function UsageRow({ row }: { row: UsageMeterRow }) {
   );
 }
 
+/**
+ * Snapshots arrive on provider turns and periodic reads, not on a clock, so a
+ * countdown drawn straight from one would sit still and go wrong. One timer
+ * for the whole section keeps every row on the same minute.
+ */
+function useCurrentMinute(): number {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  return nowMs;
+}
+
 export function SidebarUsageMeter() {
   const { providers, error } = useProviderRateLimits();
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const nowMs = useCurrentMinute();
 
   const rows = useMemo(() => {
     // Plain strings: ProviderDriverKind is an open branded slug, so a Set of
@@ -158,7 +198,7 @@ export function SidebarUsageMeter() {
     >
       <h2 className="label-meta text-muted-foreground/50">Usage</h2>
       {rows.map((row) => (
-        <UsageRow key={`${row.provider}:${row.window?.kind ?? "none"}`} row={row} />
+        <UsageRow key={`${row.provider}:${row.window?.kind ?? "none"}`} row={row} nowMs={nowMs} />
       ))}
     </section>
   );

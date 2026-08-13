@@ -1,7 +1,12 @@
 import type { ProviderRateLimits, RateLimitWindow } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildUsageRows, orderedWindows, PROVIDER_DRIVER } from "./sidebarUsageMeter.logic";
+import {
+  buildUsageRows,
+  formatResetCountdown,
+  orderedWindows,
+  PROVIDER_DRIVER,
+} from "./sidebarUsageMeter.logic";
 
 function window(
   kind: RateLimitWindow["kind"],
@@ -142,5 +147,39 @@ describe("buildUsageRows", () => {
     const rows = buildUsageRows([snapshot("claude")], ALL_ENABLED);
 
     expect(shape(rows)).toEqual(["claude:none"]);
+  });
+});
+
+describe("formatResetCountdown", () => {
+  const now = Date.parse("2026-08-13T12:00:00.000Z");
+  const inMinutes = (minutes: number) => new Date(now + minutes * 60_000).toISOString();
+
+  it("reports nothing when the provider gave no reset", () => {
+    expect(formatResetCountdown(null, now)).toBeNull();
+    expect(formatResetCountdown("not-a-date", now)).toBeNull();
+  });
+
+  it("counts down in minutes inside the first hour", () => {
+    expect(formatResetCountdown(inMinutes(1), now)).toBe("1m");
+    expect(formatResetCountdown(inMinutes(42), now)).toBe("42m");
+    expect(formatResetCountdown(inMinutes(59), now)).toBe("59m");
+  });
+
+  it("switches to hours, then days", () => {
+    expect(formatResetCountdown(inMinutes(60), now)).toBe("1h");
+    expect(formatResetCountdown(inMinutes(134), now)).toBe("2h");
+    expect(formatResetCountdown(inMinutes(60 * 5), now)).toBe("5h");
+    expect(formatResetCountdown(inMinutes(60 * 24 * 3), now)).toBe("3d");
+  });
+
+  it("promotes across a boundary rather than reading 24h", () => {
+    // 23h40m rounds to 24 hours, which must present as a day.
+    expect(formatResetCountdown(inMinutes(23 * 60 + 40), now)).toBe("1d");
+  });
+
+  it("treats an elapsed window as resetting, not as negative time", () => {
+    // Providers keep serving a stale resetsAt for a beat after rollover.
+    expect(formatResetCountdown(inMinutes(0), now)).toBe("now");
+    expect(formatResetCountdown(inMinutes(-90), now)).toBe("now");
   });
 });
