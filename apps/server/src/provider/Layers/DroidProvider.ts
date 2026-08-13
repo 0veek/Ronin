@@ -134,7 +134,7 @@ const discoverDroidModelsViaAcp = (
       environment,
       childProcessSpawner,
       cwd: process.cwd(),
-      clientInfo: { name: "t3-code-droid-probe", version: "0.0.0" },
+      clientInfo: { name: "ronin-droid-probe", version: "0.0.0" },
     });
     const started = yield* acp.start();
     return buildDroidDiscoveredModelsFromSessionModelState(started.sessionSetupResult.models);

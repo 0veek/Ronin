@@ -6,8 +6,6 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-
-const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Crypto from "effect/Crypto";
@@ -35,6 +33,8 @@ import {
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
 import { makeGrokAcpRuntime, resolveGrokAcpBaseModelId } from "../acp/GrokAcpSupport.ts";
+
+const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
@@ -66,13 +66,6 @@ type ModelInfoMeta = EffectAcpSchema.ModelInfo["_meta"];
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 
-/**
- * Shown only until ACP discovery answers, and whenever the CLI cannot be
- * probed. The installed Grok is the source of truth for both the model list
- * and each model's reasoning-effort menu — see
- * `buildGrokDiscoveredModelsFromSessionModelState` — so anything hardcoded
- * here goes stale the moment xAI ships a new build.
- */
 /**
  * One entry, and only until the CLI answers.
  *
@@ -242,7 +235,7 @@ const discoverGrokModelsViaAcp = (
       childProcessSpawner,
       cwd: process.cwd(),
       runtimeMode: "approval-required",
-      clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
+      clientInfo: { name: "ronin-provider-probe", version: "0.0.0" },
     });
     const started = yield* acp.start();
     return buildGrokDiscoveredModelsFromSessionModelState(started.sessionSetupResult.models);
