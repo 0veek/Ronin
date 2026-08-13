@@ -123,7 +123,11 @@ look pending to a naive check.
 - `pnpm lint` — 3 pre-existing errors, all in files this batch never touched
   (`DroidAcpSupport.ts`, `AntigravityAdapter.ts`, `storageDocument.test.ts`)
 
-**Pre-existing failure, unrelated to this batch:** `scripts/build-desktop-artifact.test.ts` →
-"switches desktop packaging product names to nightly" expects `"Ronin (Alpha)"` but
-`resolveDesktopProductName` reads `desktopPackageJson.productName`, now `"Ronin"`. Fails on `main`
-too; the test was not updated when the product name changed.
+**Fixed alongside this batch (pre-existing, not caused by it):**
+`scripts/build-desktop-artifact.test.ts` → "switches desktop packaging product names to nightly"
+still expected `"Ronin (Alpha)"`. The alpha suffix is gone from the artifact name, so
+`resolveDesktopProductName` reads `"Ronin"` from `desktopPackageJson.productName` and the assertion
+now matches.
+
+The `T3 Code (Alpha)` strings left in `apps/desktop/src/app/DesktopEnvironment.ts` are deliberate —
+they name the _legacy_ user-data directory the app migrates away from, not the current artifact.
