@@ -47,13 +47,62 @@ export function formatProviderDisplayName(provider: string | null | undefined): 
   }
 }
 
+function activityTimestamp(activity: OrchestrationThreadActivity): number | null {
+  const parsed = Date.parse(activity.createdAt);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Timestamp of the most recent provider switch, or null when the thread never
+ * switched.
+ *
+ * A switch retires the outgoing provider's session, so every snapshot taken
+ * before it describes *that* provider's window — a Codex 258.4k window kept
+ * rendering against a freshly selected Claude 1M model otherwise, because the
+ * backward walk below only looks at `context-window.updated` rows and those
+ * carry no provider identity.
+ *
+ * Compared by `createdAt` rather than array position on purpose:
+ * `provider.switched` is appended without a `sequence`, and the activity
+ * ordering sorts sequence-less rows last, so its position says nothing about
+ * when it happened.
+ */
+function latestProviderSwitchAt(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): number | null {
+  let latest: number | null = null;
+  for (const activity of activities) {
+    if (activity?.kind !== "provider.switched") {
+      continue;
+    }
+    const at = activityTimestamp(activity);
+    if (at !== null && (latest === null || at > latest)) {
+      latest = at;
+    }
+  }
+  return latest;
+}
+
 export function deriveLatestContextWindowSnapshot(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): ContextWindowSnapshot | null {
+  const providerSwitchedAt = latestProviderSwitchAt(activities);
+
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index];
     if (!activity || activity.kind !== "context-window.updated") {
       continue;
+    }
+
+    // Snapshots from the retired provider are dropped, not merely re-ordered:
+    // the incoming provider re-reports usage on its first turn. A snapshot
+    // stamped at the switch instant still belongs to the outgoing session,
+    // hence `<=`.
+    if (providerSwitchedAt !== null) {
+      const at = activityTimestamp(activity);
+      if (at !== null && at <= providerSwitchedAt) {
+        continue;
+      }
     }
 
     const payload = asRecord(activity.payload);
