@@ -1,3 +1,5 @@
+import * as NodeOS from "node:os";
+
 import {
   type ChatAttachment,
   CommandId,
@@ -1016,7 +1018,10 @@ const make = Effect.gen(function* () {
             const settings = yield* serverSettingsService.getSettings;
             const catalog = yield* Effect.tryPromise(() =>
               discoverSkillsCatalog({
-                homeDir: process.env.HOME?.trim() || "",
+                // Windows has no HOME, and an empty homeDir would resolve every
+                // `~/.codex/skills`-style root against the cwd instead. Read the
+                // account's home the same way the ws.ts catalog reads do.
+                homeDir: NodeOS.homedir(),
                 roninBaseDir: config.baseDir,
                 cwd: config.cwd,
                 includeDuplicateOrigins: false,

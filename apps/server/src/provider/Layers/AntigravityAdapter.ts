@@ -20,6 +20,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { resolveSpawnCommand, terminateProcessTree } from "@t3tools/shared/shell";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -39,6 +40,16 @@ const PROVIDER = ProviderDriverKind.make("antigravity");
 const DEFAULT_MODEL = "Gemini 3.5 Flash";
 const PRINT_TIMEOUT = "30m";
 const ANTIGRAVITY_RESUME_VERSION = 1 as const;
+
+/**
+ * Ends the CLI and whatever it started.
+ *
+ * Windows needs the tree walk: the handle here belongs to the `agy.cmd` shim's
+ * cmd.exe, and terminating that alone would leave the agent running with nothing
+ * left to stop it by.
+ */
+const killChildTree = (child: ChildProcess): Effect.Effect<void> =>
+  terminateProcessTree(child.pid).pipe(Effect.andThen(Effect.sync(() => child.kill())));
 
 export interface AntigravityAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
@@ -223,12 +234,22 @@ export function makeAntigravityAdapter(
           payload: { model },
         });
 
+        // `agy` is an npm shim, so on Windows it is `agy.cmd` — a name Node
+        // refuses to spawn directly and only finds through PATHEXT. The shared
+        // resolver answers both: the real executable, and whether it has to go
+        // through cmd.exe (with every argument escaped for it).
+        const spawnCommand = yield* resolveSpawnCommand(
+          command,
+          args,
+          options?.environment ? { env: options.environment } : {},
+        );
         const child = yield* Effect.try({
           try: () =>
-            spawn(command, args, {
+            spawn(spawnCommand.command, spawnCommand.args, {
               cwd,
               env: options?.environment,
               stdio: ["ignore", "pipe", "pipe"],
+              shell: spawnCommand.shell,
             }),
           catch: (cause) =>
             new ProviderAdapterProcessError({
@@ -292,7 +313,7 @@ export function makeAntigravityAdapter(
         const child = ctx.activeProcess;
         if (!child) return;
         const interruptedTurnId = turnId ?? ctx.activeTurnId;
-        child.kill();
+        yield* killChildTree(child);
         ctx.activeProcess = undefined;
         ctx.activeTurnId = undefined;
         const updatedAt = yield* nowIso;
@@ -318,10 +339,12 @@ export function makeAntigravityAdapter(
       });
 
     const stopSessionInternal = (ctx: AntigravitySessionContext) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         if (ctx.stopped) return;
         ctx.stopped = true;
-        ctx.activeProcess?.kill();
+        if (ctx.activeProcess) {
+          yield* killChildTree(ctx.activeProcess);
+        }
         ctx.activeProcess = undefined;
         ctx.activeTurnId = undefined;
       });

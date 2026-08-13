@@ -102,6 +102,7 @@ import {
 } from "./serverRuntimeState.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
 import * as NetService from "@t3tools/shared/Net";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";
 import { ServerActivation } from "./serverActivation.ts";
 
@@ -116,9 +117,13 @@ const ApplicationObservabilityLive = ObservabilityLive.pipe(
   Layer.provideMerge(ResourceAttributionLayerLive),
 );
 
+// node-pty carries the ConPTY binding and loads fine from Bun, while Bun's own
+// terminal support stops at POSIX. Windows therefore takes the Node adapter
+// under either runtime rather than losing terminals entirely.
 const PtyAdapterLive = Layer.unwrap(
   Effect.gen(function* () {
-    if (typeof Bun !== "undefined") {
+    const platform = yield* HostProcessPlatform;
+    if (typeof Bun !== "undefined" && platform !== "win32") {
       const BunPtyAdapter = yield* Effect.promise(() => import("./terminal/BunPtyAdapter.ts"));
       return BunPtyAdapter.layer;
     } else {

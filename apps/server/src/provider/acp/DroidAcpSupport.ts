@@ -10,6 +10,7 @@ import * as nodeOs from "node:os";
 import * as nodePath from "node:path";
 
 import { type DroidSettings, ProviderDriverKind } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -60,13 +61,29 @@ export function hasDroidApiKeyEnv(env: NodeJS.ProcessEnv = process.env): boolean
   return getDroidApiKeyEnv(env) !== undefined;
 }
 
-/** Honors PATH first, then falls back to Factory's common `~/.local/bin` install. */
-export function resolveDroidCliBinaryPath(binaryPath?: string | null): string {
+/**
+ * Honors PATH first, then falls back to Factory's common `~/.local/bin` install.
+ *
+ * Windows takes neither branch: the CLI installs as `droid.cmd` or `droid.exe`,
+ * so a stat for an extensionless `droid` can only ever miss, and a `.cmd` has to
+ * be spawned through a shell. Both belong to the shared resolver that
+ * `AcpSessionRuntime` already runs over this command — it walks PATH with
+ * PATHEXT (including the `%USERPROFILE%\.local\bin` entry the Windows startup
+ * probe merges in) and picks the spawn mode. Handing it the bare name is what
+ * lets it do that.
+ */
+export function resolveDroidCliBinaryPath(
+  binaryPath: string | null | undefined,
+  platform: NodeJS.Platform,
+): string {
   const configured = binaryPath?.trim();
   if (configured) {
     return configured;
   }
   const name = "droid";
+  if (platform === "win32") {
+    return name;
+  }
   const searchPath = process.env.PATH ?? "";
   for (const directory of searchPath.split(nodePath.delimiter)) {
     if (!directory.trim()) {
@@ -77,11 +94,9 @@ export function resolveDroidCliBinaryPath(binaryPath?: string | null): string {
       return candidate;
     }
   }
-  if (process.platform !== "win32") {
-    const localBin = nodePath.join(nodeOs.homedir(), ".local", "bin", name);
-    if (existsSync(localBin)) {
-      return localBin;
-    }
+  const localBin = nodePath.join(nodeOs.homedir(), ".local", "bin", name);
+  if (existsSync(localBin)) {
+    return localBin;
   }
   return name;
 }
@@ -89,6 +104,7 @@ export function resolveDroidCliBinaryPath(binaryPath?: string | null): string {
 export function buildDroidAcpSpawnInput(
   droidSettings: DroidAcpRuntimeSettings | null | undefined,
   cwd: string,
+  platform: NodeJS.Platform,
   environment?: NodeJS.ProcessEnv,
 ): AcpSessionRuntime.AcpSpawnInput {
   const args = ["exec", "--output-format", "acp"];
@@ -106,7 +122,7 @@ export function buildDroidAcpSpawnInput(
   }
 
   return {
-    command: resolveDroidCliBinaryPath(droidSettings?.binaryPath),
+    command: resolveDroidCliBinaryPath(droidSettings?.binaryPath, platform),
     args,
     cwd,
     ...(environment ? { env: environment } : {}),
@@ -127,10 +143,11 @@ export const makeDroidAcpRuntime = (
   Crypto.Crypto | Scope.Scope
 > =>
   Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
     const acpContext = yield* Layer.build(
       AcpSessionRuntime.layer({
         ...input,
-        spawn: buildDroidAcpSpawnInput(input.droidSettings, input.cwd, input.environment),
+        spawn: buildDroidAcpSpawnInput(input.droidSettings, input.cwd, platform, input.environment),
         authMethodId: resolveDroidAcpAuthMethodId(input.environment),
       }).pipe(
         Layer.provide(

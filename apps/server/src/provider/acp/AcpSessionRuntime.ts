@@ -19,7 +19,7 @@ import * as EffectAcpClient from "effect-acp/client";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { resolveSpawnCommand, terminateProcessTree } from "@t3tools/shared/shell";
 
 import {
   collectSessionConfigOptionValues,
@@ -385,6 +385,10 @@ export const make = (
             }),
         ),
       );
+
+    // On Windows the spawner's handle is the `.cmd` shim's, so its kill would
+    // leave the agent process running past the session it belongs to.
+    yield* Scope.addFinalizer(runtimeScope, terminateProcessTree(child.pid));
 
     const acpContext = yield* Layer.build(
       EffectAcpClient.layerChildProcess(child, {

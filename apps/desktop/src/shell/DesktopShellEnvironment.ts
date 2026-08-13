@@ -1,3 +1,4 @@
+import { resolveKnownWindowsCliDirs } from "@t3tools/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -211,26 +212,11 @@ const listLoginShellCandidates = (config: ShellEnvironmentConfig): ReadonlyArray
   return candidates;
 };
 
-const knownWindowsCliDirs = (env: NodeJS.ProcessEnv): ReadonlyArray<string> => [
-  ...trimNonEmpty(env.APPDATA).pipe(
-    Option.match({
-      onNone: () => [],
-      onSome: (value) => [`${value}\\npm`],
-    }),
-  ),
-  ...trimNonEmpty(env.LOCALAPPDATA).pipe(
-    Option.match({
-      onNone: () => [],
-      onSome: (value) => [`${value}\\Programs\\nodejs`, `${value}\\Volta\\bin`, `${value}\\pnpm`],
-    }),
-  ),
-  ...trimNonEmpty(env.USERPROFILE).pipe(
-    Option.match({
-      onNone: () => [],
-      onSome: (value) => [`${value}\\.local\\bin`, `${value}\\.bun\\bin`, `${value}\\scoop\\shims`],
-    }),
-  ),
-];
+// The shared list, not a second copy of it: the desktop repairs the PATH the
+// server then resolves provider CLIs against, so a directory known to one and
+// not the other is a provider that appears installed in one launch mode and
+// missing in the other.
+const knownWindowsCliDirs = resolveKnownWindowsCliDirs;
 
 const startMarker = (name: string) => `__T3CODE_ENV_${name}_START__`;
 const endMarker = (name: string) => `__T3CODE_ENV_${name}_END__`;

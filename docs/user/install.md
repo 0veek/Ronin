@@ -67,6 +67,20 @@ Each provider CLI must be on the server's `PATH`, or have an explicit binary pat
 manager or a non-standard install location keeps the CLI off the `PATH` of the shell that
 started Ronin.
 
+### Windows
+
+Ronin runs natively on Windows. There is no WSL step: it launches the same Windows CLIs you
+run in PowerShell or Terminal, including the `.cmd` shims npm installs.
+
+Beyond `PATH`, Ronin looks in the places Windows package managers install CLIs — npm, pnpm,
+Volta, Bun, Scoop, Cargo, WinGet, Chocolatey, and `%USERPROFILE%\.local\bin` — so a provider
+usually works without any configuration. It also reads the `PATH` your PowerShell profile sets,
+which covers version managers such as fnm.
+
+Install a CLI while Ronin is running and it can take up to 30 seconds to appear. If the
+installer added a new directory to your `PATH`, restart Ronin — it reads `PATH` at launch, so a
+brand new entry only counts from the next one.
+
 ### When Auth Is Needed
 
 Provider auth is required before you start a session with that provider, not before you start

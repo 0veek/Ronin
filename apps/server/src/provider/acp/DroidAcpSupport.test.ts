@@ -20,7 +20,11 @@ describe("resolveDroidAcpBaseModelId", () => {
 
 describe("buildDroidAcpSpawnInput", () => {
   it("builds the default Droid ACP command", () => {
-    const spawn = buildDroidAcpSpawnInput({ binaryPath: "/usr/local/bin/droid" }, "/tmp/project");
+    const spawn = buildDroidAcpSpawnInput(
+      { binaryPath: "/usr/local/bin/droid" },
+      "/tmp/project",
+      "linux",
+    );
     expect(spawn).toEqual({
       command: "/usr/local/bin/droid",
       args: ["exec", "--output-format", "acp"],
@@ -37,6 +41,7 @@ describe("buildDroidAcpSpawnInput", () => {
         reasoningEffort: "high",
       },
       "/tmp/project",
+      "linux",
     );
 
     expect(spawn.command).toBe("/usr/local/bin/droid");
@@ -64,7 +69,14 @@ describe("resolveDroidAcpAuthMethodId", () => {
 
 describe("resolveDroidCliBinaryPath", () => {
   it("returns a configured path unchanged", () => {
-    expect(resolveDroidCliBinaryPath("/opt/factory/droid")).toBe("/opt/factory/droid");
+    expect(resolveDroidCliBinaryPath("/opt/factory/droid", "linux")).toBe("/opt/factory/droid");
+  });
+
+  // The Windows CLI is `droid.cmd` or `droid.exe`, which only the shared spawn
+  // resolver can find and launch, and it needs the bare name to do it.
+  it("leaves the Windows lookup to the spawn resolver", () => {
+    expect(resolveDroidCliBinaryPath(undefined, "win32")).toBe("droid");
+    expect(resolveDroidCliBinaryPath("C:\\Tools\\droid.cmd", "win32")).toBe("C:\\Tools\\droid.cmd");
   });
 });
 

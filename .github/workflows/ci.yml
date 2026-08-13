@@ -113,6 +113,44 @@ jobs:
       - name: Test resource monitor
         run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
 
+  windows:
+    name: Windows Regression
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      # Ronin runs natively on Windows — no WSL — so every path that branches on
+      # win32 is only ever exercised for real here. The Linux suite runs these
+      # same files with a simulated platform, which cannot speak for the real
+      # `node:path`, PATHEXT lookups, or ConPTY underneath them.
+      - name: Test Windows command resolution and shell environment
+        run: vp test run packages/shared/src/shell.test.ts apps/desktop/src/shell/DesktopShellEnvironment.test.ts apps/server/src/os-jank.test.ts
+
+      - name: Test Windows process spawning
+        run: vp test run apps/server/src/processRunner.test.ts apps/server/src/process/externalLauncher.test.ts apps/server/src/provider/acp/DroidAcpSupport.test.ts
+
+      - name: Test Windows terminals and workspace paths
+        run: vp test run apps/server/src/terminal/Manager.test.ts apps/server/src/terminal/NodePtyAdapter.test.ts apps/server/src/workspace/WorkspaceEntries.test.ts
+
+      - name: Test Windows desktop backend configuration
+        run: vp test run apps/desktop/src/backend/DesktopBackendConfiguration.test.ts
+
   release_smoke:
     name: Release Smoke
     runs-on: blacksmith-8vcpu-ubuntu-2404

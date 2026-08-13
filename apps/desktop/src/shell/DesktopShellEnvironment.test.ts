@@ -279,6 +279,8 @@ describe("DesktopShellEnvironment", () => {
           "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
+          "C:\\Users\\testuser\\.cargo\\bin",
+          "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links",
           "C:\\Custom\\Bin",
         ].join(";"),
       );

@@ -663,6 +663,56 @@ export const resolveSpawnCommand = Effect.fn("shell.resolveSpawnCommand")(functi
   };
 });
 
+/**
+ * Terminates a Windows process and everything it started.
+ *
+ * Windows has no process group to signal, and a provider CLI installed by npm is
+ * a `.cmd` shim that {@link resolveSpawnCommand} deliberately routes through
+ * cmd.exe — so the handle the spawner holds belongs to the shim, and killing it
+ * leaves the agent itself running. `taskkill /T` walks the parent-pid tree
+ * instead, which is what actually ends the agent.
+ *
+ * Detached and unwaited: this runs from teardown paths, where blocking the event
+ * loop costs more than not learning the outcome. A pid that has already exited
+ * fails the call and is also the outcome the caller wanted.
+ *
+ * Call this only on Windows — {@link terminateProcessTree} is the same thing
+ * with the platform check already in it.
+ */
+export function killWindowsProcessTree(pid: number | undefined): void {
+  if (pid === undefined || !Number.isInteger(pid) || pid <= 0) return;
+
+  try {
+    const killer = NodeChildProcess.spawn("taskkill", ["/pid", String(pid), "/t", "/f"], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    killer.on("error", () => {});
+    killer.unref();
+  } catch {
+    // Spawning the killer is best-effort; the process is being torn down either
+    // way and a throw here would replace a real teardown error with this one.
+  }
+}
+
+/**
+ * Ends a spawned process tree, on the platforms that need to be told to.
+ *
+ * A no-op away from Windows, where {@link resolveSpawnCommand} never inserts a
+ * shell and the spawner therefore holds the CLI's own process. Register it as a
+ * scope finalizer next to the spawn it covers — finalizers run
+ * last-registered-first, so it lands before the spawner's own kill, while the
+ * tree is still walkable from the root pid.
+ */
+export const terminateProcessTree = Effect.fn("shell.terminateProcessTree")(function* (
+  pid: number | undefined,
+) {
+  const platform = yield* HostProcessPlatform;
+  if (platform !== "win32") return;
+  killWindowsProcessTree(pid);
+});
+
 export const isCommandAvailable = Effect.fn("shell.isCommandAvailable")(function* (
   command: string,
   options: CommandAvailabilityOptions = {},
@@ -677,6 +727,8 @@ export function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArra
   const appData = env.APPDATA?.trim();
   const localAppData = env.LOCALAPPDATA?.trim();
   const userProfile = env.USERPROFILE?.trim();
+  const programFiles = (env.ProgramFiles ?? env.PROGRAMFILES)?.trim();
+  const programData = env.ProgramData?.trim();
 
   return [
     ...(appData ? [`${appData}\\npm`] : []),
@@ -685,6 +737,15 @@ export function resolveKnownWindowsCliDirs(env: NodeJS.ProcessEnv): ReadonlyArra
     ...(userProfile
       ? [`${userProfile}\\.local\\bin`, `${userProfile}\\.bun\\bin`, `${userProfile}\\scoop\\shims`]
       : []),
+    // Cargo installs the provider CLIs that ship as Rust binaries; winget and
+    // Chocolatey shim whatever they install into one directory each. A machine
+    // scoped install writes to none of the user directories above, and a desktop
+    // session started from Explorer can carry a PATH that predates the install.
+    ...(userProfile ? [`${userProfile}\\.cargo\\bin`] : []),
+    ...(localAppData ? [`${localAppData}\\Microsoft\\WinGet\\Links`] : []),
+    ...(programData ? [`${programData}\\chocolatey\\bin`] : []),
+    // The MSI's Node, which is also where a machine-wide `npm` lives.
+    ...(programFiles ? [`${programFiles}\\nodejs`] : []),
   ];
 }
 

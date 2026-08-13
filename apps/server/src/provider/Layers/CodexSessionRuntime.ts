@@ -16,7 +16,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { resolveSpawnCommand, terminateProcessTree } from "@t3tools/shared/shell";
 import { normalizeModelSlug } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -893,6 +893,10 @@ export const makeCodexSessionRuntime = (
             }),
         ),
       );
+
+    // On Windows the spawner's handle is the `.cmd` shim's, so its kill would
+    // leave the app server running past the session that owns it.
+    yield* Scope.addFinalizer(runtimeScope, terminateProcessTree(child.pid));
 
     const clientContext = yield* CodexClient.layerChildProcess(child).pipe(
       Layer.build,

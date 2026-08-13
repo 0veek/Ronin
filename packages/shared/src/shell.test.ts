@@ -330,6 +330,8 @@ describe("resolveKnownWindowsCliDirs", () => {
         APPDATA: "C:\\Users\\testuser\\AppData\\Roaming",
         LOCALAPPDATA: "C:\\Users\\testuser\\AppData\\Local",
         USERPROFILE: "C:\\Users\\testuser",
+        ProgramData: "C:\\ProgramData",
+        ProgramFiles: "C:\\Program Files",
       }),
     ).toEqual([
       "C:\\Users\\testuser\\AppData\\Roaming\\npm",
@@ -339,6 +341,23 @@ describe("resolveKnownWindowsCliDirs", () => {
       "C:\\Users\\testuser\\.local\\bin",
       "C:\\Users\\testuser\\.bun\\bin",
       "C:\\Users\\testuser\\scoop\\shims",
+      "C:\\Users\\testuser\\.cargo\\bin",
+      "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links",
+      "C:\\ProgramData\\chocolatey\\bin",
+      "C:\\Program Files\\nodejs",
+    ]);
+  });
+
+  it("skips the machine-wide directories when their variables are absent", () => {
+    expect(
+      resolveKnownWindowsCliDirs({
+        USERPROFILE: "C:\\Users\\testuser",
+      }),
+    ).toEqual([
+      "C:\\Users\\testuser\\.local\\bin",
+      "C:\\Users\\testuser\\.bun\\bin",
+      "C:\\Users\\testuser\\scoop\\shims",
+      "C:\\Users\\testuser\\.cargo\\bin",
     ]);
   });
 });
@@ -480,6 +499,8 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
           "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
+          "C:\\Users\\testuser\\.cargo\\bin",
+          "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links",
           "C:\\Shell\\Bin",
           "C:\\Windows\\System32",
         ].join(";"),
@@ -529,6 +550,8 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
           "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
+          "C:\\Users\\testuser\\.cargo\\bin",
+          "C:\\Users\\testuser\\AppData\\Local\\Microsoft\\WinGet\\Links",
           "C:\\Shell\\Bin",
         ].join(";"),
         FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
@@ -570,6 +593,7 @@ effectIt.layer(NodeServices.layer)("resolveWindowsEnvironment", (it) => {
           "C:\\Users\\testuser\\.local\\bin",
           "C:\\Users\\testuser\\.bun\\bin",
           "C:\\Users\\testuser\\scoop\\shims",
+          "C:\\Users\\testuser\\.cargo\\bin",
           "C:\\Windows\\System32",
         ].join(";"),
         FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",

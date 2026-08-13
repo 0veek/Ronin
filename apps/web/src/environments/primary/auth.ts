@@ -175,6 +175,21 @@ export function takePairingTokenFromUrl(): string | null {
   return token;
 }
 
+/**
+ * Whether this renderer is the desktop shell's, judged without the preload.
+ *
+ * `window.desktopBridge` cannot answer this: a preload that failed to load is
+ * one of the reasons the credential goes missing, and that case has to stay
+ * distinguishable from a browser tab, where the pairing prompt is correct.
+ * The custom scheme is set by the shell itself, so it survives that failure.
+ */
+function isDesktopRenderer(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    (window.location.protocol === "t3code:" || window.location.protocol === "t3code-dev:")
+  );
+}
+
 function getDesktopBootstrapCredential(): string | null {
   // Both backends share the same bootstrap token (DesktopBackendConfiguration
   // mints one tokenRef and feeds it to both resolvers), so picking the
@@ -328,6 +343,18 @@ async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
     return {
       status: "requires-auth",
       auth: currentSession.auth,
+      // In the desktop shell there is nothing for a person to pair with: the
+      // shell mints this credential every launch and hands it over through the
+      // preload. Reaching the pairing prompt here means the bridge or the token
+      // never arrived, and saying so beats a prompt that cannot be satisfied.
+      ...(isDesktopRenderer()
+        ? {
+            errorMessage:
+              window.desktopBridge === undefined
+                ? "The desktop bridge did not load, so this window could not sign in to its own backend. Restarting Ronin usually clears it."
+                : "The desktop backend did not hand this window a sign-in token. Restarting Ronin usually clears it.",
+          }
+        : {}),
     };
   }
 

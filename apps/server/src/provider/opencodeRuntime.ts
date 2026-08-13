@@ -33,7 +33,7 @@ import { isWindowsCommandNotFound } from "../processRunner.ts";
 import { collectStreamAsString } from "./providerSnapshot.ts";
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { killWindowsProcessTree, resolveSpawnCommand } from "@t3tools/shared/shell";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
@@ -517,7 +517,12 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
 
       const killOpenCodeProcessGroup = (signal: NodeJS.Signals) =>
         hostPlatform === "win32"
-          ? child.kill({ killSignal: signal, forceKillAfter: "1 second" }).pipe(Effect.asVoid)
+          ? // The direct child is the `.cmd` shim when the CLI came from npm, so
+            // the tree walk is what reaches the server it started.
+            Effect.sync(() => killWindowsProcessTree(child.pid)).pipe(
+              Effect.andThen(child.kill({ killSignal: signal, forceKillAfter: "1 second" })),
+              Effect.asVoid,
+            )
           : Effect.sync(() => {
               try {
                 process.kill(-Number(child.pid), signal);

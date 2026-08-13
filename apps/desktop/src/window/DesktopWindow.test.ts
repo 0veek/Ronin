@@ -877,9 +877,9 @@ describe("DesktopWindow", () => {
     }),
   );
 
-  it("retries only transient failures for the development renderer", () => {
+  it("retries only transient same-origin renderer load failures", () => {
     assert.isTrue(
-      DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
+      DesktopWindow.isRetryableRendererLoadFailure({
         applicationUrl: "t3code-dev://app/",
         errorCode: -102,
         isMainFrame: true,
@@ -887,7 +887,7 @@ describe("DesktopWindow", () => {
       }),
     );
     assert.isFalse(
-      DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
+      DesktopWindow.isRetryableRendererLoadFailure({
         applicationUrl: "t3code-dev://app/",
         errorCode: -3,
         isMainFrame: true,
@@ -895,7 +895,7 @@ describe("DesktopWindow", () => {
       }),
     );
     assert.isFalse(
-      DesktopWindow.isRetryableDevelopmentRendererLoadFailure({
+      DesktopWindow.isRetryableRendererLoadFailure({
         applicationUrl: "t3code-dev://app/",
         errorCode: -102,
         isMainFrame: true,

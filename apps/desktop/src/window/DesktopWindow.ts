@@ -28,14 +28,21 @@ const TITLEBAR_COLOR = "#01000000"; // #00000000 does not work correctly on Linu
 const TITLEBAR_LIGHT_SYMBOL_COLOR = "#1f2937";
 const TITLEBAR_DARK_SYMBOL_COLOR = "#f8fafc";
 const MAIN_WINDOW_BOUNDS_PERSIST_DEBOUNCE_MS = 500;
-const DEVELOPMENT_LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
+const LOAD_RETRY_DELAYS_MS = [100, 250, 500, 1_000, 2_000] as const;
+// The renderer is proxied from the backend, so a first paint can land in the
+// gap between "backend answered its readiness probe" and "backend serves the
+// client bundle" — and a packaged app that does not retry stays blank forever,
+// with no reload affordance a user could reach. Bounded so a backend that is
+// genuinely gone leaves the error page up instead of reload-looping: recovery
+// from that is the backend-ready reload below, not this ramp.
+const MAX_LOAD_RETRY_ATTEMPTS = 8;
 // Renderer crash (usually V8 OOM on long sessions) recovery: reload after a
 // short delay, at most MAX_ATTEMPTS times per rolling WINDOW so a renderer
 // that dies on boot cannot reload-loop forever.
 const RENDERER_RECOVERY_RELOAD_DELAY_MS = 500;
 const RENDERER_RECOVERY_MAX_ATTEMPTS = 3;
 const RENDERER_RECOVERY_WINDOW_MS = 60_000;
-const DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES = new Set([
+const RETRYABLE_LOAD_ERROR_CODES = new Set([
   -2, // ERR_FAILED
   -7, // ERR_TIMED_OUT
   -9, // ERR_UNEXPECTED (custom protocol handler rejected)
@@ -167,7 +174,7 @@ export function isSameOriginRendererNavigation(input: {
   }
 }
 
-export function isRetryableDevelopmentRendererLoadFailure(input: {
+export function isRetryableRendererLoadFailure(input: {
   readonly applicationUrl: string;
   readonly errorCode: number;
   readonly isMainFrame: boolean;
@@ -175,7 +182,7 @@ export function isRetryableDevelopmentRendererLoadFailure(input: {
 }): boolean {
   return (
     input.isMainFrame &&
-    DEVELOPMENT_RETRYABLE_LOAD_ERROR_CODES.has(input.errorCode) &&
+    RETRYABLE_LOAD_ERROR_CODES.has(input.errorCode) &&
     isSameOriginRendererNavigation({
       applicationUrl: input.applicationUrl,
       navigationUrl: input.validatedUrl,
@@ -256,6 +263,11 @@ export const make = Effect.gen(function* () {
   // createMainIfBackendReady, which gates the post-readiness window
   // open in development and the macOS "activate without windows" path.
   const backendReadyRef = yield* Ref.make(false);
+  // Whether the main window's last main-frame load failed, and how to ask that
+  // window to try again. A renderer that never mounted cannot offer a reload
+  // affordance of its own, so the recovery has to come from out here.
+  let rendererLoadFailed = false;
+  let reloadMainWindow: (() => void) | undefined;
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -552,15 +564,15 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    let developmentLoadRetryIndex = 0;
-    let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
+    let loadRetryIndex = 0;
+    let loadRetryFiber: Fiber.Fiber<void, never> | undefined;
     let rendererRecoveryTimestamps: number[] = [];
-    const clearDevelopmentLoadRetry = () => {
-      if (developmentLoadRetryFiber === undefined) {
+    const clearLoadRetry = () => {
+      if (loadRetryFiber === undefined) {
         return;
       }
-      const retryFiber = developmentLoadRetryFiber;
-      developmentLoadRetryFiber = undefined;
+      const retryFiber = loadRetryFiber;
+      loadRetryFiber = undefined;
       runFork(Fiber.interrupt(retryFiber));
     };
     const loadApplication = () => {
@@ -569,22 +581,24 @@ export const make = Effect.gen(function* () {
       }
       void window.loadURL(applicationUrl).catch(() => undefined);
     };
-    const scheduleDevelopmentLoadRetry = () => {
-      if (developmentLoadRetryFiber !== undefined || window.isDestroyed()) {
+    reloadMainWindow = loadApplication;
+    const scheduleLoadRetry = () => {
+      if (
+        loadRetryFiber !== undefined ||
+        window.isDestroyed() ||
+        loadRetryIndex >= MAX_LOAD_RETRY_ATTEMPTS
+      ) {
         return undefined;
       }
 
-      const retryIndex = Math.min(
-        developmentLoadRetryIndex,
-        DEVELOPMENT_LOAD_RETRY_DELAYS_MS.length - 1,
-      );
-      const retryInMs = DEVELOPMENT_LOAD_RETRY_DELAYS_MS[retryIndex] ?? 2_000;
-      developmentLoadRetryIndex += 1;
-      developmentLoadRetryFiber = runFork(
+      const retryIndex = Math.min(loadRetryIndex, LOAD_RETRY_DELAYS_MS.length - 1);
+      const retryInMs = LOAD_RETRY_DELAYS_MS[retryIndex] ?? 2_000;
+      loadRetryIndex += 1;
+      loadRetryFiber = runFork(
         Effect.sleep(retryInMs).pipe(
           Effect.andThen(
             Effect.sync(() => {
-              developmentLoadRetryFiber = undefined;
+              loadRetryFiber = undefined;
               if (!window.isDestroyed()) {
                 loadApplication();
               }
@@ -605,8 +619,9 @@ export const make = Effect.gen(function* () {
       ) {
         return;
       }
-      clearDevelopmentLoadRetry();
-      developmentLoadRetryIndex = 0;
+      clearLoadRetry();
+      loadRetryIndex = 0;
+      rendererLoadFailed = false;
       window.setTitle(environment.displayName);
     });
     window.webContents.on(
@@ -615,16 +630,15 @@ export const make = Effect.gen(function* () {
         if (!isMainFrame) {
           return;
         }
-        const retryInMs =
-          environment.isDevelopment &&
-          isRetryableDevelopmentRendererLoadFailure({
-            applicationUrl,
-            errorCode,
-            isMainFrame,
-            validatedUrl: validatedURL,
-          })
-            ? scheduleDevelopmentLoadRetry()
-            : undefined;
+        rendererLoadFailed = true;
+        const retryInMs = isRetryableRendererLoadFailure({
+          applicationUrl,
+          errorCode,
+          isMainFrame,
+          validatedUrl: validatedURL,
+        })
+          ? scheduleLoadRetry()
+          : undefined;
         void runPromise(
           logWindowWarning("main window failed to load", {
             errorCode,
@@ -635,6 +649,17 @@ export const make = Effect.gen(function* () {
         );
       },
     );
+    // A preload that throws leaves `window.desktopBridge` undefined, and the
+    // renderer can only render that as "this window is not signed in" — the
+    // cause is invisible unless it is logged from out here.
+    window.webContents.on("preload-error", (_event, preloadPath, error) => {
+      void runPromise(
+        logWindowWarning("preload script failed", {
+          preloadPath,
+          error: error.message,
+        }),
+      );
+    });
     window.webContents.on("render-process-gone", (_event, details) => {
       const recoverable =
         details.reason === "crashed" ||
@@ -690,7 +715,7 @@ export const make = Effect.gen(function* () {
     }
 
     window.on("closed", () => {
-      clearDevelopmentLoadRetry();
+      clearLoadRetry();
       clearBoundsPersist();
       void runPromise(electronWindow.clearMain(Option.some(window)));
     });
@@ -719,6 +744,19 @@ export const make = Effect.gen(function* () {
     return window;
   }).pipe(Effect.withSpan("desktop.window.revealOrCreateMain"));
 
+  // A backend that has just reported ready is the one event that makes another
+  // load attempt worth making: the bounded retry ramp may already be spent, and
+  // a backend restart otherwise leaves the existing window sitting on whatever
+  // error page it failed onto.
+  const reloadMainWindowAfterFailedLoad = Effect.gen(function* () {
+    if (!rendererLoadFailed) return;
+    const existingWindow = yield* currentMainWindow;
+    if (Option.isNone(existingWindow) || existingWindow.value.isDestroyed()) return;
+    rendererLoadFailed = false;
+    yield* logWindowInfo("reloading main window after the backend became ready");
+    reloadMainWindow?.();
+  }).pipe(Effect.withSpan("desktop.window.reloadMainWindowAfterFailedLoad"));
+
   const createMainIfBackendReady = Effect.gen(function* () {
     const backendReady = yield* Ref.get(backendReadyRef);
     if (!backendReady) return;
@@ -744,6 +782,7 @@ export const make = Effect.gen(function* () {
       yield* Ref.set(backendReadyRef, true);
       yield* logWindowInfo("backend ready", { source: "http", url: httpBaseUrl.href });
       yield* createMainIfBackendReady;
+      yield* reloadMainWindowAfterFailedLoad;
     }),
     handleBackendNotReady: Ref.set(backendReadyRef, false).pipe(
       Effect.withSpan("desktop.window.handleBackendNotReady"),
