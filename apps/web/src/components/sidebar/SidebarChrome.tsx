@@ -1,10 +1,5 @@
-import {
-  ArrowLeftIcon,
-  ChartNoAxesColumnIcon,
-  GitPullRequestIcon,
-  SettingsIcon,
-} from "lucide-react";
-import { memo, useCallback } from "react";
+import { ChartSplineIcon, GitPullRequestIcon, Settings2Icon } from "lucide-react";
+import { memo, useCallback, type ReactNode } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -18,17 +13,12 @@ import {
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
-import {
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarTrigger,
-  useSidebar,
-} from "../ui/sidebar";
+import { SidebarFooter, SidebarHeader, SidebarTrigger, useSidebar } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUsageMeter } from "./SidebarUsageMeter";
+
+type SidebarFooterPage = "usage" | "pull-requests" | "settings";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -128,17 +118,56 @@ function RoninAppIcon() {
   return <img alt="" className="size-5 shrink-0" src="/apple-touch-icon.png" />;
 }
 
+function SidebarFooterIconButton({
+  label,
+  isActive,
+  onClick,
+  children,
+}: {
+  label: string;
+  isActive: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-current={isActive ? "page" : undefined}
+            aria-label={label}
+            className={cn(
+              "flex h-8 min-w-0 flex-1 items-center justify-center rounded-[var(--control-radius)] text-sidebar-muted-foreground outline-hidden ring-ring transition-colors",
+              "hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+              "focus-visible:ring-2",
+              "[&_svg]:size-4 [&_svg]:shrink-0",
+              isActive && "bg-sidebar-row-selected text-sidebar-foreground",
+            )}
+            onClick={onClick}
+          >
+            {children}
+          </button>
+        }
+      />
+      <TooltipPopup side="top">{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   const canGoBack = useCanGoBack();
   const currentFooterPage = useLocation({
-    select: (location) =>
+    select: (location): SidebarFooterPage | null =>
       location.pathname === "/usage"
         ? "usage"
         : location.pathname === "/pull-requests"
           ? "pull-requests"
-          : null,
+          : location.pathname === "/settings" || location.pathname.startsWith("/settings/")
+            ? "settings"
+            : null,
   });
   const primaryEnvironment = usePrimaryEnvironment();
   const pullRequestsSupported =
@@ -148,30 +177,36 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       setOpenMobile(false);
     }
   }, [isMobile, setOpenMobile]);
+  const leaveOrOpen = useCallback(
+    (page: SidebarFooterPage, open: () => void) => {
+      closeMobileSidebar();
+      if (currentFooterPage === page) {
+        if (canGoBack) {
+          window.history.back();
+          return;
+        }
+        void navigate({ to: "/" });
+        return;
+      }
+      open();
+    },
+    [canGoBack, closeMobileSidebar, currentFooterPage, navigate],
+  );
   const handlePullRequestsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
-  }, [closeMobileSidebar, navigate]);
+    leaveOrOpen("pull-requests", () => {
+      void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
+    });
+  }, [leaveOrOpen, navigate]);
   const handleSettingsClick = useCallback(() => {
-    closeMobileSidebar();
-    void navigate({ to: "/settings" });
-  }, [closeMobileSidebar, navigate]);
-
+    leaveOrOpen("settings", () => {
+      void navigate({ to: "/settings" });
+    });
+  }, [leaveOrOpen, navigate]);
   const handleUsageClick = useCallback(() => {
-    if (isMobile) {
-      setOpenMobile(false);
-    }
-    void navigate({ to: "/usage" });
-  }, [isMobile, navigate, setOpenMobile]);
-
-  const handleBackClick = useCallback(() => {
-    closeMobileSidebar();
-    if (canGoBack) {
-      window.history.back();
-      return;
-    }
-    void navigate({ to: "/" });
-  }, [canGoBack, closeMobileSidebar, navigate]);
+    leaveOrOpen("usage", () => {
+      void navigate({ to: "/usage" });
+    });
+  }, [leaveOrOpen, navigate]);
 
   return (
     // The footer owns no padding of its own: the meter is a full-bleed region
@@ -180,44 +215,31 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter className="gap-0 p-0">
       <div className="flex flex-col gap-2 p-[var(--sidebar-content-inset)]">
         <SidebarProviderUpdatePill />
-        <SidebarMenu>
-          {currentFooterPage === "pull-requests" ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleBackClick}>
-                <ArrowLeftIcon />
-                <span>Back</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : pullRequestsSupported ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handlePullRequestsClick}>
-                <GitPullRequestIcon />
-                <span>Pull Requests</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+        <nav aria-label="Workspace" className="flex items-center">
+          {pullRequestsSupported ? (
+            <SidebarFooterIconButton
+              isActive={currentFooterPage === "pull-requests"}
+              label="Pull Requests"
+              onClick={handlePullRequestsClick}
+            >
+              <GitPullRequestIcon />
+            </SidebarFooterIconButton>
           ) : null}
-          {currentFooterPage === "usage" ? (
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleBackClick}>
-                <ArrowLeftIcon />
-                <span>Back</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ) : (
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={handleUsageClick}>
-                <ChartNoAxesColumnIcon />
-                <span>Stats</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          )}
-          <SidebarMenuItem>
-            <SidebarMenuButton onClick={handleSettingsClick}>
-              <SettingsIcon />
-              <span>Settings</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+          <SidebarFooterIconButton
+            isActive={currentFooterPage === "usage"}
+            label="Stats"
+            onClick={handleUsageClick}
+          >
+            <ChartSplineIcon />
+          </SidebarFooterIconButton>
+          <SidebarFooterIconButton
+            isActive={currentFooterPage === "settings"}
+            label="Settings"
+            onClick={handleSettingsClick}
+          >
+            <Settings2Icon />
+          </SidebarFooterIconButton>
+        </nav>
       </div>
       {/* Last thing in the sidebar. It is a readout rather than a control, so
           it sits below the navigation and its top hairline closes the column
