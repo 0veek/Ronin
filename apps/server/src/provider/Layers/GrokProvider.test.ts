@@ -6,9 +6,118 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { GrokSettings } from "@t3tools/contracts";
 
-import { buildInitialGrokProviderSnapshot, checkGrokProviderStatus } from "./GrokProvider.ts";
+import {
+  buildGrokDiscoveredModelsFromSessionModelState,
+  buildInitialGrokProviderSnapshot,
+  checkGrokProviderStatus,
+} from "./GrokProvider.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
+
+function reasoningEffortDescriptor(model: { capabilities?: unknown } | undefined) {
+  const descriptors = (
+    model?.capabilities as
+      | { optionDescriptors?: ReadonlyArray<{ id: string; type: string }> }
+      | undefined
+  )?.optionDescriptors;
+  return descriptors?.find((descriptor) => descriptor.id === "reasoningEffort");
+}
+
+describe("buildGrokDiscoveredModelsFromSessionModelState", () => {
+  // Shape copied from what `grok 1.0.3` returns from session/new.
+  const advertised = {
+    currentModelId: "grok-4.6",
+    availableModels: [
+      {
+        modelId: "grok-4.6",
+        name: "Grok 4.6",
+        _meta: {
+          reasoningEfforts: [
+            { id: "xhigh", value: "xhigh", label: "Extra High Effort", default: true },
+            { id: "high", value: "high", label: "High Effort", default: true },
+            { id: "medium", value: "medium", label: "Medium Effort", default: false },
+            { id: "low", value: "low", label: "Low Effort", default: false },
+          ],
+        },
+      },
+      {
+        modelId: "grok-4.5",
+        name: "Grok 4.5",
+        _meta: {
+          reasoningEfforts: [
+            { id: "high", value: "high", label: "High Effort", default: true },
+            { id: "medium", value: "medium", label: "Medium Effort", default: false },
+          ],
+        },
+      },
+    ],
+  };
+
+  it("takes the model list from the CLI rather than a hardcoded catalog", () => {
+    const models = buildGrokDiscoveredModelsFromSessionModelState(advertised);
+    expect(models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-4.5"]);
+    expect(models.map((model) => model.name)).toEqual(["Grok 4.6", "Grok 4.5"]);
+  });
+
+  it("syncs each model's reasoning-effort menu from its advertised efforts", () => {
+    const models = buildGrokDiscoveredModelsFromSessionModelState(advertised);
+
+    const latest = reasoningEffortDescriptor(models[0]);
+    expect(latest?.type).toBe("select");
+    if (latest?.type === "select") {
+      const descriptor = latest as unknown as {
+        options: ReadonlyArray<{ id: string }>;
+        currentValue?: string;
+      };
+      expect(descriptor.options.map((option) => option.id)).toEqual([
+        "xhigh",
+        "high",
+        "medium",
+        "low",
+      ]);
+      // Grok flags both xhigh and high as default; a select takes one.
+      expect(descriptor.currentValue).toBe("xhigh");
+    }
+
+    // 4.5 advertises no xhigh, so it must not offer one.
+    const previous = reasoningEffortDescriptor(models[1]);
+    if (previous?.type === "select") {
+      const descriptor = previous as unknown as {
+        options: ReadonlyArray<{ id: string }>;
+        currentValue?: string;
+      };
+      expect(descriptor.options.map((option) => option.id)).toEqual(["high", "medium"]);
+      expect(descriptor.currentValue).toBe("high");
+    }
+  });
+
+  it("falls back to the static effort menu when a model advertises none", () => {
+    const models = buildGrokDiscoveredModelsFromSessionModelState({
+      currentModelId: "grok-4.6",
+      availableModels: [{ modelId: "grok-4.6", name: "Grok 4.6" }],
+    });
+    const effort = reasoningEffortDescriptor(models[0]);
+    if (effort?.type === "select") {
+      const descriptor = effort as unknown as { options: ReadonlyArray<{ id: string }> };
+      expect(descriptor.options.map((option) => option.id)).toEqual([
+        "none",
+        "low",
+        "medium",
+        "high",
+      ]);
+    }
+  });
+
+  it("returns nothing when the agent advertises no models", () => {
+    expect(buildGrokDiscoveredModelsFromSessionModelState(null)).toEqual([]);
+    expect(
+      buildGrokDiscoveredModelsFromSessionModelState({
+        currentModelId: "grok-4.6",
+        availableModels: [],
+      }),
+    ).toEqual([]);
+  });
+});
 
 describe("buildInitialGrokProviderSnapshot", () => {
   it.effect("returns a disabled snapshot when settings.enabled is false", () =>
@@ -32,8 +141,11 @@ describe("buildInitialGrokProviderSnapshot", () => {
       expect(snapshot.version).toBeNull();
       expect(snapshot.message).toContain("Checking Grok");
       expect(snapshot.requiresNewThreadForModelChange).toBe(true);
-      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build-0.1", "grok-build"]);
-      const effort = snapshot.models[1]?.capabilities?.optionDescriptors?.find(
+      // A single placeholder, not a catalog: ACP discovery supplies the real
+      // list once the CLI answers. Hardcoding more is what kept retired models
+      // (Grok Build 0.1, Grok 4.3) in the picker.
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6"]);
+      const effort = snapshot.models[0]?.capabilities?.optionDescriptors?.find(
         (descriptor) => descriptor.id === "reasoningEffort",
       );
       expect(effort?.type).toBe("select");
@@ -117,7 +229,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
       expect(snapshot.status).toBe("error");
       expect(snapshot.installed).toBe(true);
-      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build-0.1", "grok-build"]);
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6"]);
       expect(snapshot.message).toContain("ACP startup failed");
     }),
   );

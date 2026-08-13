@@ -38,7 +38,17 @@ function makeAcpGrokWrapper(dir: string, env: Record<string, string>): string {
     [
       "#!/bin/sh",
       ...Object.entries(env).map(([key, value]) => `export ${key}=${shellSingleQuote(value)}`),
-      'if [ "$1" != "agent" ] || [ "$2" != "stdio" ]; then',
+      // Scan rather than index: the real spawn line leads with process-scoped
+      // flags (`--permission-mode`, `--tools`), so `agent`/`stdio` are never
+      // at $1/$2.
+      '[ -n "$T3_ACP_ARGS_LOG_PATH" ] && printf "%s\\n" "$*" > "$T3_ACP_ARGS_LOG_PATH"',
+      "has_agent=0",
+      "has_stdio=0",
+      'for arg in "$@"; do',
+      '  [ "$arg" = "agent" ] && has_agent=1',
+      '  [ "$arg" = "stdio" ] && has_stdio=1',
+      "done",
+      'if [ "$has_agent" != "1" ] || [ "$has_stdio" != "1" ]; then',
       '  printf "%s\\n" "unexpected args: $*" >&2',
       "  exit 11",
       "fi",
@@ -85,10 +95,12 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
       NodePath.join(NodeOS.tmpdir(), "t3code-grok-text-log-"),
     );
     const requestLogPath = NodePath.join(requestLogDir, "requests.ndjson");
+    const spawnArgsLogPath = NodePath.join(requestLogDir, "spawn-args.txt");
 
     return withFakeAcpGrok(
       {
         T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+        T3_ACP_ARGS_LOG_PATH: spawnArgsLogPath,
         T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({
           subject: "Add Grok provider",
           body: "Wire up the ACP runtime and headless text generation path.",
@@ -114,13 +126,16 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
             fs: { readTextFile: false, writeTextFile: false },
             terminal: false,
           });
-          expect(
-            requests.some(
-              (request) =>
-                request.method === "session/set_model" &&
-                request.params?.modelId === "grok-mock-alt",
-            ),
-          ).toBe(true);
+          // Grok takes the model on process start, not via session/set_model —
+          // see applyGrokAcpModelSelection.
+          expect(requests.some((request) => request.method === "session/set_model")).toBe(false);
+          const spawnArgs = NodeFS.readFileSync(spawnArgsLogPath, "utf8").trim();
+          expect(spawnArgs).toContain("-m grok-mock-alt");
+          // Grok answers one-shot prompts with an agentic tool loop, and an
+          // unanswered permission request cancels the turn mid-preamble.
+          // Approve them, bounded by the read-only sandbox.
+          expect(spawnArgs).toContain("--always-approve");
+          expect(spawnArgs).toContain("--sandbox read-only");
         }),
     );
   });
@@ -146,26 +161,23 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
   );
 
   it.effect("surfaces ACP request failures as text generation errors", () =>
-    withFakeAcpGrok(
-      {
-        T3_ACP_PROMPT_RESPONSE_TEXT: JSON.stringify({ branch: "unreachable" }),
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const error = yield* Effect.flip(
-            textGeneration.generateBranchName({
-              cwd: process.cwd(),
-              message: "wire up grok",
-              modelSelection: createModelSelection(
-                ProviderInstanceId.make("grok"),
-                "missing-grok-model",
-              ),
-            }),
-          );
-          expect(error._tag).toBe("TextGenerationError");
-          expect(error.detail).toContain("Grok ACP base model");
+    Effect.gen(function* () {
+      // An unlaunchable binary is the cheapest genuine AcpError; the model id
+      // itself can no longer fail, since it rides the spawn line rather than a
+      // session/set_model round trip.
+      const textGeneration = yield* makeGrokTextGeneration(
+        decodeGrokSettings({ binaryPath: NodePath.join(NodeOS.tmpdir(), "t3code-missing-grok") }),
+      );
+      const error = yield* Effect.flip(
+        textGeneration.generateBranchName({
+          cwd: process.cwd(),
+          message: "wire up grok",
+          modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
         }),
-    ),
+      );
+      expect(error._tag).toBe("TextGenerationError");
+      expect(error.detail).toMatch(/grok acp/i);
+    }).pipe(Effect.scoped),
   );
 
   it.effect("fails with TextGenerationError when output is empty", () =>

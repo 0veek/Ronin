@@ -20,8 +20,10 @@ function initializeWithAuthMethods(ids: ReadonlyArray<string>): EffectAcpSchema.
 
 describe("resolveGrokAcpBaseModelId", () => {
   it("normalizes empty and custom Grok model ids", () => {
-    expect(resolveGrokAcpBaseModelId(undefined)).toBe("grok-build");
-    expect(resolveGrokAcpBaseModelId("   ")).toBe("grok-build");
+    // No placeholder id: Grok drops an unknown `-m` and runs its own default,
+    // so a fabricated slug would only hide which model actually answered.
+    expect(resolveGrokAcpBaseModelId(undefined)).toBeUndefined();
+    expect(resolveGrokAcpBaseModelId("   ")).toBeUndefined();
     expect(resolveGrokAcpBaseModelId("  grok-test-custom-model  ")).toBe("grok-test-custom-model");
   });
 });
@@ -72,6 +74,35 @@ describe("buildGrokAcpSpawnInput", () => {
       "stdio",
     ]);
     expect(spawn.args).not.toContain("--always-approve");
+  });
+
+  it("auto-approves inside a read-only sandbox when nobody can answer permission requests", () => {
+    const spawn = buildGrokAcpSpawnInput(
+      { binaryPath: "/usr/local/bin/grok", model: "grok-build", unattendedReadOnly: true },
+      "/tmp/project",
+      "approval-required",
+    );
+
+    // `--sandbox` is process-scoped and has to land before `agent`, while
+    // `--always-approve` belongs to the subcommand.
+    expect(spawn.args).toEqual([
+      "--permission-mode",
+      "default",
+      "--sandbox",
+      "read-only",
+      "agent",
+      "--no-leader",
+      "--always-approve",
+      "-m",
+      "grok-build",
+      "stdio",
+    ]);
+  });
+
+  it("leaves interactive sessions unsandboxed", () => {
+    expect(
+      buildGrokAcpSpawnInput({ binaryPath: "grok" }, "/tmp/project", "full-access").args,
+    ).not.toContain("--sandbox");
   });
 
   it("uses Grok's process-scoped approval override only for Full Access", () => {

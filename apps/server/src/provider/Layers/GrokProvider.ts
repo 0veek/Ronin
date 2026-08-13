@@ -1,9 +1,13 @@
 import {
+  DEFAULT_MODEL_BY_PROVIDER,
   type GrokSettings,
   type ModelCapabilities,
+  ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+
+const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Crypto from "effect/Crypto";
@@ -57,23 +61,97 @@ const GROK_REASONING_EFFORT_CAPABILITIES: ModelCapabilities = createModelCapabil
   ],
 });
 
+type ModelInfoMeta = EffectAcpSchema.ModelInfo["_meta"];
+
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 
+/**
+ * Shown only until ACP discovery answers, and whenever the CLI cannot be
+ * probed. The installed Grok is the source of truth for both the model list
+ * and each model's reasoning-effort menu — see
+ * `buildGrokDiscoveredModelsFromSessionModelState` — so anything hardcoded
+ * here goes stale the moment xAI ships a new build.
+ */
+/**
+ * One entry, and only until the CLI answers.
+ *
+ * Deliberately not a curated list: a hardcoded catalog is what put retired
+ * models (`Grok Build 0.1`, `Grok 4.3`) in the picker long after Grok Build
+ * stopped offering them. Anything selectable comes from
+ * `buildGrokDiscoveredModelsFromSessionModelState`, which reads what the
+ * installed CLI advertises. This placeholder exists so the picker is not empty
+ * before the first probe, and shares its slug with the alias table in
+ * contracts so there is a single name to update.
+ */
 const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
-    slug: "grok-build-0.1",
-    name: "Grok Build 0.1",
-    isCustom: false,
-    capabilities: GROK_REASONING_EFFORT_CAPABILITIES,
-  },
-  {
-    slug: "grok-build",
-    name: "Grok 4.3",
+    slug: DEFAULT_MODEL_BY_PROVIDER[GROK_DRIVER_KIND] ?? "grok-4.6",
+    name: "Grok",
     isCustom: false,
     capabilities: GROK_REASONING_EFFORT_CAPABILITIES,
   },
 ];
+
+interface GrokAdvertisedReasoningEffort {
+  readonly value: string;
+  readonly label: string;
+  readonly isDefault: boolean;
+}
+
+function readGrokAdvertisedReasoningEfforts(
+  meta: ModelInfoMeta,
+): ReadonlyArray<GrokAdvertisedReasoningEffort> {
+  const raw = meta?.reasoningEfforts;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const efforts: Array<GrokAdvertisedReasoningEffort> = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const value = typeof record.value === "string" ? record.value.trim() : "";
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    const label = typeof record.label === "string" ? record.label.trim() : "";
+    efforts.push({ value, label: label || value, isDefault: record.default === true });
+  }
+  return efforts;
+}
+
+/**
+ * Grok marks more than one effort as `default` (4.6 flags both `xhigh` and
+ * `high`), but a select descriptor takes exactly one current value. Keep the
+ * first, which is the order Grok itself presents.
+ */
+function grokCapabilitiesFromAdvertisedEfforts(
+  efforts: ReadonlyArray<GrokAdvertisedReasoningEffort>,
+): ModelCapabilities {
+  if (efforts.length === 0) {
+    return GROK_REASONING_EFFORT_CAPABILITIES;
+  }
+
+  const defaultValue = efforts.find((effort) => effort.isDefault)?.value;
+  return createModelCapabilities({
+    optionDescriptors: [
+      buildSelectOptionDescriptor({
+        id: "reasoningEffort",
+        label: "Reasoning",
+        options: efforts.map((effort) => ({
+          value: effort.value,
+          label: effort.label,
+          ...(effort.value === defaultValue ? { isDefault: true } : {}),
+        })),
+      }),
+    ],
+  });
+}
 
 export function buildInitialGrokProviderSnapshot(
   grokSettings: GrokSettings,
@@ -125,7 +203,7 @@ function grokModelsFromSettings(
   );
 }
 
-function buildGrokDiscoveredModelsFromSessionModelState(
+export function buildGrokDiscoveredModelsFromSessionModelState(
   modelState: EffectAcpSchema.SessionModelState | null | undefined,
 ): ReadonlyArray<ServerProviderModel> {
   if (!modelState || modelState.availableModels.length === 0) {
@@ -143,7 +221,10 @@ function buildGrokDiscoveredModelsFromSessionModelState(
         slug,
         name: model.name.trim() || slug,
         isCustom: false,
-        capabilities: GROK_REASONING_EFFORT_CAPABILITIES,
+        // Per model: 4.6 advertises xhigh, 4.5 does not.
+        capabilities: grokCapabilitiesFromAdvertisedEfforts(
+          readGrokAdvertisedReasoningEfforts(model._meta),
+        ),
       };
     })
     .filter((model): model is ServerProviderModel => model !== undefined);

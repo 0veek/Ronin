@@ -12,6 +12,7 @@ import {
   getProviderOptionStringSelectionValue,
   normalizeCustomModelSlug,
   normalizeModelSlug,
+  resolveSelectableModel,
 } from "./model.ts";
 
 const codexCaps: ModelCapabilities = createModelCapabilities({
@@ -153,5 +154,32 @@ describe("model slug normalization", () => {
 
     expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
     expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+
+  it("retires Grok slugs the CLI no longer offers", () => {
+    const grok = ProviderDriverKind.make("grok");
+
+    // Grok Build 1.x dropped both. A thread saved against one has to keep
+    // naming a model that still exists, or the picker shows it as a stray
+    // legacy entry alongside the live list.
+    expect(normalizeModelSlug("grok-build", grok)).toBe("grok-4.6");
+    expect(normalizeModelSlug("grok-build-0.1", grok)).toBe("grok-4.6");
+    expect(normalizeModelSlug("grok-4.3", grok)).toBe("grok-4.6");
+    expect(normalizeModelSlug("grok-code-fast-1", grok)).toBe("grok-4.6");
+
+    // Ids the CLI does advertise pass through untouched.
+    expect(normalizeModelSlug("grok-4.6", grok)).toBe("grok-4.6");
+    expect(normalizeModelSlug("grok-4.5", grok)).toBe("grok-4.5");
+  });
+
+  it("maps a stored legacy Grok selection onto the discovered list", () => {
+    const grok = ProviderDriverKind.make("grok");
+    const discovered = [
+      { slug: "grok-4.6", name: "Grok 4.6" },
+      { slug: "grok-4.5", name: "Grok 4.5" },
+    ];
+
+    expect(resolveSelectableModel(grok, "grok-build", discovered)).toBe("grok-4.6");
+    expect(resolveSelectableModel(grok, "grok-4.5", discovered)).toBe("grok-4.5");
   });
 });

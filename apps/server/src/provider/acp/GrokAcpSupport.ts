@@ -35,6 +35,24 @@ export interface GrokAcpRuntimeSettings {
   readonly binaryPath?: string;
   readonly model?: string;
   readonly reasoningEffort?: string;
+  /**
+   * Let the agent finish without a human, confined to read-only OS access.
+   *
+   * One-shot text generation (commit messages, PR bodies, branch names) wants
+   * a direct reply, but Grok Build always answers with an agentic loop: it
+   * opens `run_terminal_cmd`/`read_file` calls to inspect the repo first.
+   * Those raise ACP permission requests that a headless caller cannot answer,
+   * and both leaving them unanswered and rejecting them end the turn as
+   * `cancelled` with only the "I'll inspect the staged change" preamble
+   * emitted — which then fails JSON decoding.
+   *
+   * The `--tools`/`--disallowed-tools` filters are not an option here: Grok
+   * applies them to `agent headless` only, not to `agent stdio`. Approving is
+   * what actually completes the turn, so the blast radius is capped with the
+   * `read-only` sandbox instead — reads anywhere, writes nowhere, no child
+   * network.
+   */
+  readonly unattendedReadOnly?: boolean;
 }
 
 export interface GrokAcpRuntimeInput extends Omit<
@@ -77,8 +95,14 @@ export function buildGrokAcpSpawnInput(
   // Keep Grok's request-based mode as the explicit baseline. Full Access also
   // needs the process-scoped override because some Grok builds deny before
   // emitting an ACP permission request.
-  const args = ["--permission-mode", "default", "agent", "--no-leader"];
-  if (runtimeMode === "full-access") {
+  const args = ["--permission-mode", "default"];
+  // `--sandbox` is process-scoped, so it has to precede the `agent` subcommand.
+  const unattendedReadOnly = grokSettings?.unattendedReadOnly === true;
+  if (unattendedReadOnly) {
+    args.push("--sandbox", "read-only");
+  }
+  args.push("agent", "--no-leader");
+  if (runtimeMode === "full-access" || unattendedReadOnly) {
     args.push("--always-approve");
   }
   const model = grokSettings?.model?.trim();
@@ -203,10 +227,21 @@ export const makeGrokAcpRuntime = (
     return yield* makeXAiPromptCompletionRuntime(runtime);
   });
 
-export function resolveGrokAcpBaseModelId(model: string | null | undefined): string {
+/**
+ * Returns undefined rather than a placeholder id when nothing is selected.
+ *
+ * This used to fall back to `grok-build`, a slug the installed CLI no longer
+ * offers — Grok silently ignored the resulting `-m grok-build` and ran its own
+ * default, so the fabricated id only served to hide that. Omitting `-m` asks
+ * for that same default honestly, and keeps the model list the CLI advertises
+ * as the single source of truth.
+ */
+export function resolveGrokAcpBaseModelId(model: string | null | undefined): string | undefined {
   const trimmed = model?.trim();
-  const base = trimmed && trimmed.length > 0 ? trimmed : "grok-build";
-  return normalizeModelSlug(base, GROK_DRIVER_KIND) ?? "grok-build";
+  if (!trimmed) {
+    return undefined;
+  }
+  return normalizeModelSlug(trimmed, GROK_DRIVER_KIND) ?? undefined;
 }
 
 export function currentGrokModelIdFromSessionSetup(

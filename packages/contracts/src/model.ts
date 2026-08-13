@@ -131,6 +131,11 @@ const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
+/**
+ * Only used to retire slugs the Grok CLI no longer offers, and as the default
+ * before a probe has run. The selectable list itself comes from the CLI.
+ */
+const GROK_CURRENT_MODEL = "grok-4.6";
 export const GROK_REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high"] as const;
 export type GrokReasoningEffort = (typeof GROK_REASONING_EFFORT_OPTIONS)[number];
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
@@ -157,7 +162,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
   [CLAUDE_DRIVER_KIND]: "claude-sonnet-5",
   [CURSOR_DRIVER_KIND]: "auto",
-  [GROK_DRIVER_KIND]: "grok-build",
+  [GROK_DRIVER_KIND]: GROK_CURRENT_MODEL,
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
   [ANTIGRAVITY_DRIVER_KIND]: "Gemini 3.5 Flash",
   [DROID_DRIVER_KIND]: "claude-opus-4-8",
@@ -222,15 +227,23 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   },
   [OPENCODE_DRIVER_KIND]: {},
   [KILO_DRIVER_KIND]: {},
+  // Grok Build 1.x dropped `grok-build` (4.3) and `grok-build-0.1`
+  // (code-fast); the CLI advertises `grok-4.6` and `grok-4.5` and silently
+  // runs its own default for any id it does not know. Every retired slug
+  // therefore points forward at the current model, so a thread saved against
+  // one keeps naming the model that actually answers it. Live ids are never
+  // listed here — `GrokProvider` takes those from the CLI at probe time.
   [GROK_DRIVER_KIND]: {
-    build: "grok-build",
-    "4.3": "grok-build",
-    "grok-4": "grok-build",
-    "grok-4.3": "grok-build",
-    "grok-latest": "grok-build",
-    "grok-code-fast": "grok-build-0.1",
-    "grok-code-fast-1": "grok-build-0.1",
-    "code-fast": "grok-build-0.1",
+    build: GROK_CURRENT_MODEL,
+    "grok-build": GROK_CURRENT_MODEL,
+    "grok-build-0.1": GROK_CURRENT_MODEL,
+    "4.3": GROK_CURRENT_MODEL,
+    "grok-4": GROK_CURRENT_MODEL,
+    "grok-4.3": GROK_CURRENT_MODEL,
+    "grok-latest": GROK_CURRENT_MODEL,
+    "grok-code-fast": GROK_CURRENT_MODEL,
+    "grok-code-fast-1": GROK_CURRENT_MODEL,
+    "code-fast": GROK_CURRENT_MODEL,
   },
 };
 

@@ -64,7 +64,13 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       const runtime = yield* makeGrokAcpRuntime({
         grokSettings: {
           binaryPath: grokSettings.binaryPath,
-          model: resolvedModel,
+          // Omitted rather than defaulted: Grok picks its own model when `-m`
+          // is absent, which beats naming one it may not know.
+          ...(resolvedModel ? { model: resolvedModel } : {}),
+          // Grok inspects the repo with `run_terminal_cmd`/`read_file` before
+          // answering, and the permission request nobody is here to approve
+          // cancels the turn mid-preamble. Approve them, read-only.
+          unattendedReadOnly: true,
         },
         environment,
         childProcessSpawner: commandSpawner,
@@ -142,7 +148,13 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
             Effect.fail(
               new TextGenerationError({
                 operation,
-                detail: "Grok Agent returned invalid structured output.",
+                // A cancelled turn leaves the agent's preamble in the buffer,
+                // so the decode fails on prose. Naming the cancellation beats
+                // reporting it as malformed output.
+                detail:
+                  promptResult.stopReason === "cancelled"
+                    ? "Grok ACP request was cancelled before it returned structured output."
+                    : "Grok Agent returned invalid structured output.",
                 cause,
               }),
             ),
