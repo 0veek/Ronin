@@ -42,6 +42,8 @@ Ronin works with the platforms your team already uses:
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
 - Open the review directly in your browser with one click
+- Command-click (Control-click on Windows and Linux) a pull request number in the sidebar to open it
+  in your browser instead of in Ronin
 - Check out a teammate's branch to review code locally
 
 ### Know Your Setup at a Glance
