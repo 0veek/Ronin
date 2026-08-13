@@ -21,7 +21,7 @@
 
 **One desktop app for every coding agent you pay for.**
 
-Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi — nine CLIs, one dark-first Electron workspace. Chat, terminal, preview, git, pull requests, stats, themes. Bring your own subscriptions; Ronin sells you nothing and phones home to no one. Everything runs on your machine, and the whole thing is open source.
+Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi — nine CLIs, one dark-first Electron workspace on **Linux, Windows, and macOS**. Chat, terminal, preview, git, pull requests, stats, themes. Bring your own subscriptions; Ronin sells you nothing and phones home to no one. Everything runs on your machine, and the whole thing is open source.
 
 If the CLI works in a terminal, Ronin can drive it.
 
@@ -80,6 +80,7 @@ No GPU-pegging animations, no token-by-token repaint storms, no lying spinners. 
 ### And the rest
 
 - **Agent notifications** — a system ping when an agent finishes, fails, or waits for an approval while you're elsewhere; click it to land on the thread ([docs](./docs/user/notifications.md))
+- **Native on Windows** — no WSL layer: Ronin drives the same Windows CLIs you run in PowerShell, and finds them wherever npm, Scoop, WinGet, Chocolatey, Volta, or Bun put them ([docs](./docs/user/install.md))
 - **Live preview** — tabs, navigation, screenshots, recordings of the app your agent is building
 - **Composer-first workspace** — "What should we build?" with provider, model, effort and plan controls in one card
 - **Markdown that renders** — images, diffs, code, all inline in the transcript
@@ -169,11 +170,12 @@ Ports are worktree-stable; read the `[dev-runner]` line for the real URL. Pairin
 
 ```bash
 vp run build:desktop
-vp run dist:desktop:linux          # primary path
+vp run dist:desktop:linux          # Linux AppImage
+vp run dist:desktop:win            # Windows installer (NSIS)
 vp run dist:desktop:dmg:arm64      # macOS
 ```
 
-Artifacts ship as `Ronin-${version}-${arch}.${ext}`. Linux-first, Mac supported.
+Artifacts ship as `Ronin-${version}-${arch}.${ext}` for Linux, Windows, and macOS. On Windows, Ronin runs the native CLIs directly — no WSL required. ([install docs](./docs/user/install.md))
 
 ---
 
@@ -198,7 +200,7 @@ Full tree: [docs/](./docs).
 
 ## Lineage
 
-Ronin is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** by Theo and the T3 tools team — the event-sourced server, multi-provider adapters, and remote-ready architecture come from that excellent foundation. Ronin is the **masterless cut**: desktop-only, no hosted relay, no WSL orchestration, no mobile surface — a thinner blade with a full UI pass on top.
+Ronin is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** by Theo and the T3 tools team — the event-sourced server, multi-provider adapters, and remote-ready architecture come from that excellent foundation. Ronin is the **masterless cut**: desktop-only, no hosted relay, no mobile surface, and Windows runs native instead of through a WSL orchestration layer — a thinner blade with a full UI pass on top.
 
 Some later surfaces — portable agent skills, composer slash commands, and the Antigravity / Droid / Kilo / Pi providers — were adapted from **[Synara](https://github.com/Emanuele-web04/synara)** by Emanuele.
 
