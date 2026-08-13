@@ -22,6 +22,8 @@ Ronin is a **lean desktop harness** for coding agents — rebuilt UI, thinner su
 
 Drive the CLIs you already pay for (Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi) from a dark-first Electron shell: chat, terminal, preview, **git**, usage, and settings. Bring your own subscription. Nothing is sold here.
 
+And you are not married to the agent you started with — **hand a live thread to a different provider mid-conversation** and it picks up where the last one left off. [How it works ↓](#switch-provider-mid-thread)
+
 This tree is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** — event-sourced server, multi-provider adapters, remote-ready websockets — re-cut and re-skinned for a masterless desktop.
 
 ---
@@ -124,6 +126,21 @@ T3 Code is an excellent open product with a wide surface. Ronin is that product 
 - **Provider switching** — hand a live thread from one agent to another; it resumes its own session, or reads a brief of the conversation and the files changed so far ([docs](./docs/user/switching-providers.md))
 - **Agent skills** — reusable `SKILL.md` workflows, including a portable `~/.ronin/skills` folder that works on every provider ([docs](./docs/user/agent-skills.md))
 - **Slash commands** — `/clear`, `/compact`, `/model`, `/review`, `/fork`, `/status` and friends, alongside your provider's own commands ([docs](./docs/user/slash-commands.md))
+
+---
+
+## Switch provider mid-thread
+
+Every other harness binds a thread to the agent that opened it. Ronin does not. Pick another provider in the composer, confirm, and the next message goes to the new agent — same thread, same history, same checkpoints.
+
+- **Been here before?** It resumes its own session and only catches up on what it missed while it was away.
+- **New to the thread?** It starts fresh and reads a brief built from the thread itself — the conversation, the working directory and branch, and the files changed so far.
+
+The transcript marks the handover, so you always know who wrote what. Switching back later resumes the earlier agent rather than re-briefing it; each provider keeps its own place in the thread.
+
+> Ronin asks before a handover: the incoming agent writes code its own way, so later edits can drift from the approach already in your files.
+
+Full details: [docs/user/switching-providers.md](./docs/user/switching-providers.md).
 
 ---
 
