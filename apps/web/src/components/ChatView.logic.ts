@@ -390,7 +390,13 @@ export function deriveLockedProvider(input: {
   if (!threadHasStarted(input.thread)) {
     return null;
   }
-  const sessionProvider = input.thread?.session?.providerName ?? null;
+  // A retired session no longer speaks for the thread. After a provider switch
+  // the old session lingers in the read model as `stopped` until the incoming
+  // provider binds, and reading its name here would keep pointing the picker
+  // and the composer trigger at the provider the user just left.
+  const session = input.thread?.session ?? null;
+  const sessionProvider =
+    session !== null && session.status !== "stopped" ? (session.providerName ?? null) : null;
   if (sessionProvider && isProviderDriverKind(sessionProvider)) {
     return sessionProvider;
   }
@@ -403,6 +409,79 @@ export function deriveLockedProvider(input: {
       ? input.selectedProvider
       : null;
   return narrowedThreadProvider ?? narrowedSelectedProvider ?? null;
+}
+
+// Why this thread cannot be handed to another provider right now, or `null`
+// when it can. Mirrors the server's `thread.provider.switch` preconditions so
+// the picker never offers a switch the decider would only reject: a live turn
+// would be orphaned by retiring its session, and a request waiting on the user
+// belongs to the outgoing provider's process — the incoming one has nothing to
+// answer it with.
+//
+// A thread that has not started yet is never blocked: there is no session to
+// retire and no conversation to hand over, so picking a different provider is
+// an ordinary retarget.
+export function deriveProviderSwitchBlockReason(input: {
+  thread: Thread | null | undefined;
+  hasOpenBlockingRequest: boolean;
+}): string | null {
+  if (!threadHasStarted(input.thread)) {
+    return null;
+  }
+  const status = input.thread?.session?.status ?? null;
+  if (status === "starting" || status === "running") {
+    return "Interrupt the current turn before switching providers.";
+  }
+  if (input.hasOpenBlockingRequest) {
+    return "Answer the pending request before switching providers.";
+  }
+  return null;
+}
+
+// Whether moving this thread to `nextInstanceId` hands the conversation to a
+// provider that has not been following it. Instances in the same continuation
+// group can resume each other's sessions, so moving between them is a restart,
+// not a handoff, and needs no confirmation.
+export function isProviderHandoff(input: {
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "driver" | "continuation">>;
+  currentInstanceId: string | null;
+  nextInstanceId: string;
+}): boolean {
+  if (input.currentInstanceId === null || input.currentInstanceId === input.nextInstanceId) {
+    return false;
+  }
+  const current = input.providers.find(
+    (provider) => provider.instanceId === input.currentInstanceId,
+  );
+  const next = input.providers.find((provider) => provider.instanceId === input.nextInstanceId);
+  if (!current || !next) {
+    // An instance we cannot resolve is treated as a handoff: warning about a
+    // conversation boundary that turns out not to exist is recoverable, and
+    // silently crossing one is not.
+    return true;
+  }
+  if (current.driver !== next.driver) {
+    return true;
+  }
+  const currentGroup = current.continuation?.groupKey ?? null;
+  const nextGroup = next.continuation?.groupKey ?? null;
+  if (currentGroup === null || nextGroup === null) {
+    return true;
+  }
+  return currentGroup !== nextGroup;
+}
+
+// How to name a provider instance in prose. Falls back to the routing key,
+// which is what the user configured it as.
+export function providerInstanceLabel(
+  providers: ReadonlyArray<Pick<ServerProvider, "instanceId" | "displayName">>,
+  instanceId: string | null,
+): string {
+  if (instanceId === null) {
+    return "the current provider";
+  }
+  const provider = providers.find((entry) => entry.instanceId === instanceId);
+  return provider?.displayName ?? instanceId;
 }
 
 export function getStartedThreadModelChangeBlockReason(input: {

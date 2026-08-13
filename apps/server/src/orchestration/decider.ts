@@ -911,6 +911,93 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.provider.switch": {
+      const thread = yield* requireThreadNotArchived({
+        readModel,
+        command,
+        threadId: command.threadId,
+      });
+      // A switch retires the running session. Doing that under a live turn
+      // would orphan the turn mid-flight (its deltas would land against a
+      // session the thread no longer owns), so the client must interrupt or
+      // wait first.
+      if (thread.session?.status === "starting" || thread.session?.status === "running") {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} has an active session; interrupt the turn before switching providers`,
+          }),
+        );
+      }
+      // A pending approval / user-input request belongs to the outgoing
+      // provider's process. Switching would strand it: the incoming provider
+      // has no request to answer and the old one never gets its reply.
+      if (hasOpenBlockingRequest(thread)) {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} has a pending approval or user-input request and cannot switch providers`,
+          }),
+        );
+      }
+      const occurredAt = yield* nowIso;
+      // Inside the adoption window a turn start is already in flight toward the
+      // old provider even though session is still null.
+      if (threadHasQueuedTurnStart(thread, occurredAt)) {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} has a queued turn start and cannot switch providers`,
+          }),
+        );
+      }
+      // Who is being handed off *from*. The session carries it once a provider
+      // has actually bound; before that the thread's own selection is the last
+      // word — but only if the thread has history, because a switch on a
+      // never-started thread is a plain retarget with nothing to hand over.
+      const threadHasHistory =
+        thread.messages.length > 0 || thread.latestTurn !== null || thread.session !== null;
+      // A retired session is history, not the current binding. Reading its
+      // instance here would keep naming the provider of the *previous* switch,
+      // so switching back to where the thread started would look like a
+      // same-instance retarget and be rejected.
+      const boundSession =
+        thread.session !== null && thread.session.status !== "stopped" ? thread.session : null;
+      const fromInstanceId =
+        boundSession?.providerInstanceId ??
+        (threadHasHistory ? thread.modelSelection.instanceId : null);
+      // Same-instance retargets are model changes, which `thread.meta.update`
+      // already owns (including the provider-restart path for instances that
+      // cannot switch models in session). Routing them here would retire a
+      // session that does not need retiring.
+      if (fromInstanceId !== null && fromInstanceId === command.modelSelection.instanceId) {
+        return yield* Effect.fail(
+          new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.threadId} is already bound to provider instance '${command.modelSelection.instanceId}'; change the model instead of switching providers`,
+          }),
+        );
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.provider-switched",
+        payload: {
+          threadId: command.threadId,
+          fromInstanceId,
+          fromProviderName: boundSession?.providerName ?? null,
+          toInstanceId: command.modelSelection.instanceId,
+          modelSelection: command.modelSelection,
+          switchedAt: occurredAt,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
     case "thread.turn.start": {
       const targetThread = yield* requireThread({
         readModel,
@@ -1234,6 +1321,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           text: command.delta,
           turnId: command.turnId ?? null,
           streaming: true,
+          ...(command.providerInstanceId !== undefined
+            ? { providerInstanceId: command.providerInstanceId }
+            : {}),
+          ...(command.providerName !== undefined ? { providerName: command.providerName } : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

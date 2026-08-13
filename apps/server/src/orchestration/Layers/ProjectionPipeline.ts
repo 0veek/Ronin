@@ -834,6 +834,24 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
         }
 
+        case "thread.provider-switched": {
+          const existingRow = yield* projectionThreadRepository.getById({
+            threadId: event.payload.threadId,
+          });
+          if (Option.isNone(existingRow)) {
+            return;
+          }
+          yield* projectionThreadRepository.upsert({
+            ...existingRow.value,
+            modelSelection: event.payload.modelSelection,
+            updatedAt: event.payload.updatedAt,
+          });
+          // The shell carries the provider badge and the settled/active
+          // summary, both of which the retarget changes.
+          yield* refreshThreadShellSummary(event.payload.threadId);
+          return;
+        }
+
         case "thread.deleted": {
           attachmentSideEffects.deletedThreadIds.add(event.payload.threadId);
           const existingRow = yield* projectionThreadRepository.getById({
@@ -972,6 +990,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                   attachments: event.payload.attachments,
                 })
               : previousMessage?.attachments;
+          // Only the reply's first delta names its author; the completion write
+          // carries nothing, so fall back to what is already stored.
+          const nextProviderInstanceId =
+            event.payload.providerInstanceId ?? previousMessage?.providerInstanceId;
+          const nextProviderName = event.payload.providerName ?? previousMessage?.providerName;
           yield* projectionThreadMessageRepository.upsert({
             messageId: event.payload.messageId,
             threadId: event.payload.threadId,
@@ -980,6 +1003,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             text: nextText,
             ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             isStreaming: event.payload.streaming,
+            ...(nextProviderInstanceId !== undefined
+              ? { providerInstanceId: nextProviderInstanceId }
+              : {}),
+            ...(nextProviderName !== undefined ? { providerName: nextProviderName } : {}),
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
           });

@@ -49,6 +49,13 @@ const make = Effect.gen(function* () {
       threadId,
     });
 
+  const clearProviderContinuationLedger = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
+    logCleanupCauseUnlessInterrupted({
+      effect: providerService.clearContinuationLedger({ threadId }),
+      message: "thread deletion cleanup skipped provider continuation ledger clear",
+      threadId,
+    });
+
   const closeThreadTerminals = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
     logCleanupCauseUnlessInterrupted({
       effect: terminalManager.close({ threadId, deleteHistory: true }),
@@ -61,6 +68,9 @@ const make = Effect.gen(function* () {
   ) {
     const { threadId } = event.payload;
     yield* stopProviderSession(threadId);
+    // After the stop, so a provider that writes a final cursor on shutdown does
+    // not resurrect the rows we just dropped.
+    yield* clearProviderContinuationLedger(threadId);
     yield* closeThreadTerminals(threadId);
   });
 

@@ -124,6 +124,8 @@ function createProviderServiceHarness(
           continuationKey: `${providerName}:instance:${instanceId}`,
         },
       }),
+    getContinuationState: () => unsupported(),
+    clearContinuationLedger: () => unsupported(),
     rollbackConversation,
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);

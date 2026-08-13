@@ -8,6 +8,7 @@ import {
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
   ProviderDriverKind,
+  type ProviderHandoffMode,
   type ToolLifecycleItemType,
   type UserInputQuestion,
   type ThreadId,
@@ -118,7 +119,38 @@ export interface WorkLogEntry {
     workflowId: string | null;
     agentTaskIds: ReadonlyArray<string>;
   };
+  /**
+   * Present on the rows that mark a provider handover. These render as a
+   * boundary in the transcript rather than as tool chrome, because they are
+   * about who is answering, not about work that was done.
+   */
+  providerBoundary?: ProviderBoundaryWorkLogEntry;
 }
+
+/**
+ * The transcript-visible half of a provider switch. Two activities describe
+ * one handover and they arrive at different times: `switched` when the user
+ * asks for it, `handoff` at the next turn, once the incoming provider has
+ * actually picked the thread up (and only then is it known whether it resumed
+ * its own session or had to read a brief).
+ */
+export type ProviderBoundaryWorkLogEntry =
+  | {
+      event: "switched";
+      /** The provider handing over, when the thread recorded one. */
+      fromLabel: string | null;
+      toLabel: string;
+      model: string | null;
+    }
+  | {
+      event: "handoff";
+      toLabel: string;
+      handoff: ProviderHandoffMode;
+      /** Characters of reconstructed conversation carried over; 0 for a resume. */
+      briefChars: number;
+      /** True when the brief had to be trimmed to fit the provider's input budget. */
+      briefCompressed: boolean;
+    };
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
   activityKind: OrchestrationThreadActivity["kind"];
@@ -766,8 +798,19 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   return typeof payload.agentId === "string" && payload.agentId.trim().length > 0;
 }
 
+export interface WorkLogDerivationOptions {
+  /**
+   * Display name for each configured provider instance, keyed by routing id.
+   * Provider boundary rows name instances the way the picker does; without a
+   * map (or for an instance that has since been removed from settings) they
+   * fall back to the routing id, which is what the user configured it as.
+   */
+  readonly providerLabelByInstanceId?: ReadonlyMap<string, string> | undefined;
+}
+
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
+  options: WorkLogDerivationOptions = {},
 ): WorkLogEntry[] {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
   const entries: DerivedWorkLogEntry[] = [];
@@ -784,7 +827,7 @@ export function deriveWorkLogEntries(
     if (activity.summary === "Checkpoint captured") continue;
     if (isPlanBoundaryToolActivity(activity)) continue;
     if (isAgentInternalActivity(activity)) continue;
-    entries.push(toDerivedWorkLogEntry(activity));
+    entries.push(toDerivedWorkLogEntry(activity, options));
   }
   return collapseDerivedWorkLogEntries(entries).map((entry) => {
     const { activityKind, collapseKey: _collapseKey, ...rest } = entry;
@@ -823,7 +866,81 @@ function extractWorkLogToolLifecycleStatus(
   return undefined;
 }
 
-function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
+export const PROVIDER_SWITCH_ACTIVITY_KIND = "provider.switched";
+export const PROVIDER_HANDOFF_ACTIVITY_KIND = "provider.handoff";
+
+function asNonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+/**
+ * How to name a provider instance in the transcript: the label the picker
+ * shows, else the routing id it was configured under, else the driver name
+ * the session recorded. A boundary row that cannot name either side is
+ * dropped rather than rendered as an anonymous divider.
+ */
+function providerBoundaryLabel(
+  options: WorkLogDerivationOptions,
+  instanceId: string | null,
+  providerName: string | null,
+): string | null {
+  const mapped = instanceId ? options.providerLabelByInstanceId?.get(instanceId) : undefined;
+  return asNonEmptyString(mapped) ?? instanceId ?? providerName;
+}
+
+function extractProviderBoundary(
+  activity: OrchestrationThreadActivity,
+  payload: Record<string, unknown> | null,
+  options: WorkLogDerivationOptions,
+): ProviderBoundaryWorkLogEntry | null {
+  if (!payload) {
+    return null;
+  }
+  if (activity.kind === PROVIDER_SWITCH_ACTIVITY_KIND) {
+    const toLabel = providerBoundaryLabel(
+      options,
+      asNonEmptyString(payload.toInstanceId),
+      asNonEmptyString(payload.toProviderName),
+    );
+    if (!toLabel) {
+      return null;
+    }
+    return {
+      event: "switched",
+      fromLabel: providerBoundaryLabel(
+        options,
+        asNonEmptyString(payload.fromInstanceId),
+        asNonEmptyString(payload.fromProviderName),
+      ),
+      toLabel,
+      model: asNonEmptyString(payload.model),
+    };
+  }
+  if (activity.kind === PROVIDER_HANDOFF_ACTIVITY_KIND) {
+    const toLabel = providerBoundaryLabel(
+      options,
+      asNonEmptyString(payload.instanceId),
+      asNonEmptyString(payload.providerName),
+    );
+    if (!toLabel) {
+      return null;
+    }
+    const handoff = payload.handoff === "resumed" ? "resumed" : "briefed";
+    return {
+      event: "handoff",
+      toLabel,
+      handoff,
+      briefChars: typeof payload.briefChars === "number" ? Math.max(0, payload.briefChars) : 0,
+      briefCompressed: payload.briefCompressed === true,
+    };
+  }
+  return null;
+}
+
+function toDerivedWorkLogEntry(
+  activity: OrchestrationThreadActivity,
+  options: WorkLogDerivationOptions = {},
+): DerivedWorkLogEntry {
   const payload =
     activity.payload && typeof activity.payload === "object"
       ? (activity.payload as Record<string, unknown>)
@@ -869,6 +986,10 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           : activity.tone,
     activityKind: activity.kind,
   };
+  const providerBoundary = extractProviderBoundary(activity, payload, options);
+  if (providerBoundary) {
+    entry.providerBoundary = providerBoundary;
+  }
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
   if (detail) {

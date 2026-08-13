@@ -243,6 +243,12 @@ export const OrchestrationMessage = Schema.Struct({
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
+  // Which provider actually produced this message. A thread can be handed from
+  // one provider to another mid-conversation, so "the thread's provider" is not
+  // a safe stand-in for "who said this". Optional: user messages have no author
+  // instance, and rows written before switching existed carry neither field.
+  providerInstanceId: Schema.optional(ProviderInstanceId),
+  providerName: Schema.optional(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -780,6 +786,69 @@ const ThreadInteractionModeSetCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+// Moving a live thread from one provider instance to another. This is a
+// distinct command rather than a flag on thread.meta.update because it is not a
+// metadata edit: it retires the running session, and the next turn either
+// resumes the target's own native session or carries a handoff brief into a
+// fresh one. Clients must confirm with the user before dispatching it.
+const ThreadProviderSwitchCommand = Schema.Struct({
+  type: Schema.Literal("thread.provider.switch"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  // Target instance and model. The model is required because every instance
+  // has its own model namespace; carrying the old model across a switch would
+  // route a model id at a provider that has never heard of it.
+  modelSelection: ModelSelection,
+  createdAt: IsoDateTime,
+});
+
+// How the incoming provider picked up the conversation. Recorded on the switch
+// activity after the fact — only the runtime knows which one happened, because
+// it depends on whether that instance still holds native session state.
+export const ProviderHandoffMode = Schema.Literals([
+  // The instance had its own session on this thread and it was resumed. The
+  // provider's native memory is intact; only work done while it was away has
+  // to be replayed.
+  "resumed",
+  // The instance is new to this thread, so it starts fresh and reads a brief
+  // reconstructed from the thread's own record.
+  "briefed",
+]);
+export type ProviderHandoffMode = typeof ProviderHandoffMode.Type;
+
+// Payload of the `provider.switched` activity that marks the boundary in the
+// transcript. Typed so the renderer can decode it instead of probing shapes.
+// Written the moment the switch is accepted, so the boundary is visible before
+// any further work happens.
+export const ProviderSwitchActivityPayload = Schema.Struct({
+  fromInstanceId: Schema.NullOr(ProviderInstanceId),
+  fromProviderName: Schema.NullOr(TrimmedNonEmptyString),
+  toInstanceId: ProviderInstanceId,
+  toProviderName: Schema.NullOr(TrimmedNonEmptyString),
+  model: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ProviderSwitchActivityPayload = typeof ProviderSwitchActivityPayload.Type;
+
+// Payload of the `provider.handoff` activity, appended when the incoming
+// provider actually picks the thread up. Separate from `provider.switched`
+// because these are two different moments — the switch is decided when the user
+// asks for it, the handoff happens at the next turn — and activities are
+// append-only, so one row cannot learn the outcome later.
+export const ProviderHandoffActivityPayload = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  providerName: Schema.NullOr(TrimmedNonEmptyString),
+  handoff: ProviderHandoffMode,
+  // Characters of reconstructed conversation handed to the incoming provider,
+  // for the "carried N of the conversation" affordance. Zero for a resume that
+  // needed no replay.
+  briefChars: NonNegativeInt,
+  // True when the brief had to be trimmed to fit the input budget: message
+  // bodies elided, or older messages dropped entirely. Surfaced so the user
+  // knows the conversation was carried in part rather than whole.
+  briefCompressed: Schema.Boolean,
+});
+export type ProviderHandoffActivityPayload = typeof ProviderHandoffActivityPayload.Type;
+
 const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString,
@@ -915,6 +984,7 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadProviderSwitchCommand,
   ThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -943,6 +1013,7 @@ export const ClientOrchestrationCommand = Schema.Union([
   ThreadMetaUpdateCommand,
   ThreadRuntimeModeSetCommand,
   ThreadInteractionModeSetCommand,
+  ThreadProviderSwitchCommand,
   ClientThreadTurnStartCommand,
   ThreadTurnInterruptCommand,
   ThreadApprovalRespondCommand,
@@ -967,6 +1038,11 @@ const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   messageId: MessageId,
   delta: Schema.String,
   turnId: Schema.optional(TurnId),
+  // Stamped from the runtime event's own instance correlation rather than from
+  // the thread's current selection, so a reply stays attributed to its author
+  // even after the thread moves on to another provider.
+  providerInstanceId: Schema.optional(ProviderInstanceId),
+  providerName: Schema.optional(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
 });
 
@@ -1061,6 +1137,7 @@ export const OrchestrationEventType = Schema.Literals([
   "thread.meta-updated",
   "thread.runtime-mode-set",
   "thread.interaction-mode-set",
+  "thread.provider-switched",
   "thread.message-sent",
   "thread.turn-start-requested",
   "thread.turn-interrupt-requested",
@@ -1220,6 +1297,18 @@ export const ThreadInteractionModeSetPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const ThreadProviderSwitchedPayload = Schema.Struct({
+  threadId: ThreadId,
+  // Null when the thread had not bound a provider yet — switching before the
+  // first turn is a plain retarget with nothing to hand over.
+  fromInstanceId: Schema.NullOr(ProviderInstanceId),
+  fromProviderName: Schema.NullOr(TrimmedNonEmptyString),
+  toInstanceId: ProviderInstanceId,
+  modelSelection: ModelSelection,
+  switchedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
 export const ThreadMessageSentPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
@@ -1228,6 +1317,8 @@ export const ThreadMessageSentPayload = Schema.Struct({
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
+  providerInstanceId: Schema.optional(ProviderInstanceId),
+  providerName: Schema.optional(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1413,6 +1504,11 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("thread.interaction-mode-set"),
     payload: ThreadInteractionModeSetPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("thread.provider-switched"),
+    payload: ThreadProviderSwitchedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,

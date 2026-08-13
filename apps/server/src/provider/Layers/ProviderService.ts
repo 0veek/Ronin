@@ -271,10 +271,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "ProviderService.upsertSessionBinding",
         session,
       );
+      // Resolving the continuation key here is what keeps the ledger honest:
+      // it is the instance's own notion of "whose sessions can I resume", and
+      // only the registry knows it (two Codex instances sharing a home share a
+      // key). An instance that has since been removed from settings can no
+      // longer answer, in which case the binding still lands — we just cannot
+      // record which group owns the cursor.
+      const continuationKey = yield* registry.getInstanceInfo(providerInstanceId).pipe(
+        Effect.map((info) => info.continuationIdentity.continuationKey),
+        Effect.catchCause(() => Effect.succeed(undefined)),
+      );
       yield* directory.upsert({
         threadId,
         provider: session.provider,
         providerInstanceId,
+        ...(continuationKey !== undefined ? { continuationKey } : {}),
         runtimeMode: session.runtimeMode,
         status: toRuntimeStatus(session),
         ...(session.resumeCursor !== undefined ? { resumeCursor: session.resumeCursor } : {}),
@@ -964,6 +975,34 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const getInstanceInfo: ProviderServiceMethod<"getInstanceInfo"> = (instanceId) =>
     registry.getInstanceInfo(instanceId);
 
+  const getContinuationState: ProviderServiceMethod<"getContinuationState"> = Effect.fn(
+    "getContinuationState",
+  )(function* (input) {
+    const info = yield* registry.getInstanceInfo(input.instanceId);
+    const entry = yield* directory.getLedgerEntry({
+      threadId: input.threadId,
+      continuationKey: info.continuationIdentity.continuationKey,
+    });
+    return Option.flatMap(entry, (value) =>
+      // A row with no cursor is a group that ran but left nothing resumable
+      // (an errored start, a driver that does not persist state). Reporting it
+      // as continuable would produce a resume that silently starts cold.
+      value.resumeCursor === null || value.resumeCursor === undefined
+        ? Option.none()
+        : Option.some({
+            continuationKey: value.continuationKey,
+            providerInstanceId: value.providerInstanceId,
+            resumeCursor: value.resumeCursor,
+            runtimePayload: value.runtimePayload,
+            firstSeenAt: value.firstSeenAt,
+            lastSeenAt: value.lastSeenAt,
+          }),
+    );
+  });
+
+  const clearContinuationLedger: ProviderServiceMethod<"clearContinuationLedger"> = (input) =>
+    directory.clearLedger(input.threadId);
+
   const rollbackConversation: ProviderServiceMethod<"rollbackConversation"> = Effect.fn(
     "rollbackConversation",
   )(function* (rawInput) {
@@ -1067,6 +1106,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     getCapabilities,
     getInstanceInfo,
+    getContinuationState,
+    clearContinuationLedger,
     rollbackConversation,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each

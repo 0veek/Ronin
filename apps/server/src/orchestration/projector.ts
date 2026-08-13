@@ -21,6 +21,7 @@ import {
   ThreadInteractionModeSetPayload,
   ThreadMetaUpdatedPayload,
   ThreadProposedPlanUpsertedPayload,
+  ThreadProviderSwitchedPayload,
   ThreadRuntimeModeSetPayload,
   ThreadSettledPayload,
   ThreadPinnedPayload,
@@ -488,6 +489,26 @@ export function projectEvent(
         })),
       );
 
+    case "thread.provider-switched":
+      return decodeForEvent(
+        ThreadProviderSwitchedPayload,
+        event.payload,
+        event.type,
+        "payload",
+      ).pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          threads: updateThread(nextBase.threads, payload.threadId, {
+            modelSelection: payload.modelSelection,
+            // The session is deliberately left alone. Retiring the outgoing
+            // provider's runtime is the reactor's job — it has to stop a real
+            // process — and it reports the result through thread.session.set
+            // like every other session transition.
+            updatedAt: payload.updatedAt,
+          }),
+        })),
+      );
+
     case "thread.message-sent":
       return Effect.gen(function* () {
         const payload = yield* decodeForEvent(
@@ -510,6 +531,10 @@ export function projectEvent(
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
+            ...(payload.providerInstanceId !== undefined
+              ? { providerInstanceId: payload.providerInstanceId }
+              : {}),
+            ...(payload.providerName !== undefined ? { providerName: payload.providerName } : {}),
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
           },
@@ -533,6 +558,15 @@ export function projectEvent(
                     turnId: message.turnId,
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
+                      : {}),
+                    // Only the first delta of a reply carries attribution; the
+                    // completion event carries none. Spreading unconditionally
+                    // would erase the author on the last write.
+                    ...(message.providerInstanceId !== undefined
+                      ? { providerInstanceId: message.providerInstanceId }
+                      : {}),
+                    ...(message.providerName !== undefined
+                      ? { providerName: message.providerName }
                       : {}),
                   }
                 : entry,

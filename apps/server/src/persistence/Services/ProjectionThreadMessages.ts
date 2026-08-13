@@ -10,7 +10,9 @@ import {
   ChatAttachment,
   MessageId,
   OrchestrationMessageRole,
+  ProviderInstanceId,
   ThreadId,
+  TrimmedNonEmptyString,
   TurnId,
   IsoDateTime,
 } from "@t3tools/contracts";
@@ -29,6 +31,11 @@ export const ProjectionThreadMessage = Schema.Struct({
   text: Schema.String,
   attachments: Schema.optional(Schema.Array(ChatAttachment)),
   isStreaming: Schema.Boolean,
+  // Who authored the message, for threads that changed provider mid-way.
+  // Absent for user/system messages and for anything projected before
+  // attribution existed.
+  providerInstanceId: Schema.optional(ProviderInstanceId),
+  providerName: Schema.optional(TrimmedNonEmptyString),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

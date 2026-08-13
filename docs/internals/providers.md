@@ -57,6 +57,61 @@ Provider output comes back as internal commands such as `thread.message.assistan
 `thread.session.set`, which clients observe through `orchestration.subscribeThread`. See
 [overview.md](./overview.md) for the command/event loop.
 
+## Switching provider mid-thread
+
+A thread can be handed from one provider to another while keeping its conversation. The client
+dispatches `thread.provider.switch` (target instance **and** model — every instance has its own model
+namespace), and the incoming provider picks the thread up on the next turn.
+
+### Continuation groups
+
+Two instances belong to the same _continuation group_ when either can resume the other's native
+session. [`ProviderContinuationIdentity`][driver] carries the key: the default is
+`${driverKind}:instance:${instanceId}`, and Codex overrides it to `codex:home:${sharedHomePath}` so
+instances sharing a home share one key. `ServerProvider.continuation.groupKey` is the client-visible
+form — the picker uses it to tell a restart (same group, no confirmation) from a handoff (different
+group, confirm first).
+
+### The ledger
+
+[`provider_session_ledger`][ledger] holds one row per `(thread_id, continuation_key)` with that
+group's resume cursor. `provider_session_runtime` is keyed by thread alone and so can only describe
+the provider that owns the thread _right now_; switching away used to overwrite it and destroy the
+outgoing provider's cursor, which is why a switch could not be undone. Both tables are written
+together in [`ProviderSessionDirectory.upsert`][directory], so the active group's ledger row mirrors
+the runtime row and inactive ones keep the cursor they had when they were handed away. Migration
+[`041`][migration] backfills the currently bound provider, and `firstSeenAt` is pinned across
+updates — it is what the brief uses to say how far back a returning provider's own memory reaches.
+
+### Invariants
+
+The decider ([`decider.ts`][decider], `thread.provider.switch`) rejects a switch when the thread has
+a `starting`/`running` session, an open approval or user-input request, or a queued turn start —
+each would strand work in flight against a session the thread is about to give up. It also rejects a
+same-instance retarget, which is `thread.meta.update`'s job. A `stopped` session is read as history,
+not as the current binding, so switching back to where the thread started is allowed.
+
+### Handover
+
+[`ProviderCommandReactor`][cmd] stops the outgoing session, marks it `stopped`, and records a
+`provider.switched` activity — the transcript boundary. Nothing else happens until the next turn,
+where `ensureSessionForThread` resolves one of three continuities:
+
+| Continuity | Meaning                                      | Brief                  |
+| ---------- | -------------------------------------------- | ---------------------- |
+| `live`     | Session already running, followed everything | none                   |
+| `resumed`  | Started from this group's own ledger cursor  | only what it missed    |
+| `fresh`    | No provider-side memory of the thread        | the whole conversation |
+
+[`providerHandoffBrief.ts`][brief] renders it: pure, deterministic, no queries and no model call, so
+an interrupted or retried turn rebuilds the same brief. `selectHandoffMessages` cuts a resumed
+provider's brief at the last message authored by its own group, and replays everything when the
+thread has no message it can claim — seeing a turn twice is recoverable, never seeing it is not. The
+brief is prepended to the user's message within `PROVIDER_SEND_TURN_MAX_INPUT_CHARS`, and a
+`provider.handoff` activity records `resumed` vs `briefed` along with the brief size and whether it
+had to be trimmed. Both activities carry `turnId: null` so they render as transcript boundaries
+rather than folding into a turn's work log.
+
 ## Server-side workers
 
 Provider work flows through three queue-backed workers. All three are built with
@@ -90,6 +145,12 @@ when a request opens (approval) or user input is requested, via
 [kilo]: ../../apps/server/src/provider/Drivers/KiloDriver.ts
 [pi]: ../../apps/server/src/provider/Drivers/PiDriver.ts
 [adapter]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
+[driver]: ../../apps/server/src/provider/ProviderDriver.ts
+[ledger]: ../../apps/server/src/persistence/ProviderSessionLedger.ts
+[directory]: ../../apps/server/src/provider/Layers/ProviderSessionDirectory.ts
+[migration]: ../../apps/server/src/persistence/Migrations/041_ProviderSessionLedger.ts
+[decider]: ../../apps/server/src/orchestration/decider.ts
+[brief]: ../../apps/server/src/orchestration/providerHandoffBrief.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts
 [registry]: ../../apps/server/src/provider/Services/ProviderAdapterRegistry.ts
 [service]: ../../apps/server/src/provider/Layers/ProviderService.ts

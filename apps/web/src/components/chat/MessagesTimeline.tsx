@@ -33,6 +33,7 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
+  type ProviderBoundaryWorkLogEntry,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
   workEntryIndicatesToolSuccess,
@@ -2208,14 +2209,64 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
   );
 });
 
+function providerBoundaryText(boundary: ProviderBoundaryWorkLogEntry): string {
+  if (boundary.event === "switched") {
+    return boundary.fromLabel
+      ? `Handed from ${boundary.fromLabel} to ${boundary.toLabel}`
+      : `Handed to ${boundary.toLabel}`;
+  }
+  if (boundary.handoff === "resumed") {
+    return boundary.briefChars > 0
+      ? `${boundary.toLabel} resumed its session and caught up on what it missed`
+      : `${boundary.toLabel} resumed its session`;
+  }
+  return boundary.briefCompressed
+    ? `${boundary.toLabel} picked up from a trimmed brief of this conversation`
+    : `${boundary.toLabel} picked up from a brief of this conversation`;
+}
+
+/**
+ * The transcript boundary a provider handover leaves behind. Rendered as a
+ * rule rather than a work row: everything below it was answered by a different
+ * provider, which is context for reading the thread, not a step in it.
+ */
+const ProviderBoundaryRow = memo(function ProviderBoundaryRow(props: {
+  boundary: ProviderBoundaryWorkLogEntry;
+}) {
+  const { boundary } = props;
+  const isSwitch = boundary.event === "switched";
+  return (
+    <div className="flex select-none items-center gap-2 py-1">
+      <span className="h-px flex-1 bg-border/60" />
+      <span
+        className={cn(
+          "flex shrink-0 items-center gap-1.5 text-xs",
+          isSwitch ? "text-muted-foreground" : "text-muted-foreground/70",
+        )}
+      >
+        <ZapIcon className="size-3.5 shrink-0 stroke-[1.8] opacity-80" />
+        <span>{providerBoundaryText(boundary)}</span>
+        {isSwitch && boundary.model ? (
+          <span className="font-mono text-[.7rem] opacity-70">{boundary.model}</span>
+        ) : null}
+      </span>
+      <span className="h-px flex-1 bg-border/60" />
+    </div>
+  );
+});
+
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
-  // Before any hooks: spawn CTA rows render their own component.
+  // Before any hooks: spawn CTA rows and provider boundaries render their own
+  // components.
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
+  }
+  if (workEntry.providerBoundary) {
+    return <ProviderBoundaryRow boundary={workEntry.providerBoundary} />;
   }
   return <PlainWorkEntryRow workEntry={workEntry} workspaceRoot={workspaceRoot} />;
 });

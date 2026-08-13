@@ -2,10 +2,16 @@ import {
   type ChatAttachment,
   CommandId,
   EventId,
+  type MessageId,
   type ModelSelection,
   type OrchestrationEvent,
+  type OrchestrationThread,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
   ProviderDriverKind,
+  type ProviderHandoffActivityPayload,
+  type ProviderHandoffMode,
+  type ProviderInstanceId,
+  type ProviderSwitchActivityPayload,
   type ProjectId,
   type OrchestrationSession,
   ThreadId,
@@ -28,6 +34,11 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import {
+  renderProviderHandoffBrief,
+  selectHandoffMessages,
+  type ProviderHandoffBriefMessage,
+} from "../providerHandoffBrief.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ServerConfig } from "../../config.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
@@ -35,7 +46,10 @@ import { buildInlineSkillInstructions } from "../../provider/skillPromptInjectio
 import { discoverSkillsCatalog, filterDisabledSkills } from "../../provider/skillsCatalog.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
-import { ProviderService } from "../../provider/Services/ProviderService.ts";
+import {
+  ProviderService,
+  type ProviderContinuationState,
+} from "../../provider/Services/ProviderService.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -59,6 +73,7 @@ type ProviderIntentEvent = Extract<
     type:
       | "thread.meta-updated"
       | "thread.runtime-mode-set"
+      | "thread.provider-switched"
       | "thread.turn-start-requested"
       | "thread.turn-interrupt-requested"
       | "thread.approval-response-requested"
@@ -66,6 +81,33 @@ type ProviderIntentEvent = Extract<
       | "thread.session-stop-requested";
   }
 >;
+
+/**
+ * What the provider session bound to a thread already holds when a turn starts.
+ *
+ * The distinction drives the handoff brief: a session that has been live all
+ * along needs nothing, a session resumed from its own native cursor needs only
+ * what happened while it was away, and a session started cold needs the
+ * conversation reconstructed for it.
+ */
+type ProviderSessionContinuity =
+  /** The session was already running and has followed the whole conversation. */
+  | { readonly kind: "live" }
+  /** Started or restarted from a cursor belonging to this continuation group. */
+  | { readonly kind: "resumed"; readonly continuationKey: string }
+  /** Started with no provider-side memory of this thread. */
+  | { readonly kind: "fresh" };
+
+const PROVIDER_SWITCH_ACTIVITY_KIND = "provider.switched";
+const PROVIDER_HANDOFF_ACTIVITY_KIND = "provider.handoff";
+
+/**
+ * Characters of reconstructed conversation a handoff may carry.
+ *
+ * The brief is prepended to the user's message, so it has to leave room for
+ * that message and for the skill instructions the same turn may inject.
+ */
+const PROVIDER_HANDOFF_BRIEF_RESERVED_CHARS = 8_192;
 
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
@@ -451,6 +493,142 @@ const make = Effect.gen(function* () {
       .pipe(Effect.map(Option.getOrUndefined));
   });
 
+  const appendThreadActivity = (input: {
+    readonly threadId: ThreadId;
+    readonly kind: string;
+    readonly summary: string;
+    readonly payload: unknown;
+    readonly createdAt: string;
+  }) =>
+    Effect.all({
+      commandId: serverCommandId("provider-activity"),
+      eventId: serverEventId(),
+    }).pipe(
+      Effect.flatMap(({ commandId, eventId }) =>
+        orchestrationEngine.dispatch({
+          type: "thread.activity.append",
+          commandId,
+          threadId: input.threadId,
+          activity: {
+            id: eventId,
+            tone: "info",
+            kind: input.kind,
+            summary: input.summary,
+            payload: input.payload,
+            turnId: null,
+            createdAt: input.createdAt,
+          },
+          createdAt: input.createdAt,
+        }),
+      ),
+    );
+
+  /**
+   * Reconstruct, for the provider about to take a turn, the part of the
+   * conversation it does not already hold.
+   *
+   * Returns `undefined` when there is nothing to hand over — the session has
+   * been live all along, the thread has no history yet, or a resumed session's
+   * own cursor already covers everything.
+   */
+  const buildProviderHandoffBrief = Effect.fnUntraced(function* (input: {
+    readonly thread: OrchestrationThread;
+    readonly continuity: ProviderSessionContinuity;
+    readonly providerName: string | null;
+    /** The message being sent this turn; it is the request, not history. */
+    readonly excludeMessageId?: MessageId | undefined;
+    readonly maxChars: number;
+  }) {
+    if (input.continuity.kind === "live" || input.maxChars <= 0) {
+      return undefined;
+    }
+    const history: ReadonlyArray<ProviderHandoffBriefMessage> = input.thread.messages
+      .filter((message) => message.id !== input.excludeMessageId && message.text.trim().length > 0)
+      .map((message) => ({
+        role: message.role,
+        text: message.text,
+        ...(message.providerInstanceId !== undefined
+          ? { providerInstanceId: message.providerInstanceId }
+          : {}),
+        ...(message.providerName !== undefined ? { providerName: message.providerName } : {}),
+      }));
+    if (history.length === 0) {
+      return undefined;
+    }
+
+    // Which instances share resume state with which. An instance that is no
+    // longer configured simply has no key, which leaves its messages in the
+    // brief — the safe direction.
+    const continuationKeyByInstanceId = new Map<ProviderInstanceId, string>();
+    for (const instanceId of new Set(
+      history.flatMap((message) =>
+        message.providerInstanceId !== undefined ? [message.providerInstanceId] : [],
+      ),
+    )) {
+      const info = yield* providerService.getInstanceInfo(instanceId).pipe(
+        Effect.map(Option.some),
+        Effect.orElseSucceed(() =>
+          Option.none<{ continuationIdentity: { continuationKey: string } }>(),
+        ),
+      );
+      if (Option.isSome(info)) {
+        continuationKeyByInstanceId.set(
+          instanceId,
+          info.value.continuationIdentity.continuationKey,
+        );
+      }
+    }
+
+    const selected = selectHandoffMessages({
+      messages: history,
+      continuationKeyByInstanceId,
+      ...(input.continuity.kind === "resumed"
+        ? { resumedContinuationKey: input.continuity.continuationKey }
+        : {}),
+    });
+    if (selected.length === 0) {
+      return undefined;
+    }
+
+    // Cumulative line counts per file across every checkpoint in the thread, so
+    // the incoming provider can see where the work has been concentrated.
+    const changedFiles = new Map<string, { path: string; additions: number; deletions: number }>();
+    for (const checkpoint of input.thread.checkpoints) {
+      for (const file of checkpoint.files) {
+        const existing = changedFiles.get(file.path);
+        changedFiles.set(file.path, {
+          path: file.path,
+          additions: (existing?.additions ?? 0) + file.additions,
+          deletions: (existing?.deletions ?? 0) + file.deletions,
+        });
+      }
+    }
+
+    const project = yield* resolveProject(input.thread.projectId);
+    const brief = renderProviderHandoffBrief({
+      workspace: {
+        threadTitle: input.thread.title ?? null,
+        branch: input.thread.branch,
+        worktreePath: input.thread.worktreePath,
+        cwd:
+          resolveThreadWorkspaceCwd({
+            thread: input.thread,
+            projects: project ? [project] : [],
+          }) ?? null,
+      },
+      messages: selected,
+      changedFiles: [...changedFiles.values()],
+      fromProviderName:
+        selected.findLast(
+          (message) =>
+            message.providerName !== undefined && message.providerName !== input.providerName,
+        )?.providerName ?? null,
+      mode: input.continuity.kind === "resumed" ? "resumed" : "briefed",
+      maxChars: input.maxChars,
+    });
+    return brief;
+  });
+
   const rejectStartedThreadModelChangeIfRequired = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly currentModelSelection: ModelSelection;
@@ -593,28 +771,27 @@ const make = Effect.gen(function* () {
         requestedModelSelection,
       });
     }
+    // A thread that changes instance mid-conversation used to be rejected here,
+    // once for crossing drivers and once for crossing continuation groups. Both
+    // rejections existed because the incoming provider had no way to learn what
+    // it had missed. It does now: the session ledger keeps each group's own
+    // resume cursor, and anything the cursor cannot cover is handed over as a
+    // brief. The restart path below carries the change out; all that is left to
+    // do here is say so in the log.
     if (
       thread.session !== null &&
       requestedModelSelection !== undefined &&
       requestedModelSelection.instanceId !== currentInstanceId
     ) {
-      if (currentInfo.driverKind !== desiredInfo.driverKind) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' is bound to driver '${currentInfo.driverKind}' and cannot switch to '${desiredInfo.driverKind}'.`,
-        });
-      }
-      if (
-        currentInfo.continuationIdentity.continuationKey !==
-        desiredInfo.continuationIdentity.continuationKey
-      ) {
-        return yield* new ProviderAdapterRequestError({
-          provider: preferredProvider,
-          method: "thread.turn.start",
-          detail: `Thread '${threadId}' cannot switch from instance '${currentInstanceId}' to '${desiredInstanceId}' because their provider resume state is incompatible.`,
-        });
-      }
+      yield* Effect.logInfo("provider command reactor handing thread to another provider", {
+        threadId,
+        currentInstanceId,
+        currentDriverKind: currentInfo.driverKind,
+        currentContinuationKey: currentInfo.continuationIdentity.continuationKey,
+        desiredInstanceId,
+        desiredDriverKind: desiredInfo.driverKind,
+        desiredContinuationKey: desiredInfo.continuationIdentity.continuationKey,
+      });
     }
     const project = yield* resolveProject(thread.projectId);
     const effectiveCwd = resolveThreadWorkspaceCwd({
@@ -635,6 +812,22 @@ const make = Effect.gen(function* () {
         ...(input?.resumeCursor !== undefined ? { resumeCursor: input.resumeCursor } : {}),
         runtimeMode: desiredRuntimeMode,
       });
+
+    // What the instance we are about to start left behind on this thread the
+    // last time anything in its continuation group ran here. A read failure is
+    // not worth failing the turn over: the session then starts cold and the
+    // handoff brief covers it, which is the same path a first-time instance
+    // takes.
+    const resolveDesiredContinuation = () =>
+      providerService.getContinuationState({ threadId, instanceId: desiredInstanceId }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider command reactor failed to read provider continuation", {
+            threadId,
+            desiredInstanceId,
+            cause: Cause.pretty(cause),
+          }).pipe(Effect.as(Option.none<ProviderContinuationState>())),
+        ),
+      );
 
     const bindSessionToThread = (session: ProviderSession) =>
       Effect.gen(function* () {
@@ -692,12 +885,36 @@ const make = Effect.gen(function* () {
         !shouldRestartForModelChange &&
         !shouldRestartForModelSelectionChange
       ) {
-        return existingSessionThreadId;
+        return {
+          sessionThreadId: existingSessionThreadId,
+          boundInstanceId: desiredInstanceId,
+          boundProviderName: preferredProvider,
+          continuity: { kind: "live" } as const,
+        };
       }
 
-      const resumeCursor = shouldRestartForModelChange
-        ? undefined
-        : (activeSession?.resumeCursor ?? undefined);
+      // Instances that share a continuation key can resume each other's
+      // sessions, so the live cursor carries across those. Across groups it
+      // cannot: handing the outgoing provider's cursor to the incoming one
+      // would resume the wrong conversation, or nothing at all. There the
+      // incoming instance's own ledger row is the only usable starting point.
+      const continuationCompatible =
+        currentInfo.continuationIdentity.continuationKey ===
+        desiredInfo.continuationIdentity.continuationKey;
+      const liveCursor = continuationCompatible
+        ? (activeSession?.resumeCursor ?? undefined)
+        : undefined;
+      const ledgerContinuation =
+        liveCursor === undefined
+          ? yield* resolveDesiredContinuation()
+          : Option.none<ProviderContinuationState>();
+      // Restarting because the model cannot change in session used to drop the
+      // cursor, which threw the conversation away to change one setting. The
+      // model is passed to the new session independently of where it resumes
+      // from, so there is nothing to gain by starting cold.
+      const resumeCursor =
+        liveCursor ??
+        (Option.isSome(ledgerContinuation) ? ledgerContinuation.value.resumeCursor : undefined);
       yield* Effect.logInfo("provider command reactor restarting provider session", {
         threadId,
         existingSessionThreadId,
@@ -729,16 +946,46 @@ const make = Effect.gen(function* () {
         cwd: restartedSession.cwd,
       });
       yield* bindSessionToThread(restartedSession);
-      return restartedSession.threadId;
+      return {
+        sessionThreadId: restartedSession.threadId,
+        boundInstanceId: restartedSession.providerInstanceId ?? desiredInstanceId,
+        boundProviderName: restartedSession.provider,
+        continuity:
+          resumeCursor !== undefined
+            ? ({
+                kind: "resumed",
+                continuationKey: desiredInfo.continuationIdentity.continuationKey,
+              } as const)
+            : ({ kind: "fresh" } as const),
+      };
     }
 
-    const startedSession = yield* startProviderSession(undefined);
+    // No live session: either the thread has never run, the server restarted,
+    // or a switch retired the previous provider. In all three the ledger is the
+    // only thing that knows whether this instance can pick up where it left off.
+    const coldStartContinuation = yield* resolveDesiredContinuation();
+    const startedSession = yield* startProviderSession(
+      Option.isSome(coldStartContinuation)
+        ? { resumeCursor: coldStartContinuation.value.resumeCursor }
+        : undefined,
+    );
     yield* bindSessionToThread(startedSession);
-    return startedSession.threadId;
+    return {
+      sessionThreadId: startedSession.threadId,
+      boundInstanceId: startedSession.providerInstanceId ?? desiredInstanceId,
+      boundProviderName: startedSession.provider,
+      continuity: Option.isSome(coldStartContinuation)
+        ? ({
+            kind: "resumed",
+            continuationKey: coldStartContinuation.value.continuationKey,
+          } as const)
+        : ({ kind: "fresh" } as const),
+    };
   });
 
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
+    readonly messageId?: MessageId;
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
@@ -751,7 +998,7 @@ const make = Effect.gen(function* () {
         new Error(`Thread '${input.threadId}' was not found in read model.`),
       );
     }
-    yield* ensureSessionForThread(input.threadId, input.createdAt, {
+    const ensured = yield* ensureSessionForThread(input.threadId, input.createdAt, {
       ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
       pendingTurnStart: true,
     });
@@ -800,7 +1047,66 @@ const make = Effect.gen(function* () {
     const messageWithSkills = skillInlineText
       ? `${input.messageText}\n\n${skillInlineText}`
       : input.messageText;
-    const normalizedInput = toNonEmptyProviderInput(messageWithSkills);
+
+    // A provider that is picking this thread up without having followed it
+    // reads the conversation first, then the request. Built here rather than at
+    // switch time so an interrupted or retried turn reconstructs the same brief
+    // from the same durable history.
+    const handoffBrief = yield* buildProviderHandoffBrief({
+      thread,
+      continuity: ensured.continuity,
+      providerName: ensured.boundProviderName,
+      ...(input.messageId !== undefined ? { excludeMessageId: input.messageId } : {}),
+      maxChars: Math.max(
+        0,
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
+          messageWithSkills.length -
+          PROVIDER_HANDOFF_BRIEF_RESERVED_CHARS,
+      ),
+    });
+    if (handoffBrief !== undefined) {
+      const handoff: ProviderHandoffMode =
+        ensured.continuity.kind === "resumed" ? "resumed" : "briefed";
+      yield* Effect.logInfo("provider command reactor handed conversation to provider", {
+        threadId: input.threadId,
+        handoff,
+        briefChars: handoffBrief.chars,
+        briefMessages: handoffBrief.messageCount,
+        briefCompressed: handoffBrief.compressed,
+      });
+      const activityPayload: ProviderHandoffActivityPayload = {
+        instanceId: ensured.boundInstanceId,
+        providerName: ensured.boundProviderName,
+        handoff,
+        briefChars: handoffBrief.chars,
+        briefCompressed: handoffBrief.compressed,
+      };
+      yield* appendThreadActivity({
+        threadId: input.threadId,
+        kind: PROVIDER_HANDOFF_ACTIVITY_KIND,
+        summary:
+          handoff === "resumed"
+            ? "Provider resumed and caught up on the conversation"
+            : "Provider took over with a conversation brief",
+        payload: activityPayload,
+        createdAt: input.createdAt,
+      }).pipe(
+        // The brief is already built; failing to record it must not cost the
+        // user their turn.
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider command reactor failed to record provider handoff", {
+            threadId: input.threadId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
+    }
+
+    const messageWithHandoff =
+      handoffBrief === undefined
+        ? messageWithSkills
+        : `${handoffBrief.text}\n\n---\n\n## Continue the conversation\n\n${messageWithSkills}`;
+    const normalizedInput = toNonEmptyProviderInput(messageWithHandoff);
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
@@ -1210,6 +1516,7 @@ const make = Effect.gen(function* () {
 
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
+      messageId: event.payload.messageId,
       messageText: message.text,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
@@ -1373,6 +1680,76 @@ const make = Effect.gen(function* () {
     });
   });
 
+  /**
+   * Retire the outgoing provider so the next turn binds the incoming one.
+   *
+   * Nothing is started here. The switch is only a decision, and the thread may
+   * sit on it for a while; spinning up a session now would burn a provider
+   * process to hold a conversation nobody is having yet. The next turn starts
+   * the new session and carries the handoff.
+   */
+  const processProviderSwitched = Effect.fn("processProviderSwitched")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.provider-switched" }>,
+  ) {
+    const thread = yield* resolveThread(event.payload.threadId);
+    if (!thread) {
+      return;
+    }
+    const now = event.payload.switchedAt;
+
+    // Stopping is safe: the directory has already mirrored this session's
+    // resume cursor into the ledger, so the outgoing provider stays resumable
+    // if the user switches back.
+    if (thread.session && thread.session.status !== "stopped") {
+      yield* providerService.stopSession({ threadId: thread.id }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider command reactor failed to stop outgoing provider session", {
+            threadId: thread.id,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
+      yield* setThreadSession({
+        threadId: thread.id,
+        session: {
+          threadId: thread.id,
+          status: "stopped",
+          providerName: thread.session.providerName ?? null,
+          ...(thread.session.providerInstanceId !== undefined
+            ? { providerInstanceId: thread.session.providerInstanceId }
+            : {}),
+          runtimeMode: thread.session.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      });
+    }
+
+    // The cached selection drives restart decisions on later turns; leaving the
+    // retired provider's selection there would make the next turn look like a
+    // model change on a provider that is no longer bound.
+    threadModelSelections.set(event.payload.threadId, event.payload.modelSelection);
+
+    const activityPayload: ProviderSwitchActivityPayload = {
+      fromInstanceId: event.payload.fromInstanceId,
+      fromProviderName: event.payload.fromProviderName,
+      toInstanceId: event.payload.toInstanceId,
+      toProviderName: null,
+      model: event.payload.modelSelection.model,
+    };
+    yield* appendThreadActivity({
+      threadId: event.payload.threadId,
+      kind: PROVIDER_SWITCH_ACTIVITY_KIND,
+      summary: event.payload.fromProviderName
+        ? `Switched provider from ${event.payload.fromProviderName} to ${event.payload.toInstanceId}`
+        : `Switched provider to ${event.payload.toInstanceId}`,
+      payload: activityPayload,
+      createdAt: now,
+    });
+  });
+
   const processDomainEvent = Effect.fn("processDomainEvent")(function* (
     event: ProviderIntentEvent,
   ) {
@@ -1401,6 +1778,9 @@ const make = Effect.gen(function* () {
         );
         return;
       }
+      case "thread.provider-switched":
+        yield* processProviderSwitched(event);
+        return;
       case "thread.turn-start-requested":
         yield* processTurnStartRequested(event);
         return;
@@ -1450,6 +1830,7 @@ const make = Effect.gen(function* () {
       if (
         (event.type === "thread.meta-updated" && event.payload.regenerateTitle === true) ||
         event.type === "thread.runtime-mode-set" ||
+        event.type === "thread.provider-switched" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||
         event.type === "thread.approval-response-requested" ||

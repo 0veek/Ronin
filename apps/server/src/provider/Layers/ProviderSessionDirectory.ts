@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import * as ProviderSessionLedger from "../../persistence/ProviderSessionLedger.ts";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import { ProviderSessionDirectoryPersistenceError, ProviderValidationError } from "../Errors.ts";
 import {
@@ -12,6 +13,7 @@ import {
   type ProviderRuntimeBinding,
   type ProviderRuntimeBindingWithMetadata,
   type ProviderSessionDirectoryShape,
+  type ProviderSessionLedgerEntry,
 } from "../Services/ProviderSessionDirectory.ts";
 const decodeProviderDriverKindValue = Schema.decodeUnknownEffect(ProviderDriverKind);
 
@@ -83,8 +85,32 @@ function toRuntimeBinding(
   );
 }
 
+function toLedgerEntry(
+  row: ProviderSessionLedger.ProviderSessionLedgerEntry,
+  operation: string,
+): Effect.Effect<ProviderSessionLedgerEntry, ProviderSessionDirectoryPersistenceError> {
+  return decodeProviderDriverKind(row.providerName, operation).pipe(
+    Effect.map(
+      (provider) =>
+        ({
+          threadId: row.threadId,
+          continuationKey: row.continuationKey,
+          provider,
+          providerInstanceId: row.providerInstanceId,
+          adapterKey: row.adapterKey,
+          runtimeMode: row.runtimeMode,
+          resumeCursor: row.resumeCursor,
+          runtimePayload: row.runtimePayload,
+          firstSeenAt: row.firstSeenAt,
+          lastSeenAt: row.lastSeenAt,
+        }) satisfies ProviderSessionLedgerEntry,
+    ),
+  );
+}
+
 const makeProviderSessionDirectory = Effect.gen(function* () {
   const repository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+  const ledgerRepository = yield* ProviderSessionLedger.ProviderSessionLedgerRepository;
 
   const getBinding = (threadId: ThreadId) =>
     repository.getByThreadId({ threadId }).pipe(
@@ -125,28 +151,85 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
         issue: "providerInstanceId is required for provider session runtime bindings.",
       });
     }
+    const adapterKey =
+      binding.adapterKey ??
+      (providerChanged ? binding.provider : (existingRuntime?.adapterKey ?? binding.provider));
+    const runtimeMode = binding.runtimeMode ?? existingRuntime?.runtimeMode ?? "full-access";
+    const resumeCursor =
+      binding.resumeCursor !== undefined
+        ? binding.resumeCursor
+        : (existingRuntime?.resumeCursor ?? null);
+    const runtimePayload = mergeRuntimePayload(
+      existingRuntime?.runtimePayload ?? null,
+      binding.runtimePayload,
+    );
     yield* repository
       .upsert({
         threadId: resolvedThreadId,
         providerName: binding.provider,
         providerInstanceId,
-        adapterKey:
-          binding.adapterKey ??
-          (providerChanged ? binding.provider : (existingRuntime?.adapterKey ?? binding.provider)),
-        runtimeMode: binding.runtimeMode ?? existingRuntime?.runtimeMode ?? "full-access",
+        adapterKey,
+        runtimeMode,
         status: binding.status ?? existingRuntime?.status ?? "running",
         lastSeenAt: now,
-        resumeCursor:
-          binding.resumeCursor !== undefined
-            ? binding.resumeCursor
-            : (existingRuntime?.resumeCursor ?? null),
-        runtimePayload: mergeRuntimePayload(
-          existingRuntime?.runtimePayload ?? null,
-          binding.runtimePayload,
-        ),
+        resumeCursor,
+        runtimePayload,
       })
       .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.upsert:upsert")));
+
+    // Mirror into the ledger so this continuation group keeps its cursor even
+    // after the thread is handed to another provider, which overwrites the
+    // single runtime row. Callers that cannot resolve a continuation key skip
+    // the mirror rather than guessing one — a wrong key would let an instance
+    // resume a session that isn't its own.
+    if (binding.continuationKey !== undefined) {
+      yield* ledgerRepository
+        .upsert({
+          threadId: resolvedThreadId,
+          continuationKey: binding.continuationKey,
+          providerName: binding.provider,
+          providerInstanceId,
+          adapterKey,
+          runtimeMode,
+          resumeCursor,
+          runtimePayload,
+          // Ignored on conflict — the stored value is when this group first
+          // touched the thread, which no later write should move.
+          firstSeenAt: now,
+          lastSeenAt: now,
+        })
+        .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.upsert:ledgerUpsert")));
+    }
   });
+
+  const getLedgerEntry: ProviderSessionDirectoryShape["getLedgerEntry"] = (input) =>
+    ledgerRepository.get(input).pipe(
+      Effect.mapError(toPersistenceError("ProviderSessionDirectory.getLedgerEntry:get")),
+      Effect.flatMap((row) =>
+        Option.match(row, {
+          onNone: () => Effect.succeed(Option.none<ProviderSessionLedgerEntry>()),
+          onSome: (value) =>
+            toLedgerEntry(value, "ProviderSessionDirectory.getLedgerEntry").pipe(
+              Effect.map(Option.some),
+            ),
+        }),
+      ),
+    );
+
+  const listLedgerEntries: ProviderSessionDirectoryShape["listLedgerEntries"] = (threadId) =>
+    ledgerRepository.listByThreadId({ threadId }).pipe(
+      Effect.mapError(toPersistenceError("ProviderSessionDirectory.listLedgerEntries:list")),
+      Effect.flatMap((rows) =>
+        Effect.forEach(rows, (row) =>
+          toLedgerEntry(row, "ProviderSessionDirectory.listLedgerEntries"),
+        ),
+      ),
+    );
+
+  const clearLedger: ProviderSessionDirectoryShape["clearLedger"] = (threadId) =>
+    ledgerRepository
+      .deleteByThreadId({ threadId })
+      .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.clearLedger:delete")));
 
   const getProvider: ProviderSessionDirectoryShape["getProvider"] = (threadId) =>
     getBinding(threadId).pipe(
@@ -188,6 +271,9 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
     getBinding,
     listThreadIds,
     listBindings,
+    getLedgerEntry,
+    listLedgerEntries,
+    clearLedger,
   } satisfies ProviderSessionDirectoryShape;
 });
 

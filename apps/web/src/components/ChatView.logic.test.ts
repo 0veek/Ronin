@@ -2,6 +2,7 @@ import {
   EnvironmentId,
   MessageId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
   TurnId,
@@ -18,12 +19,16 @@ import {
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveLockedProvider,
+  deriveProviderSwitchBlockReason,
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
+  isProviderHandoff,
+  providerInstanceLabel,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
@@ -372,6 +377,144 @@ describe("getStartedThreadModelChangeBlockReason", () => {
       description:
         "This provider does not allow switching models after a conversation has started.",
     });
+  });
+});
+
+describe("deriveLockedProvider", () => {
+  it("locks a started thread to the provider its live session is on", () => {
+    expect(
+      deriveLockedProvider({
+        thread: makeThread({ session: readySession }),
+        selectedProvider: "grok",
+        threadProvider: null,
+      }),
+    ).toBe("codex");
+  });
+
+  it("stops speaking for a session that was retired by a provider switch", () => {
+    // After a switch the outgoing session lingers as `stopped` until the
+    // incoming provider binds; reading it would keep the picker pointed at
+    // the provider the user just left.
+    expect(
+      deriveLockedProvider({
+        thread: makeThread({
+          session: { ...readySession, status: "stopped" },
+          latestTurn: completedTurn,
+        }),
+        selectedProvider: "grok",
+        threadProvider: null,
+      }),
+    ).toBe("grok");
+  });
+});
+
+describe("deriveProviderSwitchBlockReason", () => {
+  it("never blocks a thread that has not started", () => {
+    expect(
+      deriveProviderSwitchBlockReason({ thread: makeThread(), hasOpenBlockingRequest: true }),
+    ).toBeNull();
+  });
+
+  it("blocks while a turn is in flight", () => {
+    for (const status of ["starting", "running"] as const) {
+      expect(
+        deriveProviderSwitchBlockReason({
+          thread: makeThread({ session: { ...readySession, status } }),
+          hasOpenBlockingRequest: false,
+        }),
+      ).toBe("Interrupt the current turn before switching providers.");
+    }
+  });
+
+  it("blocks while a request is waiting on the user", () => {
+    expect(
+      deriveProviderSwitchBlockReason({
+        thread: makeThread({ session: readySession }),
+        hasOpenBlockingRequest: true,
+      }),
+    ).toBe("Answer the pending request before switching providers.");
+  });
+
+  it("allows the switch on a settled started thread", () => {
+    expect(
+      deriveProviderSwitchBlockReason({
+        thread: makeThread({ session: readySession, latestTurn: completedTurn }),
+        hasOpenBlockingRequest: false,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("isProviderHandoff", () => {
+  const providers = [
+    {
+      instanceId: ProviderInstanceId.make("codex"),
+      driver: ProviderDriverKind.make("codex"),
+      continuation: { groupKey: "codex:home:/home/user/.codex" },
+    },
+    {
+      instanceId: ProviderInstanceId.make("codex_work"),
+      driver: ProviderDriverKind.make("codex"),
+      continuation: { groupKey: "codex:home:/home/user/.codex" },
+    },
+    {
+      instanceId: ProviderInstanceId.make("codex_isolated"),
+      driver: ProviderDriverKind.make("codex"),
+      continuation: { groupKey: "codex:home:/home/user/.codex-isolated" },
+    },
+    {
+      instanceId: ProviderInstanceId.make("grok"),
+      driver: ProviderDriverKind.make("grok"),
+      continuation: { groupKey: "grok:instance:grok" },
+    },
+  ];
+
+  it("is not a handoff without a current binding or when the instance is unchanged", () => {
+    expect(isProviderHandoff({ providers, currentInstanceId: null, nextInstanceId: "grok" })).toBe(
+      false,
+    );
+    expect(
+      isProviderHandoff({ providers, currentInstanceId: "codex", nextInstanceId: "codex" }),
+    ).toBe(false);
+  });
+
+  it("is not a handoff between instances that can resume each other", () => {
+    expect(
+      isProviderHandoff({ providers, currentInstanceId: "codex", nextInstanceId: "codex_work" }),
+    ).toBe(false);
+  });
+
+  it("is a handoff across drivers and across continuation groups", () => {
+    expect(
+      isProviderHandoff({ providers, currentInstanceId: "codex", nextInstanceId: "grok" }),
+    ).toBe(true);
+    expect(
+      isProviderHandoff({
+        providers,
+        currentInstanceId: "codex",
+        nextInstanceId: "codex_isolated",
+      }),
+    ).toBe(true);
+  });
+
+  it("treats an unresolvable instance as a handoff", () => {
+    expect(
+      isProviderHandoff({ providers, currentInstanceId: "retired", nextInstanceId: "codex" }),
+    ).toBe(true);
+  });
+});
+
+describe("providerInstanceLabel", () => {
+  const providers = [
+    { instanceId: ProviderInstanceId.make("codex"), displayName: "Codex" },
+    { instanceId: ProviderInstanceId.make("codex_work"), displayName: undefined },
+  ];
+
+  it("prefers the configured display name and falls back to the routing key", () => {
+    expect(providerInstanceLabel(providers, "codex")).toBe("Codex");
+    expect(providerInstanceLabel(providers, "codex_work")).toBe("codex_work");
+    expect(providerInstanceLabel(providers, "unknown")).toBe("unknown");
+    expect(providerInstanceLabel(providers, null)).toBe("the current provider");
   });
 });
 

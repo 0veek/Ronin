@@ -12,6 +12,8 @@ import {
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
   ProjectScript,
+  ProviderInstanceId,
+  TrimmedNonEmptyString,
   TurnId,
   type OrchestrationCheckpointSummary,
   type OrchestrationLatestTurn,
@@ -79,6 +81,8 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
+    providerInstanceId: Schema.NullOr(ProviderInstanceId),
+    providerName: Schema.NullOr(TrimmedNonEmptyString),
   }),
 );
 const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
@@ -529,6 +533,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
+          provider_instance_id AS "providerInstanceId",
+          provider_name AS "providerName",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_messages
@@ -972,6 +978,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
+          provider_instance_id AS "providerInstanceId",
+          provider_name AS "providerName",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_messages
@@ -1198,6 +1206,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
+          provider_instance_id AS "providerInstanceId",
+          provider_name AS "providerName",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_messages
@@ -1435,6 +1445,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   ...(row.attachments !== null ? { attachments: row.attachments } : {}),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
+                  ...(row.providerInstanceId !== null
+                    ? { providerInstanceId: row.providerInstanceId }
+                    : {}),
+                  ...(row.providerName !== null ? { providerName: row.providerName } : {}),
                   createdAt: row.createdAt,
                   updatedAt: row.updatedAt,
                 });
@@ -2474,6 +2488,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             text: row.text,
             turnId: row.turnId,
             streaming: row.isStreaming === 1,
+            ...(row.providerInstanceId !== null
+              ? { providerInstanceId: row.providerInstanceId }
+              : {}),
+            ...(row.providerName !== null ? { providerName: row.providerName } : {}),
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
           };

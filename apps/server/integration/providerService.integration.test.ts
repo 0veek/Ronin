@@ -25,6 +25,7 @@ import {
 import * as ServerConfig from "../src/config.ts";
 import { ServerSettingsService } from "../src/serverSettings.ts";
 import { SqlitePersistenceMemory } from "../src/persistence/Layers/Sqlite.ts";
+import * as ProviderSessionLedger from "../src/persistence/ProviderSessionLedger.ts";
 import * as ProviderSessionRuntime from "../src/persistence/ProviderSessionRuntime.ts";
 
 import {
@@ -65,6 +66,7 @@ const makeIntegrationFixture = () =>
 
     const directoryLayer = ProviderSessionDirectoryLive.pipe(
       Layer.provide(ProviderSessionRuntime.layer),
+      Layer.provide(ProviderSessionLedger.layer),
     );
 
     const shared = Layer.mergeAll(

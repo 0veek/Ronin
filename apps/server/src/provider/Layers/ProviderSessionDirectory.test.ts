@@ -16,15 +16,20 @@ import {
   makeSqlitePersistenceLive,
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
+import * as ProviderSessionLedger from "../../persistence/ProviderSessionLedger.ts";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import { ProviderSessionDirectoryLive } from "./ProviderSessionDirectory.ts";
 
 function makeDirectoryLayer<E, R>(persistenceLayer: Layer.Layer<SqlClient.SqlClient, E, R>) {
   const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(Layer.provide(persistenceLayer));
+  const ledgerRepositoryLayer = ProviderSessionLedger.layer.pipe(Layer.provide(persistenceLayer));
   return Layer.mergeAll(
     runtimeRepositoryLayer,
-    ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer)),
+    ProviderSessionDirectoryLive.pipe(
+      Layer.provide(runtimeRepositoryLayer),
+      Layer.provide(ledgerRepositoryLayer),
+    ),
     NodeServices.layer,
   );
 }

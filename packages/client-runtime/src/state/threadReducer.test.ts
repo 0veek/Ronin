@@ -307,6 +307,58 @@ describe("applyThreadDetailEvent", () => {
     });
   });
 
+  describe("thread.provider-switched", () => {
+    it("retargets the model selection and leaves the outgoing session alone", () => {
+      const threadWithSession: OrchestrationThread = {
+        ...baseThread,
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "idle",
+          providerName: "Codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: "2026-04-01T05:00:00.000Z",
+        },
+      };
+
+      const result = applyThreadDetailEvent(threadWithSession, {
+        ...baseEventFields,
+        sequence: 6,
+        occurredAt: "2026-04-01T06:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.provider-switched",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          fromInstanceId: ProviderInstanceId.make("codex"),
+          fromProviderName: "Codex",
+          toInstanceId: ProviderInstanceId.make("claude-work"),
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claude-work"),
+            model: "claude-opus-5",
+          },
+          switchedAt: "2026-04-01T06:00:00.000Z",
+          updatedAt: "2026-04-01T06:00:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.modelSelection).toEqual({
+          instanceId: ProviderInstanceId.make("claude-work"),
+          model: "claude-opus-5",
+        });
+        // The server retires the outgoing runtime and reports it through
+        // thread.session-set; guessing here would flicker the header against
+        // the real transition.
+        expect(result.thread.session).toEqual(threadWithSession.session);
+        expect(result.thread.updatedAt).toBe("2026-04-01T06:00:00.000Z");
+      }
+    });
+  });
+
   describe("thread.message-sent", () => {
     it("appends a new message", () => {
       const result = applyThreadDetailEvent(baseThread, {

@@ -1523,6 +1523,107 @@ describe("deriveWorkLogEntries", () => {
   });
 });
 
+describe("deriveWorkLogEntries provider boundaries", () => {
+  const providerLabelByInstanceId = new Map([
+    ["codex", "Codex"],
+    ["grok", "Grok"],
+  ]);
+
+  it("marks the switch with both providers named the way the picker names them", () => {
+    const entries = deriveWorkLogEntries(
+      [
+        makeActivity({
+          id: "switched",
+          kind: "provider.switched",
+          summary: "Switched provider from codex to grok",
+          tone: "info",
+          payload: {
+            fromInstanceId: "codex",
+            fromProviderName: "codex",
+            toInstanceId: "grok",
+            toProviderName: null,
+            model: "grok-build",
+          },
+        }),
+      ],
+      { providerLabelByInstanceId },
+    );
+
+    expect(entries[0]?.providerBoundary).toEqual({
+      event: "switched",
+      fromLabel: "Codex",
+      toLabel: "Grok",
+      model: "grok-build",
+    });
+  });
+
+  it("falls back to the routing id for an instance that is no longer configured", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "switched",
+        kind: "provider.switched",
+        summary: "Switched provider to codex_work",
+        tone: "info",
+        payload: {
+          fromInstanceId: null,
+          fromProviderName: null,
+          toInstanceId: "codex_work",
+          toProviderName: null,
+          model: null,
+        },
+      }),
+    ]);
+
+    expect(entries[0]?.providerBoundary).toEqual({
+      event: "switched",
+      fromLabel: null,
+      toLabel: "codex_work",
+      model: null,
+    });
+  });
+
+  it("records how the incoming provider picked the thread up", () => {
+    const entries = deriveWorkLogEntries(
+      [
+        makeActivity({
+          id: "handoff",
+          kind: "provider.handoff",
+          summary: "Provider took over with a conversation brief",
+          tone: "info",
+          payload: {
+            instanceId: "grok",
+            providerName: "grok",
+            handoff: "briefed",
+            briefChars: 4211,
+            briefCompressed: true,
+          },
+        }),
+      ],
+      { providerLabelByInstanceId },
+    );
+
+    expect(entries[0]?.providerBoundary).toEqual({
+      event: "handoff",
+      toLabel: "Grok",
+      handoff: "briefed",
+      briefChars: 4211,
+      briefCompressed: true,
+    });
+  });
+
+  it("leaves ordinary rows without a boundary", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "tool",
+        kind: "tool.completed",
+        summary: "Tool call complete",
+      }),
+    ]);
+
+    expect(entries[0]?.providerBoundary).toBeUndefined();
+  });
+});
+
 describe("deriveTimelineEntries", () => {
   it("includes proposed plans alongside messages and work entries in chronological order", () => {
     const entries = deriveTimelineEntries(

@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
-import { ChatAttachment } from "@t3tools/contracts";
+import { ChatAttachment, ProviderInstanceId, TrimmedNonEmptyString } from "@t3tools/contracts";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 import {
@@ -21,6 +21,8 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
+    providerInstanceId: Schema.NullOr(ProviderInstanceId),
+    providerName: Schema.NullOr(TrimmedNonEmptyString),
   }),
 );
 
@@ -37,6 +39,8 @@ function toProjectionThreadMessage(
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     ...(row.attachments !== null ? { attachments: row.attachments } : {}),
+    ...(row.providerInstanceId !== null ? { providerInstanceId: row.providerInstanceId } : {}),
+    ...(row.providerName !== null ? { providerName: row.providerName } : {}),
   };
 }
 
@@ -48,6 +52,11 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
     execute: (row) => {
       const nextAttachmentsJson =
         row.attachments !== undefined ? JSON.stringify(row.attachments) : null;
+      // Attribution arrives on the first delta of a reply and is absent from
+      // every later write for the same message, so — like attachments — it is
+      // written once and then preserved rather than overwritten with null.
+      const nextProviderInstanceId = row.providerInstanceId ?? null;
+      const nextProviderName = row.providerName ?? null;
       return sql`
         INSERT INTO projection_thread_messages (
           message_id,
@@ -57,6 +66,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json,
           is_streaming,
+          provider_instance_id,
+          provider_name,
           created_at,
           updated_at
         )
@@ -75,6 +86,22 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             )
           ),
           ${row.isStreaming ? 1 : 0},
+          COALESCE(
+            ${nextProviderInstanceId},
+            (
+              SELECT provider_instance_id
+              FROM projection_thread_messages
+              WHERE message_id = ${row.messageId}
+            )
+          ),
+          COALESCE(
+            ${nextProviderName},
+            (
+              SELECT provider_name
+              FROM projection_thread_messages
+              WHERE message_id = ${row.messageId}
+            )
+          ),
           ${row.createdAt},
           ${row.updatedAt}
         )
@@ -89,6 +116,14 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
             projection_thread_messages.attachments_json
           ),
           is_streaming = excluded.is_streaming,
+          provider_instance_id = COALESCE(
+            excluded.provider_instance_id,
+            projection_thread_messages.provider_instance_id
+          ),
+          provider_name = COALESCE(
+            excluded.provider_name,
+            projection_thread_messages.provider_name
+          ),
           created_at = excluded.created_at,
           updated_at = excluded.updated_at
       `;
@@ -108,6 +143,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
+          provider_instance_id AS "providerInstanceId",
+          provider_name AS "providerName",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_messages
@@ -129,6 +166,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           text,
           attachments_json AS "attachments",
           is_streaming AS "isStreaming",
+          provider_instance_id AS "providerInstanceId",
+          provider_name AS "providerName",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
         FROM projection_thread_messages

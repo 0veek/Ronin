@@ -26,11 +26,28 @@ import type {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import type * as Option from "effect/Option";
 import type * as Stream from "effect/Stream";
 
 import type { ProviderServiceError } from "../Errors.ts";
 import type { ProviderAdapterCapabilities } from "./ProviderAdapter.ts";
 import type { ProviderInstanceRoutingInfo } from "./ProviderAdapterRegistry.ts";
+
+/**
+ * What an instance can still pick up on a thread it is not currently bound to.
+ *
+ * `resumeCursor` is the provider's own opaque handle (a Codex thread id, a
+ * Claude session id + transcript path); `null` means the group has a ledger row
+ * but no usable cursor, which is treated the same as never having run.
+ */
+export interface ProviderContinuationState {
+  readonly continuationKey: string;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly resumeCursor: unknown | null;
+  readonly runtimePayload: unknown | null;
+  readonly firstSeenAt: string;
+  readonly lastSeenAt: string;
+}
 
 /**
  * ProviderServiceShape - Service API for provider session and turn orchestration.
@@ -96,6 +113,29 @@ export interface ProviderServiceShape {
   readonly getInstanceInfo: (
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<ProviderInstanceRoutingInfo, ProviderServiceError>;
+
+  /**
+   * The resume state an instance left behind on a thread the last time it (or
+   * anything in its continuation group) ran there.
+   *
+   * `Option.none` means the instance has never held a session on this thread,
+   * so continuing the conversation there requires handing it a brief rather
+   * than resuming native state. Distinct from `getBinding`, which only ever
+   * describes the provider currently bound to the thread.
+   */
+  readonly getContinuationState: (input: {
+    readonly threadId: ThreadId;
+    readonly instanceId: ProviderInstanceId;
+  }) => Effect.Effect<Option.Option<ProviderContinuationState>, ProviderServiceError>;
+
+  /**
+   * Forget every provider's resume state for a thread. Called when the thread
+   * is deleted — the cursors reference provider-side sessions for a
+   * conversation that no longer exists.
+   */
+  readonly clearContinuationLedger: (input: {
+    readonly threadId: ThreadId;
+  }) => Effect.Effect<void, ProviderServiceError>;
 
   /**
    * Roll back provider conversation state by a number of turns.

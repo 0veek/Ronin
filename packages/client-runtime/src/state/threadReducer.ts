@@ -242,6 +242,19 @@ export function applyThreadDetailEvent(
         },
       };
 
+    // The session is untouched here on purpose: the server retires the
+    // outgoing runtime and reports it through thread.session-set, so mirroring
+    // a guess locally would flicker the header against the real transition.
+    case "thread.provider-switched":
+      return {
+        kind: "updated",
+        thread: {
+          ...thread,
+          modelSelection: event.payload.modelSelection,
+          updatedAt: event.payload.updatedAt,
+        },
+      };
+
     // ── Turn lifecycle ──────────────────────────────────────────────
     case "thread.turn-start-requested":
       return {
@@ -291,6 +304,12 @@ export function applyThreadDetailEvent(
           : {}),
         turnId: event.payload.turnId,
         streaming: event.payload.streaming,
+        ...(event.payload.providerInstanceId !== undefined
+          ? { providerInstanceId: event.payload.providerInstanceId }
+          : {}),
+        ...(event.payload.providerName !== undefined
+          ? { providerName: event.payload.providerName }
+          : {}),
         createdAt: event.payload.createdAt,
         updatedAt: event.payload.updatedAt,
       };
@@ -312,6 +331,14 @@ export function applyThreadDetailEvent(
                   ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
                   ...(message.attachments !== undefined
                     ? { attachments: message.attachments }
+                    : {}),
+                  // Attribution rides on the reply's first delta only, so a
+                  // later delta or the completion event must not blank it.
+                  ...(message.providerInstanceId !== undefined
+                    ? { providerInstanceId: message.providerInstanceId }
+                    : {}),
+                  ...(message.providerName !== undefined
+                    ? { providerName: message.providerName }
                     : {}),
                 },
           )

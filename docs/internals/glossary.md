@@ -100,6 +100,14 @@ The backend agent runtime that actually performs work. Five drivers ship built i
 
 The live provider-backed runtime attached to a thread. Session shape is in [the orchestration contracts][1], and lifecycle is managed in [ProviderService.ts][14].
 
+#### Continuation group
+
+The set of provider instances that can resume each other's sessions on a thread, identified by a `continuationKey` — `${driverKind}:instance:${instanceId}` by default, and a shared-home key for Codex instances pointing at the same directory. Moving a thread within a group is a restart; moving across groups is a handoff. Each group's resume cursor is kept per thread in [ProviderSessionLedger.ts][25], so a provider stays resumable after the thread is handed away. See [providers.md][16].
+
+#### Handoff brief
+
+The conversation summary given to a provider picking up a thread it did not start: the transcript (or only the part it missed, if it resumed its own session), the workspace, and the files changed so far. Built purely from the thread's own record in [providerHandoffBrief.ts][26], so it costs no queries and no model call and rebuilds identically on a retry. See [providers.md][16].
+
 #### Runtime mode
 
 The safety/access mode for a thread or session. [The contracts][1] define four values: `approval-required`, `auto-accept-edits`, `auto`, and `full-access`. See [permission modes][18].
@@ -179,3 +187,5 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [22]: ../../apps/server/src/checkpointing/Utils.ts
 [23]: ../../apps/server/src/checkpointing/Diffs.ts
 [24]: ./overview.md
+[25]: ../../apps/server/src/persistence/ProviderSessionLedger.ts
+[26]: ../../apps/server/src/orchestration/providerHandoffBrief.ts

@@ -1,4 +1,4 @@
-import { MessageId, ThreadId } from "@t3tools/contracts";
+import { MessageId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -109,6 +109,72 @@ layer("ProjectionThreadMessageRepository", (it) => {
       assert.equal(rows.length, 1);
       assert.equal(rows[0]?.text, "cleared");
       assert.deepEqual(rows[0]?.attachments, []);
+    }),
+  );
+
+  it.effect("keeps the author stamped by the first delta of a reply", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-preserve-author");
+      const messageId = MessageId.make("message-preserve-author");
+      const createdAt = "2026-02-28T19:20:00.000Z";
+      const providerInstanceId = ProviderInstanceId.make("codex");
+
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "assistant",
+        text: "partial",
+        isStreaming: true,
+        providerInstanceId,
+        providerName: "codex",
+        createdAt,
+        updatedAt: "2026-02-28T19:20:01.000Z",
+      });
+
+      // The completion write carries no attribution — it must not blank the
+      // author the streaming deltas established.
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "assistant",
+        text: "partial and complete",
+        isStreaming: false,
+        createdAt,
+        updatedAt: "2026-02-28T19:20:02.000Z",
+      });
+
+      const rows = yield* repository.listByThreadId({ threadId });
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.text, "partial and complete");
+      assert.equal(rows[0]?.providerInstanceId, providerInstanceId);
+      assert.equal(rows[0]?.providerName, "codex");
+    }),
+  );
+
+  it.effect("leaves messages with no author unattributed", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadMessageRepository;
+      const threadId = ThreadId.make("thread-no-author");
+      const messageId = MessageId.make("message-no-author");
+
+      yield* repository.upsert({
+        messageId,
+        threadId,
+        turnId: null,
+        role: "user",
+        text: "hello",
+        isStreaming: false,
+        createdAt: "2026-02-28T19:30:00.000Z",
+        updatedAt: "2026-02-28T19:30:00.000Z",
+      });
+
+      const rows = yield* repository.listByThreadId({ threadId });
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0]?.providerInstanceId, undefined);
+      assert.equal(rows[0]?.providerName, undefined);
     }),
   );
 });

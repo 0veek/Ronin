@@ -188,7 +188,7 @@ import {
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -317,6 +317,10 @@ import {
   PullRequestDialogState,
   cloneComposerImageForRetry,
   deriveLockedProvider,
+  deriveProviderSwitchBlockReason,
+  isProviderHandoff,
+  providerInstanceLabel,
+  threadHasStarted,
   readFileAsDataUrl,
   reconcileMountedTerminalThreadIds,
   resolveThreadMetadataUpdateForNextTurn,
@@ -1231,6 +1235,9 @@ function ChatViewContent(props: ChatViewProps) {
     reportFailure: false,
   });
   const setThreadInteractionMode = useAtomCommand(threadEnvironment.setInteractionMode, {
+    reportFailure: false,
+  });
+  const switchThreadProvider = useAtomCommand(threadEnvironment.switchProvider, {
     reportFailure: false,
   });
   const startThreadTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
@@ -2273,7 +2280,22 @@ function ChatViewContent(props: ChatViewProps) {
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
-  const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
+  // Provider boundary rows in the transcript name instances the way the picker
+  // does, so a handover reads as "Handed to Codex Personal", not as a routing id.
+  const providerLabelByInstanceId = useMemo(
+    () =>
+      new Map(
+        deriveProviderInstanceEntries(providerStatuses).map((entry) => [
+          entry.instanceId as string,
+          entry.displayName,
+        ]),
+      ),
+    [providerStatuses],
+  );
+  const workLogEntries = useMemo(
+    () => deriveWorkLogEntries(threadActivities, { providerLabelByInstanceId }),
+    [providerLabelByInstanceId, threadActivities],
+  );
   const turnPlans = useMemo(() => deriveTurnPlans(threadActivities), [threadActivities]);
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
@@ -2296,6 +2318,23 @@ function ChatViewContent(props: ChatViewProps) {
     [threadActivities],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  // A started thread can move to another provider whenever the server would
+  // accept the switch. While it cannot, the picker stays locked to the driver
+  // the thread is on rather than offering a choice that would bounce.
+  const providerSwitchBlockReason = deriveProviderSwitchBlockReason({
+    thread: activeThread,
+    hasOpenBlockingRequest: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+  });
+  const pickerLockedProvider = providerSwitchBlockReason === null ? null : lockedProvider;
+  // The instance the thread is actually on. A stopped session is skipped for
+  // the same reason `deriveLockedProvider` skips it: after a switch it names
+  // the provider that was just handed off *from*.
+  const boundThreadSession =
+    activeThread?.session != null && activeThread.session.status !== "stopped"
+      ? activeThread.session
+      : null;
+  const currentBoundInstanceId =
+    boundThreadSession?.providerInstanceId ?? activeThread?.modelSelection.instanceId ?? null;
   const activePendingDraftAnswers = useMemo(
     () =>
       activePendingUserInput
@@ -4331,6 +4370,14 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadRef, unsnoozeThreadMutation]);
   const [isRestoringThreadBranch, setIsRestoringThreadBranch] = useState(false);
   const [branchRestoreConfirmOpen, setBranchRestoreConfirmOpen] = useState(false);
+  // The handoff the user picked but has not confirmed yet. Held rather than
+  // applied because a switch retires the running provider and hands the
+  // conversation to one that never saw it.
+  const [providerSwitchConfirm, setProviderSwitchConfirm] = useState<{
+    modelSelection: ModelSelection;
+    fromLabel: string;
+    toLabel: string;
+  } | null>(null);
   // Once revealed for a given mismatch, the banner stays mounted until the
   // mismatch changes or resolves, so clearing the draft doesn't flicker it.
   const [revealedBranchMismatchKey, setRevealedBranchMismatchKey] = useState<string | null>(null);
@@ -5999,31 +6046,17 @@ function ChatViewContent(props: ChatViewProps) {
   const onProviderModelSelect = useCallback(
     (instanceId: ProviderInstanceId, model: string) => {
       if (!activeThread) return;
-      // Look up the configured instance so model normalization and custom
-      // model lookup stay scoped to that exact instance. Unknown instance ids
-      // are rejected by returning early; the server remains authoritative too.
-      const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
-      const resolvedDriverKind = entry?.driver ?? null;
-      if (
-        lockedProvider !== null &&
-        resolvedDriverKind !== null &&
-        resolvedDriverKind !== lockedProvider
-      ) {
+      // A started thread that is mid-turn, or holding a request the outgoing
+      // provider still owns, cannot be handed over yet. Say why instead of
+      // silently swallowing the click.
+      if (providerSwitchBlockReason !== null && instanceId !== currentBoundInstanceId) {
+        toastManager.add({
+          type: "warning",
+          title: "Can't switch providers yet",
+          description: providerSwitchBlockReason,
+        });
         scheduleComposerFocus();
         return;
-      }
-      if (lockedProvider !== null && activeThread.session?.providerInstanceId) {
-        const currentEntry = providerStatuses.find(
-          (snapshot) => snapshot.instanceId === activeThread.session?.providerInstanceId,
-        );
-        if (
-          currentEntry?.continuation?.groupKey &&
-          entry?.continuation?.groupKey &&
-          currentEntry.continuation.groupKey !== entry.continuation.groupKey
-        ) {
-          scheduleComposerFocus();
-          return;
-        }
       }
       const resolvedModel = resolveAppModelSelectionForInstance(
         instanceId,
@@ -6055,6 +6088,25 @@ function ChatViewContent(props: ChatViewProps) {
         scheduleComposerFocus();
         return;
       }
+      // Crossing into a provider that has not been following this thread is a
+      // handoff, not a model change: the conversation has to be carried over.
+      // Confirm it, because the incoming provider reads a reconstruction of the
+      // thread rather than the original session.
+      if (
+        threadHasStarted(activeThread) &&
+        isProviderHandoff({
+          providers: providerStatuses,
+          currentInstanceId: currentBoundInstanceId,
+          nextInstanceId: instanceId,
+        })
+      ) {
+        setProviderSwitchConfirm({
+          modelSelection: nextModelSelection,
+          fromLabel: providerInstanceLabel(providerStatuses, currentBoundInstanceId),
+          toLabel: providerInstanceLabel(providerStatuses, instanceId),
+        });
+        return;
+      }
       setComposerDraftModelSelection(
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,
@@ -6064,7 +6116,8 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [
       activeThread,
-      lockedProvider,
+      currentBoundInstanceId,
+      providerSwitchBlockReason,
       scheduleComposerFocus,
       setComposerDraftModelSelection,
       setStickyComposerModelSelection,
@@ -6072,6 +6125,50 @@ function ChatViewContent(props: ChatViewProps) {
       settings,
     ],
   );
+
+  // Applying a confirmed handoff. The command retires the outgoing session and
+  // records the boundary in the transcript; the composer selection follows so
+  // the next turn is addressed to the provider the user just chose.
+  const onConfirmProviderSwitch = useCallback(async () => {
+    const pending = providerSwitchConfirm;
+    setProviderSwitchConfirm(null);
+    if (!pending || !activeThread) {
+      return;
+    }
+    const result = await switchThreadProvider({
+      environmentId: activeThread.environmentId,
+      input: {
+        threadId: activeThread.id,
+        modelSelection: pending.modelSelection,
+      },
+    });
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add({
+          type: "error",
+          title: "Couldn't switch providers",
+          description:
+            error instanceof Error ? error.message : "The server rejected the provider switch.",
+        });
+      }
+      scheduleComposerFocus();
+      return;
+    }
+    setComposerDraftModelSelection(
+      scopeThreadRef(activeThread.environmentId, activeThread.id),
+      pending.modelSelection,
+    );
+    setStickyComposerModelSelection(pending.modelSelection);
+    scheduleComposerFocus();
+  }, [
+    activeThread,
+    providerSwitchConfirm,
+    scheduleComposerFocus,
+    setComposerDraftModelSelection,
+    setStickyComposerModelSelection,
+    switchThreadProvider,
+  ]);
   const onEnvModeChange = useCallback(
     (mode: DraftThreadEnvMode) => {
       if (canOverrideServerThreadEnvMode) {
@@ -6501,7 +6598,7 @@ function ChatViewContent(props: ChatViewProps) {
                             activeProposedPlan={activeProposedPlan}
                             runtimeMode={runtimeMode}
                             interactionMode={interactionMode}
-                            lockedProvider={lockedProvider}
+                            lockedProvider={pickerLockedProvider}
                             providerStatuses={providerStatuses as ServerProvider[]}
                             activeProjectDefaultModelSelection={
                               activeProject?.defaultModelSelection
@@ -6599,6 +6696,36 @@ function ChatViewContent(props: ChatViewProps) {
                 bottomInset={isDraftHeroState ? 0 : composerOverlayHeight}
               />
             ) : null}
+
+            <AlertDialog
+              open={providerSwitchConfirm !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setProviderSwitchConfirm(null);
+                  scheduleComposerFocus();
+                }
+              }}
+            >
+              <AlertDialogPopup>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    Hand this thread to {providerSwitchConfirm?.toLabel ?? "another provider"}?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {providerSwitchConfirm?.fromLabel ?? "The current provider"} stops here and{" "}
+                    {providerSwitchConfirm?.toLabel ?? "the new provider"} picks up on your next
+                    message. It writes code its own way and may not carry every detail of the plan
+                    so far, so later edits can drift from the approach already in your files.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogClose render={<Button variant="outline" />}>No</AlertDialogClose>
+                  <Button variant="default" onClick={() => void onConfirmProviderSwitch()}>
+                    Yes, switch
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogPopup>
+            </AlertDialog>
 
             <AlertDialog open={branchRestoreConfirmOpen} onOpenChange={setBranchRestoreConfirmOpen}>
               <AlertDialogPopup>

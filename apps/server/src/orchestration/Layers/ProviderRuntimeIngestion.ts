@@ -16,6 +16,7 @@ import {
   type OrchestrationProposedPlan,
   type OrchestrationThread,
   type OrchestrationThreadActivity,
+  type ProviderInstanceId,
   type ProviderRuntimeEvent,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
@@ -236,6 +237,26 @@ function proposedPlanIdFromEvent(event: ProviderRuntimeEvent, threadId: ThreadId
 
 function assistantSegmentBaseKeyFromEvent(event: ProviderRuntimeEvent): string {
   return String(event.itemId ?? event.turnId ?? event.eventId);
+}
+
+/**
+ * Who wrote this reply, taken from the runtime event that carried it rather
+ * than from the thread's current selection. A thread can change provider
+ * mid-conversation, and the transcript has to keep saying who actually spoke.
+ *
+ * `providerInstanceId` stays optional because emitters populated it only after
+ * the driver/instance split; `provider` has always been on the event.
+ */
+function assistantAttributionFromEvent(event: ProviderRuntimeEvent): {
+  readonly providerInstanceId?: ProviderInstanceId;
+  readonly providerName?: string;
+} {
+  return {
+    ...(event.providerInstanceId !== undefined
+      ? { providerInstanceId: event.providerInstanceId }
+      : {}),
+    providerName: event.provider,
+  };
 }
 
 function assistantSegmentMessageId(baseKey: string, segmentIndex: number): MessageId {
@@ -1138,6 +1159,7 @@ const make = Effect.gen(function* () {
         messageId: input.messageId,
         delta: bufferedText,
         ...(input.turnId ? { turnId: input.turnId } : {}),
+        ...assistantAttributionFromEvent(input.event),
         createdAt: input.createdAt,
       });
       return true;
@@ -1205,6 +1227,7 @@ const make = Effect.gen(function* () {
           messageId: input.messageId,
           delta: text,
           ...(input.turnId ? { turnId: input.turnId } : {}),
+          ...assistantAttributionFromEvent(input.event),
           createdAt: input.createdAt,
         });
       }
@@ -1665,6 +1688,7 @@ const make = Effect.gen(function* () {
             messageId: assistantMessageId,
             delta: spillChunk,
             ...(turnId ? { turnId } : {}),
+            ...assistantAttributionFromEvent(event),
             createdAt: now,
           });
         }

@@ -62,6 +62,7 @@ T3 Code is an excellent open product with a wide surface. Ronin is that product 
 | **Preview**          | Element pick, PiP, Playwright automation               | Tabs, navigate, screenshot, recording                                            |
 | **Sidebar**          | Legacy tree toggle + modern cards                      | **One modern sidebar** — no legacy tree                                          |
 | **Assistant output** | Optional token-by-token streaming                      | **Buffered only** — cleaner read path                                            |
+| **Provider binding** | Fixed once a thread starts                             | **Switchable mid-thread** — the conversation is carried over                     |
 | **Themes**           | Managed palettes                                       | Managed + **deep OLED** (Void, Azure, Phosphor, Plasma…) + **Ronin** brand theme |
 | **Git**              | Full source control                                    | **Kept** — checkpoints, diffs, branches, PR flows                                |
 | **Packaging**        | Multi-platform + WSL prebuilds                         | **Linux-first**, Mac supported; artifacts named **Ronin**                        |
@@ -120,6 +121,9 @@ T3 Code is an excellent open product with a wide surface. Ronin is that product 
 - **Local server** — Node backend on your machine
 - **Your providers** — if the CLI works in a terminal, Ronin can drive it
 - **Source control** — first-class git, not an afterthought
+- **Provider switching** — hand a live thread from one agent to another; it resumes its own session, or reads a brief of the conversation and the files changed so far ([docs](./docs/user/switching-providers.md))
+- **Agent skills** — reusable `SKILL.md` workflows, including a portable `~/.ronin/skills` folder that works on every provider ([docs](./docs/user/agent-skills.md))
+- **Slash commands** — `/clear`, `/compact`, `/model`, `/review`, `/fork`, `/status` and friends, alongside your provider's own commands ([docs](./docs/user/slash-commands.md))
 
 ---
 
@@ -178,14 +182,17 @@ Dark-first by default. Built-ins include **Ronin**, Paper, Graphite, Obsidian, C
 
 ## Documentation
 
-| Audience           | Start here                                                   |
-| ------------------ | ------------------------------------------------------------ |
-| Using Ronin        | [docs/user/install.md](./docs/user/install.md)               |
-| Keybindings        | [docs/user/keybindings.md](./docs/user/keybindings.md)       |
-| Source control     | [docs/user/source-control.md](./docs/user/source-control.md) |
-| Remote / Tailscale | [docs/user/remote-access.md](./docs/user/remote-access.md)   |
-| Architecture       | [docs/internals/overview.md](./docs/internals/overview.md)   |
-| Glossary           | [docs/internals/glossary.md](./docs/internals/glossary.md)   |
+| Audience           | Start here                                                             |
+| ------------------ | ---------------------------------------------------------------------- |
+| Using Ronin        | [docs/user/install.md](./docs/user/install.md)                         |
+| Keybindings        | [docs/user/keybindings.md](./docs/user/keybindings.md)                 |
+| Switching provider | [docs/user/switching-providers.md](./docs/user/switching-providers.md) |
+| Agent skills       | [docs/user/agent-skills.md](./docs/user/agent-skills.md)               |
+| Slash commands     | [docs/user/slash-commands.md](./docs/user/slash-commands.md)           |
+| Source control     | [docs/user/source-control.md](./docs/user/source-control.md)           |
+| Remote / Tailscale | [docs/user/remote-access.md](./docs/user/remote-access.md)             |
+| Architecture       | [docs/internals/overview.md](./docs/internals/overview.md)             |
+| Glossary           | [docs/internals/glossary.md](./docs/internals/glossary.md)             |
 
 Full tree: [docs/](./docs).
 

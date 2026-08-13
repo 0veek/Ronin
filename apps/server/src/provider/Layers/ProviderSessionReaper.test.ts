@@ -19,6 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as ProviderSessionLedger from "../../persistence/ProviderSessionLedger.ts";
 import * as ProviderSessionRuntime from "../../persistence/ProviderSessionRuntime.ts";
 import { ProviderValidationError } from "../Errors.ts";
 import { ProviderSessionReaper } from "../Services/ProviderSessionReaper.ts";
@@ -183,6 +184,8 @@ describe("ProviderSessionReaper", () => {
           },
         });
       },
+      getContinuationState: () => unsupported(),
+      clearContinuationLedger: () => unsupported(),
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.empty,
     };
@@ -192,6 +195,7 @@ describe("ProviderSessionReaper", () => {
     );
     const providerSessionDirectoryLayer = ProviderSessionDirectoryLive.pipe(
       Layer.provide(runtimeRepositoryLayer),
+      Layer.provide(ProviderSessionLedger.layer.pipe(Layer.provide(SqlitePersistenceMemory))),
     );
     const layer = makeProviderSessionReaperLive({
       inactivityThresholdMs: 1_000,

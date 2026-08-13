@@ -1011,6 +1011,65 @@ describe("deriveMessagesTimelineRows", () => {
       expanded: true,
     });
   });
+
+  it("keeps a provider boundary visible when its work group overflows", () => {
+    const timelineEntries = [
+      {
+        id: "work-entry-1",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        entry: {
+          id: "work-1",
+          createdAt: "2026-01-01T00:00:01Z",
+          label: "read",
+          detail: "Reading package.json",
+          tone: "tool" as const,
+        },
+      },
+      {
+        id: "work-entry-switch",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:02Z",
+        entry: {
+          id: "switched",
+          createdAt: "2026-01-01T00:00:02Z",
+          label: "Switched provider from codex to grok",
+          tone: "info" as const,
+          providerBoundary: {
+            event: "switched" as const,
+            fromLabel: "Codex",
+            toLabel: "Grok",
+            model: "grok-build",
+          },
+        },
+      },
+      {
+        id: "work-entry-3",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          id: "work-3",
+          createdAt: "2026-01-01T00:00:03Z",
+          label: "test",
+          detail: "Running tests",
+          tone: "tool" as const,
+        },
+      },
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    // Hiding the boundary would make everything under it read as if the
+    // provider above had said it.
+    expect(rows.map((row) => row.id)).toEqual(["switched", "work-3", "work-toggle:work-entry-1"]);
+    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({ hiddenCount: 1 });
+  });
 });
 
 describe("computeStableMessagesTimelineRows", () => {
