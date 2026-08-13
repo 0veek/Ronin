@@ -79,6 +79,7 @@ No GPU-pegging animations, no token-by-token repaint storms, no lying spinners. 
 
 ### And the rest
 
+- **Agent notifications** — a system ping when an agent finishes, fails, or waits for an approval while you're elsewhere; click it to land on the thread ([docs](./docs/user/notifications.md))
 - **Live preview** — tabs, navigation, screenshots, recordings of the app your agent is building
 - **Composer-first workspace** — "What should we build?" with provider, model, effort and plan controls in one card
 - **Markdown that renders** — images, diffs, code, all inline in the transcript

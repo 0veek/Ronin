@@ -905,6 +905,13 @@ export interface DesktopBridge {
     position?: { x: number; y: number },
   ) => Promise<T | null>;
   openExternal: (url: string) => Promise<boolean>;
+  /**
+   * Bring the main window to the foreground: restore if minimized, show if
+   * hidden, then focus. Backs notification clicks, where the renderer's own
+   * `window.focus()` is not enough once the window is minimized. Optional:
+   * older desktop builds lack it, and web callers rely on the browser.
+   */
+  focusWindow?: () => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   getWindowFullscreenState: () => boolean;
   onWindowFullscreenStateChange: (listener: (fullscreen: boolean) => void) => () => void;

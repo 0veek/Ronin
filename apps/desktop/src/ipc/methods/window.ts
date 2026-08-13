@@ -188,6 +188,26 @@ export const openExternal = DesktopIpc.makeIpcMethod({
   }),
 });
 
+/**
+ * Backs notification clicks. The renderer's own `window.focus()` cannot
+ * restore a minimized or hidden window, so the click asks the main process to
+ * reveal it properly. A missing window is a no-op, not an error: the click
+ * may race a quit.
+ */
+export const focusWindow = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.FOCUS_WINDOW_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.focusWindow")(function* () {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.focusedMainOrFirst;
+    if (Option.isNone(window)) {
+      return;
+    }
+    yield* electronWindow.reveal(window.value);
+  }),
+});
+
 /** Theme files are a few KB; anything larger returns empty text and lets the
  *  renderer reject it by size without the contents ever crossing the bridge. */
 const PICKED_THEME_FILE_MAX_BYTES = 256 * 1024;

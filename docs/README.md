@@ -8,6 +8,7 @@
 - [Slash commands](./user/slash-commands.md)
 - [Agent skills](./user/agent-skills.md)
 - [Organizing threads](./user/thread-sidebar.md)
+- [Agent notifications](./user/notifications.md)
 - [Switching providers mid-thread](./user/switching-providers.md)
 - [Review usage](./user/usage.md)
 - [Customize a project icon](./user/project-settings.md)

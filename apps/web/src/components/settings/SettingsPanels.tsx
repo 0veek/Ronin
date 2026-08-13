@@ -109,6 +109,8 @@ import {
   NumberFieldInput,
 } from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { requestAgentNotificationPermission } from "../AgentAttentionNotifier";
+import { useUiStateStore } from "../../uiStateStore";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -1452,9 +1454,65 @@ function LegacyFeaturesSection() {
   );
 }
 
+/**
+ * Notification toggle whose checked state is the truth, not the wish.
+ *
+ * The stored preference defaults on so the desktop shell — where permission
+ * is granted from the start — pings out of the box. A browser has to be
+ * asked, so there the switch reads off until the permission prompt is
+ * actually accepted; flipping it on is the user gesture the prompt legally
+ * requires. A denied prompt leaves the switch off rather than promising
+ * pings that can never arrive.
+ */
+function AgentNotificationsRow({
+  enabled,
+  onEnabledChange,
+}: {
+  readonly enabled: boolean;
+  readonly onEnabledChange: (enabled: boolean) => void;
+}) {
+  const [permitted, setPermitted] = useState(
+    () => typeof Notification !== "undefined" && Notification.permission === "granted",
+  );
+  const supported = typeof Notification !== "undefined";
+
+  return (
+    <SettingsRow
+      {...searchableSetting("agent-notifications")}
+      description="Notify this device when an agent finishes, fails, or waits for an approval while Ronin is in the background. Clicking a notification jumps to the thread. Per device."
+      status={
+        supported && !permitted && enabled
+          ? "Waiting on this browser's notification permission — flip the switch to ask."
+          : undefined
+      }
+      control={
+        <Switch
+          checked={enabled && permitted}
+          disabled={!supported}
+          onCheckedChange={(checked) => {
+            if (!checked) {
+              onEnabledChange(false);
+              return;
+            }
+            void requestAgentNotificationPermission().then((granted) => {
+              setPermitted(granted);
+              onEnabledChange(granted);
+            });
+          }}
+          aria-label="Agent notifications"
+        />
+      }
+    />
+  );
+}
+
 export function GeneralSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const agentNotificationsEnabled = useUiStateStore((state) => state.agentNotificationsEnabled);
+  const setAgentNotificationsEnabled = useUiStateStore(
+    (state) => state.setAgentNotificationsEnabled,
+  );
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -1571,6 +1629,11 @@ export function GeneralSettingsPanel() {
               aria-label="Auto-settle inactive threads"
             />
           }
+        />
+
+        <AgentNotificationsRow
+          enabled={agentNotificationsEnabled}
+          onEnabledChange={setAgentNotificationsEnabled}
         />
         {settings.sidebarAutoSettleAfterDays !== null ? (
           <SettingsRow

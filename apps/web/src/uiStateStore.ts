@@ -27,6 +27,7 @@ export interface PersistedUiState {
   defaultAdvertisedEndpointKey?: string | null;
   threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
+  agentNotificationsEnabled?: boolean;
 }
 
 export interface UiProjectState {
@@ -43,7 +44,17 @@ export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
 }
 
-export interface UiState extends UiProjectState, UiThreadState, UiEndpointState {}
+export interface UiNotificationState {
+  /**
+   * Per-device, not synced: whether this device pings is its own business
+   * (a phone paired to the same server must not inherit the desktop's
+   * choice), and the OS-level notification permission is per-device anyway.
+   */
+  agentNotificationsEnabled: boolean;
+}
+
+export interface UiState
+  extends UiProjectState, UiThreadState, UiEndpointState, UiNotificationState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -51,6 +62,7 @@ const initialState: UiState = {
   threadLastVisitedAtById: {},
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
+  agentNotificationsEnabled: true,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -135,6 +147,10 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       parsed.defaultAdvertisedEndpointKey.length > 0
         ? parsed.defaultAdvertisedEndpointKey
         : null,
+    agentNotificationsEnabled:
+      typeof parsed.agentNotificationsEnabled === "boolean"
+        ? parsed.agentNotificationsEnabled
+        : true,
   };
 }
 
@@ -207,6 +223,7 @@ export function persistState(state: UiState): void {
         defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
+        agentNotificationsEnabled: state.agentNotificationsEnabled,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -386,6 +403,7 @@ interface UiStateStore extends UiState {
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
+  setAgentNotificationsEnabled: (enabled: boolean) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -404,6 +422,12 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
+  setAgentNotificationsEnabled: (enabled) =>
+    set((state) =>
+      state.agentNotificationsEnabled === enabled
+        ? state
+        : { ...state, agentNotificationsEnabled: enabled },
+    ),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),
   reorderProjects: (currentProjectOrder, draggedProjectIds, targetProjectIds) =>
