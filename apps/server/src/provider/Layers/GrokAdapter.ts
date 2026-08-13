@@ -32,6 +32,8 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
+import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
@@ -56,6 +58,7 @@ import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import {
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,
+  grokSettingsToRuntimeSettings,
   makeGrokAcpRuntime,
   resolveGrokAcpBaseModelId,
 } from "../acp/GrokAcpSupport.ts";
@@ -570,8 +573,19 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
           });
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
+          const requestedStartModelId = grokModelSelection?.model
+            ? resolveGrokAcpBaseModelId(grokModelSelection.model)
+            : undefined;
+          const requestedStartEffort = getModelSelectionStringOptionValue(
+            grokModelSelection,
+            "reasoningEffort",
+          );
           const acp = yield* makeGrokAcpRuntime({
-            grokSettings,
+            grokSettings: grokSettingsToRuntimeSettings(grokSettings, {
+              ...(requestedStartModelId ? { model: requestedStartModelId } : {}),
+              ...(requestedStartEffort ? { reasoningEffort: requestedStartEffort } : {}),
+            }),
+            runtimeMode: input.runtimeMode,
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
@@ -735,9 +749,6 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             ),
           );
 
-          const requestedStartModelId = grokModelSelection?.model
-            ? resolveGrokAcpBaseModelId(grokModelSelection.model)
-            : undefined;
           const boundModelId = yield* applyGrokAcpModelSelection({
             runtime: acp,
             currentModelId: currentGrokModelIdFromSessionSetup(started.sessionSetupResult),

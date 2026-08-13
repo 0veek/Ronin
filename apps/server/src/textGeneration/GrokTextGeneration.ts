@@ -62,10 +62,14 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
       const resolvedModel = resolveGrokAcpBaseModelId(modelSelection.model);
       const outputRef = yield* Ref.make("");
       const runtime = yield* makeGrokAcpRuntime({
-        grokSettings,
+        grokSettings: {
+          binaryPath: grokSettings.binaryPath,
+          model: resolvedModel,
+        },
         environment,
         childProcessSpawner: commandSpawner,
         cwd,
+        runtimeMode: "approval-required",
         clientInfo: { name: "t3-code-git-text", version: "0.0.0" },
       }).pipe(Effect.provideService(Crypto.Crypto, crypto));
 

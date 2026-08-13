@@ -18,6 +18,7 @@ import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import {
+  buildSelectOptionDescriptor,
   buildServerProvider,
   isCommandMissingCause,
   parseGenericCliVersion,
@@ -37,8 +38,23 @@ const GROK_PRESENTATION = {
   showInteractionModeToggle: false,
   requiresNewThreadForModelChange: true,
 } as const;
-const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
-  optionDescriptors: [],
+/**
+ * Grok exposes reasoning effort as a process-start CLI flag
+ * (`--reasoning-effort`), not via session/set_model. Same levels Synara ships.
+ */
+const GROK_REASONING_EFFORT_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+  optionDescriptors: [
+    buildSelectOptionDescriptor({
+      id: "reasoningEffort",
+      label: "Reasoning",
+      options: [
+        { value: "none", label: "None" },
+        { value: "low", label: "Low", isDefault: true },
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" },
+      ],
+    }),
+  ],
 });
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
@@ -46,10 +62,16 @@ const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 
 const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
-    slug: "grok-build",
-    name: "Grok Build",
+    slug: "grok-build-0.1",
+    name: "Grok Build 0.1",
     isCustom: false,
-    capabilities: EMPTY_CAPABILITIES,
+    capabilities: GROK_REASONING_EFFORT_CAPABILITIES,
+  },
+  {
+    slug: "grok-build",
+    name: "Grok 4.3",
+    isCustom: false,
+    capabilities: GROK_REASONING_EFFORT_CAPABILITIES,
   },
 ];
 
@@ -96,7 +118,11 @@ function grokModelsFromSettings(
   customModels: ReadonlyArray<string> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = GROK_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
-  return providerModelsFromSettings(builtInModels, customModels ?? [], EMPTY_CAPABILITIES);
+  return providerModelsFromSettings(
+    builtInModels,
+    customModels ?? [],
+    GROK_REASONING_EFFORT_CAPABILITIES,
+  );
 }
 
 function buildGrokDiscoveredModelsFromSessionModelState(
@@ -117,7 +143,7 @@ function buildGrokDiscoveredModelsFromSessionModelState(
         slug,
         name: model.name.trim() || slug,
         isCustom: false,
-        capabilities: EMPTY_CAPABILITIES,
+        capabilities: GROK_REASONING_EFFORT_CAPABILITIES,
       };
     })
     .filter((model): model is ServerProviderModel => model !== undefined);
@@ -134,6 +160,7 @@ const discoverGrokModelsViaAcp = (
       environment,
       childProcessSpawner,
       cwd: process.cwd(),
+      runtimeMode: "approval-required",
       clientInfo: { name: "t3-code-provider-probe", version: "0.0.0" },
     });
     const started = yield* acp.start();

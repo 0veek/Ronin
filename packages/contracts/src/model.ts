@@ -131,6 +131,8 @@ const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER_KIND = ProviderDriverKind.make("cursor");
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
+export const GROK_REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high"] as const;
+export type GrokReasoningEffort = (typeof GROK_REASONING_EFFORT_OPTIONS)[number];
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const ANTIGRAVITY_DRIVER_KIND = ProviderDriverKind.make("antigravity");
 const DROID_DRIVER_KIND = ProviderDriverKind.make("droid");
@@ -220,6 +222,16 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   },
   [OPENCODE_DRIVER_KIND]: {},
   [KILO_DRIVER_KIND]: {},
+  [GROK_DRIVER_KIND]: {
+    build: "grok-build",
+    "4.3": "grok-build",
+    "grok-4": "grok-build",
+    "grok-4.3": "grok-build",
+    "grok-latest": "grok-build",
+    "grok-code-fast": "grok-build-0.1",
+    "grok-code-fast-1": "grok-build-0.1",
+    "code-fast": "grok-build-0.1",
+  },
 };
 
 // ── Provider display names ────────────────────────────────────────────

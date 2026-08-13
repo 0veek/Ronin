@@ -32,6 +32,20 @@ describe("buildInitialGrokProviderSnapshot", () => {
       expect(snapshot.version).toBeNull();
       expect(snapshot.message).toContain("Checking Grok");
       expect(snapshot.requiresNewThreadForModelChange).toBe(true);
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build-0.1", "grok-build"]);
+      const effort = snapshot.models[1]?.capabilities?.optionDescriptors?.find(
+        (descriptor) => descriptor.id === "reasoningEffort",
+      );
+      expect(effort?.type).toBe("select");
+      if (effort?.type === "select") {
+        expect(effort.options.map((option) => option.id)).toEqual([
+          "none",
+          "low",
+          "medium",
+          "high",
+        ]);
+        expect(effort.currentValue).toBe("low");
+      }
     }),
   );
 });
@@ -103,7 +117,7 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
 
       expect(snapshot.status).toBe("error");
       expect(snapshot.installed).toBe(true);
-      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build"]);
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-build-0.1", "grok-build"]);
       expect(snapshot.message).toContain("ACP startup failed");
     }),
   );

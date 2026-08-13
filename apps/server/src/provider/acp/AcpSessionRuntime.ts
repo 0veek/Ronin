@@ -57,6 +57,34 @@ export interface AcpSpawnInput {
   readonly env?: NodeJS.ProcessEnv;
 }
 
+export interface AcpFreshSessionRetryPolicy {
+  readonly shouldRetry: (error: EffectAcpErrors.AcpError) => boolean;
+  readonly delayMs?: number;
+}
+
+/**
+ * Retries one fresh `session/new` request when the provider reports a
+ * failure that is known to occur before a session exists. Resume/load
+ * must not use this path.
+ */
+export function runAcpFreshSessionSetup<A>(
+  setup: Effect.Effect<A, EffectAcpErrors.AcpError>,
+  retryPolicy: AcpFreshSessionRetryPolicy | undefined,
+): Effect.Effect<A, EffectAcpErrors.AcpError> {
+  if (retryPolicy === undefined) {
+    return setup;
+  }
+  return setup.pipe(
+    Effect.catch((error) => {
+      if (!retryPolicy.shouldRetry(error)) {
+        return Effect.fail(error);
+      }
+      const delayMs = retryPolicy.delayMs ?? 0;
+      return delayMs > 0 ? Effect.sleep(delayMs).pipe(Effect.andThen(setup)) : setup;
+    }),
+  );
+}
+
 export interface AcpSessionRuntimeOptions {
   readonly spawn: AcpSpawnInput;
   readonly cwd: string;
@@ -68,7 +96,12 @@ export interface AcpSessionRuntimeOptions {
     readonly name: string;
     readonly version: string;
   };
-  readonly authMethodId: string;
+  readonly authMethodId?: string;
+  readonly resolveAuthMethodId?: (
+    initializeResult: EffectAcpSchema.InitializeResponse,
+  ) => Effect.Effect<string, EffectAcpErrors.AcpError>;
+  readonly authenticateMeta?: Record<string, unknown>;
+  readonly freshSessionRetry?: AcpFreshSessionRetryPolicy;
   readonly mcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly requestLogger?: (event: AcpSessionRequestLogEvent) => Effect.Effect<void, never>;
   readonly protocolLogging?: {
@@ -541,8 +574,22 @@ export const make = (
         acp.agent.initialize(initializePayload),
       );
 
+      const authMethodId =
+        options.resolveAuthMethodId !== undefined
+          ? yield* options.resolveAuthMethodId(initializeResult)
+          : options.authMethodId;
+
+      if (!authMethodId) {
+        return yield* new EffectAcpErrors.AcpRequestError({
+          code: -32602,
+          errorMessage: "ACP agent did not provide an authentication method.",
+          data: { authMethods: initializeResult.authMethods ?? [] },
+        });
+      }
+
       const authenticatePayload = {
-        methodId: options.authMethodId,
+        methodId: authMethodId,
+        ...(options.authenticateMeta ? { _meta: options.authenticateMeta } : {}),
       } satisfies EffectAcpSchema.AuthenticateRequest;
 
       yield* runLoggedRequest(
@@ -635,10 +682,9 @@ export const make = (
           cwd: options.cwd,
           mcpServers: options.mcpServers ?? [],
         } satisfies EffectAcpSchema.NewSessionRequest;
-        const created = yield* runLoggedRequest(
-          "session/new",
-          createPayload,
-          acp.agent.createSession(createPayload),
+        const created = yield* runAcpFreshSessionSetup(
+          runLoggedRequest("session/new", createPayload, acp.agent.createSession(createPayload)),
+          options.freshSessionRetry,
         );
         sessionId = created.sessionId;
         sessionSetupResult = created;

@@ -1,12 +1,22 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as EffectAcpErrors from "effect-acp/errors";
+import type * as EffectAcpSchema from "effect-acp/schema";
 
 import {
   applyGrokAcpModelSelection,
   buildGrokAcpSpawnInput,
+  isGrokSessionStoragePathNotFoundError,
+  resolveGrokAcpAuthMethodId,
   resolveGrokAcpBaseModelId,
 } from "./GrokAcpSupport.ts";
+
+function initializeWithAuthMethods(ids: ReadonlyArray<string>): EffectAcpSchema.InitializeResponse {
+  return {
+    protocolVersion: 1,
+    authMethods: ids.map((id) => ({ id, name: id })),
+  };
+}
 
 describe("resolveGrokAcpBaseModelId", () => {
   it("normalizes empty and custom Grok model ids", () => {
@@ -17,93 +27,192 @@ describe("resolveGrokAcpBaseModelId", () => {
 });
 
 describe("buildGrokAcpSpawnInput", () => {
-  it("passes the Ronin referrer through Grok OAuth env", () => {
-    const spawn = buildGrokAcpSpawnInput({ binaryPath: "/usr/local/bin/grok" }, "/tmp/project", {
-      XAI_API_KEY: "secret",
-      GROK_OAUTH2_REFERRER: "other-client",
-    });
+  it("builds the Synara-compatible Grok ACP command", () => {
+    const spawn = buildGrokAcpSpawnInput(
+      { binaryPath: "/usr/local/bin/grok" },
+      "/tmp/project",
+      "approval-required",
+      {
+        XAI_API_KEY: "secret",
+        GROK_OAUTH2_REFERRER: "other-client",
+      },
+    );
 
     expect(spawn).toEqual({
       command: "/usr/local/bin/grok",
-      args: ["agent", "stdio"],
+      args: ["--permission-mode", "default", "agent", "--no-leader", "stdio"],
       cwd: "/tmp/project",
       env: {
         XAI_API_KEY: "secret",
-        GROK_OAUTH2_REFERRER: "t3code",
+        GROK_OAUTH2_REFERRER: "ronin",
       },
     });
   });
+
+  it("passes model and reasoning effort without process-wide approval overrides", () => {
+    const spawn = buildGrokAcpSpawnInput(
+      {
+        binaryPath: "/usr/local/bin/grok",
+        model: "grok-build",
+        reasoningEffort: "high",
+      },
+      "/tmp/project",
+      "approval-required",
+    );
+
+    expect(spawn.args).toEqual([
+      "--permission-mode",
+      "default",
+      "agent",
+      "--no-leader",
+      "-m",
+      "grok-build",
+      "--reasoning-effort",
+      "high",
+      "stdio",
+    ]);
+    expect(spawn.args).not.toContain("--always-approve");
+  });
+
+  it("uses Grok's process-scoped approval override only for Full Access", () => {
+    expect(buildGrokAcpSpawnInput(undefined, "/tmp/project", "full-access").args).toEqual([
+      "--permission-mode",
+      "default",
+      "agent",
+      "--no-leader",
+      "--always-approve",
+      "stdio",
+    ]);
+  });
+});
+
+describe("isGrokSessionStoragePathNotFoundError", () => {
+  it("matches Grok's stable persistence code", () => {
+    expect(
+      isGrokSessionStoragePathNotFoundError(
+        new EffectAcpErrors.AcpRequestError({
+          code: -32603,
+          errorMessage: "Path not found.",
+          data: { code: "FS_NOT_FOUND", detail: "No such file or directory (os error 2)" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not retry other ACP or filesystem failures", () => {
+    expect(
+      isGrokSessionStoragePathNotFoundError(
+        new EffectAcpErrors.AcpRequestError({
+          code: -32603,
+          errorMessage: "Permission denied.",
+          data: { code: "FS_PERMISSION_DENIED" },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isGrokSessionStoragePathNotFoundError(
+        new EffectAcpErrors.AcpTransportError({
+          detail: "connection closed",
+          cause: new Error("connection closed"),
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("resolveGrokAcpAuthMethodId", () => {
+  it.effect("prefers the xAI API key auth method when XAI_API_KEY is present", () =>
+    Effect.gen(function* () {
+      const method = yield* resolveGrokAcpAuthMethodId(
+        initializeWithAuthMethods(["cached_token", "xai.api_key"]),
+        { XAI_API_KEY: "xai-test-key" },
+      );
+      expect(method).toBe("xai.api_key");
+    }),
+  );
+
+  it.effect("still accepts the legacy Grok API key env var", () =>
+    Effect.gen(function* () {
+      const method = yield* resolveGrokAcpAuthMethodId(
+        initializeWithAuthMethods(["cached_token", "xai.api_key"]),
+        { GROK_CODE_XAI_API_KEY: "xai-test-key" },
+      );
+      expect(method).toBe("xai.api_key");
+    }),
+  );
+
+  it.effect("falls back to cached token auth when no API key is configured", () =>
+    Effect.gen(function* () {
+      const method = yield* resolveGrokAcpAuthMethodId(
+        initializeWithAuthMethods(["cached_token", "xai.api_key"]),
+        {},
+      );
+      expect(method).toBe("cached_token");
+    }),
+  );
+
+  it.effect("identifies an interactive-only advertisement as missing headless credentials", () =>
+    Effect.gen(function* () {
+      const error = yield* resolveGrokAcpAuthMethodId(
+        initializeWithAuthMethods(["browser_login"]),
+        {},
+      ).pipe(Effect.flip);
+      expect(error).toBeInstanceOf(EffectAcpErrors.AcpRequestError);
+      expect(error.message).toContain("not authenticated for headless ACP");
+      expect(error.message).toContain("browser_login");
+    }),
+  );
+
+  it.effect("uses cached token when Grok advertises no auth methods", () =>
+    Effect.gen(function* () {
+      const method = yield* resolveGrokAcpAuthMethodId(initializeWithAuthMethods([]), {});
+      expect(method).toBe("cached_token");
+    }),
+  );
+
+  it.effect("explains when an advertised API-key method has no configured key", () =>
+    Effect.gen(function* () {
+      const error = yield* resolveGrokAcpAuthMethodId(
+        initializeWithAuthMethods(["xai.api_key"]),
+        {},
+      ).pipe(Effect.flip);
+      expect(error.message).toContain("XAI_API_KEY is not set");
+    }),
+  );
 });
 
 describe("applyGrokAcpModelSelection", () => {
-  const makeRecordingRuntime = (failure?: EffectAcpErrors.AcpError) => {
-    const modelCalls: Array<string> = [];
-    const runtime = {
-      setSessionModel: (modelId: string) =>
-        Effect.gen(function* () {
-          modelCalls.push(modelId);
-          if (failure) return yield* failure;
-          return {};
-        }),
-    };
-    return { runtime, modelCalls };
-  };
-
-  it.effect("calls session/set_model when the requested model differs from current", () =>
+  it.effect("does not call session/set_model because Grok takes model on process start", () =>
     Effect.gen(function* () {
-      const { runtime, modelCalls } = makeRecordingRuntime();
+      const modelCalls: Array<string> = [];
       const result = yield* applyGrokAcpModelSelection({
-        runtime,
+        runtime: {
+          setSessionModel: (modelId: string) =>
+            Effect.sync(() => {
+              modelCalls.push(modelId);
+              return {};
+            }),
+        },
         currentModelId: "grok-build",
         requestedModelId: "grok-mock-alt",
         mapError: (cause) => cause.message,
       });
-      expect(modelCalls).toEqual(["grok-mock-alt"]);
+      expect(modelCalls).toEqual([]);
       expect(result).toBe("grok-mock-alt");
     }),
   );
 
-  it.effect("skips set_model when requested matches current", () =>
+  it.effect("keeps the current model when none is requested", () =>
     Effect.gen(function* () {
-      const { runtime, modelCalls } = makeRecordingRuntime();
       const result = yield* applyGrokAcpModelSelection({
-        runtime,
-        currentModelId: "grok-build",
-        requestedModelId: "grok-build",
-        mapError: (cause) => cause.message,
-      });
-      expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-build");
-    }),
-  );
-
-  it.effect("skips set_model when no model is requested", () =>
-    Effect.gen(function* () {
-      const { runtime, modelCalls } = makeRecordingRuntime();
-      const result = yield* applyGrokAcpModelSelection({
-        runtime,
+        runtime: {
+          setSessionModel: () => Effect.succeed({}),
+        },
         currentModelId: "grok-build",
         requestedModelId: undefined,
         mapError: (cause) => cause.message,
       });
-      expect(modelCalls).toEqual([]);
       expect(result).toBe("grok-build");
-    }),
-  );
-
-  it.effect("propagates session/set_model failures via mapError", () =>
-    Effect.gen(function* () {
-      const failure = EffectAcpErrors.AcpRequestError.invalidParams("session id not known");
-      const { runtime } = makeRecordingRuntime(failure);
-      const error = yield* Effect.flip(
-        applyGrokAcpModelSelection({
-          runtime,
-          currentModelId: "grok-build",
-          requestedModelId: "grok-mock-alt",
-          mapError: (cause) => cause.message,
-        }),
-      );
-      expect(error).toBe(failure.message);
     }),
   );
 });

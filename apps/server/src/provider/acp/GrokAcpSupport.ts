@@ -1,4 +1,15 @@
-import { type GrokSettings, ProviderDriverKind } from "@t3tools/contracts";
+/**
+ * Grok ACP support — builds the Grok Build stdio command and resolves auth.
+ *
+ * Synara's working Grok path uses process-start flags (`--no-leader`,
+ * permission mode, model, effort) and inspects advertised ACP auth methods
+ * after initialize. Grok ACP 0.1.210 does not implement
+ * `session/set_config_option`, so model switches belong on the spawn line.
+ *
+ * @module GrokAcpSupport
+ */
+import { type GrokSettings, ProviderDriverKind, type RuntimeMode } from "@t3tools/contracts";
+import { normalizeModelSlug } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -6,50 +17,155 @@ import * as Scope from "effect/Scope";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
-import { normalizeModelSlug } from "@t3tools/shared/model";
 
 import * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 import { makeXAiPromptCompletionRuntime } from "./XAiAcpExtension.ts";
 
-const GROK_API_KEY_ENV = "XAI_API_KEY";
 const GROK_OAUTH2_REFERRER_ENV = "GROK_OAUTH2_REFERRER";
-const T3_CODE_OAUTH_REFERRER = "t3code";
-const GROK_AUTH_METHOD_API_KEY = "xai.api_key";
-const GROK_AUTH_METHOD_CACHED_TOKEN = "cached_token";
+const RONIN_OAUTH_REFERRER = "ronin";
+const GROK_API_KEY_AUTH_METHOD_ID = "xai.api_key";
+const GROK_CACHED_TOKEN_AUTH_METHOD_ID = "cached_token";
+const GROK_INTERACTIVE_AUTH_METHOD_IDS = new Set(["browser_login", "grok.com"]);
+const GROK_API_KEY_ENV_KEYS = ["XAI_API_KEY", "GROK_CODE_XAI_API_KEY"] as const;
+const GROK_SESSION_STORAGE_NOT_FOUND_CODE = "FS_NOT_FOUND";
+const GROK_SESSION_STORAGE_RETRY_DELAY_MS = 100;
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
-type GrokAcpRuntimeGrokSettings = Pick<GrokSettings, "binaryPath">;
+export interface GrokAcpRuntimeSettings {
+  readonly binaryPath?: string;
+  readonly model?: string;
+  readonly reasoningEffort?: string;
+}
 
-interface GrokAcpRuntimeInput extends Omit<
+export interface GrokAcpRuntimeInput extends Omit<
   AcpSessionRuntime.AcpSessionRuntimeOptions,
-  "authMethodId" | "clientCapabilities" | "spawn"
+  "authMethodId" | "clientCapabilities" | "freshSessionRetry" | "resolveAuthMethodId" | "spawn"
 > {
   readonly childProcessSpawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
-  readonly grokSettings: GrokAcpRuntimeGrokSettings | null | undefined;
+  readonly grokSettings: GrokAcpRuntimeSettings | null | undefined;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly runtimeMode: RuntimeMode;
+}
+
+export function isGrokSessionStoragePathNotFoundError(error: EffectAcpErrors.AcpError): boolean {
+  if (error._tag !== "AcpRequestError" || typeof error.data !== "object" || error.data === null) {
+    return false;
+  }
+  return (error.data as { readonly code?: unknown }).code === GROK_SESSION_STORAGE_NOT_FOUND_CODE;
+}
+
+export function getGrokApiKeyEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  for (const key of GROK_API_KEY_ENV_KEYS) {
+    const value = env[key]?.trim();
+    if (value) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+export function hasGrokApiKeyEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return getGrokApiKeyEnv(env) !== undefined;
 }
 
 export function buildGrokAcpSpawnInput(
-  grokSettings: GrokAcpRuntimeGrokSettings | null | undefined,
+  grokSettings: GrokAcpRuntimeSettings | null | undefined,
   cwd: string,
+  runtimeMode: RuntimeMode,
   environment?: NodeJS.ProcessEnv,
 ): AcpSessionRuntime.AcpSpawnInput {
+  // Keep Grok's request-based mode as the explicit baseline. Full Access also
+  // needs the process-scoped override because some Grok builds deny before
+  // emitting an ACP permission request.
+  const args = ["--permission-mode", "default", "agent", "--no-leader"];
+  if (runtimeMode === "full-access") {
+    args.push("--always-approve");
+  }
+  const model = grokSettings?.model?.trim();
+  if (model) {
+    args.push("-m", model);
+  }
+  const reasoningEffort = grokSettings?.reasoningEffort?.trim();
+  if (reasoningEffort) {
+    args.push("--reasoning-effort", reasoningEffort);
+  }
+  args.push("stdio");
+
   return {
     command: grokSettings?.binaryPath || "grok",
-    args: ["agent", "stdio"],
+    args,
     cwd,
     env: {
       ...environment,
-      [GROK_OAUTH2_REFERRER_ENV]: T3_CODE_OAUTH_REFERRER,
+      [GROK_OAUTH2_REFERRER_ENV]: RONIN_OAUTH_REFERRER,
     },
   };
 }
 
-function resolveGrokAuthMethodId(environment: NodeJS.ProcessEnv | undefined): string {
-  return environment?.[GROK_API_KEY_ENV]?.trim()
-    ? GROK_AUTH_METHOD_API_KEY
-    : GROK_AUTH_METHOD_CACHED_TOKEN;
+function availableAuthMethodIds(
+  initializeResult: EffectAcpSchema.InitializeResponse,
+): ReadonlySet<string> {
+  return new Set(
+    (initializeResult.authMethods ?? [])
+      .map((method) => method.id.trim())
+      .filter((methodId) => methodId.length > 0),
+  );
 }
+
+function describeAuthMethodIds(authMethodIds: ReadonlySet<string>): string {
+  return authMethodIds.size > 0 ? [...authMethodIds].join(", ") : "none";
+}
+
+export const resolveGrokAcpAuthMethodId = (
+  initializeResult: EffectAcpSchema.InitializeResponse,
+  environment?: NodeJS.ProcessEnv,
+): Effect.Effect<string, EffectAcpErrors.AcpError> =>
+  Effect.gen(function* () {
+    const authMethodIds = availableAuthMethodIds(initializeResult);
+    const hasApiKey = hasGrokApiKeyEnv(environment);
+    if (hasApiKey && authMethodIds.has(GROK_API_KEY_AUTH_METHOD_ID)) {
+      return GROK_API_KEY_AUTH_METHOD_ID;
+    }
+    if (authMethodIds.has(GROK_CACHED_TOKEN_AUTH_METHOD_ID) || authMethodIds.size === 0) {
+      // Empty advertisements match older Grok builds and the ACP mock agent.
+      return GROK_CACHED_TOKEN_AUTH_METHOD_ID;
+    }
+    const advertised = describeAuthMethodIds(authMethodIds);
+    if (!hasApiKey && authMethodIds.has(GROK_API_KEY_AUTH_METHOD_ID)) {
+      return yield* new EffectAcpErrors.AcpRequestError({
+        code: -32602,
+        errorMessage:
+          "Grok ACP requires API-key authentication, but XAI_API_KEY is not set. Set XAI_API_KEY and restart Ronin, or run `grok login` to create a cached login.",
+        data: { authMethods: [...authMethodIds], reason: "credentials_missing" },
+      });
+    }
+    if (
+      !hasApiKey &&
+      authMethodIds.size > 0 &&
+      [...authMethodIds].every((methodId) => GROK_INTERACTIVE_AUTH_METHOD_IDS.has(methodId))
+    ) {
+      return yield* new EffectAcpErrors.AcpRequestError({
+        code: -32602,
+        errorMessage: `Grok is not authenticated for headless ACP. Run \`grok login\` (or launch \`grok\`) and retry. Grok advertised only interactive auth methods: ${advertised}.`,
+        data: { authMethods: [...authMethodIds], reason: "credentials_missing" },
+      });
+    }
+    if (hasApiKey && !authMethodIds.has(GROK_API_KEY_AUTH_METHOD_ID)) {
+      return yield* new EffectAcpErrors.AcpRequestError({
+        code: -32602,
+        errorMessage: `Grok did not advertise API-key authentication even though XAI_API_KEY is set (advertised: ${advertised}). Update Grok or check its login policy, then restart Ronin.`,
+        data: { authMethods: [...authMethodIds], reason: "compatibility_mismatch" },
+      });
+    }
+    return yield* new EffectAcpErrors.AcpRequestError({
+      code: -32602,
+      errorMessage: `Grok ACP advertised no supported headless authentication method (advertised: ${advertised}). Ronin supports cached_token and xai.api_key; update Grok and retry.`,
+      data: {
+        authMethods: [...authMethodIds],
+        reason: "compatibility_mismatch",
+      },
+    });
+  });
 
 export const makeGrokAcpRuntime = (
   input: GrokAcpRuntimeInput,
@@ -62,8 +178,19 @@ export const makeGrokAcpRuntime = (
     const acpContext = yield* Layer.build(
       AcpSessionRuntime.layer({
         ...input,
-        spawn: buildGrokAcpSpawnInput(input.grokSettings, input.cwd, input.environment),
-        authMethodId: resolveGrokAuthMethodId(input.environment),
+        spawn: buildGrokAcpSpawnInput(
+          input.grokSettings,
+          input.cwd,
+          input.runtimeMode,
+          input.environment,
+        ),
+        resolveAuthMethodId: (initializeResult) =>
+          resolveGrokAcpAuthMethodId(initializeResult, input.environment),
+        authenticateMeta: { headless: true },
+        freshSessionRetry: {
+          shouldRetry: isGrokSessionStoragePathNotFoundError,
+          delayMs: GROK_SESSION_STORAGE_RETRY_DELAY_MS,
+        },
       }).pipe(
         Layer.provide(
           Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
@@ -97,12 +224,24 @@ export function applyGrokAcpModelSelection<E>(input: {
   readonly requestedModelId: string | undefined;
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
 }): Effect.Effect<string | undefined, E> {
-  const shouldSwitchModel =
-    input.requestedModelId !== undefined && input.requestedModelId !== input.currentModelId;
-  if (!shouldSwitchModel) {
-    return Effect.succeed(input.currentModelId);
-  }
-  return input.runtime
-    .setSessionModel(input.requestedModelId)
-    .pipe(Effect.mapError(input.mapError), Effect.as(input.requestedModelId));
+  void input.runtime;
+  void input.mapError;
+  // Grok ACP 0.1.210 advertises models in initialize/session responses but
+  // does not implement session/set_model or session/set_config_option.
+  // Model and effort are process-start settings on the spawn line.
+  return Effect.succeed(input.requestedModelId ?? input.currentModelId);
+}
+
+export function grokSettingsToRuntimeSettings(
+  settings: Pick<GrokSettings, "binaryPath">,
+  extras?: {
+    readonly model?: string;
+    readonly reasoningEffort?: string;
+  },
+): GrokAcpRuntimeSettings {
+  return {
+    binaryPath: settings.binaryPath,
+    ...(extras?.model ? { model: extras.model } : {}),
+    ...(extras?.reasoningEffort ? { reasoningEffort: extras.reasoningEffort } : {}),
+  };
 }
