@@ -10,21 +10,80 @@
 </p>
 
 <p align="center">
+  <a href="#the-good-stuff">Features</a> ·
   <a href="#gallery">Gallery</a> ·
-  <a href="#how-ronin-differs-from-t3-code">Why Ronin</a> ·
   <a href="#run-it">Run it</a> ·
-  <a href="#documentation">Docs</a>
+  <a href="#documentation">Docs</a> ·
+  <a href="#lineage">Lineage</a>
 </p>
 
 ---
 
-Ronin is a **lean desktop harness** for coding agents — rebuilt UI, thinner surface, same sharp forge.
+**One desktop app for every coding agent you pay for.**
 
-Drive the CLIs you already pay for (Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi) from a dark-first Electron shell: chat, terminal, preview, **git**, usage, and settings. Bring your own subscription. Nothing is sold here.
+Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi — nine CLIs, one dark-first Electron workspace. Chat, terminal, preview, git, pull requests, stats, themes. Bring your own subscriptions; Ronin sells you nothing and phones home to no one. Everything runs on your machine, and the whole thing is open source.
 
-And you are not married to the agent you started with — **hand a live thread to a different provider mid-conversation** and it picks up where the last one left off. [How it works ↓](#switch-provider-mid-thread)
+If the CLI works in a terminal, Ronin can drive it.
 
-This tree is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** — event-sourced server, multi-provider adapters, remote-ready websockets — re-cut and re-skinned for a masterless desktop.
+---
+
+## The good stuff
+
+### 🔄 Switch providers mid-thread
+
+The feature no other harness has: **hand a live conversation to a different agent and it keeps going.** Start with Codex, hit a wall, hand the thread to Claude — same history, same checkpoints, same working directory.
+
+- An agent that's been in the thread before **resumes its own session** and catches up on what it missed.
+- A newcomer gets **a brief built from the thread itself** — the conversation so far, the branch, the files already changed.
+- The transcript marks every handover, and each provider keeps its own place in the thread, so switching back later resumes rather than re-briefs.
+
+No copy-pasting context between terminals. Ever again. ([docs](./docs/user/switching-providers.md))
+
+### 📊 Stats that count everything
+
+The Stats page reads each provider CLI's **own session transcripts** — so every token is counted, including the turns you ran in a bare terminal, on every connected machine, deduplicated across environments. API-equivalent cost, cache savings, per-model breakdowns, and an hourly-resolution chart for the last 24 hours.
+
+Every provider owns one color across the whole page — chart, share bars, tables — in a palette validated for color-blind safety in light and dark alike. Grok even records its **exact** per-turn cost in an undocumented tick format; we reverse-engineered it, so that dollar figure is real, not an estimate.
+
+And in your peripheral vision: the sidebar meter shows how much of each subscription window is left and **when it resets, to the minute** — so you know if you can keep working for the next hour without opening anything.
+
+### 🔀 Git as a first-class citizen
+
+Not a plugin. Not a tab you forget exists.
+
+- **Checkpoints** — every turn ends with a hidden git ref, so you can diff or restore anything an agent did.
+- **Commit, branch, discard, worktrees** — right in the workspace topbar.
+- **Pull requests** — list them across every connected server, filter, react, edit in place, review diffs without leaving the app.
+
+### 🎨 Themes that go deep
+
+First-party themes (Tsukimi, Aizome, Urushi, the pure-black **OLED Void** family) — plus **Open VSX theme search**: pull almost any VS Code theme straight into Ronin. Import your own, tune the typography, keep light and dark mode intact per theme.
+
+### 🧰 Skills and slash commands, portable across agents
+
+Drop a `SKILL.md` in `~/.ronin/skills` once and **every provider can use it** — Codex, Claude, Grok, all of them. Same for slash commands: `/clear`, `/compact`, `/model`, `/review`, `/fork`, `/status` and friends work everywhere, alongside each provider's native commands. ([skills](./docs/user/agent-skills.md) · [commands](./docs/user/slash-commands.md))
+
+### 📱 Remote from anywhere
+
+The server speaks typed WebSockets, and pairing is one command:
+
+```bash
+npx t3 pair --tailscale
+```
+
+Scan the QR code and your phone is driving the same threads, over your tailnet, end-to-end on hardware you own. LAN and SSH work too. ([docs](./docs/user/remote-access.md))
+
+### ⚡ Performance without compromise
+
+No GPU-pegging animations, no token-by-token repaint storms, no lying spinners. Buffered assistant output, careful WebSocket payloads, lists that stay fast at thousands of threads. Ronin's users drive agents all day and notice a dropped frame — so we don't drop them.
+
+### And the rest
+
+- **Live preview** — tabs, navigation, screenshots, recordings of the app your agent is building
+- **Composer-first workspace** — "What should we build?" with provider, model, effort and plan controls in one card
+- **Markdown that renders** — images, diffs, code, all inline in the transcript
+- **Editor hand-off** — Ronin finds your installed editors and opens any file where you actually work
+- **Permission modes** — decide how much rope each agent gets ([docs](./docs/user/permission-modes.md))
 
 ---
 
@@ -38,69 +97,20 @@ This tree is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** — ev
 <br/>
 
 <p align="center">
-  <img src="Screenshots/Themes.png" alt="Ronin Appearance settings — color scheme, built-in themes including OLED Void" width="920" />
+  <img src="Screenshots/Usage.png" alt="Ronin Stats page — theme-aware provider charts, cost and token breakdowns" width="920" />
 </p>
-<p align="center"><sub><strong>Appearance</strong> — system / light / dark, first-party themes (Tsukimi, Aizome, Urushi, OLED Void…), typography you can tune.</sub></p>
+<p align="center"><sub><strong>Stats</strong> — spend and tokens by provider and model, theme-aware charts, cache savings, hourly resolution.</sub></p>
 
 <br/>
 
 <p align="center">
-  <img src="Screenshots/Usage.png" alt="Ronin Usage page — token cost charts and model breakdown" width="920" />
+  <img src="Screenshots/Themes.png" alt="Ronin Appearance settings — color scheme, built-in themes including OLED Void, Open VSX search" width="920" />
 </p>
-<p align="center"><sub><strong>Usage</strong> — spend and tokens by provider and model, with a one-click path back to the editor.</sub></p>
+<p align="center"><sub><strong>Appearance</strong> — system / light / dark, first-party themes, OLED blacks, Open VSX theme search.</sub></p>
 
 ---
 
-## How Ronin differs from T3 Code
-
-T3 Code is an excellent open product with a wide surface. Ronin is that product after a deliberate **cut** — and a **full UI pass**.
-
-|                      | **T3 Code**                                            | **Ronin**                                                                        |
-| -------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| **UI**               | Classic T3 shell                                       | **New workspace chrome** — slim sidebar, hairline topbar, calmer density         |
-| **Identity**         | Broad agent control surface                            | Desktop-first fork with a sharper edge                                           |
-| **Product surface**  | Desktop + local web + cloud/Connect + mobile/marketing | Desktop + local server/renderer only                                             |
-| **Windows / WSL**    | Dual backend, WSL distro orchestration                 | Native backends only — **no WSL**                                                |
-| **Preview**          | Element pick, PiP, Playwright automation               | Tabs, navigate, screenshot, recording                                            |
-| **Sidebar**          | Legacy tree toggle + modern cards                      | **One modern sidebar** — no legacy tree                                          |
-| **Assistant output** | Optional token-by-token streaming                      | **Buffered only** — cleaner read path                                            |
-| **Provider binding** | Fixed once a thread starts                             | **Switchable mid-thread** — the conversation is carried over                     |
-| **Themes**           | Managed palettes                                       | Managed + **deep OLED** (Void, Azure, Phosphor, Plasma…) + **Ronin** brand theme |
-| **Git**              | Full source control                                    | **Kept** — checkpoints, diffs, branches, PR flows                                |
-| **Packaging**        | Multi-platform + WSL prebuilds                         | **Linux-first**, Mac supported; artifacts named **Ronin**                        |
-| **Philosophy**       | Feature-rich open default                              | _Measure twice, cut once_                                                        |
-
-### UI that changed
-
-- **Workspace shell** — resizable left rail, floating collapse control, single topbar strip for chat / settings / usage
-- **Composer-first empty state** — “What should we build in …?” with provider, effort, and plan controls in one card
-- **Git in the chrome** — Open / Commit (and related actions) live in the workspace topbar, not buried
-- **Settings as a place** — Appearance, providers, source control, connections in a dedicated nav (not a grab bag)
-- **Usage as a first-class page** — charts, model breakdown, **Back to editor**
-
-### What we cut
-
-- **T3 Connect / hosted relay** — no cloud pairing product, no Clerk-shaped hosted path
-- **Mobile app & marketing site** — not in this repo
-- **WSL as a second OS** — no `wsl.exe` orchestrator, distro picker, or dual Windows+Linux backend
-- **Playwright preview fat** — no element pick, no PiP window, no injected automation runtime
-- **Legacy sidebar** — original per-project tree UI and its settings toggle
-- **Legacy token streaming** — token-by-token paint path removed; assistants buffer cleanly
-- **Packaging ballast** — WSL node-pty prebuild job, dual-OS Windows stage deps for WSL
-
-### What we keep (on purpose)
-
-- **Git features** — checkpoints, restore, diffs, worktrees, source control UI, PRs
-- **Multi-provider agents** — Codex · Claude · Cursor · Grok · OpenCode · Antigravity · Droid · Kilo · Pi
-- **Remote-ready architecture** — local, LAN, Tailscale / SSH
-- **Performance posture** — no continuous GPU-burning chrome; careful websocket + render cost
-- **Open source** — forkable, inspectable, yours
-
-> Ronin is not “T3 Code but worse.” It is **T3 Code with the masterless cut**: fewer doors, same forge, new face.
-
----
-
-## What you get
+## How it's built
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -108,7 +118,7 @@ T3 Code is an excellent open product with a wide surface. Ronin is that product 
 │  ┌──────────┐  ┌────────────────────────────────────┐   │
 │  │ Sidebar  │  │ Workspace topbar · git · panels    │   │
 │  │ Threads  │  │ Chat · composer · terminal         │   │
-│  │ PRs ·    │  │ Usage · Settings · OLED themes     │   │
+│  │ PRs ·    │  │ Stats · Settings · OLED themes     │   │
 │  │ Usage    │  └──────────────────▲─────────────────┘   │
 │  └────┬─────┘                     │                     │
 │       │ typed WS / IPC            │                     │
@@ -119,28 +129,7 @@ T3 Code is an excellent open product with a wide surface. Ronin is that product 
 └─────────────────────────────────────────────────────────┘
 ```
 
-- **Desktop app** — primary surface (Electron embeds the web renderer)
-- **Local server** — Node backend on your machine
-- **Your providers** — if the CLI works in a terminal, Ronin can drive it
-- **Source control** — first-class git, not an afterthought
-- **Provider switching** — hand a live thread from one agent to another; it resumes its own session, or reads a brief of the conversation and the files changed so far ([docs](./docs/user/switching-providers.md))
-- **Agent skills** — reusable `SKILL.md` workflows, including a portable `~/.ronin/skills` folder that works on every provider ([docs](./docs/user/agent-skills.md))
-- **Slash commands** — `/clear`, `/compact`, `/model`, `/review`, `/fork`, `/status` and friends, alongside your provider's own commands ([docs](./docs/user/slash-commands.md))
-
----
-
-## Switch provider mid-thread
-
-Every other harness binds a thread to the agent that opened it. Ronin does not. Pick another provider in the composer, confirm, and the next message goes to the new agent — same thread, same history, same checkpoints.
-
-- **Been here before?** It resumes its own session and only catches up on what it missed while it was away.
-- **New to the thread?** It starts fresh and reads a brief built from the thread itself — the conversation, the working directory and branch, and the files changed so far.
-
-The transcript marks the handover, so you always know who wrote what. Switching back later resumes the earlier agent rather than re-briefing it; each provider keeps its own place in the thread.
-
-> Ronin asks before a handover: the incoming agent writes code its own way, so later edits can drift from the approach already in your files.
-
-Full details: [docs/user/switching-providers.md](./docs/user/switching-providers.md).
+An event-sourced Node server wraps the provider CLIs as subprocesses; per-provider adapters translate their native protocols into one orchestration model. Commands become events, events become the UI you see, and every turn checkpoints. The desktop shell embeds the web renderer — which is also how your phone connects remotely. Deep dive: [docs/internals/overview.md](./docs/internals/overview.md).
 
 ---
 
@@ -161,7 +150,7 @@ Full details: [docs/user/switching-providers.md](./docs/user/switching-providers
 > | Kilo        | [Kilo CLI](https://kilo.ai/cli)                             | `kilo` auth                 |
 > | Pi          | [Pi](https://pi.dev/)                                       | `pi`                        |
 
-### From this fork
+### From source
 
 ```bash
 # Node 22.16+ / 23.11+ / 24.10+
@@ -183,17 +172,7 @@ vp run dist:desktop:linux          # primary path
 vp run dist:desktop:dmg:arm64      # macOS
 ```
 
-Artifacts ship as `Ronin-${version}-${arch}.${ext}`.
-
----
-
-## Themes
-
-Dark-first by default. Built-ins include **Ronin**, Paper, Graphite, Obsidian, Carbon, and pure-black **OLED Void** (plus Azure / Phosphor / Plasma siblings). Import or create your own. On Wayland+Vulkan, desktop softens glass so backdrop blur does not fall over.
-
-<p align="center">
-  <img src="Screenshots/Themes.png" alt="Theme picker" width="720" />
-</p>
+Artifacts ship as `Ronin-${version}-${arch}.${ext}`. Linux-first, Mac supported.
 
 ---
 
@@ -207,6 +186,7 @@ Dark-first by default. Built-ins include **Ronin**, Paper, Graphite, Obsidian, C
 | Agent skills       | [docs/user/agent-skills.md](./docs/user/agent-skills.md)               |
 | Slash commands     | [docs/user/slash-commands.md](./docs/user/slash-commands.md)           |
 | Source control     | [docs/user/source-control.md](./docs/user/source-control.md)           |
+| Stats & usage      | [docs/user/usage.md](./docs/user/usage.md)                             |
 | Remote / Tailscale | [docs/user/remote-access.md](./docs/user/remote-access.md)             |
 | Architecture       | [docs/internals/overview.md](./docs/internals/overview.md)             |
 | Glossary           | [docs/internals/glossary.md](./docs/internals/glossary.md)             |
@@ -215,19 +195,11 @@ Full tree: [docs/](./docs).
 
 ---
 
-## Status
-
-Early. Expect bugs. Prefer small fixes over grand PRs unless we ask.
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
-
----
-
 ## Lineage
 
-Ronin stands on **[T3 Code](https://github.com/pingdotgg/t3code)** by Theo and the T3 tools team.
+Ronin is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** by Theo and the T3 tools team — the event-sourced server, multi-provider adapters, and remote-ready architecture come from that excellent foundation. Ronin is the **masterless cut**: desktop-only, no hosted relay, no WSL orchestration, no mobile surface — a thinner blade with a full UI pass on top.
 
-Some later product surfaces — portable Agent skills, composer slash commands, and the extra providers Antigravity, Droid, Kilo, and Pi — were adapted from **[Synara](https://github.com/Emanuele-web04/synara)** by Emanuele. We kept Ronin’s existing Codex / Claude / Cursor / Grok / OpenCode adapters and its event-sourced core; Synara was the reference for how those extra tools should feel.
+Some later surfaces — portable agent skills, composer slash commands, and the Antigravity / Droid / Kilo / Pi providers — were adapted from **[Synara](https://github.com/Emanuele-web04/synara)** by Emanuele.
 
 ```
 upstream  →  pingdotgg/t3code
@@ -235,7 +207,15 @@ reference →  Emanuele-web04/synara
 this fork →  0veek/Ronin
 ```
 
-Screenshots live in [`Screenshots/`](./Screenshots) (`Code.png`, `Themes.png`, `Usage.png`).
+Curious exactly what was cut and why? The commit history tells the whole story.
+
+---
+
+## Status
+
+Early. Expect bugs. Prefer small fixes over grand PRs unless we ask.
+
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
 
 ---
 
