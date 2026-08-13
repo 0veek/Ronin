@@ -10,16 +10,16 @@ import {
   type ChangeRequestTerminology,
 } from "../sourceControlPresentation";
 
-export type GitActionIconName = "commit" | "push" | "pr";
+export type GitActionIconName = "commit" | "push" | "pr" | "discard";
 
 export type GitDialogAction = "commit" | "push" | "create_pr";
 
 export interface GitActionMenuItem {
-  id: "commit" | "push" | "pr";
+  id: "commit" | "push" | "pr" | "discard";
   label: string;
   disabled: boolean;
   icon: GitActionIconName;
-  kind: "open_dialog" | "open_pr";
+  kind: "open_dialog" | "open_pr" | "discard_changes";
   dialogAction?: GitDialogAction;
 }
 
@@ -131,8 +131,18 @@ export function buildMenuItems(
     dialogAction: "commit",
   };
 
+  // Discarding only ever touches the working tree, so it is gated on the same
+  // condition as committing and stays available with no remote configured.
+  const discardItem: GitActionMenuItem = {
+    id: "discard",
+    label: "Discard changes",
+    disabled: !canCommit,
+    icon: "discard",
+    kind: "discard_changes",
+  };
+
   if (!hasPrimaryRemote) {
-    return [commitItem];
+    return [commitItem, discardItem];
   }
 
   return [
@@ -161,6 +171,7 @@ export function buildMenuItems(
           kind: "open_dialog",
           dialogAction: "create_pr",
         },
+    discardItem,
   ];
 }
 

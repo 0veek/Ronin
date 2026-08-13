@@ -30,6 +30,7 @@ import {
   InfoIcon,
   LockIcon,
   GlobeIcon,
+  Undo2Icon,
 } from "lucide-react";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "~/components/Icons";
@@ -64,7 +65,7 @@ import {
 } from "~/components/ui/dialog";
 import { Group, GroupSeparator } from "~/components/ui/group";
 import { Input } from "~/components/ui/input";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Textarea } from "~/components/ui/textarea";
@@ -75,6 +76,7 @@ import {
   useGitStackedAction,
   useSourceControlActionRunning,
   useSourceControlPublishRepositoryAction,
+  useVcsDiscardChangesAction,
   useVcsInitAction,
   useVcsPullAction,
 } from "~/lib/sourceControlActions";
@@ -159,7 +161,12 @@ function requestVcsStatusRefresh(
   }
   void refresh({ environmentId, input: { cwd } });
 }
-const RUNNING_SOURCE_CONTROL_ACTIONS = ["runStackedAction", "pull", "publishRepository"] as const;
+const RUNNING_SOURCE_CONTROL_ACTIONS = [
+  "runStackedAction",
+  "pull",
+  "discardChanges",
+  "publishRepository",
+] as const;
 
 const PUBLISH_PROVIDER_OPTIONS = [
   {
@@ -292,6 +299,13 @@ function getMenuActionDisabledReason({
     return "Commit is currently unavailable.";
   }
 
+  if (item.id === "discard") {
+    if (!hasChanges) {
+      return "Worktree is clean. There is nothing to discard.";
+    }
+    return "Discard is currently unavailable.";
+  }
+
   if (item.id === "push") {
     if (!hasBranch) {
       return "Detached HEAD: checkout a refName before pushing.";
@@ -345,6 +359,7 @@ function GitActionItemIcon({
 }) {
   if (icon === "commit") return <GitCommitIcon />;
   if (icon === "push") return <CloudUploadIcon />;
+  if (icon === "discard") return <Undo2Icon />;
   return <SourceControlIcon />;
 }
 
@@ -1120,6 +1135,7 @@ export default function GitActionsControl({
   const initAction = useVcsInitAction(sourceControlScope);
   const runImmediateGitAction = useGitStackedAction(sourceControlScope);
   const pullAction = useVcsPullAction(sourceControlScope);
+  const discardChangesAction = useVcsDiscardChangesAction(sourceControlScope);
   const isGitActionRunning = useSourceControlActionRunning(
     sourceControlScope,
     RUNNING_SOURCE_CONTROL_ACTIONS,
@@ -1160,6 +1176,10 @@ export default function GitActionsControl({
     () => buildMenuItems(gitStatusForActions, isGitActionRunning, hasPrimaryRemote),
     [gitStatusForActions, hasPrimaryRemote, isGitActionRunning],
   );
+  const constructiveMenuItems = gitActionMenuItems.filter(
+    (item) => item.kind !== "discard_changes",
+  );
+  const destructiveMenuItems = gitActionMenuItems.filter((item) => item.kind === "discard_changes");
   const quickAction = useMemo(
     () =>
       resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultRef, hasPrimaryRemote),
@@ -1605,8 +1625,70 @@ export default function GitActionsControl({
     }
   };
 
+  const discardWorkingTreeChanges = async () => {
+    const api = readLocalApi();
+    // No confirmation surface means no confirmation, and this is not a thing to
+    // run unconfirmed.
+    if (!api) return;
+    const confirmed = await api.dialogs.confirm(
+      [
+        "Discard all changes?",
+        "",
+        "Files tracked by git are reverted to the last commit. Files git is not tracking yet are left alone.",
+        "This cannot be undone.",
+      ].join("\n"),
+      { variant: "destructive" },
+    );
+    if (!confirmed) return;
+
+    const toastId = toastManager.add({
+      type: "loading",
+      title: "Discarding changes...",
+      timeout: 0,
+      data: threadToastData,
+    });
+    const result = await discardChangesAction.run();
+    if (result._tag === "Failure") {
+      if (isAtomCommandInterrupted(result)) {
+        toastManager.close(toastId);
+        return;
+      }
+      const error = squashAtomCommandFailure(result);
+      toastManager.update(
+        toastId,
+        stackedThreadToast({
+          type: "error",
+          title: "Discard failed",
+          description: error instanceof Error ? error.message : "An error occurred.",
+          ...(threadToastData !== undefined ? { data: threadToastData } : {}),
+        }),
+      );
+      return;
+    }
+
+    const discardResult = result.value;
+    const restoredCount = discardResult.filesRestored;
+    toastManager.update(toastId, {
+      type: "success",
+      title: discardResult.status === "discarded" ? "Changes discarded" : "Nothing to discard",
+      description:
+        discardResult.status === "skipped_no_changes"
+          ? "The worktree was already clean."
+          : restoredCount === 0
+            ? // Only staged additions were present: unstaging them is all a
+              // discard can do without deleting files HEAD cannot restore.
+              "New files were unstaged and left in place."
+            : `Restored ${restoredCount} ${restoredCount === 1 ? "file" : "files"} to the last commit.`,
+      data: threadToastData,
+    });
+  };
+
   const openDialogForMenuItem = (item: GitActionMenuItem) => {
     if (item.disabled) return;
+    if (item.kind === "discard_changes") {
+      void discardWorkingTreeChanges();
+      return;
+    }
     if (item.kind === "open_pr") {
       void openExistingPr();
       return;
@@ -1622,6 +1704,50 @@ export default function GitActionsControl({
     setExcludedFiles(new Set());
     setIsEditingFiles(false);
     setIsCommitDialogOpen(true);
+  };
+
+  const renderGitActionMenuItem = (item: GitActionMenuItem) => {
+    const disabledReason = getMenuActionDisabledReason({
+      item,
+      gitStatus: gitStatusForActions,
+      isBusy: isGitActionRunning,
+      hasPrimaryRemote,
+    });
+    const variantProps =
+      item.kind === "discard_changes" ? ({ variant: "destructive" } as const) : {};
+    if (item.disabled && disabledReason) {
+      return (
+        <Popover key={`${item.id}-${item.label}`}>
+          <PopoverTrigger
+            openOnHover
+            nativeButton={false}
+            render={<span className="block w-max cursor-not-allowed" />}
+          >
+            <MenuItem className="w-full" disabled {...variantProps}>
+              <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
+              {item.label}
+            </MenuItem>
+          </PopoverTrigger>
+          <PopoverPopup tooltipStyle side="left" align="center">
+            {disabledReason}
+          </PopoverPopup>
+        </Popover>
+      );
+    }
+
+    return (
+      <MenuItem
+        key={`${item.id}-${item.label}`}
+        disabled={item.disabled}
+        {...variantProps}
+        onClick={() => {
+          openDialogForMenuItem(item);
+        }}
+      >
+        <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
+        {item.label}
+      </MenuItem>
+    );
   };
 
   const runDialogAction = () => {
@@ -1758,49 +1884,7 @@ export default function GitActionsControl({
               <ChevronDownIcon aria-hidden="true" className="size-4" />
             </MenuTrigger>
             <MenuPopup align="end" className="w-full">
-              {gitActionMenuItems.map((item) => {
-                const disabledReason = getMenuActionDisabledReason({
-                  item,
-                  gitStatus: gitStatusForActions,
-                  isBusy: isGitActionRunning,
-                  hasPrimaryRemote,
-                });
-                if (item.disabled && disabledReason) {
-                  return (
-                    <Popover key={`${item.id}-${item.label}`}>
-                      <PopoverTrigger
-                        openOnHover
-                        nativeButton={false}
-                        render={<span className="block w-max cursor-not-allowed" />}
-                      >
-                        <MenuItem className="w-full" disabled>
-                          <GitActionItemIcon
-                            icon={item.icon}
-                            SourceControlIcon={SourceControlIcon}
-                          />
-                          {item.label}
-                        </MenuItem>
-                      </PopoverTrigger>
-                      <PopoverPopup tooltipStyle side="left" align="center">
-                        {disabledReason}
-                      </PopoverPopup>
-                    </Popover>
-                  );
-                }
-
-                return (
-                  <MenuItem
-                    key={`${item.id}-${item.label}`}
-                    disabled={item.disabled}
-                    onClick={() => {
-                      openDialogForMenuItem(item);
-                    }}
-                  >
-                    <GitActionItemIcon icon={item.icon} SourceControlIcon={SourceControlIcon} />
-                    {item.label}
-                  </MenuItem>
-                );
-              })}
+              {constructiveMenuItems.map(renderGitActionMenuItem)}
               {canPublishRepository ? (
                 <MenuItem
                   disabled={isGitActionRunning}
@@ -1812,6 +1896,10 @@ export default function GitActionsControl({
                   Publish repository...
                 </MenuItem>
               ) : null}
+              {/* Discarding is the one destructive entry, so it sits last and
+                  fenced off from everything above it. */}
+              {destructiveMenuItems.length > 0 ? <MenuSeparator /> : null}
+              {destructiveMenuItems.map(renderGitActionMenuItem)}
               {gitStatusForActions?.refName === null && (
                 <p className="px-2 py-1.5 text-xs text-warning">
                   Detached HEAD: create and checkout a refName to enable push and pull request

@@ -109,6 +109,11 @@ export const VcsPullInput = Schema.Struct({
 });
 export type VcsPullInput = typeof VcsPullInput.Type;
 
+export const VcsDiscardChangesInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsDiscardChangesInput = typeof VcsDiscardChangesInput.Type;
+
 export const GitRunStackedActionInput = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,
   cwd: TrimmedNonEmptyStringSchema,
@@ -325,6 +330,18 @@ export const VcsPullResult = Schema.Struct({
   upstreamRef: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
 });
 export type VcsPullResult = typeof VcsPullResult.Type;
+
+/**
+ * `filesRestored` counts only files whose content was rolled back to HEAD. A
+ * file staged as a new addition is unstaged rather than restored -- discarding
+ * never deletes work that has no committed version to fall back to -- so it is
+ * deliberately not counted even though the discard did act on it.
+ */
+export const VcsDiscardChangesResult = Schema.Struct({
+  status: Schema.Literals(["discarded", "skipped_no_changes"]),
+  filesRestored: NonNegativeInt,
+});
+export type VcsDiscardChangesResult = typeof VcsDiscardChangesResult.Type;
 
 // RPC / domain errors
 export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()("GitCommandError", {

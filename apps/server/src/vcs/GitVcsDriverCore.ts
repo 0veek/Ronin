@@ -2057,6 +2057,58 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
   });
 
+  /**
+   * Roll the working tree back to HEAD without destroying anything HEAD cannot
+   * give back.
+   *
+   * `git restore --staged --worktree` in one pass would be shorter, but it
+   * *deletes* a file staged as a new addition: HEAD has no version of it, so
+   * restoring from HEAD means removing it. Agents stage new files constantly,
+   * and losing one to a button labelled "discard changes" is not recoverable.
+   *
+   * Unstaging first and restoring second avoids that. After `--staged` the index
+   * matches HEAD, so a staged addition is merely untracked, and the `--worktree`
+   * pass -- which restores from the index -- no longer has any reason to touch
+   * it. Tracked edits revert and tracked deletions come back; untracked files,
+   * whether they were staged or not, stay exactly where they are.
+   */
+  const discardWorkingTreeChanges: GitVcsDriver.GitVcsDriver["Service"]["discardWorkingTreeChanges"] =
+    Effect.fn("discardWorkingTreeChanges")(function* (cwd) {
+      // `--untracked-files=no` narrows this to what a discard can act on at all.
+      const porcelain = yield* runGitStdout(
+        "GitVcsDriver.discardWorkingTreeChanges.status",
+        cwd,
+        ["status", "--porcelain", "--untracked-files=no"],
+        true,
+      );
+      const entries = porcelain.split("\n").filter((line) => line.trim().length > 0);
+      if (entries.length === 0) {
+        return { status: "skipped_no_changes" as const, filesRestored: 0 };
+      }
+
+      // An index-add has no HEAD version to restore, so it is unstaged rather
+      // than rolled back and does not belong in the restored count.
+      const filesRestored = entries.filter((line) => line[0] !== "A").length;
+
+      // `:/` anchors both passes to the repository root, so a `cwd` that is a
+      // subdirectory still discards the whole working tree rather than a slice
+      // of it -- the menu item promises the former.
+      yield* runGit("GitVcsDriver.discardWorkingTreeChanges.unstage", cwd, [
+        "restore",
+        "--staged",
+        "--",
+        ":/",
+      ]);
+      yield* runGit("GitVcsDriver.discardWorkingTreeChanges.restore", cwd, [
+        "restore",
+        "--worktree",
+        "--",
+        ":/",
+      ]);
+
+      return { status: "discarded" as const, filesRestored };
+    });
+
   const readRangeContext: GitVcsDriver.GitVcsDriver["Service"]["readRangeContext"] = Effect.fn(
     "readRangeContext",
   )(function* (cwd, baseRef) {
@@ -3162,6 +3214,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     pushCurrentBranch: (cwd, fallbackBranch, options) =>
       withListRefsInvalidation(cwd, pushCurrentBranch(cwd, fallbackBranch, options)),
     pullCurrentBranch: (cwd) => withListRefsInvalidation(cwd, pullCurrentBranch(cwd)),
+    discardWorkingTreeChanges: (cwd) =>
+      withListRefsInvalidation(cwd, discardWorkingTreeChanges(cwd)),
     readRangeContext,
     getReviewDiffPreview,
     getReviewDiffFileContents,

@@ -88,6 +88,13 @@ describe("when: ref is clean and has an open PR", () => {
         icon: "pr",
         kind: "open_pr",
       },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
+      },
     ]);
   });
 });
@@ -129,6 +136,13 @@ describe("when: actions are busy", () => {
         icon: "pr",
         kind: "open_dialog",
         dialogAction: "create_pr",
+      },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
       },
     ]);
   });
@@ -209,6 +223,13 @@ describe("when: ref is clean, ahead, and has an open PR", () => {
         icon: "pr",
         kind: "open_pr",
       },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
+      },
     ]);
   });
 });
@@ -249,6 +270,13 @@ describe("when: ref is clean, ahead, and has no open PR", () => {
         icon: "pr",
         kind: "open_dialog",
         dialogAction: "create_pr",
+      },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
       },
     ]);
   });
@@ -336,6 +364,13 @@ describe("when: ref is clean, up to date, and has no open PR", () => {
         kind: "open_dialog",
         dialogAction: "create_pr",
       },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
+      },
     ]);
   });
 });
@@ -372,6 +407,13 @@ describe("when: ref is behind upstream", () => {
         icon: "pr",
         kind: "open_dialog",
         dialogAction: "create_pr",
+      },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
       },
     ]);
   });
@@ -463,6 +505,13 @@ describe("when: working tree has local changes", () => {
         kind: "open_dialog",
         dialogAction: "create_pr",
       },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: false,
+        icon: "discard",
+        kind: "discard_changes",
+      },
     ]);
   });
 
@@ -504,6 +553,13 @@ describe("when: working tree has local changes", () => {
         icon: "pr",
         kind: "open_dialog",
         dialogAction: "create_pr",
+      },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: false,
+        icon: "discard",
+        kind: "discard_changes",
       },
     ]);
   });
@@ -579,6 +635,13 @@ describe("when: working tree has local changes and ref is behind upstream", () =
         kind: "open_dialog",
         dialogAction: "create_pr",
       },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: false,
+        icon: "discard",
+        kind: "discard_changes",
+      },
     ]);
   });
 });
@@ -618,6 +681,13 @@ describe("when: HEAD is detached and there are no local changes", () => {
         icon: "pr",
         kind: "open_dialog",
         dialogAction: "create_pr",
+      },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
       },
     ]);
   });
@@ -711,6 +781,13 @@ describe("when: ref has no upstream configured", () => {
         kind: "open_dialog",
         dialogAction: "create_pr",
       },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
+      },
     ]);
   });
 
@@ -776,6 +853,13 @@ describe("when: ref has no upstream configured", () => {
         kind: "open_dialog",
         dialogAction: "create_pr",
       },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
+      },
     ]);
   });
 
@@ -793,6 +877,13 @@ describe("when: ref has no upstream configured", () => {
         icon: "commit",
         kind: "open_dialog",
         dialogAction: "commit",
+      },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
       },
     ]);
   });
@@ -869,6 +960,13 @@ describe("when: ref has no upstream configured", () => {
         icon: "pr",
         kind: "open_dialog",
         dialogAction: "create_pr",
+      },
+      {
+        id: "discard",
+        label: "Discard changes",
+        disabled: true,
+        icon: "discard",
+        kind: "discard_changes",
       },
     ]);
   });

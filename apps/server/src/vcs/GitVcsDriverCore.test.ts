@@ -1480,6 +1480,94 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
     );
   });
 
+  describe("discarding working tree changes", () => {
+    it.effect("reverts tracked files without deleting files HEAD cannot restore", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+
+        yield* writeTextFile(cwd, "tracked.txt", "committed\n");
+        yield* writeTextFile(cwd, "deleted.txt", "committed\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "add tracked files"]);
+
+        yield* writeTextFile(cwd, "tracked.txt", "edited\n");
+        yield* fileSystem.remove(pathService.join(cwd, "deleted.txt"));
+        yield* writeTextFile(cwd, "staged-new.txt", "new\n");
+        yield* git(cwd, ["add", "staged-new.txt"]);
+        yield* writeTextFile(cwd, "untracked.txt", "untracked\n");
+
+        const result = yield* driver.discardWorkingTreeChanges(cwd);
+
+        // The staged addition is unstaged rather than restored, so it is not counted.
+        assert.deepStrictEqual(result, { status: "discarded", filesRestored: 2 });
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(cwd, "tracked.txt")),
+          "committed\n",
+        );
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(cwd, "deleted.txt")),
+          "committed\n",
+        );
+        assert.equal(yield* fileSystem.exists(pathService.join(cwd, "staged-new.txt")), true);
+        assert.equal(yield* fileSystem.exists(pathService.join(cwd, "untracked.txt")), true);
+
+        const status = yield* git(cwd, ["status", "--porcelain"]);
+        assert.deepStrictEqual(status.split("\n").sort(), [
+          "?? staged-new.txt",
+          "?? untracked.txt",
+        ]);
+      }),
+    );
+
+    it.effect("discards the whole worktree when invoked from a subdirectory", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+
+        yield* writeTextFile(cwd, "root.txt", "committed\n");
+        yield* writeTextFile(cwd, "nested/deep.txt", "committed\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "add nested files"]);
+
+        yield* writeTextFile(cwd, "root.txt", "edited\n");
+        yield* writeTextFile(cwd, "nested/deep.txt", "edited\n");
+
+        const result = yield* driver.discardWorkingTreeChanges(pathService.join(cwd, "nested"));
+
+        assert.deepStrictEqual(result, { status: "discarded", filesRestored: 2 });
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(cwd, "root.txt")),
+          "committed\n",
+        );
+        assert.equal(yield* git(cwd, ["status", "--porcelain"]), "");
+      }),
+    );
+
+    it.effect("skips a clean worktree that still holds untracked files", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+
+        yield* writeTextFile(cwd, "untracked.txt", "untracked\n");
+
+        const result = yield* driver.discardWorkingTreeChanges(cwd);
+
+        assert.deepStrictEqual(result, { status: "skipped_no_changes", filesRestored: 0 });
+        assert.equal(yield* fileSystem.exists(pathService.join(cwd, "untracked.txt")), true);
+      }),
+    );
+  });
+
   describe("remote operations", () => {
     it.effect("creates a worktree from the latest fetched remote commit", () =>
       Effect.gen(function* () {
