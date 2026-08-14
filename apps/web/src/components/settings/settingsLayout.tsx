@@ -14,6 +14,7 @@ import {
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { getSettingsPageMeta, type SettingsPageMeta } from "./settingsNavigation";
 
 interface SettingsSearchTargetContextValue {
   readonly targetId: string | null;
@@ -25,6 +26,7 @@ const SettingsSearchTargetContext = createContext<SettingsSearchTargetContextVal
   targetId: null,
   onTargetHandled: noop,
 });
+const SettingsPageMetaContext = createContext<SettingsPageMeta | null>(null);
 
 export function SettingsSearchTargetProvider({
   targetId,
@@ -130,22 +132,31 @@ export function SettingsSection({
   children: ReactNode;
 }) {
   const targetRef = useSettingsSearchTarget<HTMLElement>(sectionProps.id);
+  const pageMeta = useContext(SettingsPageMetaContext);
+  const isPageNamedSection = pageMeta?.label.toLocaleLowerCase() === title.toLocaleLowerCase();
 
   return (
     <section
       {...sectionProps}
+      aria-label={sectionProps["aria-label"] ?? (isPageNamedSection ? title : undefined)}
       ref={targetRef}
       tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
       className={cn("space-y-3", className)}
     >
-      <div className="flex min-h-8 items-center justify-between gap-4 px-3 sm:px-4">
-        <h2 className="flex items-center gap-2 text-lg font-semibold tracking-[-0.025em] text-foreground">
-          {icon}
-          {title}
-        </h2>
-        <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
+      {!isPageNamedSection ? (
+        <div className="flex min-h-8 items-center justify-between gap-4 px-1 sm:px-2">
+          <h2 className="flex items-center gap-2 text-base font-semibold tracking-[-0.015em] text-foreground">
+            {icon ? <span className="text-muted-foreground [&>svg]:size-4">{icon}</span> : null}
+            {title}
+          </h2>
+          <div className="flex min-h-7 min-w-7 items-center justify-end">{headerAction}</div>
+        </div>
+      ) : headerAction ? (
+        <div className="flex min-h-7 items-center justify-end px-1 sm:px-2">{headerAction}</div>
+      ) : null}
+      <div className="relative divide-y divide-border/60 overflow-visible border-y border-border/70 text-foreground">
+        {children}
       </div>
-      <div className="relative space-y-1 overflow-visible text-foreground">{children}</div>
     </section>
   );
 }
@@ -174,9 +185,13 @@ export function SettingsRow({
       {...rowProps}
       ref={targetRef}
       tabIndex={rowProps.id ? -1 : rowProps.tabIndex}
-      className={cn("rounded-xl px-3 sm:px-4", children ? "pt-3 pb-1" : "py-3", className)}
+      className={cn(
+        "px-3 transition-colors hover:bg-muted/15 sm:px-4",
+        children ? "pt-3.5 pb-2" : "py-3.5",
+        className,
+      )}
     >
-      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] sm:items-center sm:gap-8">
+      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)] sm:items-center sm:gap-8">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
             <h3 className="text-sm font-medium tracking-[-0.005em] text-foreground">{title}</h3>
@@ -185,7 +200,7 @@ export function SettingsRow({
             </span>
           </div>
           {description ? (
-            <p className="max-w-xl text-[13px] leading-[1.45] text-muted-foreground/80">
+            <p className="max-w-2xl text-[13px] leading-[1.5] text-muted-foreground/80">
               {description}
             </p>
           ) : null}
@@ -243,20 +258,46 @@ export function SettingsPageContainer({
   className?: string;
 }) {
   const navigate = useNavigate();
-  const hash = useLocation({ select: (location) => location.hash });
-  const targetId = hash.replace(/^#/, "") || null;
+  const location = useLocation({
+    select: (currentLocation) => ({
+      hash: currentLocation.hash,
+      pathname: currentLocation.pathname,
+    }),
+  });
+  const targetId = location.hash.replace(/^#/, "") || null;
+  const pageMeta = getSettingsPageMeta(location.pathname);
   const clearTargetHash = useCallback(() => {
     void navigate({ hash: "", replace: true, resetScroll: false, hashScrollIntoView: false });
   }, [navigate]);
 
   return (
     <SettingsSearchTargetProvider targetId={targetId} onTargetHandled={clearTargetHash}>
-      <div className="settings-page-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto px-4 pt-10 pb-7 sm:px-8 sm:pt-12 sm:pb-10">
-        <div className={cn("mx-auto flex w-full max-w-4xl flex-col gap-12", className)}>
-          {children}
+      <SettingsPageMetaContext value={pageMeta}>
+        <div className="settings-page-scroll-fade scrollbar-gutter-both flex-1 overflow-y-auto px-4 pt-7 pb-8 sm:px-8 sm:pt-9 sm:pb-12">
+          <div className={cn("mx-auto flex w-full max-w-4xl flex-col gap-10", className)}>
+            {pageMeta ? <SettingsPageIntro meta={pageMeta} /> : null}
+            {children}
+          </div>
         </div>
-      </div>
+      </SettingsPageMetaContext>
     </SettingsSearchTargetProvider>
+  );
+}
+
+function SettingsPageIntro({ meta }: { readonly meta: SettingsPageMeta }) {
+  const Icon = meta.icon;
+
+  return (
+    <header className="flex items-start gap-3.5 px-1 sm:px-2">
+      <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-[var(--radius)] border border-border bg-card text-foreground">
+        <Icon aria-hidden className="size-5" strokeWidth={1.75} />
+      </div>
+      <div className="min-w-0">
+        <div className="label-meta mb-0.5 text-muted-foreground/65">Settings</div>
+        <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground">{meta.label}</h1>
+        <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">{meta.description}</p>
+      </div>
+    </header>
   );
 }
 

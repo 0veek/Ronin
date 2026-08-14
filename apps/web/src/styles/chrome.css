@@ -7,6 +7,32 @@
  * dialog, toast) share so they read as one family.
  */
 
+/*
+ * The one focus treatment.
+ *
+ * Three had grown in parallel: `ring-2` with a background offset (button,
+ * badge, toggle, checkbox, switch), `ring-2` with a translucent `ring-ring/24`
+ * and no offset (select, combobox), and `ring-[3px]` (textarea, input-group,
+ * number-field). Tabbing a form changed the ring's width and its gap per
+ * field, which reads as three different apps.
+ *
+ * This is the button's recipe, because it was the one already reasoned about:
+ * a 2px ring held one pixel off the control so the ring and the control's own
+ * hairline stay legible as separate strokes. Controls that sit on a surface
+ * other than the body override `--focus-ring-offset-color` rather than
+ * respelling the ring.
+ */
+@utility focus-ring {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-(--focus-ring-offset);
+}
+
+/* For controls whose focus state is owned by a wrapper (an input inside an
+   input-group, a number field, the combobox chips row) rather than by the
+   element the user actually tabs to. Same ring, different trigger. */
+@utility focus-ring-within {
+  @apply has-focus-visible:ring-2 has-focus-visible:ring-ring has-focus-visible:ring-offset-1 has-focus-visible:ring-offset-(--focus-ring-offset);
+}
+
 @layer components {
   .sidebar-brand {
     display: none;

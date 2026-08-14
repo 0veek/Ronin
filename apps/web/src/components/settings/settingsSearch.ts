@@ -1,13 +1,6 @@
-export type SettingsPath =
-  | "/settings/general"
-  | "/settings/appearance"
-  | "/settings/keybindings"
-  | "/settings/speech-to-text"
-  | "/settings/providers"
-  | "/settings/skills"
-  | "/settings/source-control"
-  | "/settings/connections"
-  | "/settings/archived";
+import { SETTINGS_PAGE_META, type SettingsPath } from "./settingsNavigation";
+
+export type { SettingsPath } from "./settingsNavigation";
 
 export interface SettingsSearchItem {
   readonly id: string;
@@ -21,15 +14,15 @@ export interface SettingsSearchItem {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
-  "/settings/general": "General",
-  "/settings/appearance": "Appearance",
-  "/settings/keybindings": "Keybindings",
-  "/settings/speech-to-text": "Dictation",
-  "/settings/providers": "Providers",
-  "/settings/skills": "Agent skills",
-  "/settings/source-control": "Source Control",
-  "/settings/connections": "Connections",
-  "/settings/archived": "Archive",
+  "/settings/general": SETTINGS_PAGE_META["/settings/general"].label,
+  "/settings/appearance": SETTINGS_PAGE_META["/settings/appearance"].label,
+  "/settings/keybindings": SETTINGS_PAGE_META["/settings/keybindings"].label,
+  "/settings/speech-to-text": SETTINGS_PAGE_META["/settings/speech-to-text"].label,
+  "/settings/providers": SETTINGS_PAGE_META["/settings/providers"].label,
+  "/settings/skills": SETTINGS_PAGE_META["/settings/skills"].label,
+  "/settings/source-control": SETTINGS_PAGE_META["/settings/source-control"].label,
+  "/settings/connections": SETTINGS_PAGE_META["/settings/connections"].label,
+  "/settings/archived": SETTINGS_PAGE_META["/settings/archived"].label,
 };
 
 /**
@@ -253,6 +246,20 @@ function normalizeSearchText(value: string): string {
     .trim();
 }
 
+function settingsSearchScore(item: SettingsSearchItem, normalizedQuery: string): number | null {
+  const title = normalizeSearchText(item.title);
+  if (title === normalizedQuery) return 0;
+  if (title.startsWith(normalizedQuery)) return 1;
+  if (title.includes(normalizedQuery)) return 2;
+
+  const page = SETTINGS_PAGE_META[item.to];
+  const secondaryText = normalizeSearchText(
+    [page.label, page.description, ...page.searchTerms].join(" "),
+  );
+  const queryTerms = normalizedQuery.split(" ");
+  return queryTerms.every((term) => secondaryText.includes(term)) ? 3 : null;
+}
+
 export function searchSettings(
   query: string,
   items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
@@ -260,5 +267,12 @@ export function searchSettings(
   const normalizedQuery = normalizeSearchText(query);
   if (normalizedQuery.length === 0) return [];
 
-  return items.filter((item) => normalizeSearchText(item.title).includes(normalizedQuery));
+  return items
+    .map((item, index) => ({ index, item, score: settingsSearchScore(item, normalizedQuery) }))
+    .filter(
+      (result): result is { index: number; item: SettingsSearchItem; score: number } =>
+        result.score !== null,
+    )
+    .sort((left, right) => left.score - right.score || left.index - right.index)
+    .map(({ item }) => item);
 }

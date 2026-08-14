@@ -36,11 +36,11 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
-  it("matches only setting titles", () => {
+  it("matches setting titles and their navigation vocabulary", () => {
     expect(searchSettings("word", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
     expect(searchSettings("network", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
-    expect(searchSettings("connections", ITEMS)).toEqual([]);
-    expect(searchSettings("claude", ITEMS)).toEqual([]);
+    expect(searchSettings("connections", ITEMS).map((item) => item.id)).toEqual(["network-access"]);
+    expect(searchSettings("claude", ITEMS).map((item) => item.id)).toEqual(["providers"]);
   });
 
   it("matches normalized title substrings", () => {
@@ -56,6 +56,19 @@ describe("searchSettings", () => {
       "provider-updates",
       "automatic-updates",
     ]);
+  });
+
+  it("ranks direct setting-title matches ahead of broader section matches", () => {
+    const matches = searchSettings("model");
+
+    expect(matches[0]?.id).toBe("text-generation-model");
+    expect(matches.some((item) => item.to === "/settings/providers")).toBe(true);
+  });
+
+  it("finds settings with common task vocabulary", () => {
+    expect(searchSettings("dark")[0]?.to).toBe("/settings/appearance");
+    expect(searchSettings("git")[0]?.to).toBe("/settings/source-control");
+    expect(searchSettings("ssh")[0]?.to).toBe("/settings/connections");
   });
 
   it("returns no results for an empty query", () => {

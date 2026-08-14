@@ -4,7 +4,10 @@ import type * as React from "react";
 
 import { cn } from "~/lib/utils";
 
-const alertVariants = cva("relative rounded-xl border px-3.5 py-3 text-card-foreground text-sm", {
+// Surfaces round at --radius-lg; controls round at --control-radius. An alert
+// is a surface, so it rounds with the card and the dialog, not one step past
+// them.
+const alertVariants = cva("relative rounded-lg border px-3.5 py-3 text-card-foreground text-sm", {
   defaultVariants: {
     variant: "default",
   },

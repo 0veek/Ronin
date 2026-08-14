@@ -126,6 +126,16 @@
   --radius: 0.25rem;
   --control-radius: 0.1875rem;
 
+  /*
+   * The gap the focus ring holds against the control it surrounds. It is a
+   * color, not a width: the ring sits one pixel off the control and that pixel
+   * has to be painted in whatever surface the control is sitting on, or the
+   * gap reads as a stray line. Inherited, so a panel that is not on the body
+   * background overrides it once for everything inside it rather than every
+   * control respelling its own ring.
+   */
+  --focus-ring-offset: var(--background);
+
   --app-scrollbar-width: 6px;
   --app-scrollbar-thumb: rgb(217 217 217);
 
@@ -186,6 +196,19 @@
     var(--workspace-controls-left) + var(--workspace-titlebar-control-size) +
       var(--workspace-titlebar-control-gap)
   );
+}
+
+/* Surfaces that are not the body background re-point the focus ring's gap once,
+   here, instead of every control inside them carrying its own ring-offset-*. */
+[data-slot="sidebar"],
+[data-slot="sidebar-container"],
+[data-slot="sidebar-inner"] {
+  --focus-ring-offset: var(--sidebar);
+}
+
+.surface-menu,
+.surface-dialog {
+  --focus-ring-offset: var(--popover);
 }
 
 .wco {

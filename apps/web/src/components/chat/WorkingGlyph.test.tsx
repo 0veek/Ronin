@@ -4,22 +4,21 @@ import { describe, expect, it } from "vite-plus/test";
 import { WorkingGlyph } from "./WorkingGlyph";
 
 describe("WorkingGlyph", () => {
-  it("draws three dots on a ring with a tail and hides itself from assistive tech", () => {
+  it("draws two opposing ninjas, their blades, and an impact spark", () => {
     const markup = renderToStaticMarkup(<WorkingGlyph />);
 
     expect(markup).toContain('aria-hidden="true"');
-    expect(markup).toContain("working-glyph-ring");
-    expect(markup).toContain("working-glyph-core");
-    // The descending opacities are the tail. Without them the stepped rotation
-    // is invisible, because three identical dots 120 degrees apart look the
-    // same at every step.
-    expect(markup).toContain('opacity="0.55"');
-    expect(markup).toContain('opacity="0.28"');
+    expect(markup).toContain("working-ninja-left");
+    expect(markup).toContain("working-ninja-right");
+    expect(markup).toContain("working-ninja-blade-left");
+    expect(markup).toContain("working-ninja-blade-right");
+    expect(markup).toContain("working-ninja-spark");
   });
 
-  it("does not fall back to the generic status pulse", () => {
-    // The point of the glyph is that the one surface the user is actually
-    // waiting on stops sharing the blink every other live indicator uses.
-    expect(renderToStaticMarkup(<WorkingGlyph />)).not.toContain("animate-status-pulse");
+  it("inherits its color and does not fall back to the generic status pulse", () => {
+    const markup = renderToStaticMarkup(<WorkingGlyph />);
+
+    expect(markup).toContain("text-primary");
+    expect(markup).not.toContain("animate-status-pulse");
   });
 });
