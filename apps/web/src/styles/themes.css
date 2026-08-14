@@ -126,6 +126,44 @@ html.dark[data-theme-id] {
   --terminal-scrollbar-hover: var(--app-theme-terminal-scrollbar-hover);
 }
 
+:is(html[data-theme-id="t3-chat"], html[data-theme-id="ocean"], html[data-theme-id="iris"]) {
+  --stage-night-top: color-mix(in oklch, var(--stage-art-top) 38%, var(--stage-night-base-top));
+  --stage-night-mid: color-mix(in oklch, var(--stage-art-mid) 38%, var(--stage-night-base-mid));
+  --stage-night-bottom: color-mix(
+    in oklch,
+    var(--stage-art-bottom) 38%,
+    var(--stage-night-base-bottom)
+  );
+  --stage-night-highlight: var(--stage-art-highlight);
+  --stage-night-secondary: color-mix(
+    in oklch,
+    var(--stage-art-secondary) 55%,
+    var(--stage-night-mid)
+  );
+  --stage-night-tertiary: color-mix(
+    in oklch,
+    var(--stage-art-tertiary) 60%,
+    var(--stage-night-top)
+  );
+  --stage-night-line: color-mix(in oklch, var(--stage-art-line) 82%, oklch(1 0 0));
+}
+
+:is(
+  html[data-theme-id="t3-chat"],
+  html[data-theme-id="grove"],
+  html[data-theme-id="ocean"],
+  html[data-theme-id="ember"],
+  html[data-theme-id="iris"]
+) {
+  --stage-art-celeste-highlight: var(--stage-art-highlight);
+  --stage-art-celeste-secondary: var(--stage-art-secondary);
+  --stage-art-violet-highlight: var(--stage-art-highlight);
+  --stage-art-grid-line: var(--stage-art-line);
+  --stage-night-glow-highlight: var(--stage-night-highlight);
+  --stage-night-glow-secondary: var(--stage-night-secondary);
+  --stage-night-sparkle: var(--stage-night-line);
+}
+
 html[data-theme-id]:not(.dark) {
   color-scheme: light;
 }

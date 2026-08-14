@@ -122,6 +122,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "auto-settle-merged-threads",
+    title: "Auto-settle merged threads",
+    to: "/settings/general",
+  },
+  {
     id: "agent-notifications",
     title: "Agent notifications",
     to: "/settings/general",

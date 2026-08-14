@@ -12,6 +12,13 @@ If reordering is unavailable for one environment, update the Ronin server runnin
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
 
+## Settling threads
+
+Threads on closed pull requests always settle automatically. Merged pull requests also settle by
+default; turn off **Auto-settle merged threads** in **Settings → General** if merged work should
+remain active. The separate inactivity setting controls whether quiet threads settle after a chosen
+number of days.
+
 ## Environment artwork
 
 Dev and Nightly environments can identify themselves with artwork at the top of the sidebar and in

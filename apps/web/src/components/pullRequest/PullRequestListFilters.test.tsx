@@ -4,6 +4,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from "rea
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { PullRequestFiltersMenu } from "./PullRequestListFilters";
+import { pullRequestProjectKey } from "./pullRequestList.logic";
 
 function findValueChange(
   node: ReactNode,
@@ -129,7 +130,7 @@ describe("pull request filters menu", () => {
     const radioGroup = findValueChange(view);
     expect(radioGroup).toBeDefined();
 
-    radioGroup?.props.onValueChange(`${environmentId} ${projectId}`);
+    radioGroup?.props.onValueChange(pullRequestProjectKey({ id: projectId, environmentId }));
     expect(onProject).not.toHaveBeenCalled();
 
     radioGroup?.props.onValueChange("all");
@@ -159,7 +160,23 @@ describe("pull request filters menu", () => {
     const radioGroup = findValueChange(view);
     expect(radioGroup).toBeDefined();
 
-    radioGroup?.props.onValueChange(`env-2 ${projectId}`);
+    radioGroup?.props.onValueChange(
+      pullRequestProjectKey({ id: projectId, environmentId: "env-2" as EnvironmentId }),
+    );
     expect(onProject).toHaveBeenCalledWith(projectId, "env-2");
+  });
+
+  it("does not collide when environment and project ids contain spaces", () => {
+    expect(
+      pullRequestProjectKey({
+        environmentId: "a b" as EnvironmentId,
+        id: "c" as ProjectId,
+      }),
+    ).not.toBe(
+      pullRequestProjectKey({
+        environmentId: "a" as EnvironmentId,
+        id: "b c" as ProjectId,
+      }),
+    );
   });
 });
