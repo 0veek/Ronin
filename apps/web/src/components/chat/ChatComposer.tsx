@@ -233,7 +233,8 @@ import {
   formatProviderDisplayName,
 } from "../../lib/contextWindow";
 import { formatProviderSkillDisplayName } from "../../providerSkillPresentation";
-import { searchProviderSkills } from "../../providerSkillSearch";
+import { mergeProviderSkillCatalogs, searchProviderSkills } from "../../providerSkillSearch";
+import { useEnvironmentSkillsCatalog } from "../../state/skillsCatalog";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
 
@@ -681,6 +682,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onExpandImage,
   } = props;
   const isSendDisabled = sendDisabledReason !== null;
+  const discoveredSkillsCatalog = useEnvironmentSkillsCatalog(environmentId, gitCwd);
 
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -858,6 +860,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedProviderStatus = useMemo(
     () => selectedProviderEntry?.snapshot ?? null,
     [selectedProviderEntry],
+  );
+  const selectedProviderSkills = useMemo(
+    () =>
+      mergeProviderSkillCatalogs(
+        selectedProviderStatus?.skills ?? [],
+        discoveredSkillsCatalog.skills,
+      ),
+    [discoveredSkillsCatalog.skills, selectedProviderStatus?.skills],
   );
   const selectedProviderModels = useMemo<ReadonlyArray<ServerProvider["models"][number]>>(
     () => selectedProviderEntry?.models ?? [],
@@ -1084,7 +1094,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: `/${command.name}`,
           description: command.description ?? command.input?.hint ?? "Run provider command",
         }));
-      const visibleSkills = (selectedProviderStatus?.skills ?? []).filter(
+      const visibleSkills = selectedProviderSkills.filter(
         (skill) =>
           !(settings.skills?.disabled ?? []).some(
             (name) => name.trim().toLowerCase() === skill.name.trim().toLowerCase(),
@@ -1111,7 +1121,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return [...rankedSlashItems, ...skillItems];
     }
     if (composerTrigger.kind === "skill") {
-      const visibleSkills = (selectedProviderStatus?.skills ?? []).filter(
+      const visibleSkills = selectedProviderSkills.filter(
         (skill) =>
           !(settings.skills?.disabled ?? []).some(
             (name) => name.trim().toLowerCase() === skill.name.trim().toLowerCase(),
@@ -1134,6 +1144,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerTrigger,
     planModeUiEnabled,
     selectedProvider,
+    selectedProviderSkills,
     selectedProviderStatus,
     settings.skills,
     workspaceEntries.entries,
@@ -3147,7 +3158,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       ? composerTerminalContexts
                       : []
                   }
-                  skills={selectedProviderStatus?.skills ?? []}
+                  skills={selectedProviderSkills}
                   {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
                   onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                   onChange={onPromptChange}

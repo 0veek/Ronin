@@ -1,10 +1,34 @@
 import { assert, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import type * as CodexClient from "effect-codex-app-server/client";
 
 import {
   applyPreferredCodexDefaultModel,
   isLegacyCodexModel,
   mapCodexModelCapabilities,
+  registerCodexPortableSkillRoot,
 } from "./CodexProvider.ts";
+
+it.effect("registers the Ronin skills directory as a Codex extra root", () =>
+  Effect.gen(function* () {
+    const calls: Array<{ readonly method: string; readonly payload: unknown }> = [];
+    const client = {
+      request: (method: string, payload: unknown) => {
+        calls.push({ method, payload });
+        return Effect.succeed({});
+      },
+    } as unknown as CodexClient.CodexAppServerClient["Service"];
+
+    yield* registerCodexPortableSkillRoot(client, "/home/test");
+
+    assert.deepStrictEqual(calls, [
+      {
+        method: "skills/extraRoots/set",
+        payload: { extraRoots: ["/home/test/.ronin/skills"] },
+      },
+    ]);
+  }),
+);
 
 it("keeps only the GPT-5.6 Codex family out of legacy models", () => {
   assert.deepStrictEqual(

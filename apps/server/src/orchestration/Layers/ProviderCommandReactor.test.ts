@@ -9,6 +9,7 @@ import {
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ServerProviderSkill,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -152,6 +153,9 @@ describe("ProviderCommandReactor", () => {
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
+    readonly workspaceRoot?: string;
+    readonly providerSkills?: ReadonlyArray<ServerProviderSkill>;
+    readonly disabledSkillNames?: ReadonlyArray<string>;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -303,6 +307,7 @@ describe("ProviderCommandReactor", () => {
     const providerSnapshots = [
       {
         instanceId: modelSelection.instanceId,
+        skills: input?.providerSkills ?? [],
         ...(input?.requiresNewThreadForModelChange === true
           ? { requiresNewThreadForModelChange: true }
           : {}),
@@ -444,7 +449,11 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        ServerSettingsService.layerTest({
+          skills: { disabled: [...(input?.disabledSkillNames ?? [])] },
+        }),
+      ),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -461,7 +470,7 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-project-create"),
         projectId: asProjectId("project-1"),
         title: "Provider Project",
-        workspaceRoot: "/tmp/provider-project",
+        workspaceRoot: input?.workspaceRoot ?? "/tmp/provider-project",
         defaultModelSelection: modelSelection,
         createdAt: now,
       }),
@@ -584,6 +593,89 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("inlines a named project skill for a custom provider instance", async () => {
+    const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-skill-reactor-"));
+    const workspaceRoot = NodePath.join(baseDir, "workspace");
+    const skillDir = NodePath.join(workspaceRoot, ".ronin", "skills", "project-portable-test");
+    NodeFS.mkdirSync(skillDir, { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(skillDir, "SKILL.md"),
+      "---\nname: project-portable-test\ndescription: Test portable invocation\n---\n\n# Portable instructions\n",
+      "utf8",
+    );
+    const harness = await createHarness({
+      baseDir,
+      workspaceRoot,
+      threadModelSelection: {
+        instanceId: ProviderInstanceId.make("claude_personal"),
+        model: "claude-sonnet-4-6",
+      },
+    });
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-portable-skill"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-portable-skill"),
+          role: "user",
+          text: "run project-portable-test skill",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string } | undefined;
+    expect(request?.input).toContain("run project-portable-test skill");
+    expect(request?.input).toContain('<skill name="project-portable-test"');
+    expect(request?.input).toContain("# Portable instructions");
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ cwd: workspaceRoot });
+  });
+
+  it("does not inline a disabled skill", async () => {
+    const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-skill-disabled-"));
+    const workspaceRoot = NodePath.join(baseDir, "workspace");
+    const skillDir = NodePath.join(workspaceRoot, ".ronin", "skills", "disabled-portable-test");
+    NodeFS.mkdirSync(skillDir, { recursive: true });
+    NodeFS.writeFileSync(
+      NodePath.join(skillDir, "SKILL.md"),
+      "---\nname: disabled-portable-test\ndescription: Must stay disabled\n---\n\n# Disabled instructions\n",
+      "utf8",
+    );
+    const harness = await createHarness({
+      baseDir,
+      workspaceRoot,
+      disabledSkillNames: ["disabled-portable-test"],
+    });
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-disabled-skill"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-disabled-skill"),
+          role: "user",
+          text: "run disabled-portable-test skill",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: "run disabled-portable-test skill",
+    });
   });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>

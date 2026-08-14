@@ -743,6 +743,7 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:skills-catalog",
       tag: WS_METHODS.serverGetSkillsCatalog,
       staleTimeMs: 10_000,
+      refreshIntervalMs: 30_000,
     }),
     transcribeAudio: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:transcribe-audio",

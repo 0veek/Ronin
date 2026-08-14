@@ -9,7 +9,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import type { ServerProvider, ServerProviderSkill } from "@t3tools/contracts";
 
 export interface SkillRoot {
   readonly path: string;
@@ -355,6 +355,32 @@ export function mergeSkillsIntoCatalog(input: {
     }
   }
   return [...byName.values()];
+}
+
+export function mergeSkillsIntoProviders(
+  providers: ReadonlyArray<ServerProvider>,
+  catalog: ReadonlyArray<ServerProviderSkill>,
+): ServerProvider[] {
+  return providers.map((provider) => ({
+    ...provider,
+    skills: mergeSkillsIntoCatalog({
+      native: provider.skills,
+      catalog,
+    }),
+  }));
+}
+
+export function mergeSkillSources(
+  ...sources: ReadonlyArray<ReadonlyArray<ServerProviderSkill>>
+): ServerProviderSkill[] {
+  const skillsByPath = new Map<string, ServerProviderSkill>();
+  for (const skill of sources.flat()) {
+    const key = NodePath.normalize(skill.path);
+    if (!skillsByPath.has(key)) {
+      skillsByPath.set(key, skill);
+    }
+  }
+  return [...skillsByPath.values()];
 }
 
 export function filterDisabledSkills(

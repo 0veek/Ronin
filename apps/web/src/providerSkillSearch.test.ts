@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { ServerProviderSkill } from "@t3tools/contracts";
 
-import { searchProviderSkills } from "./providerSkillSearch";
+import { mergeProviderSkillCatalogs, searchProviderSkills } from "./providerSkillSearch";
 
 function makeSkill(input: Partial<ServerProviderSkill> & Pick<ServerProviderSkill, "name">) {
   return {
@@ -55,5 +55,23 @@ describe("searchProviderSkills", () => {
     ];
 
     expect(searchProviderSkills(skills, "ui").map((skill) => skill.name)).toEqual([]);
+  });
+});
+
+describe("mergeProviderSkillCatalogs", () => {
+  it("adds portable skills while preserving the active provider's native copy", () => {
+    const native = makeSkill({ name: "review", path: "/native/review/SKILL.md" });
+    const merged = mergeProviderSkillCatalogs(
+      [native],
+      [
+        makeSkill({ name: "Review", path: "/portable/review/SKILL.md" }),
+        makeSkill({ name: "t3-sync", path: "/portable/t3-sync/SKILL.md" }),
+      ],
+    );
+
+    expect(merged.map((skill) => skill.path)).toEqual([
+      "/native/review/SKILL.md",
+      "/portable/t3-sync/SKILL.md",
+    ]);
   });
 });

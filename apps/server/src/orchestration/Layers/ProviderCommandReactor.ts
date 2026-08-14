@@ -18,10 +18,10 @@ import {
   type OrchestrationSession,
   ThreadId,
   type ProviderSession,
+  type ServerProviderSkill,
   type RuntimeMode,
   type TurnId,
 } from "@t3tools/contracts";
-import { collectComposerInlineTokens } from "@t3tools/shared/composerInlineTokens";
 import { isTemporaryWorktreeBranch, WORKTREE_BRANCH_PREFIX } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -46,8 +46,15 @@ import {
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ServerConfig } from "../../config.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
-import { buildInlineSkillInstructions } from "../../provider/skillPromptInjection.ts";
-import { discoverSkillsCatalog, filterDisabledSkills } from "../../provider/skillsCatalog.ts";
+import {
+  buildInlineSkillInstructions,
+  resolveInvokedSkills,
+} from "../../provider/skillPromptInjection.ts";
+import {
+  discoverSkillsCatalog,
+  filterDisabledSkills,
+  mergeSkillsIntoCatalog,
+} from "../../provider/skillsCatalog.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
 import {
@@ -140,6 +147,8 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+const SKILLS_CATALOG_CACHE_MAX = 64;
+const SKILLS_CATALOG_CACHE_TTL = Duration.seconds(10);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const DEFAULT_THREAD_TITLE = "New thread";
 const MAX_REGENERATION_ATTACHMENTS = 4;
@@ -370,6 +379,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const config = yield* ServerConfig;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
   const serverEventId = () => crypto.randomUUIDv4.pipe(Effect.map(EventId.make));
@@ -377,6 +387,19 @@ const make = Effect.gen(function* () {
     capacity: HANDLED_TURN_START_KEY_MAX,
     timeToLive: HANDLED_TURN_START_KEY_TTL,
     lookup: () => Effect.succeed(true),
+  });
+  const skillsCatalogCache = yield* Cache.make<string, ReadonlyArray<ServerProviderSkill>>({
+    capacity: SKILLS_CATALOG_CACHE_MAX,
+    timeToLive: SKILLS_CATALOG_CACHE_TTL,
+    lookup: (cwd) =>
+      Effect.tryPromise(() =>
+        discoverSkillsCatalog({
+          homeDir: NodeOS.homedir(),
+          roninBaseDir: config.baseDir,
+          cwd,
+          includeDuplicateOrigins: false,
+        }),
+      ).pipe(Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => [])),
   });
 
   const hasHandledTurnStartRecently = (key: string) =>
@@ -1008,48 +1031,42 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
-    const invokedSkillNames = collectComposerInlineTokens(`${input.messageText} `)
-      .filter((token) => token.type === "skill")
-      .map((token) => token.value.toLowerCase());
+    const project = yield* resolveProject(thread.projectId);
+    const skillCwd =
+      resolveThreadWorkspaceCwd({
+        thread,
+        projects: project ? [project] : [],
+      }) ?? config.cwd;
+    const catalog = yield* Cache.get(skillsCatalogCache, skillCwd);
+    const providerSnapshots = yield* providerRegistry.getProviders;
+    const activeProvider = providerSnapshots.find(
+      (provider) => provider.instanceId === ensured.boundInstanceId,
+    );
+    const settings = yield* serverSettingsService.getSettings;
+    const availableSkills = filterDisabledSkills(
+      mergeSkillsIntoCatalog({
+        native: activeProvider?.skills ?? [],
+        catalog: mergeSkillsIntoCatalog({
+          native: catalog,
+          catalog: providerSnapshots.flatMap((provider) => provider.skills ?? []),
+        }),
+      }),
+      settings.skills.disabled,
+    );
+    const referencedSkills = resolveInvokedSkills(input.messageText, availableSkills);
     const skillInlineText =
-      invokedSkillNames.length > 0
-        ? yield* Effect.gen(function* () {
-            const config = yield* ServerConfig;
-            const settings = yield* serverSettingsService.getSettings;
-            const catalog = yield* Effect.tryPromise(() =>
-              discoverSkillsCatalog({
-                // Windows has no HOME, and an empty homeDir would resolve every
-                // `~/.codex/skills`-style root against the cwd instead. Read the
-                // account's home the same way the ws.ts catalog reads do.
-                homeDir: NodeOS.homedir(),
-                roninBaseDir: config.baseDir,
-                cwd: config.cwd,
-                includeDuplicateOrigins: false,
-              }),
-            ).pipe(Effect.orElseSucceed(() => []));
-            const available = filterDisabledSkills(catalog, settings.skills.disabled);
-            const referenced = available.filter((skill) =>
-              invokedSkillNames.includes(skill.name.toLowerCase()),
-            );
-            if (referenced.length === 0) {
-              return "";
-            }
-            const provider = thread.modelSelection.instanceId;
-            const driver = isProviderDriverKind(provider)
-              ? provider
-              : ProviderDriverKind.make("codex");
-            return yield* Effect.tryPromise(() =>
-              buildInlineSkillInstructions({
-                provider: driver,
-                skills: referenced,
-                maxChars: Math.max(
-                  0,
-                  PROVIDER_SEND_TURN_MAX_INPUT_CHARS - input.messageText.length - 2048,
-                ),
-              }),
-            ).pipe(Effect.orElseSucceed(() => ""));
-          })
-        : "";
+      referencedSkills.length === 0
+        ? ""
+        : yield* Effect.tryPromise(() =>
+            buildInlineSkillInstructions({
+              skills: referencedSkills,
+              nativeSkillPaths: (activeProvider?.skills ?? []).map((skill) => skill.path),
+              maxChars: Math.max(
+                0,
+                PROVIDER_SEND_TURN_MAX_INPUT_CHARS - input.messageText.length - 2048,
+              ),
+            }),
+          ).pipe(Effect.orElseSucceed(() => ""));
     const messageWithSkills = skillInlineText
       ? `${input.messageText}\n\n${skillInlineText}`
       : input.messageText;

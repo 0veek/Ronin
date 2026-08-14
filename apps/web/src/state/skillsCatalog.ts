@@ -21,16 +21,23 @@ const EMPTY: SkillsCatalogView = {
 };
 
 const skillsCatalogAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get): SkillsCatalogView => {
-    const result = get(serverEnvironment.skillsCatalog({ environmentId, input: {} }));
-    const snapshot = Option.getOrNull(AsyncResult.value(result));
-    return {
-      isPending: result.waiting,
-      error: result._tag === "Failure" ? "Skills could not be scanned." : null,
-      skills: snapshot?.skills ?? [],
-      roninSkillsDir: snapshot?.roninSkillsDir ?? null,
-    };
-  }).pipe(Atom.withLabel(`web-skills-catalog:${environmentId}`)),
+  Atom.family((cwd: string | null) =>
+    Atom.make((get): SkillsCatalogView => {
+      const result = get(
+        serverEnvironment.skillsCatalog({
+          environmentId,
+          input: cwd ? { cwd } : {},
+        }),
+      );
+      const snapshot = Option.getOrNull(AsyncResult.value(result));
+      return {
+        isPending: result.waiting,
+        error: result._tag === "Failure" ? "Skills could not be scanned." : null,
+        skills: snapshot?.skills ?? [],
+        roninSkillsDir: snapshot?.roninSkillsDir ?? null,
+      };
+    }).pipe(Atom.withLabel(`web-skills-catalog:${environmentId}:${cwd ?? "default"}`)),
+  ),
 );
 
 const emptySkillsCatalogAtom = Atom.make((): SkillsCatalogView => EMPTY).pipe(
@@ -40,6 +47,13 @@ const emptySkillsCatalogAtom = Atom.make((): SkillsCatalogView => EMPTY).pipe(
 export function useSkillsCatalog(): SkillsCatalogView {
   const environmentId = usePrimaryEnvironmentId();
   return useAtomValue(
-    environmentId === null ? emptySkillsCatalogAtom : skillsCatalogAtom(environmentId),
+    environmentId === null ? emptySkillsCatalogAtom : skillsCatalogAtom(environmentId)(null),
   );
+}
+
+export function useEnvironmentSkillsCatalog(
+  environmentId: EnvironmentId,
+  cwd: string | null,
+): SkillsCatalogView {
+  return useAtomValue(skillsCatalogAtom(environmentId)(cwd?.trim() || null));
 }

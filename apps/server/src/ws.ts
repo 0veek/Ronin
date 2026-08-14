@@ -43,7 +43,7 @@ import {
   ProjectSearchContentsError,
   ProjectSearchEntriesError,
   ProjectWriteFileError,
-  type ServerProviderSkill,
+  type ServerProvider,
   type ServerSelfUpdateError,
   type ServerSelfUpdateProgressEvent,
   type FilesystemBrowseFailure,
@@ -83,8 +83,8 @@ import {
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import {
   discoverSkillsCatalog,
-  filterDisabledSkills,
-  mergeSkillsIntoCatalog,
+  mergeSkillSources,
+  mergeSkillsIntoProviders,
   roninSkillsDir,
 } from "./provider/skillsCatalog.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
@@ -1028,11 +1028,9 @@ const makeWsRpcLayer = (
           );
       };
 
-      const loadServerConfig = Effect.gen(function* () {
-        const keybindingsConfig = yield* keybindings.loadConfigState;
-        const providers = yield* providerRegistry.getProviders;
-        const rawSettings = yield* serverSettings.getSettings;
-        const settings = ServerSettings.redactServerSettingsForClient(rawSettings);
+      const loadProvidersWithSkills = Effect.fn("loadProvidersWithSkills")(function* (
+        providers: ReadonlyArray<ServerProvider>,
+      ) {
         const catalogSkills = yield* Effect.tryPromise(() =>
           discoverSkillsCatalog({
             homeDir: NodeOS.homedir(),
@@ -1040,18 +1038,15 @@ const makeWsRpcLayer = (
             cwd: config.cwd,
             includeDuplicateOrigins: false,
           }),
-        ).pipe(Effect.orElseSucceed((): ServerProviderSkill[] => []));
-        const disabledSkillNames = settings.skills.disabled;
-        const providersWithCatalog = providers.map((provider) => ({
-          ...provider,
-          skills: filterDisabledSkills(
-            mergeSkillsIntoCatalog({
-              native: provider.skills,
-              catalog: catalogSkills,
-            }),
-            disabledSkillNames,
-          ),
-        }));
+        ).pipe(Effect.orElseSucceed(() => []));
+        return mergeSkillsIntoProviders(providers, catalogSkills);
+      });
+
+      const loadServerConfig = Effect.gen(function* () {
+        const keybindingsConfig = yield* keybindings.loadConfigState;
+        const providers = yield* loadProvidersWithSkills(yield* providerRegistry.getProviders);
+        const rawSettings = yield* serverSettings.getSettings;
+        const settings = ServerSettings.redactServerSettingsForClient(rawSettings);
         const environment = yield* serverEnvironment.getDescriptor;
         const auth = yield* serverAuth.getDescriptor();
 
@@ -1062,7 +1057,7 @@ const makeWsRpcLayer = (
           keybindingsConfigPath: config.keybindingsConfigPath,
           keybindings: keybindingsConfig.keybindings,
           issues: keybindingsConfig.issues,
-          providers: providersWithCatalog,
+          providers,
           availableEditors: yield* resolveAvailableEditorsForConfig(
             externalLauncher.resolveAvailableEditors(),
           ),
@@ -1633,17 +1628,26 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverGetSkillsCatalog]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverGetSkillsCatalog,
-            Effect.tryPromise(() =>
-              discoverSkillsCatalog({
-                homeDir: NodeOS.homedir(),
-                roninBaseDir: config.baseDir,
-                cwd: input.cwd ?? config.cwd,
-                includeDuplicateOrigins: true,
-              }).then((skills) => ({
-                skills,
+            Effect.gen(function* () {
+              const [skills, providers] = yield* Effect.all([
+                Effect.tryPromise(() =>
+                  discoverSkillsCatalog({
+                    homeDir: NodeOS.homedir(),
+                    roninBaseDir: config.baseDir,
+                    cwd: input.cwd ?? config.cwd,
+                    includeDuplicateOrigins: true,
+                  }),
+                ).pipe(Effect.orElseSucceed(() => [])),
+                providerRegistry.getProviders,
+              ]);
+              return {
+                skills: mergeSkillSources(
+                  skills,
+                  providers.flatMap((provider) => provider.skills),
+                ),
                 roninSkillsDir: roninSkillsDir(NodeOS.homedir()),
-              })),
-            ).pipe(
+              };
+            }).pipe(
               Effect.orElseSucceed(() => ({
                 skills: [],
                 roninSkillsDir: roninSkillsDir(NodeOS.homedir()),
@@ -2245,6 +2249,7 @@ const makeWsRpcLayer = (
                 })),
               );
               const providerStatuses = providerRegistry.streamChanges.pipe(
+                Stream.mapEffect(loadProvidersWithSkills),
                 Stream.map((providers) => ({
                   version: 1 as const,
                   type: "providerStatuses" as const,

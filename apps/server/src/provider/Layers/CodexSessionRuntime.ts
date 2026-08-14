@@ -16,6 +16,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import * as NodeOS from "node:os";
 import { resolveSpawnCommand, terminateProcessTree } from "@t3tools/shared/shell";
 import { normalizeModelSlug } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
@@ -35,7 +36,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { buildCodexInitializeParams } from "./CodexProvider.ts";
+import { buildCodexInitializeParams, registerCodexPortableSkillRoot } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
@@ -1689,6 +1690,7 @@ export const makeCodexSessionRuntime = (
       yield* emitSessionEvent("session/connecting", "Starting Codex App Server session.");
       yield* client.request("initialize", buildCodexInitializeParams());
       yield* client.notify("initialized", undefined);
+      yield* registerCodexPortableSkillRoot(client, NodeOS.homedir());
 
       const requestedModel = normalizeCodexModelSlug(options.model);
 

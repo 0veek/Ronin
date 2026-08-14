@@ -1,3 +1,5 @@
+import * as NodeOS from "node:os";
+
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -33,6 +35,7 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { roninSkillsDir } from "../skillsCatalog.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
@@ -316,6 +319,19 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
   return models;
 });
 
+export const registerCodexPortableSkillRoot = Effect.fn("registerCodexPortableSkillRoot")(
+  function* (client: CodexClient.CodexAppServerClient["Service"], homeDir: string) {
+    yield* client.request("skills/extraRoots/set", {
+      extraRoots: [roninSkillsDir(homeDir)],
+    });
+  },
+  Effect.catch((error) =>
+    Effect.logDebug("Codex app-server does not accept portable skill roots", {
+      detail: error.message,
+    }),
+  ),
+);
+
 export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   return {
     clientInfo: {
@@ -390,6 +406,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     },
   });
   yield* client.notify("initialized", undefined);
+  yield* registerCodexPortableSkillRoot(client, NodeOS.homedir());
 
   // Extract the version string after the first '/' in userAgent, up to the next space or the end
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);

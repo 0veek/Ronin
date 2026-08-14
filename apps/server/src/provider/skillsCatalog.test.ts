@@ -8,7 +8,9 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   discoverSkillsCatalog,
   filterDisabledSkills,
+  mergeSkillSources,
   mergeSkillsIntoCatalog,
+  mergeSkillsIntoProviders,
   parseSkillFrontmatter,
   roninSkillsDir,
 } from "./skillsCatalog.ts";
@@ -98,5 +100,37 @@ describe("merge and filter", () => {
         ["Review"],
       ).map((skill) => skill.name),
     ).toEqual(["imagen"]);
+  });
+
+  it("adds the portable catalog to every provider without replacing native copies", () => {
+    const providers = [
+      {
+        instanceId: "codex",
+        skills: [{ name: "review", path: "/native/review/SKILL.md", enabled: true }],
+      },
+      {
+        instanceId: "claudeAgent",
+        skills: [],
+      },
+    ];
+    const merged = mergeSkillsIntoProviders(providers as never, [
+      { name: "review", path: "/portable/review/SKILL.md", enabled: true },
+      { name: "portable", path: "/portable/portable/SKILL.md", enabled: true },
+    ]);
+
+    expect(merged.map((provider) => provider.skills.map((skill) => skill.path))).toEqual([
+      ["/native/review/SKILL.md", "/portable/portable/SKILL.md"],
+      ["/portable/review/SKILL.md", "/portable/portable/SKILL.md"],
+    ]);
+  });
+
+  it("keeps distinct provider installations while removing duplicate paths", () => {
+    const portable = { name: "review", path: "/portable/review/SKILL.md", enabled: true };
+    expect(
+      mergeSkillSources(
+        [portable],
+        [portable, { name: "review", path: "/custom/review/SKILL.md", enabled: true }],
+      ).map((skill) => skill.path),
+    ).toEqual(["/portable/review/SKILL.md", "/custom/review/SKILL.md"]);
   });
 });

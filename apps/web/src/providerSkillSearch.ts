@@ -7,6 +7,24 @@ import {
 
 import { formatProviderSkillDisplayName } from "./providerSkillPresentation";
 
+function providerSkillNameKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+export function mergeProviderSkillCatalogs(
+  nativeSkills: ReadonlyArray<ServerProviderSkill>,
+  discoveredSkills: ReadonlyArray<ServerProviderSkill>,
+): ServerProviderSkill[] {
+  const skillsByName = new Map<string, ServerProviderSkill>();
+  for (const skill of [...nativeSkills, ...discoveredSkills]) {
+    const key = providerSkillNameKey(skill.name);
+    if (!skillsByName.has(key)) {
+      skillsByName.set(key, skill);
+    }
+  }
+  return [...skillsByName.values()];
+}
+
 function scoreProviderSkill(skill: ServerProviderSkill, query: string): number | null {
   const normalizedName = skill.name.toLowerCase();
   const normalizedLabel = formatProviderSkillDisplayName(skill).toLowerCase();

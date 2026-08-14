@@ -1,39 +1,56 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { shouldInlineSkillForProvider } from "./skillPromptInjection.ts";
+import { resolveInvokedSkills, shouldInlineSkill } from "./skillPromptInjection.ts";
 
-describe("shouldInlineSkillForProvider", () => {
-  it("inlines portable Ronin skills for every adapter", () => {
+describe("resolveInvokedSkills", () => {
+  const skills = [
+    {
+      name: "t3-sync",
+      displayName: "T3 Sync",
+      path: "/home/user/.ronin/skills/t3-sync/SKILL.md",
+      enabled: true,
+    },
+    {
+      name: "review",
+      path: "/home/user/.codex/skills/review/SKILL.md",
+      enabled: true,
+    },
+  ];
+
+  it("recognizes composer tokens and plain-language skill names", () => {
     expect(
-      shouldInlineSkillForProvider(
-        ProviderDriverKind.make("codex"),
-        "/home/user/.ronin/skills/review/SKILL.md",
-      ),
-    ).toBe(true);
-    expect(
-      shouldInlineSkillForProvider(
-        ProviderDriverKind.make("claudeAgent"),
-        "/workspace/.ronin/skills/review/SKILL.md",
-      ),
-    ).toBe(true);
+      resolveInvokedSkills("Use $t3-sync for this.", skills).map((skill) => skill.name),
+    ).toEqual(["t3-sync"]);
+    expect(resolveInvokedSkills("run t3-sync skill", skills).map((skill) => skill.name)).toEqual([
+      "t3-sync",
+    ]);
+    expect(resolveInvokedSkills("Please use T3 Sync", skills).map((skill) => skill.name)).toEqual([
+      "t3-sync",
+    ]);
   });
 
-  it("leaves Claude-native skills for Claude", () => {
+  it("does not match skill names inside longer identifiers", () => {
+    expect(resolveInvokedSkills("run pre-t3-sync-post", skills)).toEqual([]);
+  });
+});
+
+describe("shouldInlineSkill", () => {
+  it("leaves exact native copies, including portable roots, to the provider", () => {
     expect(
-      shouldInlineSkillForProvider(
-        ProviderDriverKind.make("claudeAgent"),
+      shouldInlineSkill(
+        "/home/user/.ronin/skills/review/SKILL.md",
+        new Set(["/home/user/.ronin/skills/review/SKILL.md"]),
+      ),
+    ).toBe(false);
+    expect(
+      shouldInlineSkill(
         "/home/user/.claude/skills/review/SKILL.md",
+        new Set(["/home/user/.claude/skills/review/SKILL.md"]),
       ),
     ).toBe(false);
   });
 
-  it("inlines Claude skills when Codex is selected", () => {
-    expect(
-      shouldInlineSkillForProvider(
-        ProviderDriverKind.make("codex"),
-        "/home/user/.claude/skills/review/SKILL.md",
-      ),
-    ).toBe(true);
+  it("inlines skills from another harness", () => {
+    expect(shouldInlineSkill("/home/user/.claude/skills/review/SKILL.md", new Set())).toBe(true);
   });
 });

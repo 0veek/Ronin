@@ -2893,6 +2893,20 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
   it.effect("routes websocket rpc subscribeServerConfig streams snapshot then update", () =>
     Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skills-snapshot-" });
+      const portableSkillDir = path.join(
+        workspaceDir,
+        ".ronin",
+        "skills",
+        "snapshot-portable-skill",
+      );
+      yield* fs.makeDirectory(portableSkillDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(portableSkillDir, "SKILL.md"),
+        "---\nname: snapshot-portable-skill\ndescription: Snapshot test\n---\n",
+      );
       const providers = [
         {
           instanceId: ProviderInstanceId.make("codex"),
@@ -2915,6 +2929,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
       yield* buildAppUnderTest({
         config: {
+          cwd: workspaceDir,
           otlpTracesUrl: "http://localhost:4318/v1/traces",
           otlpMetricsUrl: "http://localhost:4318/v1/metrics",
         },
@@ -2945,7 +2960,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         assert.equal(first.version, 1);
         assert.deepEqual(first.config.keybindings, []);
         assert.deepEqual(first.config.issues, []);
-        assert.deepEqual(first.config.providers, providers);
+        assert.deepEqual(
+          first.config.providers.map((provider) => ({ ...provider, skills: [] })),
+          providers.map((provider) => ({ ...provider, skills: [] })),
+        );
+        assertTrue(
+          first.config.providers[0]?.skills.some(
+            (skill) => skill.name === "snapshot-portable-skill",
+          ) === true,
+        );
         assert.equal(first.config.observability.logsDirectoryPath.endsWith("/logs"), true);
         assert.equal(first.config.observability.localTracingEnabled, true);
         assert.equal(first.config.observability.otlpTracesUrl, "http://localhost:4318/v1/traces");
@@ -2981,6 +3004,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
 
   it.effect("routes websocket rpc subscribeServerConfig emits provider status updates", () =>
     Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-skills-update-" });
+      const portableSkillDir = path.join(workspaceDir, ".ronin", "skills", "update-portable-skill");
+      yield* fs.makeDirectory(portableSkillDir, { recursive: true });
+      yield* fs.writeFileString(
+        path.join(portableSkillDir, "SKILL.md"),
+        "---\nname: update-portable-skill\ndescription: Update test\n---\n",
+      );
       const nextProviders = [
         {
           instanceId: ProviderInstanceId.make("codex"),
@@ -2998,6 +3030,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       ] as const;
 
       yield* buildAppUnderTest({
+        config: { cwd: workspaceDir },
         layers: {
           keybindings: {
             loadConfigState: Effect.succeed({
@@ -3025,11 +3058,18 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       if (first?.type === "snapshot") {
         assert.deepEqual(first.config.providers, []);
       }
-      assert.deepEqual(second, {
-        version: 1,
-        type: "providerStatuses",
-        payload: { providers: nextProviders },
-      });
+      assert.equal(second?.type, "providerStatuses");
+      if (second?.type === "providerStatuses") {
+        assert.deepEqual(
+          second.payload.providers.map((provider) => ({ ...provider, skills: [] })),
+          nextProviders.map((provider) => ({ ...provider, skills: [] })),
+        );
+        assertTrue(
+          second.payload.providers[0]?.skills.some(
+            (skill) => skill.name === "update-portable-skill",
+          ) === true,
+        );
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
