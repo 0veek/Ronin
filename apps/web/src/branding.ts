@@ -33,3 +33,6 @@ export const APP_VERSION = import.meta.env.APP_VERSION || "0.0.0";
  * you are running, and somewhere to compare it against.
  */
 export const APP_REPOSITORY_URL = "https://github.com/0veek/Ronin";
+export const APP_RELEASES_URL = `${APP_REPOSITORY_URL}/releases`;
+export const APP_LATEST_RELEASE_API_URL =
+  "https://api.github.com/repos/0veek/Ronin/releases/latest";

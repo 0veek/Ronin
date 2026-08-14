@@ -43,7 +43,13 @@ import { createModelSelection } from "@t3tools/shared/model";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
-import { APP_REPOSITORY_URL, APP_VERSION, HOSTED_APP_CHANNEL } from "../../branding";
+import {
+  APP_RELEASES_URL,
+  APP_REPOSITORY_URL,
+  APP_VERSION,
+  HOSTED_APP_CHANNEL,
+} from "../../branding";
+import { useAppUpdate } from "../AppUpdateProvider";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
@@ -77,6 +83,7 @@ import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
+import { Badge } from "../ui/badge";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
   Dialog,
@@ -207,63 +214,110 @@ function backgroundActivityProfileSettings(profile: BackgroundActivityProfile) {
   };
 }
 
-function AboutVersionTitle() {
+function AboutVersionTitle({ updateAvailable = false }: { readonly updateAvailable?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2">
       <span>Version</span>
       <code className="text-[11px] font-medium text-muted-foreground">{APP_VERSION}</code>
+      {updateAvailable ? (
+        <Badge size="sm" variant="info">
+          Update available
+        </Badge>
+      ) : null}
     </span>
   );
 }
 
-/**
- * The version, and somewhere to compare it against.
- *
- * The updater that used to live here belonged to T3 Code -- its release feed,
- * its stable/nightly channels, its installer. Ronin has not chosen how it
- * ships, so rather than a button that checks nothing, this opens the
- * repository and lets the reader do the comparing. Honest about what it does:
- * it says "Releases", not "Check for Updates".
- */
-function AboutVersionSection() {
+function AboutExternalLinkButton({
+  children,
+  errorTitle,
+  url,
+}: {
+  readonly children: ReactNode;
+  readonly errorTitle: string;
+  readonly url: string;
+}) {
   const [isOpening, setIsOpening] = useState(false);
 
-  const handleOpenReleases = useCallback(async () => {
+  const handleOpen = () => {
     setIsOpening(true);
-    try {
-      // Through the shell, not an anchor: in the desktop build a bare link
-      // would navigate the app window itself rather than the browser.
-      await ensureLocalApi().shell.openExternal(APP_REPOSITORY_URL);
-    } catch (error) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not open the repository",
-          description: error instanceof Error ? error.message : APP_REPOSITORY_URL,
-        }),
-      );
-    } finally {
-      setIsOpening(false);
-    }
-  }, []);
+    void ensureLocalApi()
+      .shell.openExternal(url)
+      .catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: errorTitle,
+            description: error instanceof Error ? error.message : url,
+          }),
+        );
+      })
+      .finally(() => {
+        setIsOpening(false);
+      });
+  };
+
+  return (
+    <Button
+      className="gap-1.5"
+      disabled={isOpening}
+      onClick={handleOpen}
+      size="xs"
+      type="button"
+      variant="outline"
+    >
+      {children}
+      <ExternalLinkIcon className="size-3 text-muted-foreground" />
+    </Button>
+  );
+}
+
+function AboutVersionSection() {
+  const update = useAppUpdate();
+  const latestRelease = update.status === "available" ? update.latestRelease : null;
+  const description = latestRelease
+    ? `Ronin ${latestRelease.version} is available. Open GitHub to download it when you're ready; Ronin won't download it automatically.`
+    : "Current version of the application. Releases are published on GitHub.";
+  const status =
+    update.status === "checking"
+      ? "Checking GitHub for updates…"
+      : update.status === "up-to-date"
+        ? "Ronin is up to date."
+        : update.status === "error"
+          ? "Could not check automatically. You can still view releases on GitHub."
+          : undefined;
 
   return (
     <SettingsRow
-      title={<AboutVersionTitle />}
-      description="Current version of the application. Releases are published on GitHub."
+      title={<AboutVersionTitle updateAvailable={latestRelease !== null} />}
+      description={description}
+      status={status}
       control={
-        <Button
-          className="gap-1.5"
-          disabled={isOpening}
-          onClick={() => void handleOpenReleases()}
-          size="xs"
-          type="button"
-          variant="outline"
+        <AboutExternalLinkButton
+          errorTitle="Could not open releases"
+          url={latestRelease?.url ?? APP_RELEASES_URL}
         >
           <GithubIcon className="size-3.5" />
-          Releases
-          <ExternalLinkIcon className="size-3 text-muted-foreground" />
-        </Button>
+          {latestRelease ? "View release" : "Releases"}
+        </AboutExternalLinkButton>
+      }
+    />
+  );
+}
+
+function AboutRepositorySection() {
+  return (
+    <SettingsRow
+      title="Open source"
+      description="Enjoying Ronin? Star the project on GitHub and help more people find it."
+      control={
+        <AboutExternalLinkButton
+          errorTitle="Could not open the repository"
+          url={APP_REPOSITORY_URL}
+        >
+          <GithubIcon className="size-3.5" />
+          Star us on GitHub
+        </AboutExternalLinkButton>
       }
     />
   );
@@ -2097,6 +2151,7 @@ export function GeneralSettingsPanel() {
             description="Current version of the application."
           />
         )}
+        <AboutRepositorySection />
         <SettingsRow
           {...searchableSetting("diagnostics")}
           description={diagnosticsDescription}

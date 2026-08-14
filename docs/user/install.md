@@ -20,7 +20,7 @@ This starts the Ronin server on your machine and opens the local web app. Use
 ## Desktop App
 
 Download the latest release from
-[GitHub Releases](https://github.com/pingdotgg/t3code/releases), or install from a package
+[GitHub Releases](https://github.com/0veek/Ronin/releases), or install from a package
 registry.
 
 Windows:

@@ -1,5 +1,17 @@
 # Keeping Ronin in Sync
 
+## App Release Notifications
+
+Ronin checks GitHub for the latest published app release after launch. When a newer version is
+available, a notification links to that release. The same status remains visible under
+**Settings** → **General** → **About**.
+
+Ronin does not download or install app binaries. Use **View release** to open GitHub, choose the
+installer for your platform, and update when you are ready. Dismissing the notification hides it
+for that release; a later release can notify you again.
+
+## Keeping the App and Server Together
+
 The Ronin web or desktop app and the server it connects to work best when they use the same
 version. If they do not match, Ronin shows a warning with the right update option for that server.
 
