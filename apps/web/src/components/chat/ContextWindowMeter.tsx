@@ -73,7 +73,7 @@ export function ContextWindowMeter(props: {
                   strokeLinecap="round"
                   strokeDasharray={circumference}
                   strokeDashoffset={dashOffset}
-                  className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
+                  className="transition-[stroke-dashoffset,stroke] duration-(--duration-slow) ease-out"
                 />
               </svg>
             </span>
@@ -91,7 +91,7 @@ export function ContextWindowMeter(props: {
           <div className="flex items-center justify-between gap-3">
             <div className="font-medium text-muted-foreground text-xs">Context Window</div>
             {usage.maxTokens !== null && usedPercentage ? (
-              <div className="text-secondary-label text-[11px] tabular-nums">
+              <div className="text-secondary-label text-2xs tabular-nums">
                 <span>{usedPercentage}</span>
                 <span className="mx-1">·</span>
                 <span>
@@ -100,7 +100,7 @@ export function ContextWindowMeter(props: {
                 </span>
               </div>
             ) : (
-              <div className="text-secondary-label text-[11px] tabular-nums">
+              <div className="text-secondary-label text-2xs tabular-nums">
                 {formatContextWindowTokens(usage.usedTokens)}
               </div>
             )}
@@ -127,7 +127,7 @@ export function ContextWindowMeter(props: {
             </div>
           ) : null}
           {showTotalProcessed ? (
-            <div className="flex items-center justify-between gap-3 text-[11px] leading-4">
+            <div className="flex items-center justify-between gap-3 text-2xs leading-4">
               <span className="text-secondary-label">Total processed</span>
               <span className="font-medium tabular-nums text-secondary-label">
                 {formatContextWindowTokens(totalProcessedTokens)}
@@ -135,7 +135,7 @@ export function ContextWindowMeter(props: {
             </div>
           ) : null}
           {usage.compactsAutomatically ? (
-            <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">
+            <div className="mt-1 text-pretty text-secondary-label text-2xs font-medium">
               {providerDisplayName ?? "It"} automatically compacts its context when needed.
             </div>
           ) : null}

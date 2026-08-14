@@ -794,7 +794,6 @@ export function ThemeEditorPanel({
         aria-disabled={lockReason !== null}
         aria-pressed={isActive}
         className={lockReason !== null ? "opacity-50" : undefined}
-        style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
         variant={isActive ? "secondary" : "outline"}
         onClick={() => {
           if (lockReason === null) setActiveAppearance(appearance);

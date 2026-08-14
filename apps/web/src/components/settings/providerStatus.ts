@@ -6,7 +6,7 @@ import type { ServerProvider, ServerProviderVersionAdvisory } from "@t3tools/con
  */
 export const PROVIDER_STATUS_STYLES = {
   disabled: {
-    dot: "bg-amber-400",
+    dot: "bg-status-attention",
   },
   error: {
     dot: "bg-destructive",

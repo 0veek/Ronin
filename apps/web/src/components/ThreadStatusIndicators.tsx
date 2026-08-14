@@ -38,11 +38,11 @@ export type ThreadPr = VcsStatusResult["pr"];
 export function settledPrHoverColorClass(state: NonNullable<ThreadPr>["state"]): string {
   switch (state) {
     case "open":
-      return "group-hover/v2-row:text-emerald-600 dark:group-hover/v2-row:text-emerald-300/90";
+      return "group-hover/v2-row:text-vcs-open-foreground";
     case "merged":
-      return "group-hover/v2-row:text-violet-600 dark:group-hover/v2-row:text-violet-300/90";
+      return "group-hover/v2-row:text-vcs-merged-foreground";
     case "closed":
-      return "group-hover/v2-row:text-red-600 dark:group-hover/v2-row:text-red-300/90";
+      return "group-hover/v2-row:text-vcs-closed-foreground";
   }
 }
 
@@ -66,7 +66,7 @@ export function prStatusIndicator(
   if (pr.state === "open") {
     return {
       label: `${presentation.shortName} open`,
-      colorClass: "text-emerald-600 dark:text-emerald-300/90",
+      colorClass: "text-vcs-open-foreground",
       tooltip,
       tooltipLead,
       tooltipTitle: pr.title,
@@ -76,7 +76,7 @@ export function prStatusIndicator(
   if (pr.state === "closed") {
     return {
       label: `${presentation.shortName} closed`,
-      colorClass: "text-red-600 dark:text-red-300/90",
+      colorClass: "text-vcs-closed-foreground",
       tooltip,
       tooltipLead,
       tooltipTitle: pr.title,
@@ -86,7 +86,7 @@ export function prStatusIndicator(
   if (pr.state === "merged") {
     return {
       label: `${presentation.shortName} merged`,
-      colorClass: "text-violet-600 dark:text-violet-300/90",
+      colorClass: "text-vcs-merged-foreground",
       tooltip,
       tooltipLead,
       tooltipTitle: pr.title,
@@ -134,7 +134,7 @@ export function terminalStatusFromRunningIds(
   }
   return {
     label: "Terminal process running",
-    colorClass: "text-teal-600 dark:text-teal-300/90",
+    colorClass: "text-status-ambient-foreground",
     pulse: true,
   };
 }

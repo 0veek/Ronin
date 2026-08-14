@@ -1080,12 +1080,12 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                         {script.command}
                       </code>
                       {script.runOnWorktreeCreate ? (
-                        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground">
+                        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-2xs font-normal text-muted-foreground">
                           setup
                         </span>
                       ) : null}
                       {script.previewUrl ? (
-                        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-[11px] font-normal text-muted-foreground max-sm:hidden">
+                        <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-2xs font-normal text-muted-foreground max-sm:hidden">
                           preview · desktop only
                         </span>
                       ) : null}

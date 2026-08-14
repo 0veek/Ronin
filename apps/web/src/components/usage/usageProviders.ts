@@ -2,28 +2,17 @@ import type { UsageProviderKind } from "@t3tools/contracts";
 
 import { ClaudeAI, GrokIcon, type Icon, OpenAI } from "../Icons";
 
-/**
- * Series and table order, and the palette's slot order.
- *
- * The chart layers every provider from a shared zero baseline, so this does not
- * decide which series sits above another; it fixes the reading order of
- * legends, tables and hover rows, and — because the colors below were validated
- * as an ordered set — which hue each provider owns.
+/*
+ * Names and order now live in `@t3tools/shared/providerVocabulary`, because the
+ * sidebar meter and the composer's status dialog need them too and each had
+ * grown its own copy. Re-exported here so this module stays the one import a
+ * usage surface needs for everything about a provider.
  */
-export const PROVIDER_ORDER: readonly UsageProviderKind[] = ["claude", "codex", "grok"];
-
-export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  grok: "Grok",
-};
-
-/** Compact form, for legends and axes where the full name would wrap. */
-export const PROVIDER_SHORT_LABEL: Record<UsageProviderKind, string> = {
-  claude: "Claude",
-  codex: "Codex",
-  grok: "Grok",
-};
+export {
+  PROVIDER_LABEL,
+  PROVIDER_ORDER,
+  PROVIDER_SHORT_LABEL,
+} from "@t3tools/shared/providerVocabulary";
 
 /**
  * Series color, as the token rather than a literal.

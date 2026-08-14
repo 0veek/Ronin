@@ -323,13 +323,13 @@ export function ThemeSearchSection({
                   </p>
                   <div className="mt-auto flex items-center justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className="inline-flex items-center gap-1 text-muted-foreground text-[11px]">
+                      <span className="inline-flex items-center gap-1 text-muted-foreground text-2xs">
                         <ShieldCheckIcon className="size-3" /> {extension.license}
                       </span>
                       {extension.sourceUrl ? (
                         <a
                           aria-label={`View source for ${extension.name}`}
-                          className="inline-flex items-center gap-1 text-muted-foreground text-[11px] hover:text-foreground"
+                          className="inline-flex items-center gap-1 text-muted-foreground text-2xs hover:text-foreground"
                           href={extension.sourceUrl}
                           rel="noreferrer"
                           target="_blank"

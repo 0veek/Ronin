@@ -20,6 +20,7 @@ import {
   makeWindow,
 } from "@t3tools/shared/usageFormat";
 import { Button } from "../ui/button";
+import { Kbd } from "../ui/kbd";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
@@ -35,12 +36,19 @@ const WINDOW_OPTIONS = [
   { days: 90, label: "90 days" },
 ] as const;
 
+/**
+ * Leaving is the same action here as it is in Settings, so it is named and
+ * shorthanded the same way: one destination, one word for it, and the Escape
+ * key advertised rather than left to be discovered. Escape has always worked on
+ * both screens; only Settings said so.
+ */
 function UsagePageHeader({ onBack }: { readonly onBack: () => void }) {
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
       <Button type="button" size="xs" variant="ghost" onClick={onBack} className="shrink-0 gap-1.5">
         <ArrowLeftIcon className="size-3.5" />
-        Back to editor
+        Back to workspace
+        <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-2xs">Esc</Kbd>
       </Button>
       <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
         <WorkspaceBreadcrumbItem current>Stats</WorkspaceBreadcrumbItem>
@@ -94,18 +102,23 @@ function Segmented<Value extends string>({
 }
 
 /**
- * Every provider, ranked by whatever the metric toggle is showing.
+ * Every provider, in the palette's slot order.
  *
  * A provider absent from the window is filled in at zero rather than dropped:
  * the panel is also the page's legend, and a key that gains and loses rows as
  * the range changes stops being one.
+ *
+ * It is not ranked by the metric, for the same reason. This list sits beside
+ * the chart's own legend, and the two carried different orders -- the legend
+ * fixed, this one by spend -- so three identical color chips appeared twice in
+ * one view in two sequences, and the reader had to re-map hue to provider
+ * crossing the panel divider. That is the exact cost `PROVIDER_ORDER` exists to
+ * remove. Rank is still legible without reordering: every row prints its own
+ * share of the total.
  */
-function providerRows(
-  providers: readonly ProviderTotals[],
-  metric: UsageChartMetric,
-): readonly ProviderTotals[] {
+function providerRows(providers: readonly ProviderTotals[]): readonly ProviderTotals[] {
   const byProvider = new Map(providers.map((entry) => [entry.provider, entry]));
-  const rows = PROVIDER_ORDER.map(
+  return PROVIDER_ORDER.map(
     (provider) =>
       byProvider.get(provider) ?? {
         provider,
@@ -115,9 +128,6 @@ function providerRows(
         costShare: 0,
         tokenShare: 0,
       },
-  );
-  return rows.toSorted((a, b) =>
-    metric === "cost" ? b.costUsd - a.costUsd : b.totalTokens - a.totalTokens,
   );
 }
 
@@ -179,10 +189,7 @@ export function UsagePage() {
     [isPast24Hours, merged.daily, merged.hourly],
   );
 
-  const orderedProviders = useMemo(
-    () => providerRows(merged.providers, metric),
-    [merged.providers, metric],
-  );
+  const orderedProviders = useMemo(() => providerRows(merged.providers), [merged.providers]);
 
   const activePeriods = (isPast24Hours ? merged.hourly : merged.daily).filter(
     (period) => period.totalTokens > 0,
@@ -224,6 +231,11 @@ export function UsagePage() {
 
         <ScrollArea className="min-h-0 flex-1">
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-6 py-6">
+            {/* The page opens on the number, not on its own name -- the cost is
+                the thing you came for. The heading is still here for anyone
+                navigating by headings, who would otherwise land in a document
+                that starts at h2. */}
+            <h1 className="sr-only">Stats</h1>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-col">
                 <span className="label-meta text-muted-foreground/70">Reporting period</span>
@@ -759,7 +771,7 @@ function UsageDeviceStrip({
               key={environment.environmentId}
               className="flex items-center gap-1 text-foreground"
             >
-              <CheckIcon className="size-3 text-emerald-600 dark:text-emerald-300/90" aria-hidden />
+              <CheckIcon className="size-3 text-success-foreground" aria-hidden />
               {environment.label}
             </span>
           );

@@ -1181,24 +1181,24 @@ describe("resolveProjectStatusIndicator", () => {
       resolveProjectStatusIndicator([
         {
           label: "Completed",
-          colorClass: "text-emerald-600",
-          dotClass: "bg-emerald-500",
+          colorClass: "text-status-done-foreground",
+          dotClass: "bg-status-done",
           pulse: false,
         },
         {
           label: "Pending Approval",
-          colorClass: "text-amber-600",
-          dotClass: "bg-amber-500",
+          colorClass: "text-status-attention-foreground",
+          dotClass: "bg-status-attention",
           pulse: false,
         },
         {
           label: "Working",
-          colorClass: "text-sky-600",
-          dotClass: "bg-sky-500",
+          colorClass: "text-status-live-foreground",
+          dotClass: "bg-status-live",
           pulse: true,
         },
       ]),
-    ).toMatchObject({ label: "Pending Approval", dotClass: "bg-amber-500" });
+    ).toMatchObject({ label: "Pending Approval", dotClass: "bg-status-attention" });
   });
 
   it("prefers plan-ready over completed when no stronger action is needed", () => {
@@ -1206,18 +1206,18 @@ describe("resolveProjectStatusIndicator", () => {
       resolveProjectStatusIndicator([
         {
           label: "Completed",
-          colorClass: "text-emerald-600",
-          dotClass: "bg-emerald-500",
+          colorClass: "text-status-done-foreground",
+          dotClass: "bg-status-done",
           pulse: false,
         },
         {
           label: "Plan Ready",
-          colorClass: "text-violet-600",
-          dotClass: "bg-violet-500",
+          colorClass: "text-status-decision-foreground",
+          dotClass: "bg-status-decision",
           pulse: false,
         },
       ]),
-    ).toMatchObject({ label: "Plan Ready", dotClass: "bg-violet-500" });
+    ).toMatchObject({ label: "Plan Ready", dotClass: "bg-status-decision" });
   });
 });
 

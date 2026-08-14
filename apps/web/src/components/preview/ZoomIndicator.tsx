@@ -46,7 +46,7 @@ export function ZoomIndicator({ zoomFactor }: Props) {
       className={cn(
         // Opaque, not translucent: this floats over arbitrary page content, so
         // the only thing that keeps it readable is its own fill.
-        "pointer-events-none absolute top-3 right-3 z-20 select-none rounded-(--control-radius) border border-border bg-popover px-2.5 py-1 text-xs font-medium tabular-nums text-foreground shadow-(--shadow-popover) transition-[opacity,translate] duration-(--duration-base) ease-out",
+        "pointer-events-none absolute top-3 right-3 z-20 select-none rounded-(--control-radius) border border-border bg-popover px-2.5 py-1 text-xs font-medium tabular-nums text-foreground shadow-popover transition-[opacity,translate] duration-(--duration-base) ease-out",
         visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1",
       )}
     >

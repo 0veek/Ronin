@@ -185,8 +185,7 @@ export function ThemePreviewCircles({
                     <>
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute inset-0 rounded-(--radius)"
-                        style={{ boxShadow: "inset 0 0 0 2px var(--ring)" }}
+                        className="surface-selected pointer-events-none absolute inset-0 rounded-(--radius)"
                       />
                       <span
                         aria-hidden

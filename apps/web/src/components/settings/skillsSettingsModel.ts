@@ -1,3 +1,4 @@
+import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
 import { ProviderDriverKind, type ServerProviderSkill } from "@t3tools/contracts";
 
 export interface SkillOriginInfo {
@@ -45,15 +46,15 @@ export function skillOriginInfo(scope: string | undefined): SkillOriginInfo {
     case "ronin":
       return { label: "Ronin", provider: null };
     case "codex":
-      return { label: "Codex", provider: ProviderDriverKind.make("codex") };
+      return { label: DRIVER_LABEL.codex, provider: ProviderDriverKind.make("codex") };
     case "claude":
-      return { label: "Claude", provider: ProviderDriverKind.make("claudeAgent") };
+      return { label: DRIVER_LABEL.claudeAgent, provider: ProviderDriverKind.make("claudeAgent") };
     case "cursor":
-      return { label: "Cursor", provider: ProviderDriverKind.make("cursor") };
+      return { label: DRIVER_LABEL.cursor, provider: ProviderDriverKind.make("cursor") };
     case "grok":
-      return { label: "Grok", provider: ProviderDriverKind.make("grok") };
+      return { label: DRIVER_LABEL.grok, provider: ProviderDriverKind.make("grok") };
     case "opencode":
-      return { label: "OpenCode", provider: ProviderDriverKind.make("opencode") };
+      return { label: DRIVER_LABEL.opencode, provider: ProviderDriverKind.make("opencode") };
     case "agents":
       return { label: "Shared (.agents)", provider: null };
     case "project":

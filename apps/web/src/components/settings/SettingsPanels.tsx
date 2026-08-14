@@ -218,7 +218,7 @@ function AboutVersionTitle({ updateAvailable = false }: { readonly updateAvailab
   return (
     <span className="inline-flex items-center gap-2">
       <span>Version</span>
-      <code className="text-[11px] font-medium text-muted-foreground">{APP_VERSION}</code>
+      <code className="text-2xs font-medium text-muted-foreground">{APP_VERSION}</code>
       {updateAvailable ? (
         <Badge size="sm" variant="info">
           Update available

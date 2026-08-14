@@ -708,7 +708,7 @@ export function PullRequestCodeTab({
         <PullRequestDiffStat
           additions={additions}
           deletions={deletions}
-          className="font-mono text-[11px]"
+          className="font-mono text-2xs"
         />
       );
     },
@@ -1022,7 +1022,7 @@ export function PullRequestCodeTab({
               <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
                 <TriangleAlertIcon
                   aria-label="Some of this diff was not shown"
-                  className="size-3.5 text-amber-600 dark:text-amber-500"
+                  className="size-3.5 text-warning-foreground"
                 />
               </TooltipTrigger>
               <TooltipPopup side="bottom">

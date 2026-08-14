@@ -1,5 +1,6 @@
-import type { ProviderRateLimits, RateLimitWindow } from "@t3tools/contracts";
 import { useMemo } from "react";
+
+import { PROVIDER_LABEL, RATE_LIMIT_WINDOW_LABEL } from "@t3tools/shared/providerVocabulary";
 
 import {
   deriveLatestContextWindowSnapshot,
@@ -17,18 +18,6 @@ import {
   DialogPopup,
   DialogTitle,
 } from "../ui/dialog";
-
-const PROVIDER_LABEL: Record<ProviderRateLimits["provider"], string> = {
-  claude: "Claude",
-  codex: "Codex",
-  grok: "Grok",
-};
-
-const WINDOW_LABEL: Record<RateLimitWindow["kind"], string> = {
-  session: "5-hour",
-  weekly: "Weekly",
-  monthly: "Monthly",
-};
 
 function formatResetsAt(resetsAt: string | null): string | null {
   if (resetsAt === null) return null;
@@ -74,7 +63,7 @@ export function ComposerSlashStatusDialog(props: {
                 Context
               </h3>
               {providerName ? (
-                <span className="text-[11px] text-secondary-label">{providerName}</span>
+                <span className="text-2xs text-secondary-label">{providerName}</span>
               ) : null}
             </div>
             {usage ? (
@@ -86,7 +75,7 @@ export function ComposerSlashStatusDialog(props: {
                       : `${Math.round(normalizedPercentage)}% used`}
                   </div>
                   {usage.maxTokens != null ? (
-                    <div className="text-[11px] tabular-nums text-secondary-label">
+                    <div className="text-2xs tabular-nums text-secondary-label">
                       {formatContextWindowTokens(usage.usedTokens)}/
                       {formatContextWindowTokens(usage.maxTokens)}
                     </div>
@@ -101,7 +90,7 @@ export function ComposerSlashStatusDialog(props: {
                   </div>
                 ) : null}
                 {usage.compactsAutomatically ? (
-                  <p className="mt-3 text-[11px] leading-4 text-secondary-label">
+                  <p className="mt-3 text-2xs leading-4 text-secondary-label">
                     This provider compacts context automatically when the window fills.
                   </p>
                 ) : null}
@@ -133,11 +122,11 @@ export function ComposerSlashStatusDialog(props: {
                     <div className="flex items-baseline justify-between gap-3">
                       <div className="font-medium">{PROVIDER_LABEL[entry.provider]}</div>
                       {entry.planLabel ? (
-                        <div className="text-[11px] text-secondary-label">{entry.planLabel}</div>
+                        <div className="text-2xs text-secondary-label">{entry.planLabel}</div>
                       ) : null}
                     </div>
                     {entry.status !== "ok" || entry.windows.length === 0 ? (
-                      <p className="mt-1 text-[12px] text-secondary-label">
+                      <p className="mt-1 text-xs text-secondary-label">
                         {entry.message ?? "No quota reported."}
                       </p>
                     ) : (
@@ -148,10 +137,10 @@ export function ComposerSlashStatusDialog(props: {
                           return (
                             <li
                               key={`${entry.provider}:${window.kind}`}
-                              className="flex items-center justify-between gap-3 text-[12px]"
+                              className="flex items-center justify-between gap-3 text-xs"
                             >
                               <span className="text-secondary-label">
-                                {WINDOW_LABEL[window.kind]}
+                                {RATE_LIMIT_WINDOW_LABEL[window.kind]}
                                 {reset ? ` · resets ${reset}` : ""}
                               </span>
                               <span

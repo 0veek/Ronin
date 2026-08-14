@@ -10,6 +10,7 @@ import {
   PiSettings,
   ProviderDriverKind,
 } from "@t3tools/contracts";
+import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
 import type * as Schema from "effect/Schema";
 import {
   AntigravityIcon,
@@ -52,60 +53,60 @@ export interface ProviderClientDefinition {
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
   {
     value: ProviderDriverKind.make("codex"),
-    label: "Codex",
+    label: DRIVER_LABEL.codex,
     icon: OpenAI,
     settingsSchema: CodexSettings,
   },
   {
     value: ProviderDriverKind.make("claudeAgent"),
-    label: "Claude",
+    label: DRIVER_LABEL.claudeAgent,
     icon: ClaudeAI,
     settingsSchema: ClaudeSettings,
   },
   {
     value: ProviderDriverKind.make("cursor"),
-    label: "Cursor",
+    label: DRIVER_LABEL.cursor,
     icon: CursorIcon,
     badgeLabel: "Early Access",
     settingsSchema: CursorSettings,
   },
   {
     value: ProviderDriverKind.make("grok"),
-    label: "Grok",
+    label: DRIVER_LABEL.grok,
     icon: GrokIcon,
     badgeLabel: "Early Access",
     settingsSchema: GrokSettings,
   },
   {
     value: ProviderDriverKind.make("opencode"),
-    label: "OpenCode",
+    label: DRIVER_LABEL.opencode,
     icon: OpenCodeIcon,
     settingsSchema: OpenCodeSettings,
   },
   {
     value: ProviderDriverKind.make("antigravity"),
-    label: "Antigravity",
+    label: DRIVER_LABEL.antigravity,
     icon: AntigravityIcon,
     badgeLabel: "Early Access",
     settingsSchema: AntigravitySettings,
   },
   {
     value: ProviderDriverKind.make("droid"),
-    label: "Droid",
+    label: DRIVER_LABEL.droid,
     icon: DroidIcon,
     badgeLabel: "Early Access",
     settingsSchema: DroidSettings,
   },
   {
     value: ProviderDriverKind.make("kilo"),
-    label: "Kilo",
+    label: DRIVER_LABEL.kilo,
     icon: KiloIcon,
     badgeLabel: "Early Access",
     settingsSchema: KiloSettings,
   },
   {
     value: ProviderDriverKind.make("pi"),
-    label: "Pi",
+    label: DRIVER_LABEL.pi,
     icon: PiAgentIcon,
     badgeLabel: "Early Access",
     settingsSchema: PiSettings,

@@ -45,7 +45,7 @@ export function SkillsSettingsPanel() {
           description="Skills placed here are available on every provider. When a provider already ships its own copy of a skill, that copy is used; otherwise Ronin's copy is the fallback."
           status={
             catalog.roninSkillsDir ? (
-              <code className="break-all text-[11px] text-secondary-label">
+              <code className="break-all text-2xs text-secondary-label">
                 {catalog.roninSkillsDir}
               </code>
             ) : null
@@ -94,13 +94,13 @@ export function SkillsSettingsPanel() {
                 description={group.description}
                 status={
                   <span className="flex min-w-0 flex-col gap-1">
-                    <span className="truncate text-[11px] text-secondary-label">
+                    <span className="truncate text-2xs text-secondary-label">
                       {group.sources.map((source) => source.originInfo.label).join(" · ")}
                     </span>
                     {group.sources.map((source) => (
                       <code
                         key={source.skill.path}
-                        className="truncate text-[11px] text-secondary-label"
+                        className="truncate text-2xs text-secondary-label"
                       >
                         {source.skill.path}
                       </code>

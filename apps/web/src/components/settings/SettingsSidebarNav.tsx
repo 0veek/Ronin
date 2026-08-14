@@ -193,7 +193,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   <XIcon className="size-3" />
                 </Button>
               ) : (
-                <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">/</Kbd>
+                <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-2xs">/</Kbd>
               )}
             </div>
           </SidebarGroup>
@@ -238,7 +238,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       <span className="block truncate text-sm font-medium text-sidebar-foreground">
                         {item.title}
                       </span>
-                      <span className="mt-0.5 block truncate text-[11px] text-sidebar-muted-foreground/75">
+                      <span className="mt-0.5 block truncate text-2xs text-sidebar-muted-foreground/75">
                         {SETTINGS_PAGE_META[item.to].label}
                       </span>
                     </div>
@@ -263,13 +263,13 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                     <SidebarMenuItem key={to}>
                       <SidebarMenuButton
                         isActive={isActive}
-                        className="relative h-auto min-h-11 items-start gap-2.5 rounded-[var(--control-radius)] px-2 py-2 before:absolute before:inset-y-2 before:left-0 before:w-px before:bg-sidebar-foreground before:opacity-0 data-[active=true]:before:opacity-60"
+                        className="sidebar-row h-auto min-h-11 items-start gap-2.5 rounded-[var(--control-radius)] px-2 py-2"
                         onClick={() => handleSectionClick(to)}
                       >
                         <Icon className="mt-0.5 size-4" />
                         <div className="min-w-0 flex-1">
                           <span className="block truncate text-sm leading-4">{meta.label}</span>
-                          <span className="mt-1 block truncate text-[11px] leading-3.5 font-normal text-sidebar-muted-foreground/65">
+                          <span className="mt-1 block truncate text-2xs leading-3.5 font-normal text-sidebar-muted-foreground/65">
                             {meta.description}
                           </span>
                         </div>
@@ -290,7 +290,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 <ArrowLeftIcon />
                 <span>Back to workspace</span>
               </span>
-              <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-[10px]">Esc</Kbd>
+              <Kbd className="h-4 min-w-0 rounded-sm px-1.5 text-2xs">Esc</Kbd>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

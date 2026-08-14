@@ -659,7 +659,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
           <div className="flex min-h-5 items-center gap-1.5">
             <ConnectionStatusDot
               tooltipText={`Link created at ${formatAccessTimestamp(pairingLink.createdAt)}`}
-              dotClassName="bg-amber-400"
+              dotClassName="bg-status-attention"
             />
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
           </div>
@@ -669,7 +669,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             <AccessScopeSummary scopes={pairingLink.scopes} label="Pairing link scopes" />
           </p>
           {shareablePairingUrl === null ? (
-            <p className="text-[11px] text-muted-foreground/70">
+            <p className="text-2xs text-muted-foreground/70">
               Copy the token and pair from another client using this environment&apos;s reachable
               address.
             </p>
@@ -778,7 +778,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                 role="radiogroup"
                 aria-label="Endpoint the pairing QR code and URL use"
               >
-                <p className="text-[11px] text-muted-foreground/70">Reach this machine via</p>
+                <p className="text-2xs text-muted-foreground/70">Reach this machine via</p>
                 {endpointCopyOptions.map((option) => {
                   const isSelected = option.id === selectedQrOption?.id;
                   return (
@@ -803,7 +803,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                       >
                         {option.label}
                       </span>
-                      <span className="min-w-0 truncate text-[11px] text-muted-foreground/70">
+                      <span className="min-w-0 truncate text-2xs text-muted-foreground/70">
                         {option.detail}
                       </span>
                     </button>
@@ -814,7 +814,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-2.5 py-1.5">
               <code
                 title={qrPairingUrl}
-                className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground"
+                className="min-w-0 flex-1 truncate font-mono text-2xs text-muted-foreground"
               >
                 {qrPairingUrl}
               </code>
@@ -843,7 +843,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             </div>
           ) : (
             <div className="flex size-[192px] shrink-0 items-center justify-center self-center rounded-xl border border-border/50 p-4 sm:self-start">
-              <p className="text-center text-[11px] text-muted-foreground/70">
+              <p className="text-center text-2xs text-muted-foreground/70">
                 No QR for this endpoint. Another device scanning a loopback link would dial itself;
                 copy the URL for use on this machine instead.
               </p>
@@ -899,7 +899,7 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
             <ConnectionStatusDot
               tooltipText={statusTooltip}
               dotClassName={isLive ? "bg-success" : "bg-muted-foreground/30"}
-              pingClassName={isLive ? "bg-success/60 duration-2000" : null}
+              pingClassName={isLive ? "bg-success/60" : null}
             />
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
             {clientSession.current ? (
@@ -1379,7 +1379,7 @@ function SavedBackendListRow({
               dotClassName={stateDotClassName}
               pingClassName={
                 connectionState === "connecting" || connectionState === "reconnecting"
-                  ? "bg-warning/60 duration-2000"
+                  ? "bg-warning/60"
                   : null
               }
             />
@@ -2217,7 +2217,7 @@ export function ConnectionsSettings() {
         </label>
       </div>
       <div>
-        <span className="mt-1 block text-[11px] text-muted-foreground">
+        <span className="mt-1 block text-2xs text-muted-foreground">
           Paste a full pairing URL here to fill both fields automatically.
         </span>
       </div>
@@ -2319,7 +2319,7 @@ export function ConnectionsSettings() {
         <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-muted/30 px-3 py-2">
           <div className="min-w-0">
             <p className="text-xs font-medium text-foreground">Suggested hosts</p>
-            <p className="text-[11px] text-muted-foreground">From SSH config and known hosts</p>
+            <p className="text-2xs text-muted-foreground">From SSH config and known hosts</p>
           </div>
           <Button
             size="xs"
@@ -2764,7 +2764,7 @@ export function ConnectionsSettings() {
                       <Button
                         size="xs"
                         variant="ghost"
-                        className="h-5 gap-1 rounded-sm px-1 text-[11px] font-normal text-muted-foreground/60 hover:text-muted-foreground"
+                        className="h-5 gap-1 rounded-sm px-1 text-2xs font-normal text-muted-foreground/60 hover:text-muted-foreground"
                         aria-label="Add environment"
                       >
                         <PlusIcon className="size-3" />

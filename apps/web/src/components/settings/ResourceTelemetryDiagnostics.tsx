@@ -195,10 +195,8 @@ function SourceStatusBadge({
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]",
         tone === "neutral" && "border-border/70 bg-muted/45 text-muted-foreground",
-        tone === "default" &&
-          "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-        tone === "warning" &&
-          "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+        tone === "default" && "border-success/25 bg-success/10 text-success-foreground",
+        tone === "warning" && "border-warning/30 bg-warning/10 text-warning-foreground",
         tone === "danger" && "border-destructive/30 bg-destructive/10 text-destructive",
       )}
     >
@@ -206,8 +204,8 @@ function SourceStatusBadge({
         className={cn(
           "size-1.5 rounded-full",
           tone === "neutral" && "bg-muted-foreground/55",
-          tone === "default" && "bg-emerald-500",
-          tone === "warning" && "bg-amber-500",
+          tone === "default" && "bg-success",
+          tone === "warning" && "bg-warning",
           tone === "danger" && "bg-destructive",
         )}
       />
@@ -219,14 +217,14 @@ function SourceStatusBadge({
 function LastSampleLabel({ sampledAt }: { sampledAt: DateTime.Utc | null }) {
   useRelativeTimeTick();
   if (!sampledAt) {
-    return <span className="text-[11px] text-muted-foreground/55">Waiting for sample</span>;
+    return <span className="text-2xs text-muted-foreground/55">Waiting for sample</span>;
   }
   const relative = formatRelativeTime(DateTime.formatIso(sampledAt));
   if (!relative) {
-    return <span className="text-[11px] text-muted-foreground/55">Waiting for sample</span>;
+    return <span className="text-2xs text-muted-foreground/55">Waiting for sample</span>;
   }
   return (
-    <span className="text-[11px] text-muted-foreground/60">
+    <span className="text-2xs text-muted-foreground/60">
       Updated <span className="font-mono tabular-nums">{relative.value}</span>
       {relative.suffix ? ` ${relative.suffix}` : ""}
     </span>
@@ -257,7 +255,7 @@ function IconStat({
       <div
         className={cn(
           "mt-2.5 truncate font-mono text-2xl font-semibold tracking-[-0.05em] tabular-nums text-foreground",
-          tone === "warning" && "text-amber-600 dark:text-amber-300",
+          tone === "warning" && "text-warning-foreground",
           tone === "danger" && "text-destructive",
         )}
       >
@@ -321,7 +319,7 @@ function HealthSource({ label, health }: { label: string; health: ResourceTeleme
     <div className="flex items-start justify-between gap-4 border-t border-border/50 py-3 first:border-t-0">
       <div className="min-w-0">
         <div className="text-[13px] font-medium text-foreground">{label}</div>
-        <div className="mt-1 text-[11px] leading-relaxed text-muted-foreground/65">
+        <div className="mt-1 text-2xs leading-relaxed text-muted-foreground/65">
           {expectedInBrowser
             ? "Available when this page runs inside the desktop app."
             : Option.match(health.lastError, {
@@ -357,10 +355,10 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-4 border-t border-border/50 py-2.5 first:border-t-0">
-      <span className="text-[11px] text-muted-foreground/75">{label}</span>
+      <span className="text-2xs text-muted-foreground/75">{label}</span>
       <span
         className={cn(
-          "min-w-0 truncate text-right font-mono text-[11px] tabular-nums text-foreground/85",
+          "min-w-0 truncate text-right font-mono text-2xs tabular-nums text-foreground/85",
           valueClassName,
         )}
       >
@@ -384,7 +382,7 @@ function HistoryWindowSelector({
           key={option.windowMs}
           type="button"
           className={cn(
-            "cursor-pointer h-6 rounded-sm px-2 text-[11px] font-medium text-muted-foreground hover:text-foreground",
+            "cursor-pointer h-6 rounded-sm px-2 text-2xs font-medium text-muted-foreground hover:text-foreground",
             selectedWindowMs === option.windowMs && "bg-muted text-foreground",
           )}
           onClick={() => onSelect(option.windowMs)}
@@ -504,7 +502,7 @@ function ProcessTreeName({
         />
         <TooltipPopup
           side="top"
-          className="max-w-[min(520px,calc(100vw-2rem))] whitespace-normal break-words text-left font-mono text-[11px]"
+          className="max-w-[min(520px,calc(100vw-2rem))] whitespace-normal break-words text-left font-mono text-2xs"
         >
           {process.command || process.name}
         </TooltipPopup>
@@ -636,7 +634,7 @@ function ProcessTable({
                   onToggle={toggle}
                 />
               </td>
-              <td className="truncate px-3 py-2 text-[11px] text-muted-foreground">
+              <td className="truncate px-3 py-2 text-2xs text-muted-foreground">
                 {categoryLabel(process.category)}
               </td>
               <td className="px-3 py-2 text-right font-mono tabular-nums">
@@ -739,13 +737,13 @@ function HistoryProcessTable({
                   />
                   <TooltipPopup
                     side="top"
-                    className="max-w-[min(520px,calc(100vw-2rem))] whitespace-normal break-words text-left font-mono text-[11px]"
+                    className="max-w-[min(520px,calc(100vw-2rem))] whitespace-normal break-words text-left font-mono text-2xs"
                   >
                     {process.command || process.name}
                   </TooltipPopup>
                 </Tooltip>
               </td>
-              <td className="truncate px-3 py-2 text-[11px] text-muted-foreground">
+              <td className="truncate px-3 py-2 text-2xs text-muted-foreground">
                 {categoryLabel(process.category)}
               </td>
               <td className="px-3 py-2 text-right font-mono tabular-nums">
@@ -1005,7 +1003,7 @@ export function ResourceTelemetryDiagnostics() {
               </p>
             </div>
             <div className="flex items-center gap-2 text-[10px] text-muted-foreground/65">
-              <span className="size-1.5 rounded-full bg-emerald-500" />
+              <span className="size-1.5 rounded-full bg-success" />
               Sampling every {snapshot ? formatSampleInterval(snapshot.sampleIntervalMs) : "..."}
             </div>
           </div>
@@ -1163,7 +1161,7 @@ export function ResourceTelemetryDiagnostics() {
                 <div className="text-[13px] font-medium text-foreground">
                   Desktop host signals not connected
                 </div>
-                <p className="mt-1.5 max-w-sm text-[11px] leading-relaxed text-muted-foreground/70">
+                <p className="mt-1.5 max-w-sm text-2xs leading-relaxed text-muted-foreground/70">
                   Power, idle, lock, and thermal state are supplied by the desktop host. Process
                   telemetry remains fully active in this browser session.
                 </p>
@@ -1194,7 +1192,7 @@ export function ResourceTelemetryDiagnostics() {
                   value={String(snapshot.health.inaccessibleProcessCount)}
                   valueClassName={
                     snapshot.health.inaccessibleProcessCount > 0
-                      ? "text-amber-600 dark:text-amber-300"
+                      ? "text-warning-foreground"
                       : undefined
                   }
                 />
@@ -1279,7 +1277,7 @@ export function ResourceTelemetryDiagnostics() {
         }
       >
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_1px_rgb(0_0_0/0.03)]">
-          <div className="bg-muted/15 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground sm:px-5">
+          <div className="bg-muted/15 px-4 py-3 text-2xs leading-relaxed text-muted-foreground sm:px-5">
             Native counters identify which process is reading or writing. These application-level
             counters identify known Ronin operations so process spikes can be correlated with
             specific persistence and logging paths.

@@ -243,7 +243,7 @@ export function AddProviderInstanceDialog({
 
           <div
             data-slot="dialog-panel"
-            className="space-y-4 bg-zinc-25/80 px-6 py-5 ring-1 ring-black/5 dark:bg-white/2 dark:ring-white/5"
+            className="space-y-4 bg-muted/40 px-6 py-5 ring-1 ring-border"
           >
             <AnimatedHeight>
               <div className={cn("grid gap-2", wizardStep !== 0 && "hidden")}>
@@ -262,7 +262,7 @@ export function AddProviderInstanceDialog({
                       <RadioPrimitive.Root
                         key={option.value}
                         value={option.value}
-                        className="relative flex cursor-pointer items-center gap-3 rounded-lg bg-card px-3 py-3 text-left text-muted-foreground outline-none ring-1 ring-black/5 hover:bg-zinc-50 focus-visible:ring-2 focus-visible:ring-ring data-checked:bg-primary/8 data-checked:text-foreground data-checked:ring-2 data-checked:ring-primary data-checked:hover:bg-primary/8 dark:bg-white/3 dark:ring-white/5 dark:hover:bg-white/5 dark:data-checked:bg-primary/15 dark:data-checked:ring-primary dark:data-checked:hover:bg-primary/15"
+                        className="relative flex cursor-pointer items-center gap-3 rounded-lg bg-card px-3 py-3 text-left text-muted-foreground focus-ring ring-1 ring-border hover:bg-accent data-checked:bg-primary/8 data-checked:text-foreground data-checked:ring-2 data-checked:ring-primary data-checked:hover:bg-primary/8"
                       >
                         <IconComponent className="size-4 shrink-0" aria-hidden />
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
@@ -317,7 +317,7 @@ export function AddProviderInstanceDialog({
                   value={label}
                   onChange={(event) => setLabel(event.target.value)}
                 />
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-2xs text-muted-foreground">
                   Shown in the provider list. Optional.
                 </span>
               </label>
@@ -334,9 +334,9 @@ export function AddProviderInstanceDialog({
                   aria-invalid={showInstanceIdError}
                 />
                 {showInstanceIdError ? (
-                  <span className="text-[11px] text-destructive">{instanceIdError}</span>
+                  <span className="text-2xs text-destructive">{instanceIdError}</span>
                 ) : (
-                  <span className="text-[11px] text-muted-foreground">
+                  <span className="text-2xs text-muted-foreground">
                     Routing key used by threads and sessions. Letters, digits, '-', or '_'.
                   </span>
                 )}
@@ -384,7 +384,7 @@ export function AddProviderInstanceDialog({
                     </Button>
                   ) : null}
                 </div>
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-2xs text-muted-foreground">
                   Optional marker shown in the picker.
                 </span>
               </div>

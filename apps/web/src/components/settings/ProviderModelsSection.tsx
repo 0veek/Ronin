@@ -256,7 +256,7 @@ export function ProviderModelsSection({
                     </TooltipTrigger>
                     <TooltipPopup side="top" className="max-w-56">
                       <div className="space-y-1">
-                        <code className="block text-[11px] text-foreground">{model.slug}</code>
+                        <code className="block text-2xs text-foreground">{model.slug}</code>
                         {capLabels.length > 0 ? (
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                             {capLabels.map((label) => (
@@ -286,7 +286,7 @@ export function ProviderModelsSection({
                         variant="ghost"
                         className={cn(
                           "size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground",
-                          isFavorite && "text-yellow-500 hover:text-yellow-600",
+                          isFavorite && "text-favorite hover:text-favorite/80",
                         )}
                         onClick={() => handleToggleFavorite(model.slug)}
                         aria-label={`${isFavorite ? "Remove" : "Add"} ${model.name} ${

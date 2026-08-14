@@ -231,6 +231,9 @@
   --animate-status-pulse: status-pulse 2s infinite;
   --animate-ghost-pulse: ghost-pulse 2.4s infinite;
   --animate-status-ping: status-ping 2s infinite;
+  --color-important-foreground: var(--important-foreground);
+  --color-important: var(--important);
+  --color-favorite: var(--favorite);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -335,6 +338,11 @@
   --destructive-foreground: var(--error-foreground);
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-700);
+  /* The fifth severity in GitHub's admonition set, which sits between info and
+     warning and has no equivalent among the other four roles. */
+  --important: var(--color-purple-500);
+  --important-foreground: var(--color-purple-600);
+  --favorite: var(--color-yellow-500);
   --success: var(--color-emerald-500);
   --success-foreground: var(--color-emerald-700);
   --warning: var(--color-amber-500);
@@ -401,6 +409,9 @@
     --destructive-foreground: var(--error-foreground);
     --info: var(--color-blue-500);
     --info-foreground: var(--color-blue-400);
+    --important: var(--color-purple-500);
+    --important-foreground: var(--color-purple-400);
+    --favorite: var(--color-yellow-500);
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-400);
     --warning: var(--color-amber-500);
@@ -460,6 +471,119 @@
     --provider-grok: #3987e5;
     --provider-area-opacity: 0.22;
   }
+}
+
+/*
+ * Status pigments.
+ *
+ * A categorical set, not a ramp: every value here is a state the reader has to
+ * tell apart at a glance in a dense list, so the hues are picked to stay
+ * distinct from each other rather than to sit on a scale. Named for the state,
+ * never the color, so a theme can re-pigment one without the call sites
+ * reading as a lie.
+ *
+ * Two values per state. The mark (a dot, a bar, a solid fill) and the
+ * foreground (text and icons, which need more contrast than a solid mark at
+ * the same size does). In dark mode the two converge: one light hue held at
+ * partial alpha reads correctly as both, which is why the dark block sets
+ * fewer values than the light one.
+ *
+ * These replaced ~200 hand-written `text-emerald-600 dark:text-emerald-300/90`
+ * pairs spread over 27 files. That spelling could not follow a theme -- the
+ * whole app would reskin and the status dots would stay stock Tailwind -- and
+ * it drifted, so the same state was three different greens in three lists.
+ */
+:root {
+  /* Thread activity: what an agent is doing, or what it needs from you. The
+     three "blocked on you" states are deliberately different hues, because
+     approve / answer / decide are different actions. */
+  --status-live: var(--color-sky-500);
+  --status-live-foreground: var(--color-sky-600);
+  --status-attention: var(--color-amber-500);
+  --status-attention-foreground: var(--color-amber-600);
+  --status-input: var(--color-indigo-500);
+  --status-input-foreground: var(--color-indigo-600);
+  --status-decision: var(--color-violet-500);
+  --status-decision-foreground: var(--color-violet-600);
+  --status-done: var(--color-emerald-500);
+  --status-done-foreground: var(--color-emerald-600);
+  --status-ambient: var(--color-teal-500);
+  --status-ambient-foreground: var(--color-teal-600);
+  /* Deliberately parked, not idle: a snoozed thread is coming back. */
+  --status-snoozed: var(--color-blue-500);
+  --status-snoozed-foreground: var(--color-blue-600);
+
+  /*
+   * Change-request state. Open/merged/closed carry the host's convention
+   * rather than this app's palette -- a reader arriving from GitHub reads a
+   * purple merge glyph without being taught it -- so these keep their own
+   * values instead of aliasing the activity pigments they happen to match
+   * today. Closed and draft do alias, because "closed" genuinely is the
+   * destructive role and "draft" genuinely is muted.
+   */
+  --vcs-open: var(--color-emerald-500);
+  --vcs-open-foreground: var(--color-emerald-600);
+  --vcs-merged: var(--color-violet-500);
+  --vcs-merged-foreground: var(--color-violet-600);
+  --vcs-closed: var(--destructive);
+  --vcs-closed-foreground: var(--destructive-foreground);
+  --vcs-draft-foreground: var(--muted-foreground);
+
+  /* Skill chips. One pigment, previously written out twice -- once in the
+     composer chip and once in the rendered message -- which is how the two
+     drifted apart in the first place. */
+  --skill: var(--color-fuchsia-500);
+  --skill-foreground: var(--color-fuchsia-700);
+
+  @variant dark {
+    --status-live: --alpha(var(--color-sky-300) / 80%);
+    --status-live-foreground: --alpha(var(--color-sky-300) / 80%);
+    --status-attention: --alpha(var(--color-amber-300) / 90%);
+    --status-attention-foreground: --alpha(var(--color-amber-300) / 90%);
+    --status-input: --alpha(var(--color-indigo-300) / 90%);
+    --status-input-foreground: --alpha(var(--color-indigo-300) / 90%);
+    --status-decision: --alpha(var(--color-violet-300) / 90%);
+    --status-decision-foreground: --alpha(var(--color-violet-300) / 90%);
+    --status-done: --alpha(var(--color-emerald-300) / 90%);
+    --status-done-foreground: --alpha(var(--color-emerald-300) / 90%);
+    --status-ambient: --alpha(var(--color-teal-300) / 90%);
+    --status-ambient-foreground: --alpha(var(--color-teal-300) / 90%);
+    --status-snoozed: --alpha(var(--color-blue-300) / 90%);
+    --status-snoozed-foreground: --alpha(var(--color-blue-300) / 90%);
+
+    --vcs-open: --alpha(var(--color-emerald-300) / 90%);
+    --vcs-open-foreground: --alpha(var(--color-emerald-300) / 90%);
+    --vcs-merged: --alpha(var(--color-violet-300) / 90%);
+    --vcs-merged-foreground: --alpha(var(--color-violet-300) / 90%);
+
+    --skill-foreground: var(--color-fuchsia-300);
+  }
+}
+
+@theme inline {
+  --color-status-live: var(--status-live);
+  --color-status-live-foreground: var(--status-live-foreground);
+  --color-status-attention: var(--status-attention);
+  --color-status-attention-foreground: var(--status-attention-foreground);
+  --color-status-input: var(--status-input);
+  --color-status-input-foreground: var(--status-input-foreground);
+  --color-status-decision: var(--status-decision);
+  --color-status-decision-foreground: var(--status-decision-foreground);
+  --color-status-done: var(--status-done);
+  --color-status-done-foreground: var(--status-done-foreground);
+  --color-status-ambient: var(--status-ambient);
+  --color-status-ambient-foreground: var(--status-ambient-foreground);
+  --color-status-snoozed: var(--status-snoozed);
+  --color-status-snoozed-foreground: var(--status-snoozed-foreground);
+  --color-vcs-open: var(--vcs-open);
+  --color-vcs-open-foreground: var(--vcs-open-foreground);
+  --color-vcs-merged: var(--vcs-merged);
+  --color-vcs-merged-foreground: var(--vcs-merged-foreground);
+  --color-vcs-closed: var(--vcs-closed);
+  --color-vcs-closed-foreground: var(--vcs-closed-foreground);
+  --color-vcs-draft-foreground: var(--vcs-draft-foreground);
+  --color-skill: var(--skill);
+  --color-skill-foreground: var(--skill-foreground);
 }
 
 /* App-chrome grain. Baked into each surface's own background (behind

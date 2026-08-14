@@ -96,7 +96,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
               />
             )}
           </span>
-          <span className="ml-1 hidden min-w-0 flex-1 truncate text-[11px] text-muted-foreground group-hover:text-foreground/80 @[24rem]/changed-files:inline">
+          <span className="ml-1 hidden min-w-0 flex-1 truncate text-2xs text-muted-foreground group-hover:text-foreground/80 @[24rem]/changed-files:inline">
             {expanded ? "Hide files" : "Show files"}
           </span>
         </button>
@@ -159,7 +159,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
         />
       ) : compactPreviewVisible ? (
         <div className="px-2 pb-1.5 pt-1">
-          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
+          <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs text-muted-foreground">
             {scopeSummary.map((scope, index) => (
               <span key={scope.label} className="inline-flex items-center gap-1">
                 {index > 0 ? <span aria-hidden="true">·</span> : null}
@@ -190,7 +190,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
             ))}
             <button
               type="button"
-              className="rounded-md px-1.5 py-1 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="rounded-md px-1.5 py-1 text-2xs font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               onClick={() => onExpandedChange(true)}
             >
               Show all {files.length} files
@@ -270,7 +270,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
             ) : (
               <FolderClosedIcon className="size-3.5 shrink-0 text-muted-foreground/75" />
             )}
-            <span className="truncate font-mono text-[11px] text-muted-foreground/90 group-hover:text-foreground/90">
+            <span className="truncate font-mono text-2xs text-muted-foreground/90 group-hover:text-foreground/90">
               {node.name}
             </span>
             {hasNonZeroStat(node.stat) && (
@@ -305,7 +305,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
           theme={resolvedTheme}
           className="size-3.5 text-muted-foreground/70"
         />
-        <span className="truncate font-mono text-[11px] text-muted-foreground/80 group-hover:text-foreground/90">
+        <span className="truncate font-mono text-2xs text-muted-foreground/80 group-hover:text-foreground/90">
           {node.name}
         </span>
         {node.stat && (

@@ -305,7 +305,7 @@ export function HostedBrowserWebview(props: {
             />
             {activeDrag ? (
               <div
-                className="pointer-events-none absolute z-40 -translate-x-1/2 rounded-(--control-radius) border border-border bg-background px-2 py-1 text-2xs font-medium tabular-nums text-foreground shadow-(--shadow-popover)"
+                className="pointer-events-none absolute z-40 -translate-x-1/2 rounded-(--control-radius) border border-border bg-background px-2 py-1 text-2xs font-medium tabular-nums text-foreground shadow-popover"
                 style={{
                   left: layout.viewportX + layout.viewportWidth / 2,
                   top: layout.viewportY + 10,

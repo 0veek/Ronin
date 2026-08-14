@@ -2,6 +2,12 @@ import { useAtomValue } from "@effect/atom-react";
 import type { ProviderRateLimits, RateLimitWindow } from "@t3tools/contracts";
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  PROVIDER_SHORT_LABEL,
+  RATE_LIMIT_WINDOW_SCOPE,
+  RATE_LIMIT_WINDOW_SHORT_LABEL,
+} from "@t3tools/shared/providerVocabulary";
+
 import { cn } from "../../lib/utils";
 import { useProviderRateLimits } from "../../state/rateLimits";
 import { primaryServerProvidersAtom } from "../../state/server";
@@ -29,24 +35,6 @@ import {
  * by hairlines, so the meter borrows that rule and fills the part of it that
  * has been consumed -- the measurement and the structure are the same line.
  */
-const PROVIDER_LABEL: Record<ProviderRateLimits["provider"], string> = {
-  claude: "Claude",
-  codex: "Codex",
-  grok: "Grok",
-};
-
-const WINDOW_LABEL: Record<RateLimitWindow["kind"], string> = {
-  session: "5h",
-  weekly: "Week",
-  monthly: "30d",
-};
-
-const WINDOW_SCOPE: Record<RateLimitWindow["kind"], string> = {
-  session: "5-hour window",
-  weekly: "7-day window",
-  monthly: "30-day window",
-};
-
 /** Past this, the row stops being informational and starts being a warning. */
 const CRITICAL_PERCENT = 90;
 
@@ -69,7 +57,7 @@ function tooltipFor(entry: ProviderRateLimits, window: RateLimitWindow | null): 
   if (window === null) return `${entry.message ?? "No usage reported"}${plan}`;
   const reset = formatResetsAt(window.resetsAt);
   const suffix = reset === null ? "" : ` · resets ${reset}`;
-  return `${Math.round(window.usedPercent)}% of the ${WINDOW_SCOPE[window.kind]} used${suffix}${plan}`;
+  return `${Math.round(window.usedPercent)}% of the ${RATE_LIMIT_WINDOW_SCOPE[window.kind]} used${suffix}${plan}`;
 }
 
 function UsageRow({ row, nowMs }: { row: UsageMeterRow; nowMs: number }) {
@@ -97,7 +85,7 @@ function UsageRow({ row, nowMs }: { row: UsageMeterRow; nowMs: number }) {
                   row.isFirstOfProvider ? "text-foreground/75" : "text-transparent",
                 )}
               >
-                {PROVIDER_LABEL[entry.provider]}
+                {PROVIDER_SHORT_LABEL[entry.provider]}
               </span>
               {/* Window tag and its countdown share one column: the tag names
                   the bucket, the countdown says when it refills.
@@ -113,7 +101,7 @@ function UsageRow({ row, nowMs }: { row: UsageMeterRow; nowMs: number }) {
                   next to a percentage reads as quota remaining. */}
               <span className="min-w-0 flex-1 truncate">
                 <span className="label-meta text-muted-foreground/55">
-                  {window === null ? "—" : WINDOW_LABEL[window.kind]}
+                  {window === null ? "—" : RATE_LIMIT_WINDOW_SHORT_LABEL[window.kind]}
                 </span>
                 {countdown === null ? null : (
                   <span className="text-[10px] text-muted-foreground/45">

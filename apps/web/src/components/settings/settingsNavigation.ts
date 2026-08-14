@@ -68,7 +68,7 @@ export const SETTINGS_PAGE_META = {
     searchTerms: ["skill", "workflow", "instruction", "agent"],
   },
   "/settings/source-control": {
-    label: "Source Control",
+    label: "Source control",
     description: "Git, branches, pull requests, and worktrees.",
     icon: GitBranchIcon,
     searchTerms: ["git", "github", "branch", "pull request", "pr", "worktree"],

@@ -99,8 +99,8 @@ function PullRequestRowImpl({
               className={cn(
                 "shrink-0",
                 entry.reviewDecision === "approved"
-                  ? "text-emerald-600/90 dark:text-emerald-400/80"
-                  : "text-amber-600/90 dark:text-amber-400/80",
+                  ? "text-success-foreground/90"
+                  : "text-warning-foreground/90",
               )}
             >
               {entry.reviewDecision === "approved" ? "Approved" : "Changes requested"}

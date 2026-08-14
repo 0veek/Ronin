@@ -54,7 +54,7 @@ export function ComposerSlashTargetPicker<T extends string>(props: {
                 </span>
                 <span className="min-w-0">
                   <span className="block font-medium text-foreground">{option.label}</span>
-                  <span className="mt-0.5 block text-[12px] leading-4 text-secondary-label">
+                  <span className="mt-0.5 block text-xs leading-4 text-secondary-label">
                     {option.description}
                   </span>
                 </span>

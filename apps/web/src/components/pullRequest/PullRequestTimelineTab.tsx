@@ -197,7 +197,7 @@ function ConversationCard({
               <span className="text-muted-foreground">{event.title}</span>
               {event.reviewState ? <ReviewStateBadge state={event.reviewState} /> : null}
             </div>
-            <PullRequestMetaLine className="mt-1 flex-wrap text-[11px] text-muted-foreground">
+            <PullRequestMetaLine className="mt-1 flex-wrap text-2xs text-muted-foreground">
               <span>{formatRelativeTimeLabel(event.at)}</span>
               {event.path ? (
                 <span className="inline-flex min-w-0 items-center gap-1">
@@ -403,7 +403,7 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
           {event.actor ? <ActorName actor={event.actor} /> : null}
           <span className="font-semibold text-foreground">{presentation.label}</span>
         </div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">
+        <div className="mt-0.5 text-2xs text-muted-foreground">
           {formatRelativeTimeLabel(event.at)}
         </div>
       </div>

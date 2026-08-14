@@ -727,7 +727,7 @@ export function BranchToolbarBranchSelector({
                   aria-label={branchPrTooltip}
                   onClick={(event) => openPrLink(event, branchPrStatus.url)}
                   className={cn(
-                    "inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium tabular-nums transition-colors hover:bg-muted/60",
+                    "inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-2xs font-medium tabular-nums transition-colors hover:bg-muted/60",
                     branchPrStatus.colorClass,
                   )}
                 />

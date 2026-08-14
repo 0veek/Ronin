@@ -304,7 +304,7 @@ function PullRequestBaseFreshnessWarning({
           <button
             type="button"
             aria-label={summary}
-            className="inline-flex shrink-0 cursor-help items-center rounded-sm text-amber-600 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex shrink-0 cursor-help items-center rounded-sm text-warning-foreground focus-ring"
           />
         }
       >
@@ -1398,7 +1398,7 @@ export function PullRequestDetailPanel({
             // so the chrome trades rows in one motion instead of two jumps.
             condensed
               ? "grid-rows-[1fr]"
-              : "grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+              : "grid-rows-[0fr] transition-[grid-template-rows] duration-(--duration-base) ease-out",
           )}
         >
           <div
@@ -1422,7 +1422,7 @@ export function PullRequestDetailPanel({
                       aria-pressed={tab === item.value}
                       onClick={() => setTab(item.value)}
                       className={cn(
-                        "rounded-md px-2 py-1 text-[11px] transition-colors",
+                        "rounded-md px-2 py-1 text-2xs transition-colors",
                         tab === item.value
                           ? "bg-accent text-foreground"
                           : "text-muted-foreground hover:text-foreground",
@@ -1433,7 +1433,7 @@ export function PullRequestDetailPanel({
                   ))}
                 </nav>
                 <span
-                  className="ml-auto inline-flex min-w-0 shrink items-center gap-1 font-mono text-[11px] text-muted-foreground"
+                  className="ml-auto inline-flex min-w-0 shrink items-center gap-1 font-mono text-2xs text-muted-foreground"
                   title={`${detail.baseBranch} ← ${detail.headBranch}`}
                 >
                   <span className="truncate">{detail.baseBranch}</span>
@@ -1449,7 +1449,7 @@ export function PullRequestDetailPanel({
                   <ArrowLeftIcon aria-label="receives changes from" className="size-3 shrink-0" />
                   <span className="truncate">{detail.headBranch}</span>
                 </span>
-                <span className="ml-2 inline-flex shrink-0 items-center gap-2 text-[11px] text-muted-foreground">
+                <span className="ml-2 inline-flex shrink-0 items-center gap-2 text-2xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1 tabular-nums">
                     <FileDiffIcon className="size-3" />
                     {detail.changedFiles.toLocaleString()}
@@ -1457,7 +1457,7 @@ export function PullRequestDetailPanel({
                   <PullRequestDiffStat
                     additions={detail.additions}
                     deletions={detail.deletions}
-                    className="shrink-0 font-mono text-[11px]"
+                    className="shrink-0 font-mono text-2xs"
                   />
                 </span>
               </div>
@@ -1477,7 +1477,7 @@ export function PullRequestDetailPanel({
             // snapping the content down.
             condensed
               ? "grid-rows-[0fr]"
-              : "grid-rows-[1fr] transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+              : "grid-rows-[1fr] transition-[grid-template-rows] duration-(--duration-base) ease-out",
           )}
         >
           <div
@@ -1679,7 +1679,7 @@ export function PullRequestDetailPanel({
                   <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
                     <PullRequestMetaLine
                       className={cn(
-                        "whitespace-nowrap text-[11px] transition-opacity",
+                        "whitespace-nowrap text-2xs transition-opacity",
                         (activityPending || activityError) && "opacity-35",
                       )}
                     >

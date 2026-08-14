@@ -500,13 +500,13 @@ function SurfaceIcon({
       const status = pullRequestStatuses?.[surface.id] ?? null;
       const toneClassName =
         status?.state === "merged"
-          ? "text-violet-600 dark:text-violet-300/90"
+          ? "text-vcs-merged-foreground"
           : status?.state === "closed"
-            ? "text-red-600 dark:text-red-300/90"
+            ? "text-vcs-closed-foreground"
             : status?.isDraft
-              ? "text-zinc-500 dark:text-zinc-400/80"
+              ? "text-vcs-draft-foreground"
               : status?.state === "open"
-                ? "text-emerald-600 dark:text-emerald-300/90"
+                ? "text-vcs-open-foreground"
                 : "text-muted-foreground";
       return <GitPullRequest className={cn("size-3 shrink-0", toneClassName)} />;
     }

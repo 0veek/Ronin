@@ -311,7 +311,7 @@ export function UsageProviderChart({
               className="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground/70 tabular-nums"
               style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
             >
-              {tick === 0 ? "0" : format(tick)}
+              {format(tick)}
             </span>
           ))}
         </div>

@@ -194,6 +194,10 @@
     "./appDisplayName": {
       "types": "./src/appDisplayName.ts",
       "import": "./src/appDisplayName.ts"
+    },
+    "./providerVocabulary": {
+      "types": "./src/providerVocabulary.ts",
+      "import": "./src/providerVocabulary.ts"
     }
   },
   "scripts": {

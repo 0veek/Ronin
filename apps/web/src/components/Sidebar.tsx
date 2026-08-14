@@ -39,7 +39,6 @@ import {
   ChevronDownIcon,
   CircleAlertIcon,
   CircleCheckIcon,
-  CircleDashedIcon,
   ClockIcon,
   FolderIcon,
   FolderPlusIcon,
@@ -167,6 +166,7 @@ import { Input } from "./ui/input";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
 import { SidebarContent, SidebarGroup, SidebarMenuButton, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { SidebarWorkingDuel } from "./sidebar/SidebarWorkingDuel";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import {
@@ -334,7 +334,7 @@ function SidebarThreadTooltip({
             </div>
           ) : null}
           {thread.session?.lastError ? (
-            <div className="flex min-w-0 items-center gap-2 text-red-600 dark:text-red-400">
+            <div className="flex min-w-0 items-center gap-2 text-error-foreground">
               <CircleAlertIcon className="size-3 shrink-0 stroke-current" />
               <div className="min-w-0 truncate">Error occurred</div>
             </div>
@@ -485,8 +485,8 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
         className={cn(
           "sidebar-row group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left text-sidebar-foreground outline-none select-none",
           props.isActive
-            ? "bg-amber-400/[0.08] font-medium"
-            : "bg-amber-400/[0.04] hover:bg-amber-400/[0.08]",
+            ? "bg-status-attention/8 font-medium"
+            : "bg-status-attention/4 hover:bg-status-attention/8",
         )}
         onClick={handleActivate}
         onKeyDown={handleKeyDown}
@@ -495,7 +495,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
           <div className="flex h-5 min-w-0 items-center gap-1.5">
             <SquarePenIcon
               aria-hidden
-              className="size-3 shrink-0 text-amber-600 dark:text-amber-300/80"
+              className="size-3 shrink-0 text-status-attention-foreground"
             />
             <ProjectFavicon
               environmentId={session.environmentId}
@@ -800,7 +800,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           // Working is a background state, so it rests at the dim end of what
           // the old pulse cycled through; only the thread you have open gets
           // the label at full strength.
-          className: cn("text-sky-600 dark:text-sky-400", !props.isActive && "opacity-75"),
+          className: cn("text-status-live-foreground", !props.isActive && "opacity-75"),
         }
       : status === "monitoring"
         ? {
@@ -808,37 +808,37 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
             // (monitoring-pill D6), so it keeps the label at full strength.
             label: "Monitoring",
             icon: null,
-            className: "text-sky-600 dark:text-sky-400",
+            className: "text-status-live-foreground",
           }
         : status === "approval"
           ? {
               label: "Approval",
               icon: null,
-              className: "text-amber-700 dark:text-amber-300",
+              className: "text-status-attention-foreground",
             }
           : status === "input"
             ? {
                 label: "Input",
                 icon: null,
-                className: "text-indigo-600 dark:text-indigo-300",
+                className: "text-status-input-foreground",
               }
             : status === "failed"
               ? {
                   label: "Failed",
                   icon: null,
-                  className: "text-red-700 dark:text-red-300",
+                  className: "text-error-foreground",
                 }
               : isWoke
                 ? {
                     label: "Woke",
                     icon: "woke" as const,
-                    className: "text-amber-700 dark:text-amber-300",
+                    className: "text-status-attention-foreground",
                   }
                 : isUnread
                   ? {
                       label: "Done",
                       icon: "done" as const,
-                      className: "text-emerald-700 dark:text-emerald-300",
+                      className: "text-status-done-foreground",
                     }
                   : null;
   const isWokeStatus = topStatus?.icon === "woke";
@@ -1187,7 +1187,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                   // Snoozed rows show when they come BACK, not when they were
                   // last touched — the return ticket is the row's whole story.
-                  <span className="text-xs text-blue-600 tabular-nums dark:text-blue-400">
+                  <span className="text-xs text-status-snoozed-foreground tabular-nums">
                     {props.snoozeWakeLabelText}
                   </span>
                 ) : isWoke ? (
@@ -1198,7 +1198,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     aria-label="Dismiss Woke notification"
                     title="Dismiss Woke notification"
                     onClick={handleAcknowledgeWokeClick}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-amber-700 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
+                    className="inline-flex cursor-pointer items-center gap-1 rounded-sm text-xs font-medium text-status-attention-foreground outline-none hover:underline focus-ring"
                   >
                     <AlarmClockIcon aria-hidden className="size-3" />
                     <span role="status">Woke</span>
@@ -1376,16 +1376,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                         )}
                       >
                         {topStatus.icon === "working" ? (
-                          <CircleDashedIcon aria-hidden className="size-4 shrink-0" />
+                          <SidebarWorkingDuel animated={props.isActive} />
                         ) : topStatus.icon === "done" ? (
                           <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
                         ) : null}
-                        {/* The label alone is the live region: a role="status"
-                            wrapper around the ticking duration would make
-                            screen readers announce every second. */}
-                        <span role="status">{topStatus.label}</span>
+                        {/* The label remains the live region, but the working
+                            duel carries that state visually. Keeping the
+                            ticking duration outside prevents an announcement
+                            every second. */}
+                        <span className={cn(status === "working" && "sr-only")} role="status">
+                          {topStatus.label}
+                        </span>
                         {status === "working" ? (
-                          <span aria-hidden>
+                          <span aria-hidden className="text-primary">
                             <WorkingDuration startedAt={resolveWorkingStartedAt(thread)} />
                           </span>
                         ) : null}
@@ -1454,8 +1457,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {prBadge}
               {diff ? (
                 <span className="shrink-0 font-mono">
-                  <span className="text-emerald-600 dark:text-emerald-400">+{diff.insertions}</span>{" "}
-                  <span className="text-red-600 dark:text-red-400">−{diff.deletions}</span>
+                  <span className="text-success-foreground">+{diff.insertions}</span>{" "}
+                  <span className="text-error-foreground">−{diff.deletions}</span>
                 </span>
               ) : null}
               <span
@@ -3689,16 +3692,16 @@ export default function Sidebar() {
                           data-testid="sidebar-snoozed-shelf-toggle"
                           className="mb-1 mt-3 flex w-full cursor-pointer items-center gap-2 px-2.5 text-left"
                         >
-                          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                          <span className="text-xs font-medium text-status-snoozed-foreground">
                             {snoozedShelfExpanded
                               ? "Snoozed"
                               : `Snoozed (${snoozedThreads.length})`}
                           </span>
-                          <span className="h-px flex-1 bg-blue-500/20 dark:bg-blue-400/15" />
+                          <span className="h-px flex-1 bg-status-snoozed/20" />
                           <ChevronDownIcon
                             aria-hidden
                             className={cn(
-                              "size-3 text-blue-600 transition-transform dark:text-blue-400",
+                              "size-3 text-status-snoozed-foreground transition-transform",
                               snoozedShelfExpanded && "rotate-180",
                             )}
                           />
@@ -3774,7 +3777,7 @@ export default function Sidebar() {
                   <button
                     type="button"
                     onClick={openAddProjectCommandPalette}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-[11px] font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-sidebar-border px-2.5 py-1 text-2xs font-medium text-sidebar-muted-foreground transition-colors hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
                   >
                     <PlusIcon className="-mx-0.5 size-3" />
                     Add project

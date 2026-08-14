@@ -79,21 +79,21 @@ describe("prStatusIndicator", () => {
     });
   });
 
-  it("uses red for closed pull requests", () => {
+  it("uses the closed tone for closed pull requests", () => {
     const closedPr = status().pr;
     if (!closedPr) throw new Error("Expected pull request fixture");
 
     expect(prStatusIndicator({ ...closedPr, state: "closed" }, undefined)?.colorClass).toContain(
-      "text-red-600",
+      "text-vcs-closed-foreground",
     );
   });
 });
 
 describe("settledPrHoverColorClass", () => {
   it.each([
-    ["open", "text-emerald-600"],
-    ["merged", "text-violet-600"],
-    ["closed", "text-red-600"],
+    ["open", "text-vcs-open-foreground"],
+    ["merged", "text-vcs-merged-foreground"],
+    ["closed", "text-vcs-closed-foreground"],
   ] as const)("restores the %s pull request color on row hover", (state, colorClass) => {
     expect(settledPrHoverColorClass(state)).toContain(`group-hover/v2-row:${colorClass}`);
   });

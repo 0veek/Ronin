@@ -136,18 +136,25 @@ function ThemeLibraryCard({
   // tooltip promises exactly what clicking it does.
   const cardModes = theme.previews.map((preview) => preview.mode);
   const [radialModeOpen, setRadialModeOpen] = useState<ThemeAppearance | null>(null);
-  const radialModeGroups = (["light", "dark"] as const).map((mode) => {
-    const options =
-      variantNavigation?.options.flatMap((option) => {
-        const preview = option.preview;
-        return preview.mode === mode ? [{ option, preview }] : [];
-      }) ?? [];
-    return {
-      mode,
-      options,
-      selected: options.find(({ option }) => option.activeModes.includes(mode)) ?? options[0],
-    };
-  });
+  // Only the modes this collection actually ships. A collection with dark
+  // variants and no light ones renders one swatch, and it has to sit in the
+  // middle of the card -- the offsets below are derived from how many swatches
+  // there are rather than from which mode each one is, which is what pushed a
+  // lone dark swatch 52px right of centre.
+  const radialModeGroups = (["light", "dark"] as const)
+    .map((mode) => {
+      const options =
+        variantNavigation?.options.flatMap((option) => {
+          const preview = option.preview;
+          return preview.mode === mode ? [{ option, preview }] : [];
+        }) ?? [];
+      return {
+        mode,
+        options,
+        selected: options.find(({ option }) => option.activeModes.includes(mode)) ?? options[0],
+      };
+    })
+    .filter((group) => group.selected !== undefined);
   return (
     // The card surface stays a plain div (buttons cannot nest inside a button
     // role); the title button and mode circles carry the accessible actions,
@@ -158,11 +165,10 @@ function ThemeLibraryCard({
           <div
             className={cn(
               "cursor-pointer overflow-hidden rounded-(--radius) border border-border bg-card transition-colors duration-(--duration-fast) ease-out hover:bg-accent",
-              isActive && "bg-accent",
+              isActive && "surface-selected bg-accent",
             )}
             data-theme-library-card={theme.id}
             onClick={onUse}
-            style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
           >
             <div className="relative">
               {variantNavigation ? (
@@ -184,9 +190,12 @@ function ThemeLibraryCard({
                   }}
                   onMouseLeave={() => setRadialModeOpen(null)}
                 >
-                  {radialModeGroups.map(({ mode, options, selected }) => {
+                  {radialModeGroups.map(({ mode, options, selected }, groupIndex) => {
                     if (!selected) return null;
-                    const rootOffsetX = mode === "light" ? -52 : 52;
+                    // Spread the swatches around the card's centre line: one
+                    // sits on it, two straddle it.
+                    const rootOffsetX =
+                      radialModeGroups.length === 1 ? 0 : groupIndex === 0 ? -52 : 52;
                     const isOpen = radialModeOpen === mode;
                     const isActive = selected.option.activeModes.includes(mode);
                     const modeLabel = mode === "light" ? "Light" : "Dark";
@@ -216,25 +225,31 @@ function ThemeLibraryCard({
                               colors={selected.preview.colors}
                               mode={selected.preview.mode}
                             />
+                            {/* Same two marks the single-theme card uses in
+                                ThemePreviewCircles: the swatch's own outline
+                                lights up, and a badge names the mode. The ring
+                                follows the swatch's corner, not the button's --
+                                a circular ring around a rounded-rect swatch
+                                bulged past it at the corners. */}
                             {isActive ? (
                               <span
                                 aria-hidden
-                                className="pointer-events-none absolute inset-0 rounded-full ring-2 ring-ring"
+                                className="surface-selected pointer-events-none absolute inset-0 rounded-(--radius)"
                               />
                             ) : null}
                             {isActive ? (
-                              <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-border/70 bg-background text-foreground shadow-sm">
+                              <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-5 items-center justify-center rounded-(--control-radius) border border-border bg-background text-foreground">
                                 {mode === "light" ? (
-                                  <SunIcon className="size-2.5" />
+                                  <SunIcon className="size-3" />
                                 ) : (
-                                  <MoonIcon className="size-2.5" />
+                                  <MoonIcon className="size-3" />
                                 )}
                               </span>
                             ) : null}
                           </button>
                         </ThemeVariantTooltip>
                         <span
-                          className="pointer-events-none absolute bottom-0 left-1/2 inline-flex max-w-24 -translate-x-1/2 items-center gap-1 text-[11px] font-medium text-foreground"
+                          className="pointer-events-none absolute bottom-0 left-1/2 inline-flex max-w-24 -translate-x-1/2 items-center gap-1 text-2xs font-medium text-foreground"
                           style={{ marginLeft: rootOffsetX }}
                         >
                           <span className="truncate">{selected.option.label}</span>
@@ -259,7 +274,7 @@ function ThemeLibraryCard({
                                     aria-label={`Use ${option.label} for ${mode} mode${optionIsActive ? ", currently active" : ""}`}
                                     aria-pressed={optionIsActive}
                                     className={cn(
-                                      "absolute left-1/2 top-1 z-30 flex size-7 items-center justify-center rounded-full bg-background shadow-sm outline-none transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-ring",
+                                      "absolute left-1/2 top-1 z-30 flex size-7 items-center justify-center rounded-full bg-background shadow-sm outline-none transition-[transform,opacity] duration-(--duration-base) ease-out focus-visible:ring-2 focus-visible:ring-ring",
                                       optionIsActive ? "ring-2 ring-ring" : "ring-1 ring-border/70",
                                     )}
                                     style={{
@@ -729,10 +744,9 @@ export function ThemeLibrary({
             aria-pressed={isActive}
             className={cn(
               "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-(--radius) border border-border p-2 outline-none transition-colors duration-(--duration-fast) ease-out focus-visible:ring-2 focus-visible:ring-ring",
-              isActive ? "bg-accent" : "bg-card hover:bg-accent",
+              isActive ? "surface-selected bg-accent" : "bg-card hover:bg-accent",
             )}
             key={mode}
-            style={isActive ? { boxShadow: "inset 0 0 0 1px var(--ring)" } : undefined}
             onClick={() => setMode(mode)}
             type="button"
           >

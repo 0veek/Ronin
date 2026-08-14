@@ -281,9 +281,30 @@
       transform var(--duration-fast) var(--ease-out);
   }
 
-  .sidebar-row[data-selected="true"]::before {
+  /* `data-active` as well as `data-selected`: the settings nav is built on
+     SidebarMenuButton, which spells the state the second way. Both mean "this
+     is the row you are on", and they had grown separate markers -- 2px in
+     --ring here, 1px in sidebar-foreground at 60% there. */
+  .sidebar-row[data-selected="true"]::before,
+  .sidebar-row[data-active="true"]::before {
     opacity: 1;
     transform: scaleY(1);
+  }
+
+  /*
+   * The other selection shape.
+   *
+   * A row is marked on its leading edge; a card in a grid cannot be, so its own
+   * hairline lights up instead. Same token, same meaning, one definition --
+   * this was three copies of an inline `style={{ boxShadow: ... }}` in the
+   * appearance screens, which is how the card and the swatches inside it ended
+   * up at different weights.
+   *
+   * Inset, so it replaces the border optically instead of stacking outside it
+   * and shifting the card's footprint.
+   */
+  .surface-selected {
+    box-shadow: inset 0 0 0 1px var(--ring);
   }
 
   .chat-composer-horizontal-inset {

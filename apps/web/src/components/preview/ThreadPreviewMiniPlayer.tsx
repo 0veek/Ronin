@@ -235,7 +235,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           className="absolute right-0 top-0 size-2 rounded-full bg-foreground/25 ring-1 ring-background/70 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
         />
         <div
-          className="pointer-events-none absolute right-0 top-0 flex h-8 cursor-grab items-center gap-0.5 rounded-(--radius-lg) border border-border bg-popover p-0.5 opacity-0 shadow-(--shadow-popover) transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 active:cursor-grabbing"
+          className="pointer-events-none absolute right-0 top-0 flex h-8 cursor-grab items-center gap-0.5 rounded-(--radius-lg) border border-border bg-popover p-0.5 opacity-0 shadow-popover transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 active:cursor-grabbing"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={endDrag}
@@ -284,7 +284,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       </div>
 
       <div className="relative h-full min-h-0">
-        <div className="absolute inset-0 z-[29] rounded-xl bg-muted shadow-(--shadow-popover)" />
+        <div className="absolute inset-0 z-[29] rounded-xl bg-muted shadow-popover" />
         <BrowserSurfaceSlot
           tabId={runtimeTabId}
           visible={Boolean(desktopOverlay?.hasWebContents)}

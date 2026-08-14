@@ -78,7 +78,7 @@ function SkillChip(props: { skill: InlineSkill; rawText: string }) {
       <span
         className={cn(
           CHAT_INLINE_CHIP_CLASS_NAME,
-          "border-fuchsia-500/25 bg-fuchsia-500/12 text-fuchsia-700 dark:text-fuchsia-300",
+          "border-skill/25 bg-skill/12 text-skill-foreground",
         )}
       >
         <span

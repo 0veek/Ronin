@@ -1,3 +1,4 @@
+import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -33,47 +34,51 @@ export const PROVIDER_OPTIONS: Array<{
   /** Shown on the model picker sidebar when relevant */
   pickerSidebarBadge?: "new" | "soon";
 }> = [
-  { value: ProviderDriverKind.make("codex"), label: "Codex", available: true },
-  { value: ProviderDriverKind.make("claudeAgent"), label: "Claude", available: true },
+  { value: ProviderDriverKind.make("codex"), label: DRIVER_LABEL.codex, available: true },
+  {
+    value: ProviderDriverKind.make("claudeAgent"),
+    label: DRIVER_LABEL.claudeAgent,
+    available: true,
+  },
   {
     value: ProviderDriverKind.make("opencode"),
-    label: "OpenCode",
+    label: DRIVER_LABEL.opencode,
     available: true,
     pickerSidebarBadge: "new",
   },
   {
     value: ProviderDriverKind.make("cursor"),
-    label: "Cursor",
+    label: DRIVER_LABEL.cursor,
     available: true,
     pickerSidebarBadge: "new",
   },
   {
     value: ProviderDriverKind.make("grok"),
-    label: "Grok",
+    label: DRIVER_LABEL.grok,
     available: true,
     pickerSidebarBadge: "new",
   },
   {
     value: ProviderDriverKind.make("antigravity"),
-    label: "Antigravity",
+    label: DRIVER_LABEL.antigravity,
     available: true,
     pickerSidebarBadge: "new",
   },
   {
     value: ProviderDriverKind.make("droid"),
-    label: "Droid",
+    label: DRIVER_LABEL.droid,
     available: true,
     pickerSidebarBadge: "new",
   },
   {
     value: ProviderDriverKind.make("kilo"),
-    label: "Kilo",
+    label: DRIVER_LABEL.kilo,
     available: true,
     pickerSidebarBadge: "new",
   },
   {
     value: ProviderDriverKind.make("pi"),
-    label: "Pi",
+    label: DRIVER_LABEL.pi,
     available: true,
     pickerSidebarBadge: "new",
   },

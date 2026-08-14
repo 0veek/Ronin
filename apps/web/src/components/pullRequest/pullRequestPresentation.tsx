@@ -47,21 +47,21 @@ export function resolvePullRequestState(input: {
   if (input.state === "merged") {
     return {
       label: "Merged",
-      toneClassName: "text-violet-600 dark:text-violet-300/90",
+      toneClassName: "text-vcs-merged-foreground",
       Icon: GitMergeIcon,
     };
   }
   if (input.state === "closed") {
     return {
       label: "Closed",
-      toneClassName: "text-red-600 dark:text-red-300/90",
+      toneClassName: "text-vcs-closed-foreground",
       Icon: GitPullRequestClosedIcon,
     };
   }
   if (input.isDraft) {
     return {
       label: "Draft",
-      toneClassName: "text-zinc-500 dark:text-zinc-400/80",
+      toneClassName: "text-vcs-draft-foreground",
       Icon: GitPullRequestDraftIcon,
     };
   }
@@ -76,7 +76,7 @@ export function resolvePullRequestState(input: {
   }
   return {
     label: "Open",
-    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+    toneClassName: "text-vcs-open-foreground",
     Icon: GitPullRequestIcon,
   };
 }
@@ -117,11 +117,15 @@ export function PullRequestStateGlyph({
 }
 
 const CHECK_STATUS_PRESENTATION = {
-  pending: { label: "Running", Icon: LoaderIcon, toneClassName: "animate-spin text-amber-500" },
+  pending: {
+    label: "Running",
+    Icon: LoaderIcon,
+    toneClassName: "animate-spin text-status-attention",
+  },
   success: {
     label: "Passed",
     Icon: CircleCheckIcon,
-    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+    toneClassName: "text-vcs-open-foreground",
   },
   failure: { label: "Failed", Icon: CircleXIcon, toneClassName: "text-destructive" },
   cancelled: { label: "Cancelled", Icon: CircleXIcon, toneClassName: "text-destructive" },
@@ -154,7 +158,7 @@ const CHECKS_STATE_PRESENTATION = {
   passing: {
     label: "All checks have passed",
     Icon: CircleCheckIcon,
-    toneClassName: "text-emerald-600 dark:text-emerald-300/90",
+    toneClassName: "text-vcs-open-foreground",
   },
   failing: {
     label: "Some checks were not successful",
@@ -164,7 +168,7 @@ const CHECKS_STATE_PRESENTATION = {
   pending: {
     label: "Some checks haven't completed yet",
     Icon: CircleDotIcon,
-    toneClassName: "text-amber-600 dark:text-amber-400/90",
+    toneClassName: "text-status-attention-foreground",
   },
 } as const satisfies Record<
   PullRequestChecksState,
@@ -256,10 +260,8 @@ export function PullRequestDiffStat({
   }
   return (
     <span className={cn("inline-flex items-baseline gap-1 tabular-nums", className)}>
-      <span className="text-emerald-600 dark:text-emerald-300/90">
-        +{additions.toLocaleString()}
-      </span>
-      <span className="text-destructive">-{deletions.toLocaleString()}</span>
+      <span className="text-success-foreground">+{additions.toLocaleString()}</span>
+      <span className="text-error-foreground">-{deletions.toLocaleString()}</span>
     </span>
   );
 }
