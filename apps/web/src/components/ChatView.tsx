@@ -126,6 +126,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { onRunKeybindingCommand } from "../keybindingCommandBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
@@ -200,7 +201,7 @@ import {
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
-import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import { getTerminalFocusOwner, type TerminalFocusOwner } from "../lib/terminalFocus";
 import { preventRepeatedTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import {
@@ -4804,6 +4805,124 @@ function ChatViewContent(props: ChatViewProps) {
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
+  /**
+   * Runs a workspace command, reporting whether it was this view's to run.
+   *
+   * Split out of the keydown handler so the command palette can reach exactly
+   * the same behavior through `keybindingCommandBus` instead of a second
+   * implementation that drifts. The caller owns the event: this returns true
+   * when the command was consumed, which is precisely when the keyboard path
+   * suppresses the browser's own handling of the shortcut.
+   *
+   * `terminalFocusOwner` is a parameter rather than a read: the keyboard path
+   * resolves it before dispatching (a shortcut pressed inside a terminal means
+   * something different), while a palette invocation has focus in the palette
+   * and is always addressing the drawer.
+   */
+  const runWorkspaceCommand = useCallback(
+    (command: KeybindingCommand, terminalFocusOwner: TerminalFocusOwner | null): boolean => {
+      if (command === "terminal.toggle") {
+        toggleTerminalVisibility();
+        return true;
+      }
+
+      if (command === "rightPanel.toggle") {
+        toggleRightPanel();
+        return true;
+      }
+
+      if (command === "terminal.split") {
+        if (terminalFocusOwner === "right-panel") {
+          splitPanelTerminal();
+          return true;
+        }
+        if (!terminalUiState.terminalOpen) {
+          setTerminalOpen(true);
+        }
+        splitTerminal();
+        return true;
+      }
+
+      if (command === "terminal.splitVertical") {
+        if (terminalFocusOwner === "right-panel") {
+          splitPanelTerminal("vertical");
+          return true;
+        }
+        if (!terminalUiState.terminalOpen) {
+          setTerminalOpen(true);
+        }
+        splitTerminal("vertical");
+        return true;
+      }
+
+      if (command === "terminal.close") {
+        if (terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal") {
+          closePanelTerminal(activeRightPanelSurface.activeTerminalId);
+          return true;
+        }
+        if (!terminalUiState.terminalOpen) return true;
+        closeTerminal(terminalUiState.activeTerminalId);
+        return true;
+      }
+
+      if (command === "terminal.new") {
+        if (terminalFocusOwner === "right-panel") {
+          addTerminalSurface();
+          return true;
+        }
+        if (!terminalUiState.terminalOpen) {
+          setTerminalOpen(true);
+        }
+        createNewTerminal();
+        return true;
+      }
+
+      if (command === "diff.toggle") {
+        onToggleDiff();
+        return true;
+      }
+
+      if (command === "modelPicker.toggle") {
+        composerRef.current?.toggleModelPicker();
+        return true;
+      }
+
+      const scriptId = projectScriptIdFromCommand(command);
+      if (!scriptId || !activeProject) return false;
+      const script = activeProject.scripts.find((entry) => entry.id === scriptId);
+      if (!script) return false;
+      void runProjectScript(script);
+      return true;
+    },
+    [
+      activeProject,
+      activeRightPanelSurface,
+      addTerminalSurface,
+      closePanelTerminal,
+      closeTerminal,
+      composerRef,
+      createNewTerminal,
+      onToggleDiff,
+      runProjectScript,
+      setTerminalOpen,
+      splitPanelTerminal,
+      splitTerminal,
+      terminalUiState.activeTerminalId,
+      terminalUiState.terminalOpen,
+      toggleRightPanel,
+      toggleTerminalVisibility,
+    ],
+  );
+
+  // The palette's way in. No thread means no workspace to act on, matching the
+  // keyboard path's own guard.
+  useEffect(() => {
+    if (!activeThreadId) return;
+    return onRunKeybindingCommand((command) => {
+      runWorkspaceCommand(command, null);
+    });
+  }, [activeThreadId, runWorkspaceCommand]);
+
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
@@ -4840,118 +4959,16 @@ function ChatViewContent(props: ChatViewProps) {
       });
       if (!command) return;
 
-      if (command === "terminal.toggle") {
+      // Suppressing the browser's own handling is exactly "we ran it", so the
+      // two decisions stay one decision.
+      if (runWorkspaceCommand(command, terminalFocusOwner)) {
         event.preventDefault();
         event.stopPropagation();
-        toggleTerminalVisibility();
-        return;
       }
-
-      if (command === "rightPanel.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        toggleRightPanel();
-        return;
-      }
-
-      if (command === "terminal.split") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (terminalFocusOwner === "right-panel") {
-          splitPanelTerminal();
-          return;
-        }
-        if (!terminalUiState.terminalOpen) {
-          setTerminalOpen(true);
-        }
-        splitTerminal();
-        return;
-      }
-
-      if (command === "terminal.splitVertical") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (terminalFocusOwner === "right-panel") {
-          splitPanelTerminal("vertical");
-          return;
-        }
-        if (!terminalUiState.terminalOpen) {
-          setTerminalOpen(true);
-        }
-        splitTerminal("vertical");
-        return;
-      }
-
-      if (command === "terminal.close") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal") {
-          closePanelTerminal(activeRightPanelSurface.activeTerminalId);
-          return;
-        }
-        if (!terminalUiState.terminalOpen) return;
-        closeTerminal(terminalUiState.activeTerminalId);
-        return;
-      }
-
-      if (command === "terminal.new") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (terminalFocusOwner === "right-panel") {
-          addTerminalSurface();
-          return;
-        }
-        if (!terminalUiState.terminalOpen) {
-          setTerminalOpen(true);
-        }
-        createNewTerminal();
-        return;
-      }
-
-      if (command === "diff.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        onToggleDiff();
-        return;
-      }
-
-      if (command === "modelPicker.toggle") {
-        event.preventDefault();
-        event.stopPropagation();
-        composerRef.current?.toggleModelPicker();
-        return;
-      }
-
-      const scriptId = projectScriptIdFromCommand(command);
-      if (!scriptId || !activeProject) return;
-      const script = activeProject.scripts.find((entry) => entry.id === scriptId);
-      if (!script) return;
-      event.preventDefault();
-      event.stopPropagation();
-      void runProjectScript(script);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [
-    activeProject,
-    activeRightPanelSurface,
-    addTerminalSurface,
-    terminalUiState.terminalOpen,
-    terminalUiState.activeTerminalId,
-    activeThreadId,
-    closeTerminal,
-    closePanelTerminal,
-    createNewTerminal,
-    setTerminalOpen,
-    runProjectScript,
-    splitTerminal,
-    splitPanelTerminal,
-    keybindings,
-    onToggleDiff,
-    toggleRightPanel,
-    toggleTerminalVisibility,
-    composerRef,
-  ]);
+  }, [activeThreadId, composerRef, keybindings, runWorkspaceCommand, terminalUiState.terminalOpen]);
 
   const onRevertToTurnCount = useCallback(
     async (turnCount: number) => {

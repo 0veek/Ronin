@@ -36,6 +36,17 @@ function MenuPopup({
   side?: MenuPrimitive.Positioner.Props["side"];
   anchor?: MenuPrimitive.Positioner.Props["anchor"];
 }) {
+  // The default floor has to be decided here rather than by a `not-[class*='w-']`
+  // variant: that selector reads the element's whole class attribute, which always
+  // contains the variant's own `min-w-32`, so it never matched and every menu fell
+  // back to content width.
+  const hasExplicitWidthClass =
+    typeof className === "string" &&
+    className.split(/\s+/).some((classToken) => {
+      const utility = classToken.split(":").at(-1) ?? classToken;
+      return /^(?:min-|max-)?w-/.test(utility);
+    });
+
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner
@@ -49,7 +60,8 @@ function MenuPopup({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "surface-menu relative flex not-[class*='w-']:min-w-32 origin-(--transform-origin) rounded-(--radius) outline-none focus:outline-none",
+            "surface-menu relative flex origin-(--transform-origin) rounded-(--radius) outline-none focus:outline-none",
+            !hasExplicitWidthClass && "min-w-32",
             className,
           )}
           data-slot="menu-popup"
@@ -158,7 +170,7 @@ function MenuRadioItem({
   return (
     <MenuPrimitive.RadioItem
       className={cn(
-        "flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-sm px-2 py-1 text-base text-foreground outline-none data-checked:bg-foreground/[0.08] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "[&_svg]:-mx-0.5 flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-sm px-2 py-1 text-base text-foreground outline-none data-checked:bg-foreground/[0.08] data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-accent data-highlighted:text-accent-foreground data-disabled:opacity-64 sm:min-h-7 sm:text-sm [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="menu-radio-item"

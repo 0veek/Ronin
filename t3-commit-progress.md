@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                 |
-| ----------------------------- | ------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `184d8ef33` — `fix(mobile): steer active turns by default (#6543)` (2026-08-14) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                 |
-| **Ported on**                 | 2026-08-14                                                                      |
+|                               |                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| **Upstream reviewed through** | `e9ae134c5` — `docs: route feature requests to Discussions` (2026-08-15) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`          |
+| **Ported on**                 | 2026-08-15                                                               |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -262,3 +262,140 @@ would never repaint.
 - `vp lint` over every changed file — one pre-existing `eslint(require-yield)` warning at
   `Manager.ts:1080`, on Ronin's own `pickElement` no-op stub, which this batch does not modify.
 - `git diff --check` and `git diff --cached --check` pass; no unexpected or untracked files.
+
+## Batch 4 — reviewed through `e9ae134c5` (17 commits)
+
+### Ported (9)
+
+| Upstream    | Title                                                                           | Notes                                                                                                                     |
+| ----------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `80991402d` | fix(server): terminal subprocess polling no longer floods the PID space (#6377) | clean — Ronin's `terminal/Manager.ts` was byte-identical to upstream's parent                                             |
+| `1add47b32` | fix(web): add copying terminal selection with ctrl+c in the web app (#5638)     | clean — includes the new `LocalApi.contextMenu.close`; no desktop hunk needed, the native menu self-dismisses             |
+| `196c8ea0d` | fix(web): style sidebar action tooltips (#6371)                                 | clean — snooze, unpin and settle all matched verbatim; applied to the worktree to preserve uncommitted `Sidebar.tsx` work |
+| `9885a845c` | refactor(web): simplify global styling (#6381)                                  | **subset only** — the `MenuPopup` min-width fix. See below                                                                |
+| `f0719072a` | fix(server): handle files named HEAD in git status (#6397)                      | clean — `git diff HEAD --numstat --` plus the `bad revision 'head'` unborn-HEAD branch                                    |
+| `74f7b4348` | fix(web): bound OKLCH gamut mapping (#6485)                                     | clean — real hang: `log2(C / 1e-6)` overflows to `Infinity` for huge chroma, so the bisection loop never terminated       |
+| `57a299a78` | feat(web): open remote environments in your local editor over SSH (#6572)       | **adapted** — see below                                                                                                   |
+| `48ddb3d46` | feat(web): older chat timestamps show the date, not just the time (#6654)       | **adapted** — hand-applied; Ronin's `timestampFormat.ts` has diverged well past upstream's                                |
+| `8c628f149` | fix(web): align pull request action menu rows (#6534)                           | clean — the `MenuRadioItem` hunk is independent of `9885a845c`'s `MenuPopup` hunk, so it ports on its own                 |
+
+`9885a845c` is a 69-file pass that rewrites upstream's monolithic `index.css` (1101 lines) and folds
+one-off control classes into shared `Button`/`Select` variants. Ronin already simplified global
+styling its own way — `index.css` is a 32-line manifest over `styles/{tokens,base,chrome,themes,motion,…}.css`
+— so the reorganization is superseded, and three of its parts would actively regress this fork:
+
+- **`--control-radius` means something else here.** Upstream introduces it as the input/control
+  radius replacing `--radius-lg`. Ronin already defines `--control-radius: 0.1875rem` in
+  `tokens.css` for _dense_ controls, so taking upstream's `input.tsx` / `input-group.tsx` hunks
+  would silently re-radius every input to 3px.
+- **The class-migration hunks invert Ronin's architecture.** `terminal/ghostty/surface.ts`,
+  `SidebarChrome.tsx`, `routes/settings.tsx` and `routes/_chat.index.tsx` replace `.t3-ghostty-*`,
+  `.sidebar-brand` and `.workspace-topbar` with inline utilities. Those classes are owned by
+  `styles/terminal.css` and `styles/chrome.css` here on purpose.
+- **New `Button`/`Select` geometry (`compact`, `icon-micro`, `ghost-muted`, `glass`) and
+  `getVirtualizedScrollFadeClassName`** are only reachable from the same commit's call-site rewrites
+  across Settings and the pull-request surfaces, which Ronin has restyled. Taking the variants alone
+  would be dead code; taking the call sites would be adopting upstream's visual pass.
+
+What _was_ portable is the `MenuPopup` default width. `not-[class*='w-']:min-w-32` compiles to
+`:not([class*='w-'])` evaluated against the element's whole class attribute — which always contains
+the variant's own `min-w-32` — so the selector never matched and every menu without an explicit
+width fell back to content width. The check now runs in JS against the incoming `className` only.
+The `skeleton.tsx` hunk (`motion-reduce:after:content-none`) is **already in the tree**: `motion.css`
+zeroes the same sweep via `[data-slot="skeleton"]::after { content: none }` under
+`prefers-reduced-motion`.
+
+`57a299a78` is a remote-ready feature, so it belongs here: when the client is not on the
+environment's machine, "Open in editor" now hands the OS a
+`vscode://vscode-remote/ssh-remote+<host><path>` deep link instead of exec'ing an editor on the
+environment host. Every prerequisite already existed (`packages/tailscale`'s `readTailscaleStatus`,
+`HostProcessHostname`, and `Net.ts`'s private `hasListenerOnHost`, which the commit promotes onto
+`NetServiceShape`). Four fork-specific decisions:
+
+- **`RelayConnectionTarget` does not exist here.** `remoteOpen.test.ts` used it to build "a remote
+  environment that advertises no hosts". Ronin's equivalent non-local, non-primary target is a
+  `BearerConnectionTarget` with a `connectionId` outside the `local:` prefix, so the case is now
+  expressed that way. `remoteOpen.ts` itself never referenced relay.
+- **The `apps/desktop/src/wsl/DesktopWslBackend.test.ts` hunk was dropped** — one line adding
+  `hasListenerOnHost` to a WSL `NetService` stub, and WSL is cut. Every other `NetService` stub in
+  the tree (`PortScanner.test.ts`, `tunnel.test.ts`, `dev-runner.test.ts`,
+  `RemoteOpenTargets.test.ts`) was checked and updated.
+- **The four desktop IPC files were hand-applied.** Ronin's own `FOCUS_WINDOW_CHANNEL` /
+  `focusWindow` sits exactly where upstream inserts `probeRemoteEditors`, in all of `channels.ts`,
+  `preload.ts`, `DesktopIpcHandlers.ts` and `methods/window.ts`. The handler import is placed
+  alphabetically (`pickThemeFiles`, `probeRemoteEditors`, `setTheme`) rather than at upstream's
+  unsorted position.
+- **`packages/contracts/src/ipc.ts` was hand-applied** because Ronin adds members between
+  `openExternal` and `onMenuAction`, and because the file already carried this batch's
+  `contextMenu.close` addition from `1add47b32`.
+
+### Already in the tree (2) — do not re-port
+
+| Upstream    | Title                                                  | Where it lives                                                                                      |
+| ----------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `6ae9662d8` | fix(web): restore selected themes in dark mode (#6665) | `styles/themes.css:60` already carries the `html[data-theme-id], html.dark[data-theme-id]` pair     |
+| `f0ebc628c` | fix(web): improve Codex usage graph contrast (#6669)   | `usageProviders.ts` already reads `var(--provider-codex)` / `--provider-claude` / `--provider-grok` |
+
+`f0ebc628c` exists because upstream hardcoded Codex's series as `#e6e6e6`, invisible in light mode;
+its fix swaps in `var(--foreground)`. Ronin solved that earlier and further: per-mode tokens in
+`tokens.css` (`--provider-codex: #1baf7a` light, `#199e70` dark) give Codex a distinct hue rather
+than the text color, the chart paints colored swatches instead of leaning on brand marks to key the
+series, and labels/order are shared via `@t3tools/shared/providerVocabulary`. Upstream's remaining
+diff is its `PROVIDER_PRESENTATION` record consolidation, which would undo that sharing and drop
+Ronin's Grok entry. Deliberately not taken.
+
+### Skipped (6)
+
+| Upstream    | Title                                                       | Why                                                                        |
+| ----------- | ----------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `1a6599437` | fix(web): clarify desktop update status (#6504)             | upstream's electron-updater update pill is cut — see below                 |
+| `c9063f03e` | perf(desktop): speed up Windows update installation (#6169) | depends on the skipped `7e01d33f0`, plus WSL and `asarUnpack` — see below  |
+| `e25021af7` | feat(packaging): maintain AUR packages in-repo (#4128)      | upstream's `t3code-bin` AUR identity and publish pipeline — see below      |
+| `d7abd7f3b` | feat(web): refresh workspace layouts and tool activity      | reverted upstream by `804cba430`; `git diff d7abd7f3b^ 804cba430` is empty |
+| `804cba430` | revert: refresh workspace layouts and tool activity (#6657) | the revert of the above — the pair nets to zero, nothing to port           |
+| `e9ae134c5` | docs: route feature requests to Discussions                 | upstream governance: its issue templates, CONTRIBUTING and README          |
+
+`1a6599437` builds entirely on upstream's `desktopUpdate` state machine — `useDesktopUpdateState`,
+`resolveDesktopUpdateButtonAction`, `bridge.checkForUpdate()`, the downloading/downloaded statuses
+and the nightly-channel release notes. None of it exists here: Ronin replaced that surface with
+`appUpdate.ts` + `AppUpdateProvider`/`AppUpdateNotification`, a GitHub-releases poller whose states
+are `unavailable | checking | up-to-date | available | error` with no download/install lifecycle to
+visualize. Same reason Batch 1 skipped `860179723`.
+
+`c9063f03e` moves the packaged server tree from `app.asar.unpacked` into a `resources/server.asar`
+sidecar so NSIS copies one archive instead of thousands of loose files on update. Ronin sets no
+`asarUnpack` at all (see Batch 3's note on `7e01d33f0`), has no `serverRoot`, and has no
+`apps/desktop/src/wsl/` — and the commit's justification is precisely the WSL backend needing to
+read that tree with plain `wsl.exe -- node`. It also edits `scripts/lib/cli-external-packages.ts`,
+a file this fork does not have because `7e01d33f0` created it and Batch 3 skipped it. Its
+`DesktopBackendConfiguration.ts` hunks are all inside `resolveWslStartConfig`.
+
+`e25021af7` publishes `pkgname=t3code-bin` / `t3code-nightly-bin` to the AUR from
+`url='https://github.com/pingdotgg/t3code'`, under an upstream maintainer's name, via a
+`publish-aur.yml` workflow keyed to upstream's AUR SSH secrets. Porting it as written would have
+Ronin's repo publishing upstream's package. A _Ronin_ AUR package is a reasonable idea and the
+PKGBUILDs are a decent starting point, but it needs Ronin's package name, repo URL, release asset
+names and its own AUR credentials — a new product decision, not a port.
+
+### Verification
+
+- `vp run typecheck` per package — 0 errors in `packages/contracts`, `packages/shared`,
+  `packages/client-runtime`, `packages/ssh`, `packages/tailscale`, `apps/server`, `apps/web`,
+  `apps/desktop`, `scripts`. The Effect-diagnostic _suggestions_ in `apps/server` remain
+  pre-existing and are in files this batch never touched.
+- `vp test run` — `apps/web` 252 files / 2461 tests pass; `apps/desktop` 48 / 371;
+  `packages/contracts` 19 / 256; `packages/shared` 36 / 325; `packages/client-runtime` 44 / 560;
+  `packages/ssh` 4 / 25; `apps/server` touched scopes (`terminal/`, `vcs/`, `environment/`,
+  `preview/`, `server.test.ts`) 17 / 307; `scripts/dev-runner.test.ts` 1 / 72.
+- **Batch 3's one pre-existing failure is gone.** `apps/web/src/terminal/ghostty/runtimeAbi.test.ts`
+  now passes, so `apps/web` is fully green (242 → 252 files as this fork has grown).
+- `vp lint` over all 75 changed files — 0 findings. `vp fmt --check` over the same set — all
+  correctly formatted.
+- `git diff --check` and `git diff --cached --check` pass. No unexpected or generated files; the
+  index is left unstaged, as it was found.
+
+**Uncommitted local work was preserved.** This batch landed alongside in-progress keybinding /
+shortcuts-cheat-sheet / attention-chime work. Two files overlapped and were applied to the worktree
+rather than through `--3way`: `Sidebar.tsx` (the tooltip wraps sit clear of the local
+`SidebarWorkingDuel settled` edit) and `MessagesTimeline.tsx` (the two timestamp call sites sit clear
+of the local edits). None of the other 19 locally-modified files or 11 untracked files were touched.

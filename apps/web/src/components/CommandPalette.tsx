@@ -18,6 +18,7 @@ import {
 import {
   type EnvironmentId,
   type FilesystemBrowseResult,
+  type KeybindingCommand,
   type ProjectId,
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
@@ -27,16 +28,26 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
+  BoxIcon,
+  ColumnsIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
+  GitCompareIcon,
+  KeyboardIcon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  PanelRightIcon,
+  PlayIcon,
+  PlusIcon,
+  RowsIcon,
   SettingsIcon,
   SquarePenIcon,
+  TerminalIcon,
   TextSearchIcon,
+  XIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -80,6 +91,9 @@ import {
   resolveProjectPathForDispatch,
 } from "../lib/projectPaths";
 import { onOpenCommandPalette } from "../commandPaletteBus";
+import { onRunKeybindingCommand, runKeybindingCommand } from "../keybindingCommandBus";
+import { KeyboardShortcutsDialog } from "./KeyboardShortcutsDialog";
+import { commandForProjectScript } from "../projectScripts";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
@@ -105,6 +119,7 @@ import {
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
   type SearchOverlayMode,
+  WORKSPACE_COMMANDS,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
@@ -160,6 +175,29 @@ function getLocalFileManagerName(platform: string): string {
     return "Explorer";
   }
   return "Files";
+}
+
+/** One icon per workspace verb, so the list scans as a set of things rather
+    than a wall of identical rows. */
+function workspaceCommandIcon(command: KeybindingCommand): ReactNode {
+  switch (command) {
+    case "terminal.toggle":
+      return <TerminalIcon className={ITEM_ICON_CLASS} />;
+    case "terminal.new":
+      return <PlusIcon className={ITEM_ICON_CLASS} />;
+    case "terminal.split":
+      return <ColumnsIcon className={ITEM_ICON_CLASS} />;
+    case "terminal.splitVertical":
+      return <RowsIcon className={ITEM_ICON_CLASS} />;
+    case "terminal.close":
+      return <XIcon className={ITEM_ICON_CLASS} />;
+    case "diff.toggle":
+      return <GitCompareIcon className={ITEM_ICON_CLASS} />;
+    case "rightPanel.toggle":
+      return <PanelRightIcon className={ITEM_ICON_CLASS} />;
+    default:
+      return <BoxIcon className={ITEM_ICON_CLASS} />;
+  }
 }
 
 function getEnvironmentBrowsePlatform(os: string | null | undefined): string {
@@ -385,6 +423,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme } = useTheme();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
@@ -439,6 +478,12 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         });
         return;
       }
+      if (command === "shortcuts.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        setShortcutsOpen((open) => !open);
+        return;
+      }
       const mode = overlayModeForCommand(command);
       if (mode === null) {
         return;
@@ -450,6 +495,16 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [keybindings, previewOpen, resolvedTheme, terminalOpen, theme, themeHalves, toggleMode]);
+
+  // The palette's own entry for the cheat sheet arrives the same way the
+  // workspace verbs do, so there is one route from a palette row to a command.
+  useEffect(
+    () =>
+      onRunKeybindingCommand((command) => {
+        if (command === "shortcuts.toggle") setShortcutsOpen((open) => !open);
+      }),
+    [],
+  );
 
   useEffect(
     () =>
@@ -486,6 +541,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen={setOpen}
           openOverlayMode={toggleMode}
           clearOpenIntent={clearOpenIntent}
+        />
+        {/* Hosted here rather than in the chat view so the sheet answers "what
+            can I press?" from anywhere, including with no thread open. */}
+        <KeyboardShortcutsDialog
+          keybindings={keybindings}
+          onOpenChange={setShortcutsOpen}
+          open={shortcutsOpen}
         />
       </CommandDialog>
     </ComposerHandleContext>
@@ -690,6 +752,19 @@ function OpenCommandPaletteDialog(props: {
       }),
     [activeDraftThread, activeThread, defaultProjectRef, handleNewThread],
   );
+  // Scripts belong to a project, and the palette's project is whichever one
+  // the open thread (or draft) is in — the same one the shortcut would run
+  // against, so the palette entry and the keybinding never target different
+  // projects.
+  const contextualProjectScripts = useMemo(() => {
+    if (contextualProjectRef === null) return [];
+    const project = projects.find(
+      (candidate) =>
+        candidate.id === contextualProjectRef.projectId &&
+        candidate.environmentId === contextualProjectRef.environmentId,
+    );
+    return project?.scripts ?? [];
+  }, [contextualProjectRef, projects]);
   const projectPickerEntries = useMemo(
     () =>
       buildSidebarProjectPickerEntries({
@@ -1456,6 +1531,39 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
+  // Workspace verbs act on the thread that is open, so they are offered only
+  // when there is one. The chat view owns the behavior; the bus is the way in.
+  if (activeThreadId) {
+    for (const descriptor of WORKSPACE_COMMANDS) {
+      actionItems.push({
+        kind: "action",
+        value: descriptor.value,
+        searchTerms: [...descriptor.searchTerms],
+        title: descriptor.title,
+        icon: workspaceCommandIcon(descriptor.command),
+        shortcutCommand: descriptor.command,
+        run: async () => {
+          runKeybindingCommand(descriptor.command);
+        },
+      });
+    }
+
+    for (const script of contextualProjectScripts) {
+      actionItems.push({
+        kind: "action",
+        value: `action:script:${script.id}`,
+        searchTerms: ["run", "script", script.name, script.command],
+        title: `Run ${script.name}`,
+        description: script.command,
+        icon: <PlayIcon className={ITEM_ICON_CLASS} />,
+        shortcutCommand: commandForProjectScript(script.id),
+        run: async () => {
+          runKeybindingCommand(commandForProjectScript(script.id));
+        },
+      });
+    }
+  }
+
   actionItems.push({
     kind: "action",
     value: "action:add-project",
@@ -1499,6 +1607,26 @@ function OpenCommandPaletteDialog(props: {
         themeHalves,
         initialAppearance: resolvedTheme,
       });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:keyboard-shortcuts",
+    searchTerms: [
+      "keyboard",
+      "shortcuts",
+      "keys",
+      "keybindings",
+      "bindings",
+      "cheat sheet",
+      "help",
+    ],
+    title: "Keyboard shortcuts",
+    icon: <KeyboardIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "shortcuts.toggle",
+    run: async () => {
+      runKeybindingCommand("shortcuts.toggle");
     },
   });
 

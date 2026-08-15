@@ -15,6 +15,77 @@ export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";
 export const ADDON_ICON_CLASS = "size-4";
 
+export interface WorkspaceCommandDescriptor {
+  readonly command: KeybindingCommand;
+  readonly value: string;
+  readonly title: string;
+  readonly searchTerms: readonly string[];
+}
+
+/**
+ * The workspace commands the palette offers, in the order it offers them.
+ *
+ * These are implemented in the chat view and were previously reachable only by
+ * pressing their shortcut, which made the palette useless for discovering the
+ * app's own verbs. Listing them here — with `shortcutCommand` set on each item
+ * so the palette prints the binding beside the name — turns using the palette
+ * into the way a user learns the shortcuts.
+ *
+ * Kept as data rather than eight near-identical `push` calls so the set is
+ * greppable, testable, and does not drift from the dispatcher: every entry's
+ * `command` must be one the chat view actually runs.
+ */
+export const WORKSPACE_COMMANDS: readonly WorkspaceCommandDescriptor[] = [
+  {
+    command: "terminal.toggle",
+    value: "action:terminal-toggle",
+    title: "Toggle terminal",
+    searchTerms: ["terminal", "toggle", "shell", "console", "drawer"],
+  },
+  {
+    command: "terminal.new",
+    value: "action:terminal-new",
+    title: "New terminal",
+    searchTerms: ["terminal", "new", "create", "shell", "tab"],
+  },
+  {
+    command: "terminal.split",
+    value: "action:terminal-split",
+    title: "Split terminal",
+    searchTerms: ["terminal", "split", "pane", "horizontal"],
+  },
+  {
+    command: "terminal.splitVertical",
+    value: "action:terminal-split-vertical",
+    title: "Split terminal vertically",
+    searchTerms: ["terminal", "split", "vertical", "pane"],
+  },
+  {
+    command: "terminal.close",
+    value: "action:terminal-close",
+    title: "Close terminal",
+    searchTerms: ["terminal", "close", "kill", "exit"],
+  },
+  {
+    command: "diff.toggle",
+    value: "action:diff-toggle",
+    title: "Toggle diff",
+    searchTerms: ["diff", "changes", "review", "toggle", "compare"],
+  },
+  {
+    command: "rightPanel.toggle",
+    value: "action:right-panel-toggle",
+    title: "Toggle right panel",
+    searchTerms: ["panel", "right", "sidebar", "toggle", "preview"],
+  },
+  {
+    command: "modelPicker.toggle",
+    value: "action:model-picker-toggle",
+    title: "Change model",
+    searchTerms: ["model", "picker", "provider", "switch", "change"],
+  },
+];
+
 /**
  * The global search overlay hosts three mutually exclusive surfaces: the
  * command palette (⌘K), the project file picker (⌘P), and project content

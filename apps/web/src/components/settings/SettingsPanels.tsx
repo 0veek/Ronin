@@ -117,6 +117,7 @@ import {
 } from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { requestAgentNotificationPermission } from "../AgentAttentionNotifier";
+import { AGENT_SOUND_PREVIEW_CHIME, playChime } from "~/lib/attentionChime";
 import { useUiStateStore } from "../../uiStateStore";
 import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -1565,6 +1566,42 @@ function AgentNotificationsRow({
   );
 }
 
+/**
+ * The audible half of the same idea, kept as its own row.
+ *
+ * Deliberately not folded into the notification switch: the two have different
+ * defaults (sound is opt-in), different prerequisites (audio needs no OS
+ * permission), and different tolerances — plenty of people want the badge and
+ * not the noise. Flipping it on previews the sound, because the only honest
+ * way to offer a noise is to let the user hear it before they commit.
+ */
+function AgentSoundsRow({
+  enabled,
+  onEnabledChange,
+}: {
+  readonly enabled: boolean;
+  readonly onEnabledChange: (enabled: boolean) => void;
+}) {
+  return (
+    <SettingsRow
+      {...searchableSetting("agent-sounds")}
+      description="Play a short chime on this device when an agent finishes, fails, or waits for an approval while Ronin is in the background. Per device."
+      control={
+        <Switch
+          checked={enabled}
+          onCheckedChange={(checked) => {
+            onEnabledChange(checked);
+            // The switch is a user gesture, which is also what unblocks the
+            // audio context on browsers that require one.
+            if (checked) playChime(AGENT_SOUND_PREVIEW_CHIME);
+          }}
+          aria-label="Agent sounds"
+        />
+      }
+    />
+  );
+}
+
 export function GeneralSettingsPanel() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
@@ -1572,6 +1609,8 @@ export function GeneralSettingsPanel() {
   const setAgentNotificationsEnabled = useUiStateStore(
     (state) => state.setAgentNotificationsEnabled,
   );
+  const agentSoundsEnabled = useUiStateStore((state) => state.agentSoundsEnabled);
+  const setAgentSoundsEnabled = useUiStateStore((state) => state.setAgentSoundsEnabled);
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -1721,6 +1760,7 @@ export function GeneralSettingsPanel() {
           enabled={agentNotificationsEnabled}
           onEnabledChange={setAgentNotificationsEnabled}
         />
+        <AgentSoundsRow enabled={agentSoundsEnabled} onEnabledChange={setAgentSoundsEnabled} />
         {settings.sidebarAutoSettleAfterDays !== null ? (
           <SettingsRow
             title="Days of inactivity before auto-settle"

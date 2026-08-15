@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type KeybindingCommand,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+} from "@t3tools/contracts";
 import type { Thread } from "../types";
 import {
   buildBrowseGroups,
@@ -8,6 +14,7 @@ import {
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
   type CommandPaletteGroup,
+  WORKSPACE_COMMANDS,
 } from "./CommandPalette.logic";
 
 describe("reduceCommandPaletteUiState", () => {
@@ -339,5 +346,41 @@ describe("buildBrowseGroups", () => {
     finishNavigation?.();
     await action;
     expect(actionSettled).toBe(true);
+  });
+});
+
+describe("WORKSPACE_COMMANDS", () => {
+  it("gives every entry a distinct palette row and a distinct command", () => {
+    const values = WORKSPACE_COMMANDS.map((entry) => entry.value);
+    const commands = WORKSPACE_COMMANDS.map((entry) => entry.command);
+
+    expect(new Set(values).size).toBe(values.length);
+    expect(new Set(commands).size).toBe(commands.length);
+  });
+
+  it("only lists commands the chat view actually dispatches", () => {
+    // The palette runs these through the keybinding bus, so an entry naming a
+    // command nothing handles is a row that silently does nothing.
+    const dispatched = new Set<KeybindingCommand>([
+      "terminal.toggle",
+      "terminal.new",
+      "terminal.split",
+      "terminal.splitVertical",
+      "terminal.close",
+      "diff.toggle",
+      "rightPanel.toggle",
+      "modelPicker.toggle",
+    ]);
+
+    for (const entry of WORKSPACE_COMMANDS) {
+      expect(dispatched.has(entry.command)).toBe(true);
+    }
+  });
+
+  it("carries search terms so the verbs are findable by what they do", () => {
+    for (const entry of WORKSPACE_COMMANDS) {
+      expect(entry.searchTerms.length).toBeGreaterThan(0);
+      expect(entry.title.length).toBeGreaterThan(0);
+    }
   });
 });

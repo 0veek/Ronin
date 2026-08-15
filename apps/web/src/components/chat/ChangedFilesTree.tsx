@@ -34,6 +34,9 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   showCompactPreview: boolean;
   allDirectoriesExpanded: boolean;
   resolvedTheme: "light" | "dark";
+  /** How long the turn took, when it can be derived. Absent rather than empty
+      so a thread loaded without its opening message simply omits it. */
+  durationLabel?: string;
   onExpandedChange: (expanded: boolean) => void;
   onToggleAllDirectories: () => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
@@ -45,6 +48,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     showCompactPreview,
     allDirectoriesExpanded,
     resolvedTheme,
+    durationLabel,
     onExpandedChange,
     onToggleAllDirectories,
     onOpenTurnDiff,
@@ -94,6 +98,14 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
                 deletions={summaryStat.deletions}
                 layout="inline"
               />
+            )}
+            {/* The receipt's third number. Kept quiet and last: the file count
+                and the diff stat are what the card is about, and the time is
+                the detail a reader looks for only once they care. */}
+            {durationLabel !== undefined && (
+              <span className="font-normal tabular-nums text-muted-foreground">
+                {durationLabel}
+              </span>
             )}
           </span>
           <span className="ml-1 hidden min-w-0 flex-1 truncate text-2xs text-muted-foreground group-hover:text-foreground/80 @[24rem]/changed-files:inline">

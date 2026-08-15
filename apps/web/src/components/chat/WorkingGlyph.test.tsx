@@ -17,6 +17,12 @@ describe("WorkingGlyph", () => {
     expect(markup).toContain('opacity="0.28"');
   });
 
+  it("parks itself while the window is hidden", () => {
+    // The ring and core both loop for as long as the run lasts, which can be
+    // hours behind another window.
+    expect(renderToStaticMarkup(<WorkingGlyph />)).toContain("loops-forever");
+  });
+
   it("does not fall back to the generic status pulse", () => {
     // The point of the glyph is that the one surface the user is actually
     // waiting on stops sharing the blink every other live indicator uses.

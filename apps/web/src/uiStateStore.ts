@@ -28,6 +28,7 @@ export interface PersistedUiState {
   threadChangedFilesExpansionVersion?: typeof THREAD_CHANGED_FILES_EXPANSION_VERSION;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   agentNotificationsEnabled?: boolean;
+  agentSoundsEnabled?: boolean;
 }
 
 export interface UiProjectState {
@@ -51,6 +52,14 @@ export interface UiNotificationState {
    * choice), and the OS-level notification permission is per-device anyway.
    */
   agentNotificationsEnabled: boolean;
+  /**
+   * Whether this device also makes a sound. Off by default and separate from
+   * the notification toggle: a visual notification is easy to ignore, a noise
+   * is not, so it is opted into rather than out of. Per-device for the same
+   * reason as above — the machine on your desk and the phone in your pocket
+   * have different opinions about being audible.
+   */
+  agentSoundsEnabled: boolean;
 }
 
 export interface UiState
@@ -63,6 +72,7 @@ const initialState: UiState = {
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
   agentNotificationsEnabled: true,
+  agentSoundsEnabled: false,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -151,6 +161,8 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       typeof parsed.agentNotificationsEnabled === "boolean"
         ? parsed.agentNotificationsEnabled
         : true,
+    agentSoundsEnabled:
+      typeof parsed.agentSoundsEnabled === "boolean" ? parsed.agentSoundsEnabled : false,
   };
 }
 
@@ -224,6 +236,7 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         agentNotificationsEnabled: state.agentNotificationsEnabled,
+        agentSoundsEnabled: state.agentSoundsEnabled,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -404,6 +417,7 @@ interface UiStateStore extends UiState {
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setAgentNotificationsEnabled: (enabled: boolean) => void;
+  setAgentSoundsEnabled: (enabled: boolean) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -427,6 +441,10 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
       state.agentNotificationsEnabled === enabled
         ? state
         : { ...state, agentNotificationsEnabled: enabled },
+    ),
+  setAgentSoundsEnabled: (enabled) =>
+    set((state) =>
+      state.agentSoundsEnabled === enabled ? state : { ...state, agentSoundsEnabled: enabled },
     ),
   setProjectExpanded: (projectIds, expanded) =>
     set((state) => setProjectExpanded(state, projectIds, expanded)),

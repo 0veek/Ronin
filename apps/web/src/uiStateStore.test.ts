@@ -25,6 +25,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     threadChangedFilesExpandedById: {},
     defaultAdvertisedEndpointKey: null,
     agentNotificationsEnabled: true,
+    agentSoundsEnabled: false,
     ...overrides,
   };
 }
@@ -185,7 +186,15 @@ describe("parsePersistedState", () => {
         },
       },
       agentNotificationsEnabled: true,
+      agentSoundsEnabled: false,
     });
+  });
+
+  it("keeps agent sounds opt-in, and remembers the opt-in once given", () => {
+    // Noise is the one preference that must never arrive switched on by
+    // default, including for users whose state predates the setting.
+    expect(parsePersistedState({}).agentSoundsEnabled).toBe(false);
+    expect(parsePersistedState({ agentSoundsEnabled: true }).agentSoundsEnabled).toBe(true);
   });
 
   it("ignores changed-file expansion values saved with legacy folder semantics", () => {
@@ -306,6 +315,7 @@ describe("uiStateStore persistence", () => {
         },
       },
       agentNotificationsEnabled: true,
+      agentSoundsEnabled: false,
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

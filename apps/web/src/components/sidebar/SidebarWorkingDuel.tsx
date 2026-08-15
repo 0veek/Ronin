@@ -1,10 +1,32 @@
-/** The sidebar's working mark: animated for the active thread, resting elsewhere. */
-export function SidebarWorkingDuel({ animated }: { animated: boolean }) {
+import { cn } from "~/lib/utils";
+
+/**
+ * The sidebar's working mark: animated for the active thread, resting
+ * elsewhere, and bowing once when the thread settles.
+ *
+ * `settled` is the duel's ending. A run that just stops leaves the strike
+ * mid-air and the mark simply vanishes on the next status change; landing it
+ * on a bow gives the work a punchline and reuses the character the row already
+ * established. It is one 400ms beat that holds its final pose — nothing here
+ * loops, which is why the settled variant drops `loops-forever`.
+ */
+export function SidebarWorkingDuel({
+  animated,
+  settled = false,
+}: {
+  animated: boolean;
+  settled?: boolean;
+}) {
   return (
     <svg
       aria-hidden
-      className="sidebar-working-duel h-4 w-9 shrink-0 text-primary"
+      className={cn(
+        "sidebar-working-duel h-4 w-9 shrink-0 text-primary",
+        // Only the looping variant needs parking while the window is hidden.
+        animated && !settled && "loops-forever",
+      )}
       data-animated={animated}
+      data-settled={settled}
       fill="none"
       focusable="false"
       viewBox="0 0 44 20"

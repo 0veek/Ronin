@@ -28,7 +28,7 @@ export function WorkingGlyph({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden
-      className={cn("working-glyph size-4 shrink-0 text-primary", className)}
+      className={cn("working-glyph loops-forever size-4 shrink-0 text-primary", className)}
       fill="currentColor"
       focusable="false"
       viewBox="0 0 16 16"

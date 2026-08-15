@@ -7,6 +7,7 @@ import {
   type AgentAttentionEvent,
   type ThreadAttentionBaseline,
 } from "../lib/agentAttentionNotifications";
+import { playAttentionChime } from "../lib/attentionChime";
 import { useThreadShells } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
 
@@ -26,6 +27,7 @@ import { useUiStateStore } from "../uiStateStore";
 export function AgentAttentionNotifier() {
   const shells = useThreadShells();
   const enabled = useUiStateStore((state) => state.agentNotificationsEnabled);
+  const soundsEnabled = useUiStateStore((state) => state.agentSoundsEnabled);
   const navigate = useNavigate();
   const baselineRef = useRef<ThreadAttentionBaseline | null>(null);
   const openRef = useRef<readonly Notification[]>([]);
@@ -37,11 +39,18 @@ export function AgentAttentionNotifier() {
     baselineRef.current = baseline;
 
     if (events.length === 0) return;
+    // Attention is only worth stealing while the user is elsewhere. In view,
+    // the sidebar's own working indicators already tell this story. Checked
+    // before the toggles below because the sound obeys the same rule.
+    if (document.visibilityState === "visible" && document.hasFocus()) return;
+
+    // Independent of the notification toggle and of the OS permission: audio
+    // needs neither, and a user who silenced system notifications may still
+    // want the room to tell them.
+    if (soundsEnabled) playAttentionChime(events);
+
     if (!enabled) return;
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
-    // Attention is only worth stealing while the user is elsewhere. In view,
-    // the sidebar's own working indicators already tell this story.
-    if (document.visibilityState === "visible" && document.hasFocus()) return;
 
     const reveal = (event?: AgentAttentionEvent) => {
       window.focus();
@@ -80,7 +89,7 @@ export function AgentAttentionNotifier() {
       }
     }
     openRef.current = [...openRef.current, ...raised];
-  }, [enabled, navigate, shells]);
+  }, [enabled, navigate, shells, soundsEnabled]);
 
   // Coming back on your own settles the debt: anything still sitting in the
   // notification tray is now stale chrome, so it is withdrawn.

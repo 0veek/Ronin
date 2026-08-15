@@ -8,7 +8,23 @@
  *   2. Timing comes from the duration/easing tokens in tokens.css. The single
  *      prefers-reduced-motion block lives there and zeroes the durations, so
  *      nothing here needs its own reduced-motion handling.
+ *   3. Anything that loops forever carries `.loops-forever`, so the block below
+ *      can park it while nobody is looking. Add the class rather than a rule.
  */
+
+/* -------------------------------------------------------------------------
+ * Parked while hidden
+ *
+ * Status indicators loop for as long as an agent is working, which can be
+ * hours, and a window behind another one still pays for every frame. The root
+ * class is set once at boot (lib/documentVisibility.ts); pausing rather than
+ * cancelling means an indicator resumes mid-stride instead of snapping back to
+ * the start when the window comes forward.
+ * ------------------------------------------------------------------------- */
+.window-hidden .loops-forever,
+.window-hidden .loops-forever * {
+  animation-play-state: paused;
+}
 
 /* -------------------------------------------------------------------------
  * Theme keyframes
@@ -455,6 +471,70 @@ html[data-panel-surface-transition="true"]::view-transition-new(t3-panel-surface
 
 .sidebar-working-duel[data-animated="true"] .working-ninja-spark {
   animation: working-ninja-spark var(--working-duel-cycle) infinite;
+}
+
+/* The ending. Blades come down and the two bow to each other, once, holding
+   the final pose — `both` so the pose survives after the beat rather than
+   snapping back to the guard stance. The spark stays hidden: the fight is
+   over. */
+.sidebar-working-duel[data-settled="true"] .working-ninja-left {
+  transform-origin: 9.5px 14px;
+  animation: working-ninja-bow-left var(--duration-slow) var(--ease-spring) both;
+}
+
+.sidebar-working-duel[data-settled="true"] .working-ninja-right {
+  transform-origin: 34.5px 14px;
+  animation: working-ninja-bow-right var(--duration-slow) var(--ease-spring) both;
+}
+
+.sidebar-working-duel[data-settled="true"] .working-ninja-blade-left {
+  transform-origin: 15.5px 8.2px;
+  animation: working-ninja-sheathe-left var(--duration-slow) var(--ease-spring) both;
+}
+
+.sidebar-working-duel[data-settled="true"] .working-ninja-blade-right {
+  transform-origin: 28.5px 8.2px;
+  animation: working-ninja-sheathe-right var(--duration-slow) var(--ease-spring) both;
+}
+
+@keyframes working-ninja-bow-left {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(9deg);
+  }
+}
+
+@keyframes working-ninja-bow-right {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(-9deg);
+  }
+}
+
+@keyframes working-ninja-sheathe-left {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(-38deg);
+  }
+}
+
+@keyframes working-ninja-sheathe-right {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(38deg);
+  }
 }
 
 @keyframes sidebar-working-duel-enter {
