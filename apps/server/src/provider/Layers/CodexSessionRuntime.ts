@@ -36,7 +36,7 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { buildCodexInitializeParams, registerCodexPortableSkillRoot } from "./CodexProvider.ts";
+import { buildCodexInitializeParams, registerCodexSkillRoots } from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
@@ -1742,7 +1742,7 @@ export const makeCodexSessionRuntime = (
       yield* emitSessionEvent("session/connecting", "Starting Codex App Server session.");
       yield* client.request("initialize", buildCodexInitializeParams());
       yield* client.notify("initialized", undefined);
-      yield* registerCodexPortableSkillRoot(client, NodeOS.homedir());
+      yield* registerCodexSkillRoots(client, NodeOS.homedir());
 
       const requestedModel = normalizeCodexModelSlug(options.model);
 

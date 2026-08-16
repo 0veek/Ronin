@@ -6,19 +6,11 @@ import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import {
-  BUNDLED_SKILLS_SECTION,
   buildSettingsSkillGroups,
   buildSettingsSkillSections,
   settingsSkillNameKey,
   type SettingsSkillSection,
 } from "./skillsSettingsModel";
-
-function sectionDescription(section: SettingsSkillSection): string | null {
-  if (section.key !== BUNDLED_SKILLS_SECTION) {
-    return null;
-  }
-  return "Skills that ship with Ronin. Your own copy of a skill with the same name always wins.";
-}
 
 export function SkillsSettingsPanel() {
   const catalog = useSkillsCatalog();
@@ -110,7 +102,6 @@ export function SkillsSettingsPanel() {
         const sectionEnabledCount = section.groups.filter(
           (group) => !disabledSkillNames.has(group.key),
         ).length;
-        const description = sectionDescription(section);
         return (
           <SettingsSection
             key={section.key}
@@ -128,10 +119,10 @@ export function SkillsSettingsPanel() {
               ) : null
             }
           >
-            {description ? (
+            {section.summary ? (
               <SettingsRow
-                title="Bundled with Ronin"
-                description={description}
+                title={section.summary.title}
+                description={section.summary.description}
                 control={
                   <span className="text-xs font-medium text-secondary-label">
                     {`${sectionEnabledCount} of ${section.groups.length} enabled`}

@@ -1,4 +1,4 @@
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import { BUNDLED_SKILLS_SCOPE, type ServerProviderSkill } from "@t3tools/contracts";
 
 function titleCaseWords(value: string): string {
   const words: string[] = [];
@@ -35,7 +35,7 @@ export function formatProviderSkillInstallSource(
   if (normalizedScope === "system") {
     return "System";
   }
-  if (normalizedScope === "bundled") {
+  if (normalizedScope === BUNDLED_SKILLS_SCOPE) {
     return "Built-in";
   }
   if (

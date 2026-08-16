@@ -10,7 +10,11 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { ServerProvider, ServerProviderSkill } from "@t3tools/contracts";
+import {
+  BUNDLED_SKILLS_SCOPE,
+  type ServerProvider,
+  type ServerProviderSkill,
+} from "@t3tools/contracts";
 
 export interface SkillRoot {
   readonly path: string;
@@ -86,8 +90,6 @@ export function roninSkillsDir(homeDir: string): string {
   return NodePath.join(homeDir, ".ronin", "skills");
 }
 
-export const BUNDLED_SKILLS_SCOPE = "bundled";
-
 /**
  * Where the packs from `apps/server/skills` end up, packaged first: the build
  * copies them next to the bundled entrypoint, so `dist/skills` is what both the
@@ -122,6 +124,15 @@ export async function resolveBundledSkillsDir(): Promise<string | null> {
     return null;
   })();
   return bundledSkillsDirPromise;
+}
+
+/**
+ * The roots discovery scans when the caller does not override them: the shipped
+ * packs, or nothing at all on a partial build.
+ */
+async function defaultBundledSkillsDirs(): Promise<string[]> {
+  const dir = await resolveBundledSkillsDir();
+  return dir ? [dir] : [];
 }
 
 const ensuredRoninSkillsDirs = new Set<string>();
@@ -253,7 +264,10 @@ const HOME_ORIGIN_ORDER = [
   "agents",
 ] as const;
 
-export type SkillsCatalogOrigin = (typeof HOME_ORIGIN_ORDER)[number] | "project" | "bundled";
+export type SkillsCatalogOrigin =
+  | (typeof HOME_ORIGIN_ORDER)[number]
+  | "project"
+  | typeof BUNDLED_SKILLS_SCOPE;
 
 export interface SkillsCatalogDiscoveryInput {
   readonly cwd?: string | null;
@@ -261,10 +275,10 @@ export interface SkillsCatalogDiscoveryInput {
   readonly roninBaseDir: string;
   readonly includeDuplicateOrigins?: boolean;
   /**
-   * Built-in skills root. Left undefined it resolves to the packs Ronin ships
-   * with; null skips them.
+   * Test seam: the built-in skill roots to scan, `[]` for none. Omit it and
+   * discovery uses the packs Ronin ships with.
    */
-  readonly bundledSkillsDir?: string | null;
+  readonly bundledSkillsDirs?: ReadonlyArray<string>;
 }
 
 function homeRootsForOrigin(
@@ -374,13 +388,12 @@ export async function discoverSkillsCatalog(
   input: SkillsCatalogDiscoveryInput,
 ): Promise<ServerProviderSkill[]> {
   await ensureRoninSkillsDir(input.homeDir);
-  const bundledSkillsDir =
-    input.bundledSkillsDir === undefined ? await resolveBundledSkillsDir() : input.bundledSkillsDir;
+  const bundledSkillsDirs = input.bundledSkillsDirs ?? (await defaultBundledSkillsDirs());
   const skills = await collectSkillsFromRoots([
     ...skillsCatalogRoots(input),
     // Last, so a user's own copy or a provider-native copy of the same skill
     // shadows the built-in one.
-    ...(bundledSkillsDir ? [{ path: bundledSkillsDir, scope: BUNDLED_SKILLS_SCOPE }] : []),
+    ...bundledSkillsDirs.map((path) => ({ path, scope: BUNDLED_SKILLS_SCOPE })),
   ]);
   if (input.includeDuplicateOrigins) {
     return skills;

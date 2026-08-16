@@ -100,6 +100,14 @@ The backend agent runtime that actually performs work. Five drivers ship built i
 
 The live provider-backed runtime attached to a thread. Session shape is in [the orchestration contracts][1], and lifecycle is managed in [ProviderService.ts][14].
 
+#### Agent skill
+
+A folder holding a `SKILL.md` that a provider loads on demand. [skillsCatalog.ts][27] discovers three kinds: the user's portable copies under `~/.ronin/skills`, provider-native copies in each provider's own folder, and the built-in packs. A native copy wins a name collision, then the portable copy, then the built-in one. See [agent-skills.md][28].
+
+#### Built-in skill
+
+A skill Ronin ships with, vendored under `apps/server/skills` and packaged to `dist/skills`. It crosses the wire as `scope: "bundled"` — the constant is `BUNDLED_SKILLS_SCOPE` in [the server contracts][29], shared by discovery and the settings UI. Say "built-in" everywhere a user can read it; "bundled" is the scope value and the build vocabulary, not a second name for the concept.
+
 #### Continuation group
 
 The set of provider instances that can resume each other's sessions on a thread, identified by a `continuationKey` — `${driverKind}:instance:${instanceId}` by default, and a shared-home key for Codex instances pointing at the same directory. Moving a thread within a group is a restart; moving across groups is a handoff. Each group's resume cursor is kept per thread in [ProviderSessionLedger.ts][25], so a provider stays resumable after the thread is handed away. See [providers.md][16].
@@ -189,3 +197,6 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [24]: ./overview.md
 [25]: ../../apps/server/src/persistence/ProviderSessionLedger.ts
 [26]: ../../apps/server/src/orchestration/providerHandoffBrief.ts
+[27]: ../../apps/server/src/provider/skillsCatalog.ts
+[28]: ../user/agent-skills.md
+[29]: ../../packages/contracts/src/server.ts

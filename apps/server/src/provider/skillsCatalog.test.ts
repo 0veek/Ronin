@@ -50,7 +50,7 @@ describe("discoverSkillsCatalog", () => {
       homeDir,
       roninBaseDir,
       includeDuplicateOrigins: true,
-      bundledSkillsDir: null,
+      bundledSkillsDirs: [],
     });
 
     expect(skills.map((skill) => skill.name).sort()).toEqual(["imagen", "portable"]);
@@ -70,7 +70,7 @@ describe("discoverSkillsCatalog", () => {
     const skills = await discoverSkillsCatalog({
       homeDir,
       roninBaseDir,
-      bundledSkillsDir,
+      bundledSkillsDirs: [bundledSkillsDir],
     });
 
     expect(skills.map((skill) => `${skill.name}:${skill.scope}`).sort()).toEqual([
@@ -91,7 +91,7 @@ describe("discoverSkillsCatalog", () => {
       homeDir,
       roninBaseDir,
       includeDuplicateOrigins: true,
-      bundledSkillsDir,
+      bundledSkillsDirs: [bundledSkillsDir],
     });
 
     expect(skills.map((skill) => skill.scope).sort()).toEqual(["bundled", "ronin"]);

@@ -60,6 +60,29 @@ describe("buildSettingsSkillSections", () => {
     expect(sections[1]?.groups[0]?.sources[0]?.originInfo.label).toBe("Built-in");
   });
 
+  it("explains the shadowing rule only on the built-in section", () => {
+    const sections = buildSettingsSkillSections([
+      {
+        name: "tdd",
+        path: "/app/skills/mattpocock/tdd/SKILL.md",
+        enabled: true,
+        scope: "bundled",
+        description: "Test-driven development.",
+      },
+      {
+        name: "imagen",
+        path: "/home/user/.codex/skills/imagen/SKILL.md",
+        enabled: true,
+        scope: "codex",
+        description: "Make images.",
+      },
+    ]);
+
+    expect(sections[0]?.summary).toBeNull();
+    expect(sections[1]?.summary?.title).toBe("Ships with Ronin");
+    expect(sections[1]?.summary?.description).toContain("always wins");
+  });
+
   it("keeps a user copy as the primary source of a shadowed built-in skill", () => {
     const sections = buildSettingsSkillSections([
       {

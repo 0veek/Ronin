@@ -85,6 +85,14 @@ export const ServerProviderSlashCommand = Schema.Struct({
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 
+/**
+ * `scope` on a skill stays an open string because provider-native folders name
+ * their own scopes. This one is ours and crosses the wire in both directions,
+ * so server discovery and the settings UI share the literal from here rather
+ * than each spelling it out.
+ */
+export const BUNDLED_SKILLS_SCOPE = "bundled";
+
 export const ServerProviderSkill = Schema.Struct({
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),

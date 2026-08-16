@@ -319,10 +319,13 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
   return models;
 });
 
-export const registerCodexPortableSkillRoot = Effect.fn("registerCodexPortableSkillRoot")(
+/**
+ * Hands Codex the skill roots it cannot find on its own: the user's portable
+ * Ronin folder, plus the built-in packs, so Codex loads them natively instead
+ * of relying on Ronin inlining their instructions into the turn.
+ */
+export const registerCodexSkillRoots = Effect.fn("registerCodexSkillRoots")(
   function* (client: CodexClient.CodexAppServerClient["Service"], homeDir: string) {
-    // Built-in packs are handed over too, so Codex loads them natively instead
-    // of relying on Ronin inlining their instructions into the turn.
     const bundledSkillsDir = yield* Effect.tryPromise(() => resolveBundledSkillsDir()).pipe(
       Effect.orElseSucceed(() => null),
     );
@@ -331,7 +334,7 @@ export const registerCodexPortableSkillRoot = Effect.fn("registerCodexPortableSk
     });
   },
   Effect.catch((error) =>
-    Effect.logDebug("Codex app-server does not accept portable skill roots", {
+    Effect.logDebug("Codex app-server does not accept extra skill roots", {
       detail: error.message,
     }),
   ),
@@ -411,7 +414,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     },
   });
   yield* client.notify("initialized", undefined);
-  yield* registerCodexPortableSkillRoot(client, NodeOS.homedir());
+  yield* registerCodexSkillRoots(client, NodeOS.homedir());
 
   // Extract the version string after the first '/' in userAgent, up to the next space or the end
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);

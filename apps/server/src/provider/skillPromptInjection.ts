@@ -9,9 +9,7 @@
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { ServerProviderSkill } from "@t3tools/contracts";
-
-import { BUNDLED_SKILLS_SCOPE } from "./skillsCatalog.ts";
+import { BUNDLED_SKILLS_SCOPE, type ServerProviderSkill } from "@t3tools/contracts";
 
 const MAX_INLINE_SKILL_CONTENT_CHARS = 24_000;
 

@@ -4,6 +4,8 @@ import * as NodePath from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
+import { BUNDLED_SKILLS_SCOPE } from "@t3tools/contracts";
+
 import {
   collectSkillMarkdownPaths,
   readSkillDescriptor,
@@ -11,17 +13,22 @@ import {
   skillNameKey,
 } from "./skillsCatalog.ts";
 
-async function bundledSkillDescriptors() {
+async function requireBundledSkillsDir(): Promise<string> {
   const dir = await resolveBundledSkillsDir();
-  expect(dir).not.toBeNull();
-  const skillPaths = await collectSkillMarkdownPaths(dir as string);
-  const descriptors = await Promise.all(
-    skillPaths.map((skillPath) => readSkillDescriptor({ skillPath, scope: "bundled" })),
+  if (dir === null) {
+    throw new Error("No bundled skills directory resolved; the packs are missing from this build.");
+  }
+  return dir;
+}
+
+async function bundledSkillDescriptors() {
+  const skillPaths = await collectSkillMarkdownPaths(await requireBundledSkillsDir());
+  return Promise.all(
+    skillPaths.map(async (skillPath) => ({
+      descriptor: await readSkillDescriptor({ skillPath, scope: BUNDLED_SKILLS_SCOPE }),
+      skillPath,
+    })),
   );
-  return descriptors.map((descriptor, index) => ({
-    descriptor,
-    skillPath: skillPaths[index] as string,
-  }));
 }
 
 describe("bundled skill packs", () => {
@@ -45,7 +52,7 @@ describe("bundled skill packs", () => {
   });
 
   it("points every cross-reference at the renamed setup skill", async () => {
-    const dir = (await resolveBundledSkillsDir()) as string;
+    const dir = await requireBundledSkillsDir();
     const entries = await NodeFSP.readdir(dir, { recursive: true, withFileTypes: true });
     const documents = entries.filter(
       (entry) =>
@@ -84,11 +91,8 @@ describe("bundled skill packs", () => {
   });
 
   it("keeps the upstream license next to the pack it covers", async () => {
-    const dir = await resolveBundledSkillsDir();
-    const license = await NodeFSP.readFile(
-      NodePath.join(dir as string, "mattpocock", "LICENSE"),
-      "utf8",
-    );
+    const dir = await requireBundledSkillsDir();
+    const license = await NodeFSP.readFile(NodePath.join(dir, "mattpocock", "LICENSE"), "utf8");
     expect(license).toContain("MIT License");
   });
 });

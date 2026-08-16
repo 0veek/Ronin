@@ -6,7 +6,7 @@ import {
   applyPreferredCodexDefaultModel,
   isLegacyCodexModel,
   mapCodexModelCapabilities,
-  registerCodexPortableSkillRoot,
+  registerCodexSkillRoots,
 } from "./CodexProvider.ts";
 import { resolveBundledSkillsDir } from "../skillsCatalog.ts";
 
@@ -20,7 +20,7 @@ it.effect("registers the Ronin and built-in skill directories as Codex extra roo
       },
     } as unknown as CodexClient.CodexAppServerClient["Service"];
 
-    yield* registerCodexPortableSkillRoot(client, "/home/test");
+    yield* registerCodexSkillRoots(client, "/home/test");
 
     const bundledSkillsDir = yield* Effect.promise(() => resolveBundledSkillsDir());
     assert.deepStrictEqual(calls, [

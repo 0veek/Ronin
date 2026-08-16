@@ -1,5 +1,9 @@
 import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
-import { ProviderDriverKind, type ServerProviderSkill } from "@t3tools/contracts";
+import {
+  BUNDLED_SKILLS_SCOPE,
+  ProviderDriverKind,
+  type ServerProviderSkill,
+} from "@t3tools/contracts";
 
 export interface SkillOriginInfo {
   readonly label: string;
@@ -22,15 +26,24 @@ export interface SettingsSkillGroup {
   readonly section: string;
 }
 
+/**
+ * The note a section leads with, when it has something to say beyond its title.
+ * Only built-in skills need one today, to explain that a user copy wins.
+ */
+export interface SettingsSkillSectionSummary {
+  readonly title: string;
+  readonly description: string;
+}
+
 export interface SettingsSkillSection {
   readonly key: string;
   readonly title: string;
+  readonly summary: SettingsSkillSectionSummary | null;
   readonly groups: ReadonlyArray<SettingsSkillGroup>;
 }
 
 const SHARED_SKILLS_SECTION = "shared";
 const PERSONAL_ORIGIN = "personal";
-export const BUNDLED_SKILLS_SECTION = "bundled";
 export const ORIGIN_SECTION_ORDER = [
   "ronin",
   "codex",
@@ -40,14 +53,14 @@ export const ORIGIN_SECTION_ORDER = [
   "opencode",
   "agents",
   "project",
-  BUNDLED_SKILLS_SECTION,
+  BUNDLED_SKILLS_SCOPE,
 ] as const;
 
 export function skillOriginInfo(scope: string | undefined): SkillOriginInfo {
   switch (scope) {
     case "ronin":
       return { label: "Ronin", provider: null };
-    case BUNDLED_SKILLS_SECTION:
+    case BUNDLED_SKILLS_SCOPE:
       return { label: "Built-in", provider: null };
     case "codex":
       return { label: DRIVER_LABEL.codex, provider: ProviderDriverKind.make("codex") };
@@ -85,10 +98,21 @@ function sectionTitle(section: string): string {
   if (section === SHARED_SKILLS_SECTION) {
     return "Shared skills";
   }
-  if (section === BUNDLED_SKILLS_SECTION) {
+  if (section === BUNDLED_SKILLS_SCOPE) {
     return "Built-in skills";
   }
   return `From ${skillOriginInfo(section).label}`;
+}
+
+function sectionSummary(section: string): SettingsSkillSectionSummary | null {
+  if (section !== BUNDLED_SKILLS_SCOPE) {
+    return null;
+  }
+  return {
+    title: "Ships with Ronin",
+    description:
+      "Skills that ship with Ronin. Your own copy of a skill with the same name always wins.",
+  };
 }
 
 function sectionRank(section: string): number {
@@ -156,6 +180,7 @@ export function buildSettingsSkillSections(
     .map(([key, groups]) => ({
       key,
       title: sectionTitle(key),
+      summary: sectionSummary(key),
       groups,
     }))
     .sort((left, right) => sectionRank(left.key) - sectionRank(right.key));
