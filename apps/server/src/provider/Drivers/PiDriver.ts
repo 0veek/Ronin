@@ -1,3 +1,13 @@
+/**
+ * PiDriver — `ProviderDriver` for the `@earendil-works/pi-coding-agent` agent.
+ *
+ * Pi is the one driver with no child process: `PiAdapter` imports the library
+ * and drives it in-process. That is also why maintenance stays advisory-only —
+ * the version Ronin runs is whichever module resolves, so a global install
+ * would not necessarily be the copy a thread uses.
+ *
+ * @module provider/Drivers/PiDriver
+ */
 import { PiSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";

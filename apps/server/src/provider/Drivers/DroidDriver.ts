@@ -1,3 +1,13 @@
+/**
+ * DroidDriver — `ProviderDriver` for Factory's Droid CLI (`droid`).
+ *
+ * Droid exposes ACP through `droid exec --output-format acp`. The model
+ * catalog comes from that session, and the selection is applied with
+ * `session/set_config_option` both at session start and on every turn, so a
+ * thread can change model without being restarted.
+ *
+ * @module provider/Drivers/DroidDriver
+ */
 import { DroidSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -28,8 +38,7 @@ import {
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
-  makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
+  makePackageManagedProviderMaintenanceResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
 import {
@@ -40,12 +49,15 @@ import {
 const decodeDroidSettings = Schema.decodeSync(DroidSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("droid");
-const UPDATE = makeStaticProviderMaintenanceResolver(
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider: DRIVER_KIND,
-    packageName: null,
-  }),
-);
+// Factory publishes the CLI as the `droid` npm package
+// (github.com/Factory-AI/factory, `apps/cli`), so Droid gets the same version
+// advisory and one-click update as Codex and Claude Code.
+const UPDATE = makePackageManagedProviderMaintenanceResolver({
+  provider: DRIVER_KIND,
+  npmPackageName: "droid",
+  homebrewFormula: null,
+  nativeUpdate: null,
+});
 
 export type DroidDriverEnv =
   | BackgroundPolicy.BackgroundPolicy

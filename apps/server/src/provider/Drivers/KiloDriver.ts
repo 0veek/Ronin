@@ -40,8 +40,7 @@ import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
-  makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
+  makePackageManagedProviderMaintenanceResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
 import {
@@ -53,12 +52,15 @@ const decodeKiloSettings = Schema.decodeSync(KiloSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("kilo");
 
-const UPDATE = makeStaticProviderMaintenanceResolver(
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider: DRIVER_KIND,
-    packageName: null,
-  }),
-);
+// Kilo ships as `@kilocode/cli` (github.com/Kilo-Org/kilocode), whose `kilo`
+// bin is the binary this driver defaults to, so it gets the same version
+// advisory and one-click update as the other packaged CLIs.
+const UPDATE = makePackageManagedProviderMaintenanceResolver({
+  provider: DRIVER_KIND,
+  npmPackageName: "@kilocode/cli",
+  homebrewFormula: null,
+  nativeUpdate: null,
+});
 
 export type KiloDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
