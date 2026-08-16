@@ -278,15 +278,41 @@ function modeState(): AcpSchema.SessionModeState {
   };
 }
 
+// The ids Grok Build 1.x advertises. Retired slugs such as `grok-build` are
+// not listed on purpose: they resolve forward through the contracts alias
+// table before they reach the agent, so a mock that still answered to them
+// would hide a normalization bug rather than catch it.
 const grokAcpModels: ReadonlyArray<AcpSchema.ModelInfo> = [
-  { modelId: "grok-build", name: "Grok Build" },
-  { modelId: "grok-mock-alt", name: "Grok Mock Alt" },
+  { modelId: "grok-4.6", name: "Grok 4.6" },
+  { modelId: "grok-4.5", name: "Grok 4.5" },
 ];
+
+/**
+ * Grok binds the model with `-m` on the spawn line, so a session opens on that
+ * model and a caller that asked for it has nothing left to switch. Reading the
+ * flag here keeps that true of the mock, which is what lets a test tell a
+ * redundant `session/set_model` from a real one.
+ */
+const spawnLineModelId = (() => {
+  const flagIndex = process.argv.indexOf("-m");
+  const value = flagIndex >= 0 ? process.argv[flagIndex + 1]?.trim() : undefined;
+  return value ? value : undefined;
+})();
+
+/**
+ * Auth methods to advertise from `initialize`, comma separated. Unset means
+ * advertise none, which every caller reads as "any headless method is fine".
+ * Set it to interactive-only ids to make the agent look signed out.
+ */
+const mockAuthMethodIds = (process.env.T3_MOCK_ACP_AUTH_METHODS ?? "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter((id) => id.length > 0);
 
 function modelState(): AcpSchema.SessionModelState {
   const modelId = grokAcpModels.some((model) => model.modelId === currentModelId)
     ? currentModelId
-    : "grok-build";
+    : (spawnLineModelId ?? "grok-4.6");
   return {
     currentModelId: modelId,
     availableModels: grokAcpModels,
@@ -303,6 +329,9 @@ const program = Effect.gen(function* () {
       return {
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
+        ...(mockAuthMethodIds.length > 0
+          ? { authMethods: mockAuthMethodIds.map((id) => ({ id, name: id })) }
+          : {}),
       };
     }),
   );

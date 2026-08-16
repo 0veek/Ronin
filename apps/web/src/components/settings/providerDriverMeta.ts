@@ -74,7 +74,6 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     value: ProviderDriverKind.make("grok"),
     label: DRIVER_LABEL.grok,
     icon: GrokIcon,
-    badgeLabel: "Early Access",
     settingsSchema: GrokSettings,
   },
   {

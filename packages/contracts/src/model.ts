@@ -136,8 +136,6 @@ const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
  * before a probe has run. The selectable list itself comes from the CLI.
  */
 const GROK_CURRENT_MODEL = "grok-4.6";
-export const GROK_REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high"] as const;
-export type GrokReasoningEffort = (typeof GROK_REASONING_EFFORT_OPTIONS)[number];
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const ANTIGRAVITY_DRIVER_KIND = ProviderDriverKind.make("antigravity");
 /**

@@ -6,6 +6,8 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import {
   applyGrokAcpModelSelection,
   buildGrokAcpSpawnInput,
+  describeGrokAuthMethod,
+  isGrokCredentialsMissingError,
   isGrokSessionStoragePathNotFoundError,
   resolveGrokAcpAuthMethodId,
   resolveGrokAcpBaseModelId,
@@ -212,8 +214,40 @@ describe("resolveGrokAcpAuthMethodId", () => {
   );
 });
 
+describe("isGrokCredentialsMissingError", () => {
+  it.effect("separates a sign-in failure from any other startup failure", () =>
+    Effect.gen(function* () {
+      const signedOut = yield* resolveGrokAcpAuthMethodId(
+        initializeWithAuthMethods(["browser_login"]),
+        {},
+      ).pipe(Effect.flip);
+      expect(isGrokCredentialsMissingError(signedOut)).toBe(true);
+
+      const staleBuild = yield* resolveGrokAcpAuthMethodId(
+        initializeWithAuthMethods(["something_new"]),
+        { XAI_API_KEY: "xai-test-key" },
+      ).pipe(Effect.flip);
+      expect(isGrokCredentialsMissingError(staleBuild)).toBe(false);
+
+      expect(
+        isGrokCredentialsMissingError(
+          new EffectAcpErrors.AcpProcessExitedError({ code: 1, cause: "boom" }),
+        ),
+      ).toBe(false);
+    }),
+  );
+});
+
+describe("describeGrokAuthMethod", () => {
+  it("names the credential the provider card shows", () => {
+    expect(describeGrokAuthMethod("xai.api_key")).toBe("API key");
+    expect(describeGrokAuthMethod("cached_token")).toBe("CLI login");
+    expect(describeGrokAuthMethod("browser_login")).toBeUndefined();
+  });
+});
+
 describe("applyGrokAcpModelSelection", () => {
-  it.effect("does not call session/set_model because Grok takes model on process start", () =>
+  it.effect("switches the live session to the requested model", () =>
     Effect.gen(function* () {
       const modelCalls: Array<string> = [];
       const result = yield* applyGrokAcpModelSelection({
@@ -224,12 +258,32 @@ describe("applyGrokAcpModelSelection", () => {
               return {};
             }),
         },
-        currentModelId: "grok-build",
-        requestedModelId: "grok-mock-alt",
+        currentModelId: "grok-4.5",
+        requestedModelId: "grok-4.6",
+        mapError: (cause) => cause.message,
+      });
+      expect(modelCalls).toEqual(["grok-4.6"]);
+      expect(result).toBe("grok-4.6");
+    }),
+  );
+
+  it.effect("does not re-send a switch to the model already running", () =>
+    Effect.gen(function* () {
+      const modelCalls: Array<string> = [];
+      const result = yield* applyGrokAcpModelSelection({
+        runtime: {
+          setSessionModel: (modelId: string) =>
+            Effect.sync(() => {
+              modelCalls.push(modelId);
+              return {};
+            }),
+        },
+        currentModelId: "grok-4.6",
+        requestedModelId: "grok-4.6",
         mapError: (cause) => cause.message,
       });
       expect(modelCalls).toEqual([]);
-      expect(result).toBe("grok-mock-alt");
+      expect(result).toBe("grok-4.6");
     }),
   );
 

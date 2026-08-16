@@ -3,8 +3,9 @@
  *
  * Synara's working Grok path uses process-start flags (`--no-leader`,
  * permission mode, model, effort) and inspects advertised ACP auth methods
- * after initialize. Grok ACP 0.1.210 does not implement
- * `session/set_config_option`, so model switches belong on the spawn line.
+ * after initialize. Grok Build still has no `session/set_config_option`, so
+ * reasoning effort is bound on the spawn line and a change to it needs a new
+ * session; the model itself switches in place through `session/set_model`.
  *
  * @module GrokAcpSupport
  */
@@ -70,6 +71,33 @@ export function isGrokSessionStoragePathNotFoundError(error: EffectAcpErrors.Acp
     return false;
   }
   return (error.data as { readonly code?: unknown }).code === GROK_SESSION_STORAGE_NOT_FOUND_CODE;
+}
+
+/**
+ * Whether a failed ACP startup was Grok telling us nobody is signed in.
+ *
+ * `resolveGrokAcpAuthMethodId` is the only thing that stamps
+ * `reason: "credentials_missing"`, so this separates "run `grok login`" from
+ * every other way the agent can fail to come up. The provider probe reports
+ * the first as an authentication state and the second as a startup error.
+ */
+export function isGrokCredentialsMissingError(error: EffectAcpErrors.AcpError): boolean {
+  if (error._tag !== "AcpRequestError" || typeof error.data !== "object" || error.data === null) {
+    return false;
+  }
+  return (error.data as { readonly reason?: unknown }).reason === "credentials_missing";
+}
+
+/** How a resolved auth method reads on the provider card. */
+export function describeGrokAuthMethod(authMethodId: string): string | undefined {
+  switch (authMethodId) {
+    case GROK_API_KEY_AUTH_METHOD_ID:
+      return "API key";
+    case GROK_CACHED_TOKEN_AUTH_METHOD_ID:
+      return "CLI login";
+    default:
+      return undefined;
+  }
 }
 
 export function getGrokApiKeyEnv(env: NodeJS.ProcessEnv = process.env): string | undefined {
@@ -253,18 +281,29 @@ export function currentGrokModelIdFromSessionSetup(
   return sessionSetupResult.models?.currentModelId?.trim() || undefined;
 }
 
+/**
+ * Switches the live session's model, and reports the one now answering.
+ *
+ * Grok Build 1.x implements `session/set_model`: the switch takes effect for
+ * the next prompt, verified against grok 1.0.4 where a session opened on
+ * `grok-4.5` billed its turn to `grok-4.6-build` after the call. It still has
+ * no `session/set_config_option`, so reasoning effort stays a spawn-line flag
+ * and only a session restart can change it.
+ */
 export function applyGrokAcpModelSelection<E>(input: {
   readonly runtime: Pick<AcpSessionRuntime.AcpSessionRuntime["Service"], "setSessionModel">;
   readonly currentModelId: string | undefined;
   readonly requestedModelId: string | undefined;
   readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
 }): Effect.Effect<string | undefined, E> {
-  void input.runtime;
-  void input.mapError;
-  // Grok ACP 0.1.210 advertises models in initialize/session responses but
-  // does not implement session/set_model or session/set_config_option.
-  // Model and effort are process-start settings on the spawn line.
-  return Effect.succeed(input.requestedModelId ?? input.currentModelId);
+  const shouldSwitchModel =
+    input.requestedModelId !== undefined && input.requestedModelId !== input.currentModelId;
+  if (!shouldSwitchModel) {
+    return Effect.succeed(input.currentModelId);
+  }
+  return input.runtime
+    .setSessionModel(input.requestedModelId)
+    .pipe(Effect.mapError(input.mapError), Effect.as(input.requestedModelId));
 }
 
 export function grokSettingsToRuntimeSettings(

@@ -150,6 +150,7 @@ describe("ProviderCommandReactor", () => {
     readonly baseDir?: string;
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
+    readonly sessionModelOptionsSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
@@ -354,9 +355,14 @@ describe("ProviderCommandReactor", () => {
       respondToUserInput: respondToUserInput as ProviderServiceShape["respondToUserInput"],
       stopSession: stopSession as ProviderServiceShape["stopSession"],
       listSessions: () => Effect.succeed(runtimeSessions),
-      getCapabilities: (_provider) =>
+      getCapabilities: (instanceId) =>
         Effect.succeed({
           sessionModelSwitch: input?.sessionModelSwitch ?? "in-session",
+          sessionModelOptionsSwitch:
+            input?.sessionModelOptionsSwitch ??
+            // Claude reads its thinking effort when the SDK query is created,
+            // so the real adapter reports options as spawn-bound.
+            (String(instanceId).startsWith("claude") ? "unsupported" : "in-session"),
         }),
       getInstanceInfo: (instanceId) => {
         const raw = String(instanceId);
@@ -2237,6 +2243,62 @@ describe("ProviderCommandReactor", () => {
       ),
     });
   });
+
+  effectIt.effect("switches models in session when only the options are spawn-bound", () =>
+    Effect.gen(function* () {
+      // Grok's shape: `session/set_model` works, but `--reasoning-effort` is
+      // read once on the spawn line. A model-only change must not cost a
+      // restart, and an effort change must.
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          sessionModelOptionsSwitch: "unsupported",
+          threadModelSelection: {
+            instanceId: ProviderInstanceId.make("grok"),
+            model: "grok-4.5",
+          },
+        }),
+      );
+      const now = "2026-01-01T00:00:00.000Z";
+
+      const startTurn = (suffix: string, model: string, effort: string) =>
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make(`cmd-turn-start-grok-${suffix}`),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId(`user-message-grok-${suffix}`),
+            role: "user",
+            text: `grok turn ${suffix}`,
+            attachments: [],
+          },
+          modelSelection: createModelSelection(ProviderInstanceId.make("grok"), model, [
+            { id: "reasoningEffort", value: effort },
+          ]),
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "approval-required",
+          createdAt: now,
+        });
+
+      yield* startTurn("1", "grok-4.5", "low");
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 1));
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 1));
+
+      yield* startTurn("2", "grok-4.6", "low");
+      yield* Effect.promise(() => waitFor(() => harness.sendTurn.mock.calls.length === 2));
+      expect(harness.startSession.mock.calls.length).toBe(1);
+      expect(harness.sendTurn.mock.calls[1]?.[0]).toMatchObject({
+        modelSelection: { model: "grok-4.6" },
+      });
+
+      yield* startTurn("3", "grok-4.6", "high");
+      yield* Effect.promise(() => waitFor(() => harness.startSession.mock.calls.length === 2));
+      expect(harness.startSession.mock.calls[1]?.[1]).toMatchObject({
+        modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-4.6", [
+          { id: "reasoningEffort", value: "high" },
+        ]),
+      });
+    }),
+  );
 
   it("restarts the provider session when runtime mode is updated on the thread", async () => {
     const harness = await createHarness();

@@ -30,6 +30,14 @@ export interface ProviderAdapterCapabilities {
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /**
+   * Declares whether a live session can adopt new model *options* — Claude's
+   * thinking effort, Grok's reasoning effort. Providers that bind them on the
+   * spawn line report `"unsupported"`, and the command reactor restarts the
+   * session so the new value actually reaches the agent instead of showing in
+   * the picker and nowhere else. Omitted means the session can adopt them.
+   */
+  readonly sessionModelOptionsSwitch?: ProviderSessionModelSwitchMode;
 }
 
 export interface ProviderThreadTurnSnapshot {

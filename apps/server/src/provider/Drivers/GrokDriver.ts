@@ -1,3 +1,16 @@
+/**
+ * GrokDriver — `ProviderDriver` for the Grok Build CLI (`grok`).
+ *
+ * Grok speaks ACP over `grok agent stdio`. The model catalog, each model's
+ * reasoning-effort menu, and the sign-in state all come from one ACP startup
+ * during the managed provider status check.
+ *
+ * Text generation runs the same ACP transport inside Grok's `read-only`
+ * sandbox, because Grok answers a one-shot prompt by inspecting the repo
+ * first and a headless caller has to approve those tool calls to get a reply.
+ *
+ * @module provider/Drivers/GrokDriver
+ */
 import { GrokSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -28,8 +41,7 @@ import {
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
-  makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
+  makePackageManagedProviderMaintenanceResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
 import {
@@ -40,12 +52,15 @@ import {
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("grok");
-const UPDATE = makeStaticProviderMaintenanceResolver(
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider: DRIVER_KIND,
-    packageName: null,
-  }),
-);
+// Grok Build ships as a global npm package with a postinstall that fetches the
+// platform binary, the same shape as Codex and Claude Code — so it gets the
+// same update advisory and one-click update instead of a manual-only card.
+const UPDATE = makePackageManagedProviderMaintenanceResolver({
+  provider: DRIVER_KIND,
+  npmPackageName: "@xai-official/grok",
+  homebrewFormula: null,
+  nativeUpdate: null,
+});
 
 export type GrokDriverEnv =
   | BackgroundPolicy.BackgroundPolicy

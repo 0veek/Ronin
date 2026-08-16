@@ -1463,7 +1463,12 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "in-session" },
+      capabilities: {
+        sessionModelSwitch: "in-session",
+        // `--reasoning-effort` is a spawn-line flag and Grok Build implements
+        // no `session/set_config_option`, so only a restart changes it.
+        sessionModelOptionsSwitch: "unsupported",
+      },
       startSession,
       sendTurn,
       interruptTurn,

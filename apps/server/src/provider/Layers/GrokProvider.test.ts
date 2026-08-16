@@ -1,3 +1,8 @@
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import * as NodeURL from "node:url";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -13,6 +18,35 @@ import {
 } from "./GrokProvider.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
+
+const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
+const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
+
+/**
+ * A `grok` stand-in that answers `--version` itself and hands everything else
+ * to the ACP mock agent, which is the same two-step the real probe walks.
+ */
+async function makeMockGrokCli(extraEnv?: Record<string, string>) {
+  const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-probe-mock-"));
+  const cliPath = NodePath.join(dir, "fake-grok.sh");
+  const envExports = Object.entries(extraEnv ?? {})
+    .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
+    .join("\n");
+  await NodeFSP.writeFile(
+    cliPath,
+    `#!/bin/sh
+${envExports}
+if [ "$1" = "--version" ]; then
+  printf "grok 1.0.4\\n"
+  exit 0
+fi
+exec ${JSON.stringify(process.execPath)} ${JSON.stringify(mockAgentPath)} "$@"
+`,
+    "utf8",
+  );
+  await NodeFSP.chmod(cliPath, 0o755);
+  return cliPath;
+}
 
 function reasoningEffortDescriptor(model: { capabilities?: unknown } | undefined) {
   const descriptors = (
@@ -140,7 +174,9 @@ describe("buildInitialGrokProviderSnapshot", () => {
       expect(snapshot.status).toBe("warning");
       expect(snapshot.version).toBeNull();
       expect(snapshot.message).toContain("Checking Grok");
-      expect(snapshot.requiresNewThreadForModelChange).toBe(true);
+      // Grok Build implements `session/set_model`, so a thread can change
+      // models without being started over.
+      expect(snapshot.requiresNewThreadForModelChange).toBeUndefined();
       // A single placeholder, not a catalog: ACP discovery supplies the real
       // list once the CLI answers. Hardcoding more is what kept retired models
       // (Grok Build 0.1, Grok 4.3) in the picker.
@@ -231,6 +267,39 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.installed).toBe(true);
       expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6"]);
       expect(snapshot.message).toContain("ACP startup failed");
+    }),
+  );
+
+  it.effect("reports the credential the CLI authenticated with", () =>
+    Effect.gen(function* () {
+      const cliPath = yield* Effect.promise(() => makeMockGrokCli());
+      const snapshot = yield* checkGrokProviderStatus(
+        decodeGrokSettings({ enabled: true, binaryPath: cliPath }),
+      );
+
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.version).toBe("1.0.4");
+      expect(snapshot.auth).toEqual({ status: "authenticated", type: "CLI login" });
+      expect(snapshot.models.map((model) => model.slug)).toEqual(["grok-4.6", "grok-4.5"]);
+    }),
+  );
+
+  it.effect("reads an interactive-only auth advertisement as signed out", () =>
+    Effect.gen(function* () {
+      const cliPath = yield* Effect.promise(() =>
+        makeMockGrokCli({ T3_MOCK_ACP_AUTH_METHODS: "grok.com" }),
+      );
+      // Signing out is not the same failure as a broken install, and the card
+      // has to say which one it is rather than sending the user to the logs.
+      const snapshot = yield* checkGrokProviderStatus(
+        decodeGrokSettings({ enabled: true, binaryPath: cliPath }),
+      );
+
+      expect(snapshot.status).toBe("error");
+      expect(snapshot.installed).toBe(true);
+      expect(snapshot.auth).toEqual({ status: "unauthenticated" });
+      expect(snapshot.message).toContain("grok login");
+      expect(snapshot.message).not.toContain("Check server logs");
     }),
   );
 });

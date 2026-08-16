@@ -1,3 +1,13 @@
+/**
+ * GrokProvider — snapshot for the Grok Build CLI (`grok`).
+ *
+ * One ACP startup answers three questions at once: whether the CLI runs,
+ * whether it is signed in, and which models it advertises. The model list and
+ * each model's reasoning-effort menu come from that probe rather than a
+ * hand-maintained catalog.
+ *
+ * @module provider/Layers/GrokProvider
+ */
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   type GrokSettings,
@@ -6,6 +16,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import type * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Crypto from "effect/Crypto";
@@ -32,15 +43,19 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
-import { makeGrokAcpRuntime, resolveGrokAcpBaseModelId } from "../acp/GrokAcpSupport.ts";
+import {
+  describeGrokAuthMethod,
+  isGrokCredentialsMissingError,
+  makeGrokAcpRuntime,
+  resolveGrokAcpAuthMethodId,
+  resolveGrokAcpBaseModelId,
+} from "../acp/GrokAcpSupport.ts";
 
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
-  badgeLabel: "Early Access",
   showInteractionModeToggle: false,
-  requiresNewThreadForModelChange: true,
 } as const;
 /**
  * Grok exposes reasoning effort as a process-start CLI flag
@@ -223,10 +238,27 @@ export function buildGrokDiscoveredModelsFromSessionModelState(
     .filter((model): model is ServerProviderModel => model !== undefined);
 }
 
-const discoverGrokModelsViaAcp = (
+/**
+ * What one ACP startup told us: the models the CLI advertises, or that nobody
+ * is signed in. Grok authenticates during `initialize`, so the same probe that
+ * reads the model list is also the only place the sign-in state is observable.
+ */
+type GrokAcpProbe =
+  | {
+      readonly _tag: "ready";
+      readonly models: ReadonlyArray<ServerProviderModel>;
+      readonly authLabel: string | undefined;
+    }
+  | { readonly _tag: "unauthenticated"; readonly detail: string };
+
+const probeGrokViaAcp = (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
-) =>
+): Effect.Effect<
+  GrokAcpProbe,
+  EffectAcpErrors.AcpError,
+  ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto
+> =>
   Effect.gen(function* () {
     const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const acp = yield* makeGrokAcpRuntime({
@@ -238,8 +270,25 @@ const discoverGrokModelsViaAcp = (
       clientInfo: { name: "ronin-provider-probe", version: "0.0.0" },
     });
     const started = yield* acp.start();
-    return buildGrokDiscoveredModelsFromSessionModelState(started.sessionSetupResult.models);
-  }).pipe(Effect.scoped);
+    // Startup already authenticated with this method; resolving it again names
+    // the credential the card shows without a second round trip.
+    const authMethodId = yield* resolveGrokAcpAuthMethodId(
+      started.initializeResult,
+      environment,
+    ).pipe(Effect.orElseSucceed(() => undefined));
+    return {
+      _tag: "ready",
+      models: buildGrokDiscoveredModelsFromSessionModelState(started.sessionSetupResult.models),
+      authLabel: authMethodId ? describeGrokAuthMethod(authMethodId) : undefined,
+    } as const;
+  }).pipe(
+    Effect.scoped,
+    Effect.catch((cause) =>
+      isGrokCredentialsMissingError(cause)
+        ? Effect.succeed({ _tag: "unauthenticated", detail: cause.message } as const)
+        : Effect.fail(cause),
+    ),
+  );
 
 const runGrokVersionCommand = (
   grokSettings: GrokSettings,
@@ -352,7 +401,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     });
   }
 
-  const discoveryExit = yield* discoverGrokModelsViaAcp(grokSettings, environment).pipe(
+  const discoveryExit = yield* probeGrokViaAcp(grokSettings, environment).pipe(
     Effect.timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
     Effect.exit,
   );
@@ -392,10 +441,25 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       },
     });
   }
-  const discoveredModels = discoveryExit.value.value;
+  const probe = discoveryExit.value.value;
+  if (probe._tag === "unauthenticated") {
+    return buildServerProvider({
+      presentation: GROK_PRESENTATION,
+      enabled: grokSettings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: true,
+        version,
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: probe.detail,
+      },
+    });
+  }
   const models =
-    discoveredModels.length > 0
-      ? grokModelsFromSettings(grokSettings.customModels, discoveredModels)
+    probe.models.length > 0
+      ? grokModelsFromSettings(grokSettings.customModels, probe.models)
       : fallbackModels;
 
   return buildServerProvider({
@@ -407,7 +471,9 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       installed: true,
       version,
       status: "ready",
-      auth: { status: "unknown" },
+      // Startup completed the ACP `authenticate` handshake, so the CLI holds a
+      // credential Ronin can actually run turns with.
+      auth: { status: "authenticated", ...(probe.authLabel ? { type: probe.authLabel } : {}) },
     },
   });
 });

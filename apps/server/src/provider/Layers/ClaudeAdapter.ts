@@ -4699,6 +4699,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      // Thinking effort is read when the SDK query is created, so a live
+      // session keeps the level it started on.
+      sessionModelOptionsSwitch: "unsupported",
     },
     startSession,
     sendTurn,

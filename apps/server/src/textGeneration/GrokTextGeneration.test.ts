@@ -52,7 +52,9 @@ function makeAcpGrokWrapper(dir: string, env: Record<string, string>): string {
       '  printf "%s\\n" "unexpected args: $*" >&2',
       "  exit 11",
       "fi",
-      `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(mockAgentPath)}`,
+      // Forward the spawn line: the mock reads `-m` from it the way Grok does,
+      // so a session opens on the requested model and needs no set_model.
+      `exec ${JSON.stringify(process.execPath)} ${JSON.stringify(mockAgentPath)} "$@"`,
       "",
     ].join("\n"),
     "utf8",
@@ -113,7 +115,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
             branch: "feature/grok",
             stagedSummary: "M apps/server/src/provider/Drivers/GrokDriver.ts",
             stagedPatch: "diff --git a/.../GrokDriver.ts b/.../GrokDriver.ts",
-            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-mock-alt"),
+            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-4.5"),
           });
 
           expect(generated.subject).toBe("Add Grok provider");
@@ -130,7 +132,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
           // see applyGrokAcpModelSelection.
           expect(requests.some((request) => request.method === "session/set_model")).toBe(false);
           const spawnArgs = NodeFS.readFileSync(spawnArgsLogPath, "utf8").trim();
-          expect(spawnArgs).toContain("-m grok-mock-alt");
+          expect(spawnArgs).toContain("-m grok-4.5");
           // Grok answers one-shot prompts with an agentic tool loop, and an
           // unanswered permission request cancels the turn mid-preamble.
           // Approve them, bounded by the read-only sandbox.
@@ -153,7 +155,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
           const generated = yield* textGeneration.generateThreadTitle({
             cwd: process.cwd(),
             message: "the lint job is red",
-            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-mock-alt"),
+            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-4.5"),
           });
           expect(generated.title).toBe("Investigate failing CI");
         }),
@@ -172,7 +174,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
         textGeneration.generateBranchName({
           cwd: process.cwd(),
           message: "wire up grok",
-          modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
+          modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-4.6"),
         }),
       );
       expect(error._tag).toBe("TextGenerationError");
@@ -191,7 +193,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
             textGeneration.generateThreadTitle({
               cwd: process.cwd(),
               message: "anything",
-              modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
+              modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-4.6"),
             }),
           );
           expect(error._tag).toBe("TextGenerationError");
@@ -217,7 +219,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
             commitSummary: "feat: add grok provider",
             diffSummary: "M apps/server/src/provider/Drivers/GrokDriver.ts",
             diffPatch: "diff --git a/.../GrokDriver.ts b/.../GrokDriver.ts",
-            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
+            modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-4.6"),
           });
 
           expect(generated.title).toBe("feat(grok): wire up session/set_model");
@@ -237,7 +239,7 @@ it.layer(GrokTextGenerationTestLayer)("GrokTextGeneration", (it) => {
             textGeneration.generateThreadTitle({
               cwd: process.cwd(),
               message: "anything",
-              modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-build"),
+              modelSelection: createModelSelection(ProviderInstanceId.make("grok"), "grok-4.6"),
             }),
           );
           expect(error._tag).toBe("TextGenerationError");

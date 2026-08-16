@@ -878,8 +878,8 @@ const make = Effect.gen(function* () {
     if (existingSessionThreadId) {
       const runtimeModeChanged = thread.runtimeMode !== thread.session?.runtimeMode;
       const cwdChanged = effectiveCwd !== activeSession?.cwd;
-      const sessionModelSwitch = (yield* providerService.getCapabilities(desiredInstanceId))
-        .sessionModelSwitch;
+      const desiredCapabilities = yield* providerService.getCapabilities(desiredInstanceId);
+      const sessionModelSwitch = desiredCapabilities.sessionModelSwitch;
       const modelChanged =
         requestedModelSelection !== undefined &&
         requestedModelSelection.model !== activeSession?.model;
@@ -888,17 +888,21 @@ const make = Effect.gen(function* () {
         activeSession?.providerInstanceId !== requestedModelSelection.instanceId;
       const shouldRestartForModelChange = modelChanged && sessionModelSwitch === "unsupported";
       const previousModelSelection = threadModelSelections.get(threadId);
-      const shouldRestartForModelSelectionChange =
-        preferredProvider === "claudeAgent" &&
+      // Options a provider reads once, at spawn — Claude's thinking effort,
+      // Grok's `--reasoning-effort` — only reach the agent through a restart.
+      // The model is compared separately above, so a provider that switches
+      // models in session keeps doing that without a needless restart.
+      const shouldRestartForModelOptionsChange =
+        desiredCapabilities.sessionModelOptionsSwitch === "unsupported" &&
         requestedModelSelection !== undefined &&
-        !Equal.equals(previousModelSelection, requestedModelSelection);
+        !Equal.equals(previousModelSelection?.options, requestedModelSelection.options);
 
       if (
         !runtimeModeChanged &&
         !cwdChanged &&
         !instanceChanged &&
         !shouldRestartForModelChange &&
-        !shouldRestartForModelSelectionChange
+        !shouldRestartForModelOptionsChange
       ) {
         return {
           sessionThreadId: existingSessionThreadId,
@@ -946,7 +950,7 @@ const make = Effect.gen(function* () {
         modelChanged,
         instanceChanged,
         shouldRestartForModelChange,
-        shouldRestartForModelSelectionChange,
+        shouldRestartForModelOptionsChange,
         hasResumeCursor: resumeCursor !== undefined,
       });
       const restartedSession = yield* startProviderSession(
