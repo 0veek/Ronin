@@ -15,4 +15,23 @@ Turn the provider on, then pick **Antigravity** in the model picker. Models come
 
 A custom model has to be an id Antigravity knows, the left-hand column of `agy models` — `gemini-3.7-flash-high`, not `Gemini 3.7 Flash`.
 
-Print mode cannot pause for interactive approvals. Use Full access if a turn needs to run tools without asking.
+## Access
+
+Print mode cannot pause to ask, so Antigravity answers its own permission prompts:
+
+| Access                  | What Antigravity does                                               |
+| :---------------------- | :------------------------------------------------------------------ |
+| Full access, Auto       | Runs every tool without asking.                                     |
+| Auto-accept edits       | Applies edits; commands that would need approval are declined.      |
+| Supervised              | Declines anything that needs approval, and says so in the work log. |
+| Plan (interaction mode) | Plans without making changes.                                       |
+
+A supervised turn can therefore end with the agent explaining what it was not allowed to do rather than doing it. Use Full access when a turn needs to run tools unattended.
+
+## Continuity
+
+Each turn runs a fresh `agy` process, and Ronin reconnects it to the conversation the thread started, so follow-up messages keep the earlier context. Switching model requires a new thread — Antigravity fixes the model when the conversation opens.
+
+## Skills
+
+Antigravity reads workspace customizations from `.agents/` at your repository root and machine-local ones from `~/.gemini/config/`. Skills in those places show up in Ronin's skills list for this provider.

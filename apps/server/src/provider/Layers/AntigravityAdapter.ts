@@ -1,9 +1,11 @@
 /**
  * AntigravityAdapter — Google Antigravity CLI (`agy -p`) print/stdio runtime.
  *
- * Synara's implementation polls hook files and injects a host gateway. Ronin
- * keeps the same CLI contract (`agy --print-timeout -p`) and maps stdout /
- * process lifetime onto the shared adapter event stream.
+ * Each turn is one `agy` process. The CLI is driven in its NDJSON mode
+ * (`--output-format stream-json`) rather than plain text, because that is the
+ * only place it names the conversation it just ran: without that id every
+ * follow-up would have to open a fresh `--new-project` and answer with no
+ * memory of the turn before it. See `AntigravityStream` for the protocol.
  *
  * @module AntigravityAdapter
  */
@@ -14,10 +16,14 @@ import {
   type AntigravitySettings,
   DEFAULT_MODEL_BY_PROVIDER,
   EventId,
+  type ModelSelection,
+  type ProviderInteractionMode,
   type ProviderRuntimeEvent,
   type ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeItemId,
+  type RuntimeMode,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -37,6 +43,7 @@ import {
   ProviderAdapterValidationError,
 } from "../Errors.ts";
 import { type AntigravityAdapterShape } from "../Services/AntigravityAdapter.ts";
+import { type AntigravityStreamEvent, parseAntigravityStreamLine } from "./AntigravityStream.ts";
 
 const PROVIDER = ProviderDriverKind.make("antigravity");
 const DEFAULT_MODEL = DEFAULT_MODEL_BY_PROVIDER[PROVIDER] ?? "gemini-3.5-flash-medium";
@@ -99,6 +106,50 @@ function messageFromCause(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message.trim() ? cause.message : fallback;
 }
 
+/**
+ * Translates the thread's access setting into the CLI's own vocabulary.
+ *
+ * Print mode cannot stop to ask, so `agy` declines anything that would need a
+ * prompt. That makes Supervised honest rather than useless: the agent reports
+ * what it was not allowed to do instead of silently doing it, which is what
+ * passing `--dangerously-skip-permissions` on every turn used to mean.
+ */
+export function antigravityAccessArgs(input: {
+  readonly runtimeMode: RuntimeMode | undefined;
+  readonly interactionMode: ProviderInteractionMode | undefined;
+}): ReadonlyArray<string> {
+  if (input.interactionMode === "plan") return ["--mode", "plan"];
+  switch (input.runtimeMode) {
+    case "approval-required":
+      return [];
+    case "auto-accept-edits":
+      return ["--mode", "accept-edits"];
+    default:
+      return ["--dangerously-skip-permissions"];
+  }
+}
+
+export function antigravityTurnArgs(input: {
+  readonly conversationId: string | undefined;
+  readonly model: string;
+  readonly prompt: string;
+  readonly runtimeMode: RuntimeMode | undefined;
+  readonly interactionMode: ProviderInteractionMode | undefined;
+}): ReadonlyArray<string> {
+  return [
+    ...(input.conversationId ? ["--conversation", input.conversationId] : ["--new-project"]),
+    ...antigravityAccessArgs(input),
+    "--model",
+    input.model,
+    "--output-format",
+    "stream-json",
+    "--print-timeout",
+    PRINT_TIMEOUT,
+    "-p",
+    input.prompt,
+  ];
+}
+
 export function makeAntigravityAdapter(
   settings: AntigravitySettings,
   options?: AntigravityAdapterLiveOptions,
@@ -134,6 +185,14 @@ export function makeAntigravityAdapter(
     const offerRuntimeEvent = (event: ProviderRuntimeEvent) =>
       PubSub.publish(runtimeEventPubSub, event).pipe(Effect.asVoid);
 
+    /**
+     * A thread carries one model selection, and it belongs to whichever
+     * instance the user picked. Handing another instance's slug to this CLI
+     * would spend the turn on `invalid model selection`.
+     */
+    const selectionForThisInstance = (selection: ModelSelection | undefined) =>
+      selection?.instanceId === boundInstanceId ? selection : undefined;
+
     const requireSession = (threadId: ThreadId) => {
       const ctx = sessions.get(threadId);
       return ctx && !ctx.stopped
@@ -157,7 +216,9 @@ export function makeAntigravityAdapter(
         }
         const now = yield* nowIso;
         const resume = parseAntigravityResume(input.resumeCursor);
-        const model = resolveAntigravityModel(input.modelSelection?.model);
+        const model = resolveAntigravityModel(
+          selectionForThisInstance(input.modelSelection)?.model,
+        );
         const session: ProviderSession = {
           provider: PROVIDER,
           providerInstanceId: boundInstanceId,
@@ -221,19 +282,17 @@ export function makeAntigravityAdapter(
           });
         }
         const turnId = TurnId.make(yield* randomUUIDv4);
-        const model = resolveAntigravityModel(input.modelSelection?.model ?? ctx.session.model);
+        const modelSelection = selectionForThisInstance(input.modelSelection);
+        const model = resolveAntigravityModel(modelSelection?.model ?? ctx.session.model);
         const cwd = ctx.session.cwd ?? serverConfig.cwd;
         const command = settings.binaryPath || "agy";
-        const args = [
-          ...(ctx.conversationId ? ["--conversation", ctx.conversationId] : ["--new-project"]),
-          "--dangerously-skip-permissions",
-          "--model",
+        const args = antigravityTurnArgs({
+          conversationId: ctx.conversationId,
           model,
-          "--print-timeout",
-          PRINT_TIMEOUT,
-          "-p",
           prompt,
-        ];
+          runtimeMode: ctx.session.runtimeMode,
+          interactionMode: input.interactionMode,
+        });
         ctx.activeTurnId = turnId;
         ctx.turns.push({ id: turnId, items: [] });
         ctx.session = {
@@ -286,35 +345,157 @@ export function makeAntigravityAdapter(
         child.stderr?.on("data", (chunk: string) => {
           stderrTail = `${stderrTail}${chunk}`.slice(-STDERR_CAPTURE_LIMIT);
         });
-        child.stdout?.setEncoding("utf8");
-        child.stdout?.on("data", (chunk: string) => {
-          if (!chunk.trim()) return;
-          void runDetached(
-            makeEventStamp().pipe(
-              Effect.flatMap((stamp) =>
-                offerRuntimeEvent({
-                  type: "content.delta",
-                  ...stamp,
+
+        const openToolSteps = new Set<number>();
+        let turnFailure: string | undefined;
+        let sawAssistantText = false;
+        const handleStreamEvent = (event: AntigravityStreamEvent) =>
+          Effect.gen(function* () {
+            switch (event.kind) {
+              case "init": {
+                if (ctx.conversationId === event.conversationId) return;
+                ctx.conversationId = event.conversationId;
+                ctx.session = {
+                  ...ctx.session,
+                  resumeCursor: {
+                    schemaVersion: ANTIGRAVITY_RESUME_VERSION,
+                    conversationId: event.conversationId,
+                  },
+                  updatedAt: yield* nowIso,
+                };
+                yield* offerRuntimeEvent({
+                  type: "thread.started",
+                  ...(yield* makeEventStamp()),
                   provider: PROVIDER,
                   threadId: input.threadId,
                   turnId,
-                  payload: { streamKind: "assistant_text", delta: chunk },
-                }),
-              ),
-            ),
-          );
+                  payload: { providerThreadId: event.conversationId },
+                });
+                return;
+              }
+              case "text": {
+                sawAssistantText = true;
+                yield* offerRuntimeEvent({
+                  type: "content.delta",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: { streamKind: "assistant_text", delta: event.delta },
+                });
+                return;
+              }
+              case "tool": {
+                const itemId = RuntimeItemId.make(`${turnId}:${String(event.stepIndex)}`);
+                const payloadFor = (
+                  status: "inProgress" | "completed" | "failed" | "declined",
+                ) => ({
+                  itemType: event.itemType,
+                  status,
+                  title: event.title,
+                  ...(event.detail ? { detail: event.detail } : {}),
+                  data: event.data,
+                });
+                const emit = (
+                  type: "item.started" | "item.updated" | "item.completed",
+                  status: "inProgress" | "completed" | "failed" | "declined",
+                ) =>
+                  makeEventStamp().pipe(
+                    Effect.flatMap((stamp) =>
+                      offerRuntimeEvent({
+                        type,
+                        ...stamp,
+                        provider: PROVIDER,
+                        threadId: input.threadId,
+                        turnId,
+                        itemId,
+                        payload: payloadFor(status),
+                      }),
+                    ),
+                  );
+
+                // A tool the CLI opened and closed between two reads still needs
+                // its opening event, or the timeline shows a result for work it
+                // never saw start.
+                if (!openToolSteps.has(event.stepIndex)) {
+                  openToolSteps.add(event.stepIndex);
+                  yield* emit("item.started", "inProgress");
+                } else if (!event.completed) {
+                  yield* emit("item.updated", "inProgress");
+                }
+                if (event.completed) {
+                  openToolSteps.delete(event.stepIndex);
+                  yield* emit("item.completed", event.status ?? "completed");
+                }
+                return;
+              }
+              case "result": {
+                if (!event.succeeded) turnFailure = event.message ?? "Antigravity turn failed.";
+                if (event.usage) {
+                  yield* offerRuntimeEvent({
+                    type: "thread.token-usage.updated",
+                    ...(yield* makeEventStamp()),
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    turnId,
+                    payload: { usage: event.usage },
+                  });
+                }
+              }
+            }
+          });
+
+        // stdout callbacks fire in order but their effects do not, so each batch
+        // waits on the one before it. Interleaved text deltas would rewrite the
+        // assistant's reply into nonsense.
+        let pending: Promise<unknown> = Promise.resolve();
+        const enqueue = (effect: Effect.Effect<void, ProviderAdapterRequestError>) => {
+          pending = pending.then(() => runDetached(effect)).catch(() => undefined);
+        };
+
+        let stdoutBuffer = "";
+        child.stdout?.setEncoding("utf8");
+        child.stdout?.on("data", (chunk: string) => {
+          stdoutBuffer += chunk;
+          const lines = stdoutBuffer.split("\n");
+          stdoutBuffer = lines.pop() ?? "";
+          const events = lines
+            .map(parseAntigravityStreamLine)
+            .filter((event): event is AntigravityStreamEvent => event !== null);
+          if (events.length === 0) return;
+          enqueue(Effect.forEach(events, handleStreamEvent, { discard: true }));
         });
+
         child.once("close", (code) => {
           if (sessions.get(input.threadId) !== ctx || ctx.activeTurnId !== turnId) {
             return;
           }
           ctx.activeProcess = undefined;
           ctx.activeTurnId = undefined;
-          void runDetached(
+          // The CLI does not always end its last line, and that line is usually
+          // the `result` this turn is judged by.
+          const trailing = parseAntigravityStreamLine(stdoutBuffer);
+          stdoutBuffer = "";
+          if (trailing) enqueue(handleStreamEvent(trailing));
+          enqueue(
             Effect.gen(function* () {
               const updatedAt = yield* nowIso;
               const { activeTurnId: _activeTurnId, ...readySession } = ctx.session;
               ctx.session = { ...readySession, status: "ready", updatedAt };
+              const failed = code !== 0 || turnFailure !== undefined;
+              // A run that answers with nothing at all has a reason, and the CLI
+              // only ever writes it to stderr — a supervised turn whose tools
+              // were auto-declined otherwise reads as a blank success.
+              if (!failed && !sawAssistantText && stderrTail.trim()) {
+                yield* offerRuntimeEvent({
+                  type: "runtime.warning",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: { message: stderrTail.trim().slice(0, 500) },
+                });
+              }
               yield* offerRuntimeEvent({
                 type: "turn.completed",
                 ...(yield* makeEventStamp()),
@@ -322,24 +503,39 @@ export function makeAntigravityAdapter(
                 threadId: input.threadId,
                 turnId,
                 payload: {
-                  state: code === 0 ? "completed" : "failed",
-                  ...(code === 0
-                    ? {}
-                    : {
-                        errorMessage: [
-                          `Antigravity CLI exited with code ${String(code)}.`,
-                          stderrTail.trim(),
-                        ]
-                          .filter(Boolean)
-                          .join(" "),
-                      }),
+                  state: failed ? "failed" : "completed",
+                  ...(failed
+                    ? {
+                        errorMessage:
+                          [
+                            turnFailure ?? `Antigravity CLI exited with code ${String(code)}.`,
+                            stderrTail.trim(),
+                          ]
+                            .filter(Boolean)
+                            .join(" ") || "Antigravity turn failed.",
+                      }
+                    : {}),
                 },
               });
             }),
           );
         });
 
-        return { threadId: input.threadId, turnId };
+        return {
+          threadId: input.threadId,
+          turnId,
+          // Only known once a turn has run: the id lands in the ledger from the
+          // next turn on, which is what lets a restarted server resume instead
+          // of opening a new conversation.
+          ...(ctx.conversationId
+            ? {
+                resumeCursor: {
+                  schemaVersion: ANTIGRAVITY_RESUME_VERSION,
+                  conversationId: ctx.conversationId,
+                },
+              }
+            : {}),
+        };
       });
 
     const interruptTurn: AntigravityAdapterShape["interruptTurn"] = (threadId, turnId) =>

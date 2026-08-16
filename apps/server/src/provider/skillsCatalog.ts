@@ -303,8 +303,10 @@ function homeRootsForOrigin(
       return [NodePath.join(input.homeDir, ".config", "opencode", "skills")];
     case "kilo":
       return [NodePath.join(input.homeDir, ".kilo", "skills")];
+    // Antigravity's machine-local customizations live under `~/.gemini/config`,
+    // not beside the CLI's own state in `~/.gemini/antigravity`.
     case "antigravity":
-      return [NodePath.join(input.homeDir, ".gemini", "antigravity", "skills")];
+      return [NodePath.join(input.homeDir, ".gemini", "config", "skills")];
     case "droid":
       return [NodePath.join(input.homeDir, ".factory", "skills")];
     case "pi":
@@ -330,8 +332,11 @@ function projectRootNamesForOrigin(origin: (typeof HOME_ORIGIN_ORDER)[number]): 
       return [".opencode"];
     case "kilo":
       return [".kilo"];
+    // Workspace customizations come from `.agents`, which Antigravity walks up
+    // from the cwd. `.gemini` in a repo is the CLI's artifact directory, and
+    // nothing there is ever loaded as a skill.
     case "antigravity":
-      return [".gemini"];
+      return [".agents"];
     case "droid":
       return [".factory"];
     case "pi":
