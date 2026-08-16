@@ -35,6 +35,9 @@ export function formatProviderSkillInstallSource(
   if (normalizedScope === "system") {
     return "System";
   }
+  if (normalizedScope === "bundled") {
+    return "Built-in";
+  }
   if (
     normalizedScope === "project" ||
     normalizedScope === "workspace" ||

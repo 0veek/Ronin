@@ -30,6 +30,7 @@ export interface SettingsSkillSection {
 
 const SHARED_SKILLS_SECTION = "shared";
 const PERSONAL_ORIGIN = "personal";
+export const BUNDLED_SKILLS_SECTION = "bundled";
 export const ORIGIN_SECTION_ORDER = [
   "ronin",
   "codex",
@@ -39,12 +40,15 @@ export const ORIGIN_SECTION_ORDER = [
   "opencode",
   "agents",
   "project",
+  BUNDLED_SKILLS_SECTION,
 ] as const;
 
 export function skillOriginInfo(scope: string | undefined): SkillOriginInfo {
   switch (scope) {
     case "ronin":
       return { label: "Ronin", provider: null };
+    case BUNDLED_SKILLS_SECTION:
+      return { label: "Built-in", provider: null };
     case "codex":
       return { label: DRIVER_LABEL.codex, provider: ProviderDriverKind.make("codex") };
     case "claude":
@@ -80,6 +84,9 @@ function originRank(origin: string): number {
 function sectionTitle(section: string): string {
   if (section === SHARED_SKILLS_SECTION) {
     return "Shared skills";
+  }
+  if (section === BUNDLED_SKILLS_SECTION) {
+    return "Built-in skills";
   }
   return `From ${skillOriginInfo(section).label}`;
 }

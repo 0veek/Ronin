@@ -8,8 +8,9 @@ import {
   mapCodexModelCapabilities,
   registerCodexPortableSkillRoot,
 } from "./CodexProvider.ts";
+import { resolveBundledSkillsDir } from "../skillsCatalog.ts";
 
-it.effect("registers the Ronin skills directory as a Codex extra root", () =>
+it.effect("registers the Ronin and built-in skill directories as Codex extra roots", () =>
   Effect.gen(function* () {
     const calls: Array<{ readonly method: string; readonly payload: unknown }> = [];
     const client = {
@@ -21,10 +22,13 @@ it.effect("registers the Ronin skills directory as a Codex extra root", () =>
 
     yield* registerCodexPortableSkillRoot(client, "/home/test");
 
+    const bundledSkillsDir = yield* Effect.promise(() => resolveBundledSkillsDir());
     assert.deepStrictEqual(calls, [
       {
         method: "skills/extraRoots/set",
-        payload: { extraRoots: ["/home/test/.ronin/skills"] },
+        payload: {
+          extraRoots: ["/home/test/.ronin/skills", ...(bundledSkillsDir ? [bundledSkillsDir] : [])],
+        },
       },
     ]);
   }),

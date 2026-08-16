@@ -50,11 +50,51 @@ describe("discoverSkillsCatalog", () => {
       homeDir,
       roninBaseDir,
       includeDuplicateOrigins: true,
+      bundledSkillsDir: null,
     });
 
     expect(skills.map((skill) => skill.name).sort()).toEqual(["imagen", "portable"]);
     expect(skills.find((skill) => skill.name === "portable")?.scope).toBe("ronin");
     expect(skills.find((skill) => skill.name === "imagen")?.scope).toBe("codex");
+  });
+
+  it("adds built-in packs and lets a user copy shadow them", async () => {
+    const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-skills-"));
+    const homeDir = NodePath.join(tempDir, "home");
+    const roninBaseDir = NodePath.join(tempDir, "t3");
+    const bundledSkillsDir = NodePath.join(tempDir, "bundled");
+    await writeSkill(NodePath.join(bundledSkillsDir, "pack"), "tdd", "Built-in TDD.");
+    await writeSkill(NodePath.join(bundledSkillsDir, "pack"), "triage", "Built-in triage.");
+    await writeSkill(roninSkillsDir(homeDir), "tdd", "My own TDD.");
+
+    const skills = await discoverSkillsCatalog({
+      homeDir,
+      roninBaseDir,
+      bundledSkillsDir,
+    });
+
+    expect(skills.map((skill) => `${skill.name}:${skill.scope}`).sort()).toEqual([
+      "tdd:ronin",
+      "triage:bundled",
+    ]);
+  });
+
+  it("reports both copies of a shadowed built-in skill for the settings list", async () => {
+    const tempDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-skills-"));
+    const homeDir = NodePath.join(tempDir, "home");
+    const roninBaseDir = NodePath.join(tempDir, "t3");
+    const bundledSkillsDir = NodePath.join(tempDir, "bundled");
+    await writeSkill(NodePath.join(bundledSkillsDir, "pack"), "tdd", "Built-in TDD.");
+    await writeSkill(roninSkillsDir(homeDir), "tdd", "My own TDD.");
+
+    const skills = await discoverSkillsCatalog({
+      homeDir,
+      roninBaseDir,
+      includeDuplicateOrigins: true,
+      bundledSkillsDir,
+    });
+
+    expect(skills.map((skill) => skill.scope).sort()).toEqual(["bundled", "ronin"]);
   });
 });
 

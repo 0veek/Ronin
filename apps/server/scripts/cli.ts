@@ -172,6 +172,15 @@ const buildCmd = Command.make(
       } else {
         yield* Effect.logWarning("[cli] Web dist not found — skipping client bundle.");
       }
+
+      // Built-in skill packs ride along next to the bundled entrypoint, which
+      // is where `resolveBundledSkillsDir` looks first.
+      const bundledSkills = path.join(serverDir, "skills");
+      if (!(yield* fs.exists(bundledSkills))) {
+        return yield* new ServerCliBuildAssetMissingError({ assetPath: bundledSkills });
+      }
+      yield* fs.copy(bundledSkills, path.join(serverDir, "dist/skills"));
+      yield* Effect.log("[cli] Bundled skill packs into dist/skills");
     }),
 ).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));
 
@@ -227,6 +236,7 @@ const publishCmd = Command.make(
         "dist/bin.mjs",
         "dist/service-launcher.mjs",
         "dist/client/index.html",
+        "dist/skills",
       ]) {
         const abs = path.join(serverDir, relPath);
         if (!(yield* fs.exists(abs))) {

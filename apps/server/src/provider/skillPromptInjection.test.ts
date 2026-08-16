@@ -32,6 +32,33 @@ describe("resolveInvokedSkills", () => {
   it("does not match skill names inside longer identifiers", () => {
     expect(resolveInvokedSkills("run pre-t3-sync-post", skills)).toEqual([]);
   });
+
+  describe("built-in skills", () => {
+    const builtIn = [
+      {
+        name: "implement",
+        path: "/app/skills/mattpocock/implement/SKILL.md",
+        enabled: true,
+        scope: "bundled",
+      },
+    ];
+
+    it("stays out of prose that happens to use its name", () => {
+      expect(
+        resolveInvokedSkills("Implement the login form, then implement logout", builtIn),
+      ).toEqual([]);
+      expect(resolveInvokedSkills("open apps/web/src/implement.ts", builtIn)).toEqual([]);
+    });
+
+    it("is invoked by a composer mention", () => {
+      expect(
+        resolveInvokedSkills("Use $implement here", builtIn).map((skill) => skill.name),
+      ).toEqual(["implement"]);
+      expect(
+        resolveInvokedSkills("/implement the plan", builtIn).map((skill) => skill.name),
+      ).toEqual(["implement"]);
+    });
+  });
 });
 
 describe("shouldInlineSkill", () => {

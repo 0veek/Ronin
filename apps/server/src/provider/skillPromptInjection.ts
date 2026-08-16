@@ -11,6 +11,8 @@ import * as NodePath from "node:path";
 
 import type { ServerProviderSkill } from "@t3tools/contracts";
 
+import { BUNDLED_SKILLS_SCOPE } from "./skillsCatalog.ts";
+
 const MAX_INLINE_SKILL_CONTENT_CHARS = 24_000;
 
 const INLINE_SKILLS_HEADER =
@@ -22,7 +24,24 @@ function isSkillNameCharacter(value: string | undefined): boolean {
   return value !== undefined && /[a-zA-Z0-9:_-]/.test(value);
 }
 
-function containsSkillName(text: string, rawName: string): boolean {
+/**
+ * A `$name` or `/name` the composer inserted, rather than the same characters
+ * inside a path or an identifier: the sigil itself has to open a word.
+ */
+function isSkillMentionSigil(text: string, sigilIndex: number): boolean {
+  const sigil = text[sigilIndex];
+  if (sigil !== "$" && sigil !== "/") {
+    return false;
+  }
+  const preceding = text[sigilIndex - 1];
+  return preceding === undefined || /\s/.test(preceding);
+}
+
+function containsSkillName(
+  text: string,
+  rawName: string,
+  options?: { readonly requireMentionSigil?: boolean },
+): boolean {
   const name = rawName.trim().toLowerCase();
   if (!name) {
     return false;
@@ -33,7 +52,8 @@ function containsSkillName(text: string, rawName: string): boolean {
     const end = start + name.length;
     if (
       !isSkillNameCharacter(normalizedText[start - 1]) &&
-      !isSkillNameCharacter(normalizedText[end])
+      !isSkillNameCharacter(normalizedText[end]) &&
+      (options?.requireMentionSigil !== true || isSkillMentionSigil(normalizedText, start - 1))
     ) {
       return true;
     }
@@ -42,16 +62,27 @@ function containsSkillName(text: string, rawName: string): boolean {
   return false;
 }
 
+/**
+ * Skills Ronin ships with are named after everyday verbs — `implement`,
+ * `research`, `teach` — so they only count as invoked when the message mentions
+ * them as `$name` or `/name`. Skills the user or a provider installed keep the
+ * looser match, where naming the skill in prose is enough.
+ */
 export function resolveInvokedSkills(
   messageText: string,
   skills: ReadonlyArray<ServerProviderSkill>,
 ): ServerProviderSkill[] {
-  return skills.filter(
-    (skill) =>
-      skill.enabled &&
-      (containsSkillName(messageText, skill.name) ||
-        (skill.displayName !== undefined && containsSkillName(messageText, skill.displayName))),
-  );
+  return skills.filter((skill) => {
+    if (!skill.enabled) {
+      return false;
+    }
+    const options = { requireMentionSigil: skill.scope === BUNDLED_SKILLS_SCOPE };
+    return (
+      containsSkillName(messageText, skill.name, options) ||
+      (skill.displayName !== undefined &&
+        containsSkillName(messageText, skill.displayName, options))
+    );
+  });
 }
 
 function normalizedSkillPath(path: string): string {

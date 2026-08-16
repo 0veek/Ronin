@@ -38,6 +38,9 @@ export default defineConfig({
       "**/routeTree.gen.ts",
       "apps/web/public/mockServiceWorker.js",
       "apps/web/src/lib/vendor/qrcodegen.ts",
+      // Vendored skill packs stay byte-identical to upstream so refreshing one
+      // is a re-copy, not a merge. `apps/server/skills/README.md` is ours.
+      "apps/server/skills/*/**",
       "*.icon/**",
     ],
     sortPackageJson: {},

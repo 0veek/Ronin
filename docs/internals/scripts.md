@@ -79,7 +79,9 @@ authenticated.
 - Desktop production windows load the bundled UI from the `t3code://app/` root URL (not a
   `127.0.0.1` document URL, and not an explicit `index.html` path).
 - Desktop packaging includes `apps/server/dist` (the `t3` backend) and starts it on loopback with an
-  auth token for WebSocket/API traffic.
+  auth token for WebSocket/API traffic. That directory carries the bundled web client (`dist/client`)
+  and the built-in skill packs (`dist/skills`, copied from `apps/server/skills` — see its README for
+  how to refresh a vendored pack); both builds fail if either is missing.
 - Your tester can still open it on macOS by right-clicking the app and choosing **Open** on first
   launch.
 - To keep staging files for debugging package contents, run: `vp run dist:desktop:dmg --keep-stage`

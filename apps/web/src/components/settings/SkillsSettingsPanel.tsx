@@ -2,13 +2,23 @@ import { BoxesIcon } from "lucide-react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useSkillsCatalog } from "../../state/skillsCatalog";
+import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import {
+  BUNDLED_SKILLS_SECTION,
   buildSettingsSkillGroups,
   buildSettingsSkillSections,
   settingsSkillNameKey,
+  type SettingsSkillSection,
 } from "./skillsSettingsModel";
+
+function sectionDescription(section: SettingsSkillSection): string | null {
+  if (section.key !== BUNDLED_SKILLS_SECTION) {
+    return null;
+  }
+  return "Skills that ship with Ronin. Your own copy of a skill with the same name always wins.";
+}
 
 export function SkillsSettingsPanel() {
   const catalog = useSkillsCatalog();
@@ -22,18 +32,36 @@ export function SkillsSettingsPanel() {
   const totalSkills = skillGroups.length;
   const enabledSkills = skillGroups.filter((group) => !disabledSkillNames.has(group.key)).length;
 
-  const setSkillEnabled = (skillName: string, enabled: boolean) => {
+  const applyDisabledSkillNames = (mutate: (disabled: Set<string>) => void) => {
     const next = new Set(
       (settings.skills?.disabled ?? []).map((name) => settingsSkillNameKey(name)),
     );
-    const key = settingsSkillNameKey(skillName);
-    if (enabled) {
-      next.delete(key);
-    } else {
-      next.add(key);
-    }
+    mutate(next);
     updateSettings({
       skills: { disabled: [...next].sort() },
+    });
+  };
+
+  const setSkillEnabled = (skillName: string, enabled: boolean) => {
+    applyDisabledSkillNames((disabled) => {
+      const key = settingsSkillNameKey(skillName);
+      if (enabled) {
+        disabled.delete(key);
+      } else {
+        disabled.add(key);
+      }
+    });
+  };
+
+  const setSectionEnabled = (section: SettingsSkillSection, enabled: boolean) => {
+    applyDisabledSkillNames((disabled) => {
+      for (const group of section.groups) {
+        if (enabled) {
+          disabled.delete(group.key);
+        } else {
+          disabled.add(group.key);
+        }
+      }
     });
   };
 
@@ -78,49 +106,81 @@ export function SkillsSettingsPanel() {
         </SettingsSection>
       ) : null}
 
-      {skillSections.map((section) => (
-        <SettingsSection key={section.key} title={section.title}>
-          {section.groups.map((group) => {
-            const enabled = !disabledSkillNames.has(group.key);
-            return (
+      {skillSections.map((section) => {
+        const sectionEnabledCount = section.groups.filter(
+          (group) => !disabledSkillNames.has(group.key),
+        ).length;
+        const description = sectionDescription(section);
+        return (
+          <SettingsSection
+            key={section.key}
+            title={section.title}
+            headerAction={
+              section.groups.length > 1 ? (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setSectionEnabled(section, sectionEnabledCount === 0)}
+                >
+                  {sectionEnabledCount === 0 ? "Turn all on" : "Turn all off"}
+                </Button>
+              ) : null
+            }
+          >
+            {description ? (
               <SettingsRow
-                key={group.key}
-                title={
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                    <BoxesIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{group.displayName}</span>
-                  </span>
-                }
-                description={group.description}
-                status={
-                  <span className="flex min-w-0 flex-col gap-1">
-                    <span className="truncate text-2xs text-secondary-label">
-                      {group.sources.map((source) => source.originInfo.label).join(" · ")}
-                    </span>
-                    {group.sources.map((source) => (
-                      <code
-                        key={source.skill.path}
-                        className="truncate text-2xs text-secondary-label"
-                      >
-                        {source.skill.path}
-                      </code>
-                    ))}
-                  </span>
-                }
+                title="Bundled with Ronin"
+                description={description}
                 control={
-                  <Switch
-                    checked={enabled}
-                    onCheckedChange={(checked) =>
-                      setSkillEnabled(group.primarySkill.name, Boolean(checked))
-                    }
-                    aria-label={`Enable the ${group.displayName} skill`}
-                  />
+                  <span className="text-xs font-medium text-secondary-label">
+                    {`${sectionEnabledCount} of ${section.groups.length} enabled`}
+                  </span>
                 }
               />
-            );
-          })}
-        </SettingsSection>
-      ))}
+            ) : null}
+            {section.groups.map((group) => {
+              const enabled = !disabledSkillNames.has(group.key);
+              return (
+                <SettingsRow
+                  key={group.key}
+                  title={
+                    <span className="inline-flex min-w-0 items-center gap-1.5">
+                      <BoxesIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate">{group.displayName}</span>
+                    </span>
+                  }
+                  description={group.description}
+                  status={
+                    <span className="flex min-w-0 flex-col gap-1">
+                      <span className="truncate text-2xs text-secondary-label">
+                        {group.sources.map((source) => source.originInfo.label).join(" · ")}
+                      </span>
+                      {group.sources.map((source) => (
+                        <code
+                          key={source.skill.path}
+                          className="truncate text-2xs text-secondary-label"
+                        >
+                          {source.skill.path}
+                        </code>
+                      ))}
+                    </span>
+                  }
+                  control={
+                    <Switch
+                      checked={enabled}
+                      onCheckedChange={(checked) =>
+                        setSkillEnabled(group.primarySkill.name, Boolean(checked))
+                      }
+                      aria-label={`Enable the ${group.displayName} skill`}
+                    />
+                  }
+                />
+              );
+            })}
+          </SettingsSection>
+        );
+      })}
     </SettingsPageContainer>
   );
 }

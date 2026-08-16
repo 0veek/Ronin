@@ -322,6 +322,7 @@ const DesktopBuildInputArtifact = Schema.Literals([
   "desktop-resources",
   "server-dist",
   "bundled-server-client",
+  "bundled-server-skills",
 ]);
 type DesktopBuildInputArtifact = typeof DesktopBuildInputArtifact.Type;
 const desktopBuildInputArtifactNames = {
@@ -329,6 +330,7 @@ const desktopBuildInputArtifactNames = {
   "desktop-resources": "desktopResources",
   "server-dist": "serverDist",
   "bundled-server-client": "bundled server client",
+  "bundled-server-skills": "bundled server skills",
 } satisfies Record<DesktopBuildInputArtifact, string>;
 
 export class MissingDesktopBuildInputError extends Schema.TaggedErrorClass<MissingDesktopBuildInputError>()(
@@ -1326,6 +1328,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     serverDist: path.join(repoRoot, "apps/server/dist"),
   };
   const bundledClientEntry = path.join(distDirs.serverDist, "client/index.html");
+  const bundledSkillsDir = path.join(distDirs.serverDist, "skills");
 
   if (!options.skipBuild) {
     yield* Effect.log("[desktop-artifact] Building desktop/server/web artifacts...");
@@ -1357,6 +1360,14 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     return yield* new MissingDesktopBuildInputError({
       artifact: "bundled-server-client",
       artifactPath: bundledClientEntry,
+      buildCommand: "vp run build:desktop",
+    });
+  }
+
+  if (!(yield* fs.exists(bundledSkillsDir))) {
+    return yield* new MissingDesktopBuildInputError({
+      artifact: "bundled-server-skills",
+      artifactPath: bundledSkillsDir,
       buildCommand: "vp run build:desktop",
     });
   }

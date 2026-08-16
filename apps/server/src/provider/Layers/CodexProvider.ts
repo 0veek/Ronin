@@ -35,7 +35,7 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
-import { roninSkillsDir } from "../skillsCatalog.ts";
+import { resolveBundledSkillsDir, roninSkillsDir } from "../skillsCatalog.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
@@ -321,8 +321,13 @@ const requestAllCodexModels = Effect.fn("requestAllCodexModels")(function* (
 
 export const registerCodexPortableSkillRoot = Effect.fn("registerCodexPortableSkillRoot")(
   function* (client: CodexClient.CodexAppServerClient["Service"], homeDir: string) {
+    // Built-in packs are handed over too, so Codex loads them natively instead
+    // of relying on Ronin inlining their instructions into the turn.
+    const bundledSkillsDir = yield* Effect.tryPromise(() => resolveBundledSkillsDir()).pipe(
+      Effect.orElseSucceed(() => null),
+    );
     yield* client.request("skills/extraRoots/set", {
-      extraRoots: [roninSkillsDir(homeDir)],
+      extraRoots: [roninSkillsDir(homeDir), ...(bundledSkillsDir ? [bundledSkillsDir] : [])],
     });
   },
   Effect.catch((error) =>

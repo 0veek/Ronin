@@ -1,8 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off -- skill discovery walks user skill folders concurrently.
 /**
- * Unified Agent Skill discovery: portable `{T3_HOME}/skills` plus every
- * provider-native skills folder. Native copies win on name collisions;
- * Ronin's portable copy is the fallback.
+ * Unified Agent Skill discovery: portable `{T3_HOME}/skills`, every
+ * provider-native skills folder, and the skill packs Ronin ships with. Native
+ * copies win on name collisions, then Ronin's portable copy, then the built-in
+ * copy.
  *
  * @module provider/skillsCatalog
  */
@@ -85,6 +86,44 @@ export function roninSkillsDir(homeDir: string): string {
   return NodePath.join(homeDir, ".ronin", "skills");
 }
 
+export const BUNDLED_SKILLS_SCOPE = "bundled";
+
+/**
+ * Where the packs from `apps/server/skills` end up, packaged first: the build
+ * copies them next to the bundled entrypoint, so `dist/skills` is what both the
+ * npm package and the desktop app carry. Running from source falls through to
+ * the checked-in tree.
+ */
+function bundledSkillsDirCandidates(): string[] {
+  return [
+    NodePath.resolve(import.meta.dirname, "skills"),
+    NodePath.resolve(import.meta.dirname, "../../skills"),
+  ];
+}
+
+let bundledSkillsDirPromise: Promise<string | null> | undefined;
+
+/**
+ * Resolve the built-in skills root once per process. Returns null when the
+ * packs are missing, which keeps discovery working on a partial build.
+ */
+export async function resolveBundledSkillsDir(): Promise<string | null> {
+  bundledSkillsDirPromise ??= (async () => {
+    for (const candidate of bundledSkillsDirCandidates()) {
+      try {
+        const stat = await NodeFSP.stat(candidate);
+        if (stat.isDirectory()) {
+          return candidate;
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    return null;
+  })();
+  return bundledSkillsDirPromise;
+}
+
 const ensuredRoninSkillsDirs = new Set<string>();
 
 export async function ensureRoninSkillsDir(homeDir: string): Promise<string> {
@@ -103,6 +142,7 @@ export async function ensureRoninSkillsDir(homeDir: string): Promise<string> {
 
 export function clearSkillsCatalogCacheForTests(): void {
   ensuredRoninSkillsDirs.clear();
+  bundledSkillsDirPromise = undefined;
 }
 
 async function readdirOrEmpty(path: string): Promise<import("node:fs").Dirent[]> {
@@ -213,13 +253,18 @@ const HOME_ORIGIN_ORDER = [
   "agents",
 ] as const;
 
-export type SkillsCatalogOrigin = (typeof HOME_ORIGIN_ORDER)[number] | "project";
+export type SkillsCatalogOrigin = (typeof HOME_ORIGIN_ORDER)[number] | "project" | "bundled";
 
 export interface SkillsCatalogDiscoveryInput {
   readonly cwd?: string | null;
   readonly homeDir: string;
   readonly roninBaseDir: string;
   readonly includeDuplicateOrigins?: boolean;
+  /**
+   * Built-in skills root. Left undefined it resolves to the packs Ronin ships
+   * with; null skips them.
+   */
+  readonly bundledSkillsDir?: string | null;
 }
 
 function homeRootsForOrigin(
@@ -329,7 +374,14 @@ export async function discoverSkillsCatalog(
   input: SkillsCatalogDiscoveryInput,
 ): Promise<ServerProviderSkill[]> {
   await ensureRoninSkillsDir(input.homeDir);
-  const skills = await collectSkillsFromRoots(skillsCatalogRoots(input));
+  const bundledSkillsDir =
+    input.bundledSkillsDir === undefined ? await resolveBundledSkillsDir() : input.bundledSkillsDir;
+  const skills = await collectSkillsFromRoots([
+    ...skillsCatalogRoots(input),
+    // Last, so a user's own copy or a provider-native copy of the same skill
+    // shadows the built-in one.
+    ...(bundledSkillsDir ? [{ path: bundledSkillsDir, scope: BUNDLED_SKILLS_SCOPE }] : []),
+  ]);
   if (input.includeDuplicateOrigins) {
     return skills;
   }
