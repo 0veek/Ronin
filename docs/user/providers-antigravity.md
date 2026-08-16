@@ -30,7 +30,17 @@ A supervised turn can therefore end with the agent explaining what it was not al
 
 ## Continuity
 
-Each turn runs a fresh `agy` process, and Ronin reconnects it to the conversation the thread started, so follow-up messages keep the earlier context. Switching model requires a new thread — Antigravity fixes the model when the conversation opens.
+Each turn runs a fresh `agy` process, and Ronin reconnects it to the conversation the thread started, so follow-up messages keep the earlier context.
+
+Switching model applies to the next message in the same conversation. Because the model rides the spawn line of each turn rather than being fixed when the conversation opens, changing it costs nothing and loses nothing. The same is true of handing a thread to Antigravity from another provider, or away from it.
+
+## Git and pull-request text
+
+Antigravity can write commit messages, pull-request titles and bodies, branch names, and thread titles. Those run as their own sandboxed `agy` print-mode call, so a commit message can never edit your working tree.
+
+## Updates
+
+The provider card offers **Update**, which runs `agy update`. Antigravity ships a downloaded binary rather than a package Ronin can query, so the card cannot tell you in advance that a new version is waiting — run the update when you want to pick one up. See [Updating](./updating.md).
 
 ## Skills
 

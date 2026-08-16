@@ -125,4 +125,16 @@ describe("buildInitialAntigravityProviderSnapshot", () => {
       expect(snapshot.models.map((model) => model.slug)).toEqual(["gemini-3.5-flash-medium"]);
     }),
   );
+
+  it.effect("does not make a model change cost a new thread", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* buildInitialAntigravityProviderSnapshot(
+        decodeAntigravitySettings({ enabled: true }),
+      );
+      // Each turn is its own `agy` process that takes `--model` and rejoins
+      // through `--conversation`, so the model is not fixed when the
+      // conversation opens. This flag also gates handoff in both directions.
+      expect(snapshot.requiresNewThreadForModelChange).toBeUndefined();
+    }),
+  );
 });

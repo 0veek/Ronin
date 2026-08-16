@@ -11,7 +11,7 @@ export function makeUnsupportedTextGeneration(
     Effect.fail(
       new TextGenerationError({
         operation,
-        detail: `${providerLabel} does not generate git or pull-request text. Pick Codex, Claude, Cursor, Grok, or OpenCode for that.`,
+        detail: `${providerLabel} does not generate git or pull-request text. Pick Codex, Claude, Cursor, Grok, Antigravity, or OpenCode for that.`,
       }),
     );
 

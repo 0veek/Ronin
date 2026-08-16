@@ -59,4 +59,17 @@ describe("antigravityTurnArgs", () => {
     expect(args.at(-2)).toBe("-p");
     expect(args.at(-1)).toBe("hello");
   });
+
+  it("carries a new model into the conversation it is resuming", () => {
+    // This pairing is why the adapter reports in-session model switching:
+    // the model rides each turn's spawn line while `--conversation` keeps the
+    // history, so a mid-thread change needs neither a restart nor a new thread.
+    const args = antigravityTurnArgs({
+      ...base,
+      conversationId: "conv-1",
+      model: "gemini-3.5-flash-low",
+    });
+    expect(args.slice(0, 2)).toEqual(["--conversation", "conv-1"]);
+    expect(args[args.indexOf("--model") + 1]).toBe("gemini-3.5-flash-low");
+  });
 });

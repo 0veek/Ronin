@@ -595,7 +595,10 @@ export function makeAntigravityAdapter(
 
     return {
       provider: PROVIDER,
-      capabilities: { sessionModelSwitch: "unsupported" },
+      // Every turn is a fresh `agy` process that takes `--model` on its spawn
+      // line and rejoins the thread through `--conversation`, so switching
+      // model costs nothing and keeps the conversation.
+      capabilities: { sessionModelSwitch: "in-session" },
       startSession,
       sendTurn,
       interruptTurn,

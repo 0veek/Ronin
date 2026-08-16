@@ -44,6 +44,9 @@ export interface SettingsSkillSection {
 
 const SHARED_SKILLS_SECTION = "shared";
 const PERSONAL_ORIGIN = "personal";
+// Mirrors the server's `HOME_ORIGIN_ORDER` in `skillsCatalog.ts`. An origin
+// missing from here still renders, but under its raw scope string and with no
+// provider attached — which is how Antigravity's skills read as "antigravity".
 export const ORIGIN_SECTION_ORDER = [
   "ronin",
   "codex",
@@ -51,6 +54,10 @@ export const ORIGIN_SECTION_ORDER = [
   "cursor",
   "grok",
   "opencode",
+  "kilo",
+  "antigravity",
+  "droid",
+  "pi",
   "agents",
   "project",
   BUNDLED_SKILLS_SCOPE,
@@ -72,6 +79,14 @@ export function skillOriginInfo(scope: string | undefined): SkillOriginInfo {
       return { label: DRIVER_LABEL.grok, provider: ProviderDriverKind.make("grok") };
     case "opencode":
       return { label: DRIVER_LABEL.opencode, provider: ProviderDriverKind.make("opencode") };
+    case "kilo":
+      return { label: DRIVER_LABEL.kilo, provider: ProviderDriverKind.make("kilo") };
+    case "antigravity":
+      return { label: DRIVER_LABEL.antigravity, provider: ProviderDriverKind.make("antigravity") };
+    case "droid":
+      return { label: DRIVER_LABEL.droid, provider: ProviderDriverKind.make("droid") };
+    case "pi":
+      return { label: DRIVER_LABEL.pi, provider: ProviderDriverKind.make("pi") };
     case "agents":
       return { label: "Shared (.agents)", provider: null };
     case "project":

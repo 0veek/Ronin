@@ -1,3 +1,16 @@
+/**
+ * AntigravityDriver — `ProviderDriver` for Google's Antigravity CLI (`agy`).
+ *
+ * There is no long-lived agent process: every turn is its own `agy -p` print
+ * run that rejoins the thread through `--conversation` and takes its model on
+ * the spawn line. Model catalog and version come from the managed provider
+ * status check, which shells out to `agy models` and `agy --version`.
+ *
+ * Text generation reuses print mode in `plan` mode inside `agy`'s sandbox, so
+ * a headless commit-message run cannot touch the repository.
+ *
+ * @module provider/Drivers/AntigravityDriver
+ */
 import { AntigravitySettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -10,7 +23,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { makeUnsupportedTextGeneration } from "../../textGeneration/UnsupportedTextGeneration.ts";
+import { makeAntigravityTextGeneration } from "../../textGeneration/AntigravityTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityAdapter } from "../Layers/AntigravityAdapter.ts";
 import {
@@ -28,8 +41,8 @@ import {
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import {
-  makeManualOnlyProviderMaintenanceCapabilities,
-  makeStaticProviderMaintenanceResolver,
+  makeProviderMaintenanceCapabilities,
+  type ProviderMaintenanceCapabilitiesResolver,
   resolveProviderMaintenanceCapabilitiesEffect,
 } from "../providerMaintenance.ts";
 import {
@@ -40,12 +53,20 @@ import {
 
 const decodeAntigravitySettings = Schema.decodeSync(AntigravitySettings);
 const DRIVER_KIND = ProviderDriverKind.make("antigravity");
-const UPDATE = makeStaticProviderMaintenanceResolver(
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider: DRIVER_KIND,
-    packageName: null,
-  }),
-);
+// `agy update` updates in place. There is no package to read a latest version
+// from — Antigravity ships a downloaded binary, and the plausible npm names are
+// unrelated placeholders — so the card offers the update without claiming to
+// know whether one is waiting.
+const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
+  resolve: (options) =>
+    makeProviderMaintenanceCapabilities({
+      provider: DRIVER_KIND,
+      packageName: null,
+      updateExecutable: options?.binaryPath?.trim() || "agy",
+      updateArgs: ["update"],
+      updateLockKey: "agy",
+    }),
+};
 
 export type AntigravityDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
@@ -108,7 +129,7 @@ export const AntigravityDriver: ProviderDriver<AntigravitySettings, AntigravityD
         environment: processEnv,
         instanceId,
       });
-      const textGeneration = makeUnsupportedTextGeneration("Antigravity");
+      const textGeneration = yield* makeAntigravityTextGeneration(effectiveConfig, processEnv);
 
       const checkProvider = checkAntigravityProviderStatus(effectiveConfig, processEnv).pipe(
         Effect.map(stampIdentity),

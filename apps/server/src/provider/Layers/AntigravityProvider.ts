@@ -35,7 +35,6 @@ const ANTIGRAVITY_PRESENTATION = {
   displayName: "Antigravity",
   badgeLabel: "Early Access",
   showInteractionModeToggle: false,
-  requiresNewThreadForModelChange: true,
 } as const;
 
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
