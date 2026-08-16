@@ -52,6 +52,7 @@ vi.mock("electron", () => ({
       setIcon: setDockIconMock,
     },
     getAppPath: getAppPathMock,
+    getSystemLocale: vi.fn(() => "en_GB"),
     getVersion: getVersionMock,
     isDefaultProtocolClient: isDefaultProtocolClientMock,
     isPackaged: true,

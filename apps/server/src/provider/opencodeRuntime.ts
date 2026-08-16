@@ -37,6 +37,18 @@ import { killWindowsProcessTree, resolveSpawnCommand } from "@t3tools/shared/she
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
+export function resolveOpenCodeConfigContent(
+  inputEnvironment: Readonly<Record<string, string | undefined>> | undefined,
+  inheritedEnvironment: Readonly<Record<string, string | undefined>> = process.env,
+  configContentEnvVar = "OPENCODE_CONFIG_CONTENT",
+): string {
+  return (
+    inputEnvironment?.[configContentEnvVar] ??
+    inheritedEnvironment[configContentEnvVar] ??
+    OPENCODE_EMPTY_CONFIG_CONTENT
+  );
+}
+
 const OPENCODE_SERVER_READY_PREFIX = "opencode server listening";
 const DEFAULT_OPENCODE_SERVER_TIMEOUT_MS = 30_000;
 const DEFAULT_HOSTNAME = "127.0.0.1";
@@ -498,7 +510,18 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
             shell: spawnCommand.shell,
             env: {
               ...input.environment,
-              [cliSpec.configContentEnvVar]: OPENCODE_EMPTY_CONFIG_CONTENT,
+              // Respect a config-content env var provided by the caller or the
+              // inherited process environment, only falling back to the empty
+              // config when neither is set. Setting it unconditionally
+              // previously clobbered the user's opencode config, hiding their
+              // providers/models. The value is set explicitly (rather than
+              // relying on inheritance) because `extendEnv` is false whenever
+              // `input.environment` is provided.
+              [cliSpec.configContentEnvVar]: resolveOpenCodeConfigContent(
+                input.environment,
+                process.env,
+                cliSpec.configContentEnvVar,
+              ),
             },
             extendEnv: input.environment === undefined,
           }),

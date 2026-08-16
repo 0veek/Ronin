@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| **Upstream reviewed through** | `e9ae134c5` — `docs: route feature requests to Discussions` (2026-08-15) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`          |
-| **Ported on**                 | 2026-08-15                                                               |
+|                               |                                                                                                             |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `d484735c6` — `fix(web): keep highlighted command menu items clear of the scroll fade (#7132)` (2026-08-15) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                             |
+| **Ported on**                 | 2026-08-16                                                                                                  |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -399,3 +399,133 @@ shortcuts-cheat-sheet / attention-chime work. Two files overlapped and were appl
 rather than through `--3way`: `Sidebar.tsx` (the tooltip wraps sit clear of the local
 `SidebarWorkingDuel settled` edit) and `MessagesTimeline.tsx` (the two timestamp call sites sit clear
 of the local edits). None of the other 19 locally-modified files or 11 untracked files were touched.
+
+## Batch 5 — reviewed through `d484735c6` (89 commits)
+
+Snapshot tip: `d484735c64ed98a0737b594818996660f72c1616`. Watermark was `e9ae134c5`.
+
+### Ported (77)
+
+Clean applies unless noted. `.github/pr-assets` and `apps/desktop/src/ipc/methods/wsl.test.ts` were
+never taken.
+
+| Upstream    | Title                                                                                       | Notes                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `d8a6dfd31` | fix(desktop): app zoom no longer zooms the preview browser (#6649)                          | **adapted** — kept Ronin's no-op `pickElement`; 3way tried to restore the cut picker            |
+| `afca73d36` | fix(server): keep provider notification consumers alive past startSession (#6538)           | clean                                                                                           |
+| `75472802b` | fix(server): treat removed Bitbucket permissions endpoint as unknown, not blocking (#6525)  | clean                                                                                           |
+| `672216d7e` | fix(ssh): let cold remote servers finish starting (#6168)                                   | **adapted** — 60s ready / 90s launch; kept "Remote Ronin server" copy                           |
+| `1e8702926` | fix(web): preserve Claude insight line breaks (#4344)                                       | clean                                                                                           |
+| `a6ac27e7f` | feat(web): accept file drops across the chat workspace (#6636)                              | **adapted** — new `workspaceFileDrop`; kept `ComposerDictationContext` and mention-drag capture |
+| `eaa6c4712` | fix(web): widen ordered-list marker gutter for 3+ digit item numbers (#6527)                | **adapted** — CSS in `styles/markdown.css`, not upstream `index.css`                            |
+| `71c6f8248` | fix(server): bound thread activity hydration (#6153)                                        | clean                                                                                           |
+| `48cba7d93` | fix(web): restore the Archive action in the default sidebar thread menu (#6526)             | clean                                                                                           |
+| `9f26656cb` | fix(web): open diff files from nested projects (#6174)                                      | clean                                                                                           |
+| `2cb1a26f0` | fix(web): open the file a bare filename reference names (#6297)                             | clean                                                                                           |
+| `ddee418a8` | fix(server): stop the provider title mirror from overwriting real thread titles (#5941)     | **adapted** — did not reintroduce unused `ServerSettingsService` import                         |
+| `178da6bc3` | fix(shared): match source-control providers by DNS label (#6175)                            | clean                                                                                           |
+| `b7dbbbaf6` | feat(desktop): Chrome-style hold-to-quit (#5508)                                            | **adapted** — dropped WSL test; hand-applied IPC/settings into Ronin's extra members            |
+| `d94fbda34` | fix(gitlab): submit review comments on context lines (#6348)                                | clean                                                                                           |
+| `a38cac81d` | fix(web): keep a long path from running under the folder picker button (#4823)              | **adapted** — kept Ronin's `WORKSPACE_COMMANDS` catalog                                         |
+| `270489b88` | fix(terminal): right-click paste works in the terminal (#5240)                              | clean behavior; import merge only                                                               |
+| `9bdd91293` | fix(web): stop counting a workflow coordinator as a working agent (#6672)                   | clean                                                                                           |
+| `6e6d1b494` | fix(web): keep floating preview anchored after panel closes (#6547)                         | 3way                                                                                            |
+| `7afa184a9` | fix(web): keep send reachable while a turn is running on mobile (#4781)                     | **adapted** — `showSendWhileRunning` on `max-sm`; kept `ComposerDictationControl`               |
+| `34a12bc33` | fix(web): reject unsupported composer image types at attach time (#6574)                    | **subset** — dropped mobile hunks                                                               |
+| `5ffbf3ce4` | Make ClaudeTextGeneration tests hermetic on Windows (#4508)                                 | clean                                                                                           |
+| `143f713c7` | fix(web): show command output in work log (#4083)                                           | clean                                                                                           |
+| `06dd9993b` | fix(web): reserve sibling column width when resizing the right panel (#6279)                | clean                                                                                           |
+| `9e61d0f12` | fix(web): replace whitespace in new ref names with dashes (#6270)                           | clean                                                                                           |
+| `c7b14a866` | fix(client-runtime): branch list no longer resets while paging through refs (#5858)         | clean                                                                                           |
+| `b0de38577` | fix(web): support Shift+Insert terminal paste (#5982)                                       | clean                                                                                           |
+| `135dc156e` | fix(codex): keep background memory out of chats (#5468)                                     | clean                                                                                           |
+| `51c6daa3b` | fix(server): treat a missing Codex rollout as a recoverable resume error (#6671)            | clean                                                                                           |
+| `3cde99b25` | fix(web): hide provider Update toast action while an update is running (#6544)              | 3way                                                                                            |
+| `e204f5a5d` | fix(desktop): agent shells inherit a UTF-8 locale on macOS (#6236)                          | clean                                                                                           |
+| `474cc5fb0` | fix(server): ignore Claude command lifecycle messages (#6606)                               | clean                                                                                           |
+| `402c9e074` | docs: mention Bitbucket user read scope needed by auth probe (#6291)                        | clean; docs already Ronin-branded                                                               |
+| `551f4c99c` | fix(server): return valid preview action results (#5966)                                    | **adapted** — MCP preview toolkit is live even though pick-element is a stub                    |
+| `e9e46972f` | fix(claude): make "Always allow for session" stick, and only for the session (#5041)        | clean + `requestId` on new test fixtures                                                        |
+| `9d0f2fc21` | fix(ssh): surface a failed remote t3 install instead of a silent 0-byte server.log (#5132)  | **adapted** — kept Ronin ready-message; took empty-log branch                                   |
+| `f075a5811` | perf(server): persist the wire projection for streaming tool.updated data (#6675)           | 3way                                                                                            |
+| `c4556ab23` | fix(web): stop wrapping partial code block selections in markdown fences (#5069)            | clean                                                                                           |
+| `a5d35321b` | fix(web): show provider account accent badge in sidebar rows and hover card (#5980)         | clean                                                                                           |
+| `c0f9d917c` | fix(server): wait for concurrent SQLite writers instead of failing with SQLITE_BUSY (#5134) | clean                                                                                           |
+| `7c55e8632` | fix(web): reject oversized prompts before provider turn start (#6602)                       | **adapted** — `docs/user/composer.md` rebranded; ChatComposer structure kept                    |
+| `40ab7bf32` | feat(web): collapse the question prompt from its header (#6773)                             | **adapted** — collapse UI with Ronin `text-2xs` / `duration-(--duration-fast)`                  |
+| `684d703b0` | fix(shared): degrade an unknown system time zone to UTC in usage windows (#6670)            | clean                                                                                           |
+| `ad47d2347` | fix(claude): discover repo-local .agents/skills in skill discovery (#5488)                  | clean                                                                                           |
+| `d715c2e56` | fix(server): let slow provider CLIs raise their discovery probe budget (#6223)              | clean                                                                                           |
+| `d5465aebf` | fix(web): retain terminal PR badges after checkout switch (#4755)                           | clean                                                                                           |
+| `ca37b19cf` | fix(web): show selected model in context window tooltip (#4772)                             | **adapted** — `modelDisplayName` through Ronin's footer                                         |
+| `5e1473715` | fix(web): scale command details with code font (#6510)                                      | **adapted** — `--font-size-code`; dropped PR assets                                             |
+| `cf7bfd1c9` | fix(web): preserve XML-like tags in user messages (#4133)                                   | **adapted** — strip `title` on Ronin's `MarkdownImage` path                                     |
+| `7c8848ebb` | fix(desktop): route mouse thumb buttons to the in-app browser (#4459)                       | **adapted** — new `preview-guest-preload.ts` instead of cut `PickPreload`                       |
+| `f91532091` | fix(web): keep the final segment of directory paths with a trailing separator (#5460)       | clean                                                                                           |
+| `7083bce26` | Keep block code plain when copying from rendered markdown (#4468)                           | clean                                                                                           |
+| `21b6fb528` | fix(web): add web app manifest so installed app keeps its scope (#4306)                     | **adapted** — added Ronin `name`/`short_name`                                                   |
+| `db02c6b9c` | Skip user hooks during Claude capability probes (#4466)                                     | clean                                                                                           |
+| `b72d5d798` | fix(desktop): timestamps follow the OS locale instead of en-US (#6190)                      | **adapted** — hand-applied IPC; dropped missing `DesktopLifecycle.test.ts`                      |
+| `1a5ff424c` | fix(web): keep multi-select questions open after the first click (#6646)                    | clean                                                                                           |
+| `d550b829b` | fix(web): stop clipping the changed-files expand hover on Windows (#6545)                   | **adapted** — kept Ronin's duration label                                                       |
+| `86fb47afd` | fix(server): allow long-running git pushes (#6499)                                          | clean                                                                                           |
+| `160c76c6d` | fix(desktop): keep probing backend readiness while the process is alive (#5526)             | clean                                                                                           |
+| `dc0ff8f13` | fix(server): allow install scripts in npm-global provider updates (#5646)                   | clean                                                                                           |
+| `7ce419470` | fix: detect SSH remotes with non-git user prefixes (e.g. gitlab@) (#3649)                   | clean                                                                                           |
+| `39167eb1a` | fix(web): describe what Ultracode does in the Reasoning picker (#6092)                      | clean                                                                                           |
+| `3b54a2a57` | fix(server): settle pending user-input requests when a Claude session stops (#5127)         | clean                                                                                           |
+| `4fc80fcbd` | fix(server): stop replaying a command receipt for a different aggregate (#5246)             | clean                                                                                           |
+| `07e668dc4` | fix(server): settle snoozed threads immediately (#5379)                                     | clean                                                                                           |
+| `62bb97428` | fix(web): contain long approval commands (#6503)                                            | **adapted** — `flex-wrap` on Ronin's approval toolbar; dropped PR assets                        |
+| `e17f244e0` | feat(web): make right panel maximize bindable (#5091)                                       | **adapted** — dispatched from `runWorkspaceCommand`; exported `STATIC_KEYBINDING_COMMANDS`      |
+| `61b2e744d` | fix(server): respect inherited OPENCODE_CONFIG_CONTENT (#4242)                              | **adapted** — uses `cliSpec.configContentEnvVar` so Kilo is covered too                         |
+| `931e91527` | Keep the server alive when a response write hits a dead socket (#4470)                      | 3way                                                                                            |
+| `664499c92` | Limit physical key fallback to non-Latin layout output (#4469)                              | clean                                                                                           |
+| `2fc676239` | fix: restore CLAUDE.md symlink target (#3929)                                               | recreated `CLAUDE.md` → `AGENTS.md` with no trailing newline                                    |
+| `ec141c125` | fix(clients): default clone destination to folder plus repo name (#5989)                    | **subset** — dropped mobile; kept `WORKSPACE_COMMANDS` tests                                    |
+| `20a70420a` | fix(web): keep timestamp date and time in the same locale (#7081)                           | clean                                                                                           |
+| `a5e29edee` | feat(web): send PR line requests to agent (#6597)                                           | clean                                                                                           |
+| `e58cbb9e7` | fix(web): restore dark theme palette (#6663)                                                | **adapted** — `html[data-theme-id]:not([data-theme-id=""])` in `styles/themes.css`              |
+| `2f486ab80` | refactor(web): simplify advanced theme controls (#7107)                                     | **adapted** — kept Ronin Paper/Graphite themes; family updater before them                      |
+| `d484735c6` | fix(web): keep highlighted command menu items clear of the scroll fade (#7132)              | 3way                                                                                            |
+
+### Already in the tree (0)
+
+None as whole commits.
+
+### Skipped (12)
+
+| Upstream    | Title                                                                                               | Why                                                                                                                                         |
+| ----------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `b277cc65e` | fix(mobile): use tryOpenExternalUrl for markdown links in ThreadFeed (#5872)                        | no mobile app                                                                                                                               |
+| `db3278f97` | fix(marketing): keep Grok mark clear of mobile hero copy (#4542)                                    | no marketing site                                                                                                                           |
+| `3bc4fdf05` | fix(mobile): recover the QR pairing scanner when camera access is denied (#6487)                    | no mobile app                                                                                                                               |
+| `4db50757c` | fix(mobile): explain iOS-only settings on Android (#4981)                                           | no mobile app                                                                                                                               |
+| `a7c5ad5db` | fix(web): unstick /connect after in-modal sign-in by redirecting to the authorize endpoint (#5133)  | Clerk / T3 Connect cut                                                                                                                      |
+| `efe1773e9` | fix(web): hide T3 Connect toggle in web app settings (#5068)                                        | Connect toggle is already gone from `ConnectionsSettings`                                                                                   |
+| `d79f975d0` | fix(web): keep the composer glass aligned with the context strip at any interface font size (#5703) | Ronin composer is a flat `.composer-surface`; no `shape()` glass clip-path                                                                  |
+| `31d0fb6ca` | fix(mobile): use Android monospace font family (#4609)                                              | no mobile app                                                                                                                               |
+| `277a7cb44` | fix(mobile): prevent crash on sign out in settings (#4899)                                          | Clerk / mobile cut                                                                                                                          |
+| `f8bb92b51` | fix(mobile): local-checkout threads record their branch so PR badges show (#4986)                   | no mobile app                                                                                                                               |
+| `04f23098e` | fix(marketing): detect Mac chip on homepage download button (#4197)                                 | no marketing site                                                                                                                           |
+| `ad117235b` | feat(desktop): add signal macOS DMG installer background (#6201)                                    | upstream Signal/T3 branding; deletes `resources/icon.{icns,ico,png}` Ronin still launches from. A Ronin DMG theme is a separate design task |
+
+### Verification
+
+- `git diff --check` — clean.
+- Typecheck: `@t3tools/contracts`, `@t3tools/shared`, `@t3tools/client-runtime`, `@t3tools/ssh`,
+  `@t3tools/web`, `@t3tools/desktop`, `t3` (server) — 0 errors. Server Effect-diagnostic
+  _suggestions_ remain pre-existing (`decider.ts`, `AntigravityAdapter.ts`, `PiAdapter.ts`,
+  `workflowScriptQuery.ts`, speech-to-text) and were not introduced by this batch.
+- Focused tests: desktop preview/window/quit-hold/ElectronApp 81 tests pass; shared/contracts/ssh/
+  client-runtime 148 tests pass; server adapters/orchestration/MCP/SQLite/Claude 390+ tests pass;
+  web composer/markdown/timeline/palette/keybindings 277+ tests pass.
+- `vp lint` on 10 representative new/adapted files — 0 findings.
+- Index left unstaged, as found. New files from this batch remain untracked until committed.
+
+**Hit every surface (for this batch):** desktop (zoom isolation, hold-to-quit, locale, thumb-button
+preload, backend readiness, UTF-8 shells), web renderer (composer, markdown, preview, PRs,
+settings, keybindings), contracts (IPC, keybindings, orchestration attachments), providers
+(Claude / Codex / Cursor / Grok / OpenCode), remote SSH, docs (`docs/user/composer.md`,
+`keybindings.md`, `source-control.md`, `providers-claude.md`). No mobile / Connect / WSL /
+Playwright picker restore.

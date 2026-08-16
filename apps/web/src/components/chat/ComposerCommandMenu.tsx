@@ -171,7 +171,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         className="surface-menu relative w-full overflow-hidden rounded-[var(--radius-lg)] **:data-[slot=scroll-area-scrollbar]:data-[orientation=vertical]:my-4"
       >
         {props.items.length > 0 ? (
-          <CommandList className="max-h-72">
+          <CommandList className="max-h-72 not-empty:py-3">
             {groups.map((group, groupIndex) => (
               <div key={group.id}>
                 {groupIndex > 0 ? <CommandSeparator className="my-0.5" /> : null}

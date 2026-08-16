@@ -23,6 +23,7 @@ import * as Schema from "effect/Schema";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
+import * as ElectronApp from "../../electron/ElectronApp.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
@@ -53,6 +54,15 @@ export const getAppBranding = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getAppBranding")(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     return environment.branding;
+  }),
+});
+
+export const getSystemLocale = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_SYSTEM_LOCALE_CHANNEL,
+  result: Schema.String,
+  handler: Effect.fn("desktop.ipc.window.getSystemLocale")(function* () {
+    const electronApp = yield* ElectronApp.ElectronApp;
+    return yield* electronApp.systemLocale;
   }),
 });
 

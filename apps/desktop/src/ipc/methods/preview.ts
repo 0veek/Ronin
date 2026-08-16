@@ -20,6 +20,8 @@ import {
   PreviewAutomationSnapshot,
   PreviewAutomationStatus,
 } from "@t3tools/contracts";
+import * as NodeURL from "node:url";
+
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -208,7 +210,7 @@ export const getPreviewConfig = DesktopIpc.makeIpcMethod({
     return {
       partition: yield* manager.getBrowserPartition(environmentId),
       webPreferences: PREVIEW_WEBVIEW_PREFERENCES,
-      preloadUrl: null,
+      preloadUrl: NodeURL.pathToFileURL(`${__dirname}/preview-guest-preload.cjs`).href,
     };
   }),
 });

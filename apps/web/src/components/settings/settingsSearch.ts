@@ -1,3 +1,4 @@
+import { isElectron } from "~/env";
 import { SETTINGS_PAGE_META, type SettingsPath } from "./settingsNavigation";
 
 export type { SettingsPath } from "./settingsNavigation";
@@ -7,6 +8,9 @@ export interface SettingsSearchItem {
   readonly title: string;
   readonly to: SettingsPath;
   readonly targetId?: string;
+  // Its row only renders in the desktop app, so a browser result would land on
+  // an anchor that isn't there.
+  readonly desktopOnly?: boolean;
 }
 
 /**
@@ -171,6 +175,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "quit-confirmation",
+    title: "Hold to quit",
+    to: "/settings/general",
+    desktopOnly: true,
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/general",
@@ -273,6 +283,7 @@ export function searchSettings(
   if (normalizedQuery.length === 0) return [];
 
   return items
+    .filter((item) => isElectron || item.desktopOnly !== true)
     .map((item, index) => ({ index, item, score: settingsSearchScore(item, normalizedQuery) }))
     .filter(
       (result): result is { index: number; item: SettingsSearchItem; score: number } =>
