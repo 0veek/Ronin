@@ -161,24 +161,20 @@ export const make = Effect.gen(function* () {
     const provider = input.provider ?? stt.provider;
 
     if (!stt.enabled && input.provider === undefined) {
-      return yield* Effect.fail(
-        new SpeechToTextError({
-          provider,
-          reason: "notConfigured",
-          detail: "Dictation is turned off in settings.",
-        }),
-      );
+      return yield* new SpeechToTextError({
+        provider,
+        reason: "notConfigured",
+        detail: "Dictation is turned off in settings.",
+      });
     }
 
     const apiKey = yield* readKey(provider);
     if (apiKey.length === 0) {
-      return yield* Effect.fail(
-        new SpeechToTextError({
-          provider,
-          reason: "notConfigured",
-          detail: "No API key is saved for this provider.",
-        }),
-      );
+      return yield* new SpeechToTextError({
+        provider,
+        reason: "notConfigured",
+        detail: "No API key is saved for this provider.",
+      });
     }
 
     const audio = yield* decodeAudio(input, provider);

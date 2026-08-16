@@ -54,6 +54,10 @@ function printResult(response: string, status = "SUCCESS"): string {
   return `${JSON.stringify({ conversation_id: "conv-1", status, response, num_turns: 1 })}\n`;
 }
 
+function errorResult(error: string): string {
+  return `${JSON.stringify({ conversation_id: "conv-1", status: "ERROR", error })}\n`;
+}
+
 const modelSelection = createModelSelection(
   ProviderInstanceId.make("antigravity"),
   "gemini-3.5-flash-low",
@@ -140,13 +144,7 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
 
   it.effect("names a non-SUCCESS run instead of reporting malformed output", () =>
     Effect.gen(function* () {
-      const binaryPath = makeFakeAgy({
-        stdout: `${JSON.stringify({
-          conversation_id: "conv-1",
-          status: "ERROR",
-          error: "invalid model selection",
-        })}\n`,
-      });
+      const binaryPath = makeFakeAgy({ stdout: errorResult("invalid model selection") });
 
       const textGeneration = yield* makeAntigravityTextGeneration(
         decodeAntigravitySettings({ binaryPath }),

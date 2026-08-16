@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off - the probe fixtures write a real mock CLI to disk.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";

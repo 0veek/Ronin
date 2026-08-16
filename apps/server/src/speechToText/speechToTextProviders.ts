@@ -79,18 +79,16 @@ const send = Effect.fn("speechToText.send")(function* (
 
   if (response.status >= 400) {
     // The body can quote the request, so it is never forwarded verbatim.
-    return yield* Effect.fail(
-      fail(
-        provider,
-        "providerRejected",
-        response.status === 401 || response.status === 403
-          ? "The API key was rejected."
-          : response.status === 404
-            ? "The model was not found. Check the model name."
-            : response.status === 429
-              ? "The provider is rate limiting or out of quota."
-              : `The provider returned HTTP ${response.status}.`,
-      ),
+    return yield* fail(
+      provider,
+      "providerRejected",
+      response.status === 401 || response.status === 403
+        ? "The API key was rejected."
+        : response.status === 404
+          ? "The model was not found. Check the model name."
+          : response.status === 429
+            ? "The provider is rate limiting or out of quota."
+            : `The provider returned HTTP ${response.status}.`,
     );
   }
 
@@ -133,9 +131,7 @@ export const transcribeWithDeepgram = Effect.fn("speechToText.deepgram")(functio
 
   const transcript = body.results?.channels?.[0]?.alternatives?.[0]?.transcript;
   if (typeof transcript !== "string") {
-    return yield* Effect.fail(
-      fail("deepgram", "providerRejected", "The response carried no transcript."),
-    );
+    return yield* fail("deepgram", "providerRejected", "The response carried no transcript.");
   }
   return transcript;
 });
@@ -169,9 +165,7 @@ export const transcribeWithGroq = Effect.fn("speechToText.groq")(function* (
 
   const body = (yield* send("groq", deps.httpClient, request)) as { text?: unknown };
   if (typeof body.text !== "string") {
-    return yield* Effect.fail(
-      fail("groq", "providerRejected", "The response carried no transcript."),
-    );
+    return yield* fail("groq", "providerRejected", "The response carried no transcript.");
   }
   return body.text;
 });
@@ -213,12 +207,10 @@ export const transcribeWithOpenRouter = Effect.fn("speechToText.openrouter")(fun
 ) {
   const format = audioFormat(deps.mimeType);
   if (!OPENROUTER_AUDIO_FORMATS.has(format)) {
-    return yield* Effect.fail(
-      fail(
-        "openrouter",
-        "audioRejected",
-        `OpenRouter does not accept ${format} audio. Deepgram or Groq will take this recording.`,
-      ),
+    return yield* fail(
+      "openrouter",
+      "audioRejected",
+      `OpenRouter does not accept ${format} audio. Deepgram or Groq will take this recording.`,
     );
   }
 
@@ -255,12 +247,10 @@ export const transcribeWithOpenRouter = Effect.fn("speechToText.openrouter")(fun
 
   const content = body.choices?.[0]?.message?.content;
   if (typeof content !== "string") {
-    return yield* Effect.fail(
-      fail(
-        "openrouter",
-        "providerRejected",
-        "The model returned no text. It may not accept audio input.",
-      ),
+    return yield* fail(
+      "openrouter",
+      "providerRejected",
+      "The model returned no text. It may not accept audio input.",
     );
   }
   return stripChatPreamble(content);

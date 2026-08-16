@@ -248,7 +248,5 @@ export function applyDroidAcpInteractionMode<E>(input: {
 export function droidSettingsToRuntimeSettings(
   settings: Pick<DroidSettings, "binaryPath"> | null | undefined,
 ): DroidAcpRuntimeSettings {
-  return {
-    ...(settings?.binaryPath ? { binaryPath: settings.binaryPath } : {}),
-  };
+  return settings?.binaryPath ? { binaryPath: settings.binaryPath } : {};
 }
