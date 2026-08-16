@@ -1,6 +1,8 @@
 import {
   type AntigravitySettings,
+  DEFAULT_MODEL_BY_PROVIDER,
   type ModelCapabilities,
+  ProviderDriverKind,
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
@@ -27,6 +29,8 @@ import {
 } from "../providerMaintenance.ts";
 import { parseAntigravityModelLines } from "./AntigravityModels.ts";
 
+const ANTIGRAVITY_DRIVER_KIND = ProviderDriverKind.make("antigravity");
+
 const ANTIGRAVITY_PRESENTATION = {
   displayName: "Antigravity",
   badgeLabel: "Early Access",
@@ -41,10 +45,19 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 
+/**
+ * One entry, and only until the CLI answers.
+ *
+ * Antigravity ships new Gemini generations faster than Ronin ships releases, so
+ * anything selectable comes from `agy models` — see `parseAntigravityModelLines`.
+ * This placeholder only keeps the picker from being empty before the first
+ * probe, and shares its slug with the alias table in contracts so there is a
+ * single name to update.
+ */
 const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
   {
-    slug: "Gemini 3.5 Flash",
-    name: "Gemini 3.5 Flash",
+    slug: DEFAULT_MODEL_BY_PROVIDER[ANTIGRAVITY_DRIVER_KIND] ?? "gemini-3.5-flash-medium",
+    name: "Gemini 3.5 Flash (Medium)",
     isCustom: false,
     capabilities: EMPTY_CAPABILITIES,
   },
@@ -107,6 +120,10 @@ const runAntigravityCommand = (
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         env: environment,
         shell: spawnCommand.shell,
+        // `agy models` waits on stdin before printing anything, so the default
+        // open pipe hangs it until the timeout and leaves the picker on its
+        // placeholder. Closing stdin is what makes the CLI answer at all.
+        stdin: "ignore",
       }),
     );
   });
@@ -211,6 +228,14 @@ export const checkAntigravityProviderStatus = Effect.fn("checkAntigravityProvide
             }),
           )
         : [];
+    if (discovered.length === 0) {
+      // Silent fallback is why a stale picker went unnoticed for so long: it
+      // looks identical to a provider that simply has one model.
+      yield* Effect.logWarning("Antigravity model discovery returned no models.", {
+        timedOut: Result.isSuccess(modelsResult) && Option.isNone(modelsResult.success),
+        failed: Result.isFailure(modelsResult),
+      });
+    }
     const models =
       discovered.length > 0
         ? antigravityModelsFromSettings(settings.customModels, discovered)

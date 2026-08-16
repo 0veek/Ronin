@@ -12,6 +12,7 @@ import * as NodeChildProcess from "node:child_process";
 
 import {
   type AntigravitySettings,
+  DEFAULT_MODEL_BY_PROVIDER,
   EventId,
   type ProviderRuntimeEvent,
   type ProviderSession,
@@ -20,6 +21,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { normalizeModelSlug } from "@t3tools/shared/model";
 import { resolveSpawnCommand, terminateProcessTree } from "@t3tools/shared/shell";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -37,9 +39,21 @@ import {
 import { type AntigravityAdapterShape } from "../Services/AntigravityAdapter.ts";
 
 const PROVIDER = ProviderDriverKind.make("antigravity");
-const DEFAULT_MODEL = "Gemini 3.5 Flash";
+const DEFAULT_MODEL = DEFAULT_MODEL_BY_PROVIDER[PROVIDER] ?? "gemini-3.5-flash-medium";
 const PRINT_TIMEOUT = "30m";
+/** Enough of a rejected launch to read, without holding a runaway log in memory. */
+const STDERR_CAPTURE_LIMIT = 4_000;
 const ANTIGRAVITY_RESUME_VERSION = 1 as const;
+
+/**
+ * `agy` matches `--model` against the ids from `agy models`, never against the
+ * labels it prints beside them, and answers anything else with a hard
+ * "invalid model selection". Threads saved under the old label-shaped slugs go
+ * through the contracts alias table on their way to the command line.
+ */
+function resolveAntigravityModel(model: string | null | undefined): string {
+  return normalizeModelSlug(model, PROVIDER) ?? DEFAULT_MODEL;
+}
 
 /**
  * Ends the CLI and whatever it started.
@@ -143,7 +157,7 @@ export function makeAntigravityAdapter(
         }
         const now = yield* nowIso;
         const resume = parseAntigravityResume(input.resumeCursor);
-        const model = input.modelSelection?.model?.trim() || DEFAULT_MODEL;
+        const model = resolveAntigravityModel(input.modelSelection?.model);
         const session: ProviderSession = {
           provider: PROVIDER,
           providerInstanceId: boundInstanceId,
@@ -207,7 +221,7 @@ export function makeAntigravityAdapter(
           });
         }
         const turnId = TurnId.make(yield* randomUUIDv4);
-        const model = input.modelSelection?.model?.trim() || ctx.session.model || DEFAULT_MODEL;
+        const model = resolveAntigravityModel(input.modelSelection?.model ?? ctx.session.model);
         const cwd = ctx.session.cwd ?? serverConfig.cwd;
         const command = settings.binaryPath || "agy";
         const args = [
@@ -264,6 +278,14 @@ export function makeAntigravityAdapter(
             }),
         });
         ctx.activeProcess = child;
+        // The CLI writes its launch rejections (an unknown `--model`, a missing
+        // login) to stderr and then exits, so without this a bad model reads as
+        // a bare exit code in the UI.
+        let stderrTail = "";
+        child.stderr?.setEncoding("utf8");
+        child.stderr?.on("data", (chunk: string) => {
+          stderrTail = `${stderrTail}${chunk}`.slice(-STDERR_CAPTURE_LIMIT);
+        });
         child.stdout?.setEncoding("utf8");
         child.stdout?.on("data", (chunk: string) => {
           if (!chunk.trim()) return;
@@ -303,7 +325,14 @@ export function makeAntigravityAdapter(
                   state: code === 0 ? "completed" : "failed",
                   ...(code === 0
                     ? {}
-                    : { errorMessage: `Antigravity CLI exited with code ${String(code)}.` }),
+                    : {
+                        errorMessage: [
+                          `Antigravity CLI exited with code ${String(code)}.`,
+                          stderrTail.trim(),
+                        ]
+                          .filter(Boolean)
+                          .join(" "),
+                      }),
                 },
               });
             }),

@@ -1,45 +1,52 @@
-const EFFORT_ORDER = ["low", "medium", "high", "thinking"] as const;
+/**
+ * Reader for `agy models`, the only list of Antigravity models that is true for
+ * the CLI actually installed.
+ *
+ * Each row is `<id>\t<label>`: the value `--model` takes, then how Antigravity
+ * writes it. Ronin keeps both verbatim. Reasoning effort lives inside the id
+ * (`gemini-3.7-flash-high`) and the CLI rejects a family id unless `--effort`
+ * comes with it, so a whole row is the only spelling we know is launchable —
+ * which is why the label stays in the model name rather than being split off
+ * into an option.
+ *
+ * @module AntigravityModels
+ */
 
-export function parseAntigravityCliModelLabel(
-  value: string,
-): { model: string; effort?: string } | null {
-  // oxlint-disable-next-line no-control-regex -- stripping ANSI SGR codes requires matching ESC.
-  const stripped = value.replace(/\x1b\[[0-9;]*m/g, "").trim();
-  if (!stripped) return null;
-
-  const tabIndex = stripped.indexOf("\t");
-  const labelColumn =
-    tabIndex >= 0 ? stripped.slice(tabIndex + 1).trim() : stripped.replace(/^(?:[*•-]\s+)+/u, "");
-  const trimmed = labelColumn.replace(/^(?:[*•-]\s+)+/u, "").trim();
-  if (!trimmed) return null;
-
-  const match = trimmed.match(/^(.*?)\s+\(([^()]+)\)$/u);
-  if (!match?.[1] || !match[2]) return { model: trimmed };
-  return {
-    model: match[1].trim(),
-    effort: match[2].trim().toLowerCase(),
-  };
-}
-
-export function parseAntigravityModelLines(output: string): ReadonlyArray<{
+export interface AntigravityCliModel {
   readonly slug: string;
   readonly name: string;
-  readonly efforts: ReadonlyArray<string>;
-}> {
-  const groups = new Map<string, string[]>();
+}
+
+// oxlint-disable-next-line no-control-regex -- stripping ANSI SGR codes requires matching ESC.
+const ANSI_SGR = /\x1b\[[0-9;]*m/g;
+/** `agy` marks the active model with a bullet in some builds. */
+const LEADING_MARKER = /^(?:[*•-]\s+)+/u;
+
+export function parseAntigravityModelLine(value: string): AntigravityCliModel | null {
+  const stripped = value.replace(ANSI_SGR, "").trim();
+  const tabIndex = stripped.indexOf("\t");
+  // Progress chatter ("Fetching available models...") has no id column, and a
+  // row without one is not something we could ever pass to `--model`.
+  if (tabIndex < 0) return null;
+
+  const slug = stripped.slice(0, tabIndex).replace(LEADING_MARKER, "").trim();
+  if (!slug || /\s/u.test(slug)) return null;
+
+  const name = stripped
+    .slice(tabIndex + 1)
+    .replace(LEADING_MARKER, "")
+    .trim();
+  return { slug, name: name || slug };
+}
+
+export function parseAntigravityModelLines(output: string): ReadonlyArray<AntigravityCliModel> {
+  const models: AntigravityCliModel[] = [];
+  const seen = new Set<string>();
   for (const line of output.split(/\r?\n/g)) {
-    const parsed = parseAntigravityCliModelLabel(line);
-    if (!parsed) continue;
-    const efforts = groups.get(parsed.model) ?? [];
-    if (parsed.effort && !efforts.includes(parsed.effort)) efforts.push(parsed.effort);
-    groups.set(parsed.model, efforts);
+    const model = parseAntigravityModelLine(line);
+    if (!model || seen.has(model.slug)) continue;
+    seen.add(model.slug);
+    models.push(model);
   }
-  return [...groups.entries()].map(([model, discoveredEfforts]) => {
-    const efforts = discoveredEfforts.toSorted((left, right) => {
-      const leftIndex = EFFORT_ORDER.indexOf(left as (typeof EFFORT_ORDER)[number]);
-      const rightIndex = EFFORT_ORDER.indexOf(right as (typeof EFFORT_ORDER)[number]);
-      return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
-    });
-    return { slug: model, name: model, efforts };
-  });
+  return models;
 }

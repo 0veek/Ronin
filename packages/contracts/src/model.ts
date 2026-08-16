@@ -140,6 +140,12 @@ export const GROK_REASONING_EFFORT_OPTIONS = ["none", "low", "medium", "high"] a
 export type GrokReasoningEffort = (typeof GROK_REASONING_EFFORT_OPTIONS)[number];
 const OPENCODE_DRIVER_KIND = ProviderDriverKind.make("opencode");
 const ANTIGRAVITY_DRIVER_KIND = ProviderDriverKind.make("antigravity");
+/**
+ * Seed slug only, and only until `agy models` answers. `agy` matches `--model`
+ * against its own ids, so this has to be one of them — the display label it
+ * used to hold ("Gemini 3.5 Flash") was rejected by the CLI on every turn.
+ */
+const ANTIGRAVITY_CURRENT_MODEL = "gemini-3.5-flash-medium";
 const DROID_DRIVER_KIND = ProviderDriverKind.make("droid");
 const KILO_DRIVER_KIND = ProviderDriverKind.make("kilo");
 const PI_DRIVER_KIND = ProviderDriverKind.make("pi");
@@ -164,7 +170,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [CURSOR_DRIVER_KIND]: "auto",
   [GROK_DRIVER_KIND]: GROK_CURRENT_MODEL,
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
-  [ANTIGRAVITY_DRIVER_KIND]: "Gemini 3.5 Flash",
+  [ANTIGRAVITY_DRIVER_KIND]: ANTIGRAVITY_CURRENT_MODEL,
   [DROID_DRIVER_KIND]: "claude-opus-4-8",
   [KILO_DRIVER_KIND]: "kilo/kilo-auto/free",
 };
@@ -244,6 +250,16 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
     "grok-code-fast": GROK_CURRENT_MODEL,
     "grok-code-fast-1": GROK_CURRENT_MODEL,
     "code-fast": GROK_CURRENT_MODEL,
+  },
+  // Ronin used to store Antigravity models under their display label, and a
+  // label is not something `agy --model` accepts. Threads saved that way point
+  // forward at the equivalent CLI id. `agy` also refuses a bare family id
+  // unless `--effort` comes with it, so the base ids resolve to their middle
+  // variant. Live ids are never listed here — `AntigravityProvider` takes
+  // those from `agy models` at probe time.
+  [ANTIGRAVITY_DRIVER_KIND]: {
+    "Gemini 3.5 Flash": ANTIGRAVITY_CURRENT_MODEL,
+    "gemini-3.5-flash": ANTIGRAVITY_CURRENT_MODEL,
   },
 };
 
