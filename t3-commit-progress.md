@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `d484735c6` — `fix(web): keep highlighted command menu items clear of the scroll fade (#7132)` (2026-08-15) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                             |
-| **Ported on**                 | 2026-08-16                                                                                                  |
+|                               |                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `bab4b6f02` — `fix(web): align Windows update confirmation copy (#7208)` (2026-08-16) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                       |
+| **Ported on**                 | 2026-08-16                                                                            |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -529,3 +529,96 @@ settings, keybindings), contracts (IPC, keybindings, orchestration attachments),
 (Claude / Codex / Cursor / Grok / OpenCode), remote SSH, docs (`docs/user/composer.md`,
 `keybindings.md`, `source-control.md`, `providers-claude.md`). No mobile / Connect / WSL /
 Playwright picker restore.
+
+## Batch 6 — reviewed through `bab4b6f02` (7 commits)
+
+Snapshot tip: `bab4b6f02b8bdaf15fd32636a97f69ff657cec50`. Watermark was `d484735c6`.
+
+### Ported (3)
+
+| Upstream    | Title                                                                           | Notes                                                                  |
+| ----------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `3583cd27d` | test: favor behavior over implementation details (#7157)                        | **subset** — web + shared hunks only; mobile hunks dropped             |
+| `4cb676cc1` | docs: point CLAUDE.md at AGENTS.md with an @import instead of a symlink (#7171) | clean — reverses Batch 5's `2fc676239`, matching upstream's new stance |
+| `4c1d99d7f` | fix(web): show filenames when commit dialog paths overflow (#6392)              | clean — Ronin's changed-file row still matched upstream's parent       |
+
+`3583cd27d` is upstream's "assert behavior, not implementation" pass. Two of its three targets are
+mobile (`peekPendingTerminalLaunch`, `threadTerminalSubscriptionKey` and their tests) and were
+dropped. What applies here removes genuinely dead exports rather than coverage:
+
+- `toolCallExpandedBodyClassName` is un-exported from `MessagesTimeline.tsx` and its test dropped.
+  That test asserted the class string carries `var(--font-size-code`, from Batch 5's `5e1473715`
+  port. The `--font-size-code` sizing itself is untouched; only the string-shape assertion goes.
+- `COMPOSER_PRIMARY_ACTIONS_COMPACT_BREAKPOINT_PX` was an alias of
+  `COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX` with no reader outside its own module and
+  test. Verified by grep across `apps/web` and `packages` before removing it.
+- One duplicate `nextTerminalId([])` assertion in `packages/shared/src/terminalLabels.test.ts`.
+
+`4cb676cc1` replaces the `CLAUDE.md → AGENTS.md` symlink with a one-line `@AGENTS.md` import.
+Recreating that symlink _was_ a Batch 5 port (`2fc676239`); upstream has now reversed itself, and the
+new form is the one that survives a Windows checkout — which matters for a fork whose shipped
+product is a Windows desktop app. Nothing in the tree reads `CLAUDE.md` as content: the only
+references are the bundled `mattpocock` skills (generic guidance) and a file-icon test fixture. The
+resulting blob is byte-identical to upstream's.
+
+`4c1d99d7f` adds `StartTruncatedPath` (an RTL `<bdi>` trick that keeps the filename visible when a
+long path overflows) and points the commit dialog's changed-file rows at it. Both new files match
+upstream byte for byte; Ronin's `ui/tooltip` already exposes the `Tooltip` / `TooltipTrigger render=`
+/ `TooltipPopup` API the component needs.
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (4)
+
+| Upstream    | Title                                                    | Why                                                                     |
+| ----------- | -------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `277322933` | test: remove redundant and stale tests (#6267)           | test-only deletion; the tests are not stale here — see below            |
+| `d23b181da` | feat(mobile): add built-in themes (#6619)                | mobile feature; its web/shared hunks only exist to feed it — see below  |
+| `89c52a331` | fix(mobile): keep sheet actions below status bar (#6635) | no mobile app in this repo                                              |
+| `bab4b6f02` | fix(web): align Windows update confirmation copy (#7208) | upstream's electron-updater surface is cut — same reason as `1a6599437` |
+
+`277322933` deletes 875 lines of tests across 11 files. Three of those files do not exist here
+(`PickPreload.test.ts`, `infra/relay/scripts/deploy.test.ts`, `scripts/mobile-showcase.test.ts` —
+all cut surfaces) and one more is absent (`apps/web/src/features/terminal/terminalMenu.test.ts`).
+The remaining seven were run before deciding, and **all pass: 75 tests across 7 files**. They cover
+live Ronin behavior, including `orchestrationRecovery.test.ts` (10 tests on the replay/recovery
+coordinator, which is the remote-ready reconnect path this fork is built around),
+`orchestrationEventEffects.test.ts`, `historyBootstrap.test.ts`, `terminalUiStateCleanup.test.ts`,
+`ProviderRegistry.test.ts`'s merged-snapshot persistence, `commandInvariants.test.ts`'s
+`requireNonNegativeInteger`, and `tailscaleEndpointProvider.test.ts`'s CGNAT-boundary check for
+`isTailscaleIpv4Address`. Upstream leaves those production functions in place, so porting the
+deletion would only make them untested. "Redundant" is upstream's coverage judgment on upstream's
+suite; taking it buys this fork nothing and costs it coverage on a path it diverges toward.
+
+`d23b181da` lifts the built-in palettes (T3 Chat, Ember, Grove, Iris, Ocean) out of
+`apps/web/src/themePalette.ts` into `packages/shared/src/themePalettes.ts`, plus a shared
+`themePreview.ts` render spec, so the mobile app can render the same themes. There is no behavior
+change for web — `ThemePreviewCircles` swaps inline constants for spec-derived ones that compute to
+the same blur, scale and gradient stops. With no mobile app to consume it, the extraction is churn
+across a module where Ronin has deliberately diverged (its own Sakura / Paper / Graphite themes).
+
+`bab4b6f02` drops the Windows-specific paragraph from an install-confirmation dialog that does not
+exist here. All four files it touches are cut: `desktopUpdate.logic.ts`, `LegacySidebar.tsx` and
+`sidebar/SidebarUpdatePill.tsx` are absent, and `SettingsPanels.tsx` never calls
+`getDesktopUpdateInstallConfirmationMessage` — Ronin replaced that whole state machine with
+`appUpdate.ts` + `AppUpdateProvider` (see Batch 4's note on `1a6599437`).
+
+### Verification
+
+- Focused tests: `StartTruncatedPath` + `composerFooterLayout` + `terminalLabels` 3 files / 15 tests;
+  `MessagesTimeline.test.tsx` 20 tests; `GitActionsControl.logic.test.ts` 62 tests — all pass.
+- Triage evidence for `277322933`: the 7 present files it deletes were run and pass (4 web files /
+  22 tests, 3 server+desktop files / 53 tests).
+- Typecheck: `@t3tools/web`, `@t3tools/shared` — 0 errors.
+- `vp lint` over all 8 changed/added source files — 0 findings. `vp fmt --check` — all correctly
+  formatted.
+- `git diff --check` and `git diff --cached --check` pass. Index left unstaged, as found; the two
+  new `StartTruncatedPath` files remain untracked until committed.
+
+**Hit every surface (for this batch):** web renderer (commit dialog changed-file rows, composer
+footer layout, message timeline), `packages/shared` (terminal labels test), repo agent docs
+(`CLAUDE.md`). No contract, provider, desktop-IPC, connection-mode or user-doc surface is touched by
+what was ported — the commit-dialog fix is presentation-only and reversible by nature (the full path
+stays available in the row's tooltip).
