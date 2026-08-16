@@ -1097,6 +1097,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     // Element pick mode removed; kept as a no-op for bridge compatibility.
   });
 
+  // oxlint-disable-next-line require-yield -- Effect.fn needs generator syntax; this stub has nothing to yield.
   const pickElement = Effect.fn("PreviewManager.pickElement")(function* (_tabId: string) {
     // Element pick mode removed; kept as a no-op for bridge compatibility.
     return null;

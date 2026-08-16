@@ -103,6 +103,10 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
     const crypto = yield* Crypto.Crypto;
     const sessions = new Map<ThreadId, PiSessionContext>();
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+    // The runtime's session subscription fires outside the fiber. Running it
+    // with the captured context keeps the adapter's logger, tracer, and fiber
+    // refs attached instead of spawning on a fresh default runtime.
+    const runDetached = Effect.runPromiseWith(yield* Effect.context<never>());
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const randomUUIDv4 = crypto.randomUUIDv4.pipe(
@@ -207,17 +211,19 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
           if (ctx.activeTurnId === undefined) return;
           if (event.type === "message_update" && typeof event.text === "string" && event.text) {
             const turnId = ctx.activeTurnId;
-            void Effect.runPromise(
-              Effect.gen(function* () {
-                yield* offerRuntimeEvent({
-                  type: "content.delta",
-                  ...(yield* makeEventStamp()),
-                  provider: PROVIDER,
-                  threadId: input.threadId,
-                  turnId,
-                  payload: { streamKind: "assistant_text", delta: event.text ?? "" },
-                });
-              }),
+            void runDetached(
+              makeEventStamp().pipe(
+                Effect.flatMap((stamp) =>
+                  offerRuntimeEvent({
+                    type: "content.delta",
+                    ...stamp,
+                    provider: PROVIDER,
+                    threadId: input.threadId,
+                    turnId,
+                    payload: { streamKind: "assistant_text", delta: event.text ?? "" },
+                  }),
+                ),
+              ),
             );
           }
         });

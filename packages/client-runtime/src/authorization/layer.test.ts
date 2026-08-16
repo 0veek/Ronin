@@ -45,9 +45,7 @@ const websocketTicket = (ticket: string) =>
     expiresAt: "2026-06-06T01:00:00.000Z",
   });
 
-const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (input: {
-  readonly responses: ReadonlyArray<Response>;
-}) {
+const makeHarness = (input: { readonly responses: ReadonlyArray<Response> }) => {
   const fetch = recordedFetch(input.responses);
 
   const layer = RemoteEnvironmentAuthorization.layer.pipe(
@@ -73,12 +71,12 @@ const makeHarness = Effect.fn("TestRemoteAuthorization.makeHarness")(function* (
     layer,
     fetch,
   };
-});
+};
 
 describe("RemoteEnvironmentAuthorization", () => {
   it.effect("reuses a validated bearer descriptor while issuing fresh websocket tickets", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness({
+      const harness = makeHarness({
         responses: [
           Response.json(DESCRIPTOR),
           websocketTicket("first-ticket"),
@@ -112,7 +110,7 @@ describe("RemoteEnvironmentAuthorization", () => {
   it.effect("revalidates a bearer descriptor after the cache expires", () =>
     Effect.gen(function* () {
       const reassignedEnvironmentId = EnvironmentId.make("environment-2");
-      const harness = yield* makeHarness({
+      const harness = makeHarness({
         responses: [
           Response.json(DESCRIPTOR),
           websocketTicket("first-ticket"),

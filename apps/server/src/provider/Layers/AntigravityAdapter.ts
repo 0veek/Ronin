@@ -8,7 +8,7 @@
  * @module AntigravityAdapter
  */
 // @effect-diagnostics nodeBuiltinImport:off
-import { spawn, type ChildProcess } from "node:child_process";
+import * as NodeChildProcess from "node:child_process";
 
 import {
   type AntigravitySettings,
@@ -48,7 +48,7 @@ const ANTIGRAVITY_RESUME_VERSION = 1 as const;
  * cmd.exe, and terminating that alone would leave the agent running with nothing
  * left to stop it by.
  */
-const killChildTree = (child: ChildProcess): Effect.Effect<void> =>
+const killChildTree = (child: NodeChildProcess.ChildProcess): Effect.Effect<void> =>
   terminateProcessTree(child.pid).pipe(Effect.andThen(Effect.sync(() => child.kill())));
 
 export interface AntigravityAdapterLiveOptions {
@@ -65,7 +65,7 @@ interface AntigravitySessionContext {
   session: ProviderSession;
   readonly turns: StoredTurn[];
   activeTurnId: TurnId | undefined;
-  activeProcess: ChildProcess | undefined;
+  activeProcess: NodeChildProcess.ChildProcess | undefined;
   conversationId: string | undefined;
   stopped: boolean;
 }
@@ -95,6 +95,10 @@ export function makeAntigravityAdapter(
     const crypto = yield* Crypto.Crypto;
     const sessions = new Map<ThreadId, AntigravitySessionContext>();
     const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
+    // The CLI's stdout/close handlers fire outside the fiber. Running them with
+    // the captured context keeps the adapter's logger, tracer, and fiber refs
+    // attached instead of spawning each callback on a fresh default runtime.
+    const runDetached = Effect.runPromiseWith(yield* Effect.context<never>());
 
     const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
     const randomUUIDv4 = crypto.randomUUIDv4.pipe(
@@ -245,7 +249,7 @@ export function makeAntigravityAdapter(
         );
         const child = yield* Effect.try({
           try: () =>
-            spawn(spawnCommand.command, spawnCommand.args, {
+            NodeChildProcess.spawn(spawnCommand.command, spawnCommand.args, {
               cwd,
               env: options?.environment,
               stdio: ["ignore", "pipe", "pipe"],
@@ -263,17 +267,19 @@ export function makeAntigravityAdapter(
         child.stdout?.setEncoding("utf8");
         child.stdout?.on("data", (chunk: string) => {
           if (!chunk.trim()) return;
-          void Effect.runPromise(
-            Effect.gen(function* () {
-              yield* offerRuntimeEvent({
-                type: "content.delta",
-                ...(yield* makeEventStamp()),
-                provider: PROVIDER,
-                threadId: input.threadId,
-                turnId,
-                payload: { streamKind: "assistant_text", delta: chunk },
-              });
-            }),
+          void runDetached(
+            makeEventStamp().pipe(
+              Effect.flatMap((stamp) =>
+                offerRuntimeEvent({
+                  type: "content.delta",
+                  ...stamp,
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: { streamKind: "assistant_text", delta: chunk },
+                }),
+              ),
+            ),
           );
         });
         child.once("close", (code) => {
@@ -282,7 +288,7 @@ export function makeAntigravityAdapter(
           }
           ctx.activeProcess = undefined;
           ctx.activeTurnId = undefined;
-          void Effect.runPromise(
+          void runDetached(
             Effect.gen(function* () {
               const updatedAt = yield* nowIso;
               const { activeTurnId: _activeTurnId, ...readySession } = ctx.session;

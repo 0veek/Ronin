@@ -279,7 +279,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // record which group owns the cursor.
       const continuationKey = yield* registry.getInstanceInfo(providerInstanceId).pipe(
         Effect.map((info) => info.continuationIdentity.continuationKey),
-        Effect.catchCause(() => Effect.succeed(undefined)),
+        Effect.catchCause(() => Effect.void),
       );
       yield* directory.upsert({
         threadId,
@@ -1041,7 +1041,6 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   });
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
-    const threadIds = yield* directory.listThreadIds();
     const currentAdapters = yield* getAdapterEntries;
     const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
       adapter.listSessions().pipe(

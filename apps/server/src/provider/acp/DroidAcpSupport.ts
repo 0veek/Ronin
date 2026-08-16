@@ -5,9 +5,9 @@
  * @module DroidAcpSupport
  */
 // @effect-diagnostics nodeBuiltinImport:off
-import { existsSync } from "node:fs";
-import * as nodeOs from "node:os";
-import * as nodePath from "node:path";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import { type DroidSettings, ProviderDriverKind } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -85,17 +85,17 @@ export function resolveDroidCliBinaryPath(
     return name;
   }
   const searchPath = process.env.PATH ?? "";
-  for (const directory of searchPath.split(nodePath.delimiter)) {
+  for (const directory of searchPath.split(NodePath.delimiter)) {
     if (!directory.trim()) {
       continue;
     }
-    const candidate = nodePath.join(directory, name);
-    if (existsSync(candidate)) {
+    const candidate = NodePath.join(directory, name);
+    if (NodeFS.existsSync(candidate)) {
       return candidate;
     }
   }
-  const localBin = nodePath.join(nodeOs.homedir(), ".local", "bin", name);
-  if (existsSync(localBin)) {
+  const localBin = NodePath.join(NodeOS.homedir(), ".local", "bin", name);
+  if (NodeFS.existsSync(localBin)) {
     return localBin;
   }
   return name;

@@ -306,6 +306,12 @@ function ThemeColorPickerPanel({
       <div className="grid gap-3 px-3 pb-3 pt-3">
         <div
           aria-label={`${label} saturation and brightness`}
+          // `role="slider"` requires aria-valuenow. This plane is two-axis, so
+          // valuenow tracks saturation (the horizontal axis) and valuetext
+          // carries both dimensions for screen readers.
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={Math.round(hsv.s * 100)}
           aria-valuetext={`saturation ${Math.round(hsv.s * 100)}%, brightness ${Math.round(hsv.v * 100)}%`}
           className="relative h-32 cursor-crosshair touch-none overflow-hidden rounded-(--radius) outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"
           role="slider"

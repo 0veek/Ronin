@@ -17,6 +17,7 @@ import {
   ClaudeSettings,
   CodexSettings,
   DEFAULT_SERVER_SETTINGS,
+  defaultInstanceIdForDriver,
   ProviderDriverKind,
   ProviderInstanceId,
   ServerSettings,
@@ -34,6 +35,7 @@ import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
+import { BUILT_IN_DRIVERS } from "../builtInDrivers.ts";
 import * as OpenCodeRuntime from "../opencodeRuntime.ts";
 import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./ProviderInstanceRegistryHydration.ts";
@@ -1802,13 +1804,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 (provider) => provider.instanceId === ProviderInstanceId.make("cursor"),
               );
 
-              assert.deepStrictEqual(providers.map((provider) => provider.instanceId).toSorted(), [
-                "claudeAgent",
-                "codex",
-                "cursor",
-                "grok",
-                "opencode",
-              ]);
+              // Disabling a provider must not drop it from the roster — every
+              // built-in driver still reports an instance. Derived from
+              // BUILT_IN_DRIVERS so adding a driver doesn't rot this test.
+              assert.deepStrictEqual(
+                providers.map((provider) => provider.instanceId).toSorted(),
+                BUILT_IN_DRIVERS.map((driver) =>
+                  defaultInstanceIdForDriver(driver.driverKind),
+                ).toSorted(),
+              );
               assert.strictEqual(cursorProvider?.enabled, false);
               assert.strictEqual(cursorProvider?.status, "disabled");
               assert.strictEqual(cursorProvider?.message, "Cursor is disabled in Ronin settings.");

@@ -231,17 +231,18 @@ function JumpHintBadge(props: { label: string }) {
 // Self-ticking so only this span re-renders each second, not the whole row.
 function WorkingDuration(props: { startedAt: string | null }) {
   const startedMs = props.startedAt !== null ? Date.parse(props.startedAt) : Number.NaN;
-  const [, setTick] = useState(0);
+  // The clock lives in state rather than being read during render: reading
+  // Date.now() in the render body makes the component impure, which breaks
+  // memoization. The interval already owns the once-a-second cadence.
+  const [nowMs, setNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (Number.isNaN(startedMs)) return;
-    const id = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
+    const id = window.setInterval(() => setNowMs(Date.now()), 1_000);
     return () => window.clearInterval(id);
   }, [startedMs]);
   if (Number.isNaN(startedMs)) return null;
   return (
-    <span className="font-mono tabular-nums">
-      {formatWorkingDurationLabel(Date.now() - startedMs)}
-    </span>
+    <span className="font-mono tabular-nums">{formatWorkingDurationLabel(nowMs - startedMs)}</span>
   );
 }
 

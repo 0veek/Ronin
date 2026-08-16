@@ -142,66 +142,68 @@ describe("ConnectionCatalogDocument", () => {
     expect(document.credentials).toEqual([]);
   });
 
-  it("drops relay targets and remote DPoP tokens from legacy documents", async () => {
-    const sanitized = sanitizeConnectionCatalogDocument({
-      schemaVersion: 1,
-      targets: [
-        {
-          _tag: "RelayConnectionTarget",
-          environmentId: "environment-relay",
-          label: "Relay",
-        },
-        {
-          _tag: "BearerConnectionTarget",
-          environmentId: ENVIRONMENT_ID,
-          label: "Remote",
-          connectionId: "bearer-1",
-        },
-      ],
-      profiles: [BEARER_PROFILE],
-      credentials: [
-        {
-          connectionId: BEARER_TARGET.connectionId,
-          credential: BEARER_CREDENTIAL,
-        },
-      ],
-      remoteDpopTokens: [
-        {
-          environmentId: ENVIRONMENT_ID,
-          label: "Remote",
-          endpoint: {
-            httpBaseUrl: "https://remote.example.test",
-            wsBaseUrl: "wss://remote.example.test",
-            providerKind: "cloudflare_tunnel",
+  it.effect("drops relay targets and remote DPoP tokens from legacy documents", () =>
+    Effect.gen(function* () {
+      const sanitized = sanitizeConnectionCatalogDocument({
+        schemaVersion: 1,
+        targets: [
+          {
+            _tag: "RelayConnectionTarget",
+            environmentId: "environment-relay",
+            label: "Relay",
           },
-          accessToken: "dpop-token",
-          expiresAtEpochMs: 1_000_000,
-          dpopThumbprint: "thumbprint",
-        },
-      ],
-    });
+          {
+            _tag: "BearerConnectionTarget",
+            environmentId: ENVIRONMENT_ID,
+            label: "Remote",
+            connectionId: "bearer-1",
+          },
+        ],
+        profiles: [BEARER_PROFILE],
+        credentials: [
+          {
+            connectionId: BEARER_TARGET.connectionId,
+            credential: BEARER_CREDENTIAL,
+          },
+        ],
+        remoteDpopTokens: [
+          {
+            environmentId: ENVIRONMENT_ID,
+            label: "Remote",
+            endpoint: {
+              httpBaseUrl: "https://remote.example.test",
+              wsBaseUrl: "wss://remote.example.test",
+              providerKind: "cloudflare_tunnel",
+            },
+            accessToken: "dpop-token",
+            expiresAtEpochMs: 1_000_000,
+            dpopThumbprint: "thumbprint",
+          },
+        ],
+      });
 
-    expect(sanitized).toEqual({
-      schemaVersion: 1,
-      targets: [
-        {
-          _tag: "BearerConnectionTarget",
-          environmentId: ENVIRONMENT_ID,
-          label: "Remote",
-          connectionId: "bearer-1",
-        },
-      ],
-      profiles: [BEARER_PROFILE],
-      credentials: [
-        {
-          connectionId: BEARER_TARGET.connectionId,
-          credential: BEARER_CREDENTIAL,
-        },
-      ],
-    });
+      expect(sanitized).toEqual({
+        schemaVersion: 1,
+        targets: [
+          {
+            _tag: "BearerConnectionTarget",
+            environmentId: ENVIRONMENT_ID,
+            label: "Remote",
+            connectionId: "bearer-1",
+          },
+        ],
+        profiles: [BEARER_PROFILE],
+        credentials: [
+          {
+            connectionId: BEARER_TARGET.connectionId,
+            credential: BEARER_CREDENTIAL,
+          },
+        ],
+      });
 
-    const decoded = await Effect.runPromise(parseConnectionCatalogDocument(sanitized));
-    expect(decoded.targets).toHaveLength(1);
-    expect(decoded.targets[0]?._tag).toBe("BearerConnectionTarget");
-  });
+      const decoded = yield* parseConnectionCatalogDocument(sanitized);
+      expect(decoded.targets).toHaveLength(1);
+      expect(decoded.targets[0]?._tag).toBe("BearerConnectionTarget");
+    }),
+  );
 });

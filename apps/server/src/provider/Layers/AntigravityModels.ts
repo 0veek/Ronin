@@ -3,6 +3,7 @@ const EFFORT_ORDER = ["low", "medium", "high", "thinking"] as const;
 export function parseAntigravityCliModelLabel(
   value: string,
 ): { model: string; effort?: string } | null {
+  // oxlint-disable-next-line no-control-regex -- stripping ANSI SGR codes requires matching ESC.
   const stripped = value.replace(/\x1b\[[0-9;]*m/g, "").trim();
   if (!stripped) return null;
 

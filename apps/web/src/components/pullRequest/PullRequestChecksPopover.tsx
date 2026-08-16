@@ -55,6 +55,7 @@ function ChecksBody({ checks }: { checks: ReadonlyArray<PullRequestCheck> }) {
       {/* Keyed by position as well as by name: the host is the one that decides how many runs
           share a name, and a repeated key is a rendering fault rather than a wrong list. */}
       {checks.map((check, index) => (
+        // oxlint-disable-next-line react/no-array-index-key
         <li key={`${index}:${check.name}`} className="flex items-center gap-2 text-xs">
           <PullRequestCheckStatusIcon status={check.status} />
           <span className="min-w-0 flex-1 truncate" title={check.description ?? check.name}>
