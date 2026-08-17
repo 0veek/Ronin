@@ -18,6 +18,16 @@ the background.
 
 Dismissing the notification hides it for that release; a later release can notify you again.
 
+### If the update cannot install
+
+An update can fail for reasons you cannot fix from inside Ronin. On macOS this is the usual one:
+macOS refuses to swap in an update it cannot verify, so a build without an Apple Developer ID
+signature cannot replace itself.
+
+When that happens Ronin says so and offers **Download from GitHub**. Open it, download the build
+for your platform, and install it over the existing one. Your threads, settings, and project files
+are not affected.
+
 ### When Ronin links out instead
 
 Some builds cannot replace their own files, so the notification links to GitHub and you install the

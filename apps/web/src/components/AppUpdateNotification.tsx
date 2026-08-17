@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 
 import { useAppUpdate } from "./AppUpdateProvider";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+import { APP_REPOSITORY_URL } from "~/branding";
 import { useDesktopAppUpdate } from "~/hooks/useDesktopAppUpdate";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { ensureLocalApi } from "~/localApi";
@@ -11,6 +12,23 @@ import { ensureLocalApi } from "~/localApi";
 export const APP_UPDATE_NOTIFICATION_STORAGE_KEY = "ronin:app-update-notification:v1";
 
 const seenUpdateVersions = new Set<string>();
+
+export const APP_RELEASES_PAGE_URL = `${APP_REPOSITORY_URL}/releases/latest`;
+
+function openReleasePage(url: string, onOpened?: () => void) {
+  void ensureLocalApi()
+    .shell.openExternal(url)
+    .then(onOpened)
+    .catch((error: unknown) => {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not open the release",
+          description: error instanceof Error ? error.message : url,
+        }),
+      );
+    });
+}
 
 export function AppUpdateNotification() {
   const update = useAppUpdate();
@@ -28,6 +46,45 @@ export function AppUpdateNotification() {
   const desktopPercent = desktopUpdate?.state.percent;
   const desktopDownload = desktopUpdate?.download;
   const desktopInstall = desktopUpdate?.installAndRestart;
+  const desktopMessage = desktopUpdate?.state.message;
+  // Prefer the exact release the check found; fall back to the latest-release
+  // page so the escape hatch works even when we never learned a version.
+  const releaseUrl =
+    update.status === "available" || update.status === "up-to-date"
+      ? update.latestRelease.url
+      : APP_RELEASES_PAGE_URL;
+
+  // Self-updating can fail for reasons the user cannot fix from inside the app
+  // -- an unsigned macOS build is the common one, since macOS refuses to swap
+  // in an update it cannot verify. Always leave them a way to finish by hand.
+  useEffect(() => {
+    if (desktopStatus !== "error") {
+      return;
+    }
+
+    const toastId = toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: "Could not update automatically",
+        description: `${
+          desktopMessage ?? "The update could not be installed."
+        } Download the latest release and install it manually.`,
+        timeout: 0,
+        actionProps: {
+          children: "Download from GitHub",
+          onClick: () => {
+            openReleasePage(releaseUrl);
+          },
+        },
+        actionVariant: "outline",
+        data: { hideCopyButton: true },
+      }),
+    );
+
+    return () => {
+      toastManager.close(toastId);
+    };
+  }, [desktopStatus, desktopMessage, releaseUrl]);
 
   useEffect(() => {
     if (desktopStatus === undefined || desktopStatus === "idle" || desktopStatus === "checking") {
@@ -121,18 +178,7 @@ export function AppUpdateNotification() {
       setDismissedVersion(release.version);
     };
     const openRelease = () => {
-      void ensureLocalApi()
-        .shell.openExternal(release.url)
-        .then(dismiss)
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not open the release",
-              description: error instanceof Error ? error.message : release.url,
-            }),
-          );
-        });
+      openReleasePage(release.url, dismiss);
     };
 
     const toastId = toastManager.add(
