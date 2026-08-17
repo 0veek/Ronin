@@ -178,15 +178,13 @@ export const formatSchemaError = (cause: Cause.Cause<Schema.SchemaError>) => {
 const decodeJsonString = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const parseLenientJsonGetter = SchemaGetter.onSome((input: string) => {
-  // Strip single-line comments - alternation preserves quoted strings.
+  // Strip comments - alternation preserves quoted strings. Both comment forms
+  // are matched in one pass because whichever opens first wins: stripping line
+  // comments first would eat the `//` of a URL inside a block comment and
+  // leave the `/*` unterminated, and stripping block comments first would let
+  // a `/*` inside a line comment swallow the rest of the file.
   let stripped = input.replace(
-    /("(?:[^"\\]|\\.)*")|\/\/[^\n]*/g,
-    (match, stringLiteral: string | undefined) => (stringLiteral ? match : ""),
-  );
-
-  // Strip multi-line comments.
-  stripped = stripped.replace(
-    /("(?:[^"\\]|\\.)*")|\/\*[\s\S]*?\*\//g,
+    /("(?:[^"\\]|\\.)*")|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
     (match, stringLiteral: string | undefined) => (stringLiteral ? match : ""),
   );
 

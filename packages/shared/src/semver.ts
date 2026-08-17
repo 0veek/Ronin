@@ -7,8 +7,23 @@ interface ParsedSemver {
 
 const SEMVER_NUMBER_SEGMENT = /^\d+$/;
 
+/**
+ * Splits a version into its main segment and everything after the first
+ * hyphen. `split("-", 2)` cannot be used here: its limit discards the
+ * remainder rather than keeping it, so a prerelease that itself contains a
+ * hyphen ("1.2.3-nightly-20260901") would silently lose its tail and compare
+ * equal to every other build of the same prerelease name.
+ */
+function splitOnFirstHyphen(value: string): readonly [string, string | undefined] {
+  const hyphenIndex = value.indexOf("-");
+  if (hyphenIndex === -1) {
+    return [value, undefined];
+  }
+  return [value.slice(0, hyphenIndex), value.slice(hyphenIndex + 1)];
+}
+
 export function normalizeSemverVersion(version: string): string {
-  const [main, prerelease] = version.trim().split("-", 2);
+  const [main, prerelease] = splitOnFirstHyphen(version.trim());
   const segments: string[] = [];
   for (const segment of (main ?? "").split(".")) {
     const trimmed = segment.trim();
@@ -31,7 +46,7 @@ export function normalizeSemverVersion(version: string): string {
 
 export function parseSemver(value: string): ParsedSemver | null {
   const normalized = normalizeSemverVersion(value).replace(/^v/, "");
-  const [main = "", prerelease] = normalized.split("-", 2);
+  const [main = "", prerelease] = splitOnFirstHyphen(normalized);
   const segments = main.split(".");
   if (segments.length !== 3) {
     return null;

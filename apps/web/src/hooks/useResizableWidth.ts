@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { type PointerEvent as ReactPointerEvent, useCallback, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { getLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
 
@@ -88,6 +94,22 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     document.body.style.removeProperty("cursor");
     document.body.style.removeProperty("user-select");
     dragStateRef.current = null;
+  }, []);
+
+  // Unmounting mid-drag never delivers pointerup or pointercancel to the
+  // handle — removing an element that holds pointer capture fires
+  // lostpointercapture instead — so without this the whole document keeps the
+  // resize cursor and `user-select: none` until the window is reloaded.
+  useEffect(() => {
+    return () => {
+      const state = dragStateRef.current;
+      if (state?.rafId != null) {
+        cancelAnimationFrame(state.rafId);
+      }
+      dragStateRef.current = null;
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    };
   }, []);
 
   const onPointerDown = useCallback(

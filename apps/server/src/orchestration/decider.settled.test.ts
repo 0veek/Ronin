@@ -323,6 +323,30 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
         ]),
       }).pipe(Effect.flip);
       expect(stillOpen._tag).toBe("OrchestrationCommandInvariantError");
+
+      // A respond failure because the session is gone also clears: the
+      // provider callback died with the session, so no resolution can ever
+      // arrive and there is nothing for the user to retry. Left open, this
+      // pinned the thread as blocked-on-you forever with no way out.
+      const sessionGone = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.settle",
+          commandId: CommandId.make("cmd-settle-no-session-failed"),
+          threadId: ThreadId.make("thread-1"),
+        },
+        readModel: makeReadModel(null, null, null, [
+          activity("approval.requested", "req-4", {}),
+          activity("provider.approval.respond.failed", "req-4", {
+            detail: "No active provider session is bound to this thread.",
+          }),
+          activity("user-input.requested", "req-5", {}),
+          activity("provider.user-input.respond.failed", "req-5", {
+            detail: "No active provider session is bound to this thread.",
+          }),
+        ]),
+      });
+      const sessionGoneEvents = Array.isArray(sessionGone) ? sessionGone : [sessionGone];
+      expect(sessionGoneEvents[0]?.type).toBe("thread.settled");
     }),
   );
 

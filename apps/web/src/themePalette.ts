@@ -182,6 +182,14 @@ type CustomThemeLibrarySnapshot =
   | Readonly<{ status: "unavailable"; reason: "storage-unavailable"; cause: unknown }>;
 
 let customThemeLibrarySnapshot: CustomThemeLibrarySnapshot | null = null;
+/**
+ * The empty result `getCustomThemes` hands back when the library is
+ * unavailable. Shared rather than allocated per call because `getCustomThemes`
+ * is a `useSyncExternalStore` snapshot: React compares snapshots with
+ * `Object.is`, so a fresh `[]` reads as "the store changed" on every render and
+ * spins the component forever.
+ */
+export const EMPTY_CUSTOM_THEMES: ReadonlyArray<ThemeDefinition> = [];
 const themePreviewListeners = new Set<() => void>();
 let themePreviewSidebarArtwork: boolean | null = null;
 
@@ -340,7 +348,7 @@ export function invalidateCustomThemes() {
 
 export function getCustomThemes(): ReadonlyArray<ThemeDefinition> {
   const snapshot = getCustomThemeLibrarySnapshot();
-  return snapshot.status === "ready" ? snapshot.themes : [];
+  return snapshot.status === "ready" ? snapshot.themes : EMPTY_CUSTOM_THEMES;
 }
 
 export function getStoredCustomThemeCollection(

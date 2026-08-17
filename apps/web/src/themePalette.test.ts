@@ -561,6 +561,29 @@ describe("theme files", () => {
     vi.unstubAllGlobals();
   });
 
+  it("returns a stable empty array when the theme library is unavailable", () => {
+    // getCustomThemes is a useSyncExternalStore snapshot, and React compares
+    // snapshots with Object.is. A fresh [] per call reads as "the store
+    // changed" on every render and spins the component forever.
+    vi.stubGlobal("window", {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      localStorage: {
+        getItem: () => {
+          throw new Error("storage is blocked");
+        },
+      },
+    });
+
+    invalidateCustomThemes();
+    const first = getCustomThemes();
+    expect(first).toEqual([]);
+    expect(getCustomThemes()).toBe(first);
+
+    invalidateCustomThemes();
+    vi.unstubAllGlobals();
+  });
+
   it("preserves valid imported-theme collections and drops malformed metadata", () => {
     vi.stubGlobal("window", {
       localStorage: {

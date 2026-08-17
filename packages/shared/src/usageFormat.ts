@@ -29,10 +29,14 @@ export function formatCount(value: number): string {
  */
 export function formatTokens(value: number): string {
   const abs = Math.abs(value);
-  if (abs >= 1e12) return `${trim(value / 1e12)}T`;
-  if (abs >= 1e9) return `${trim(value / 1e9)}B`;
-  if (abs >= 1e6) return `${trim(value / 1e6)}M`;
-  if (abs >= 1e3) return `${trim(value / 1e3)}K`;
+  // Thresholds sit at 999.5x rather than 1000x because `trim` rounds to three
+  // significant figures and that rounding can carry past the unit it was
+  // picked for: 999_999 against a flat 1e3 boundary prints "1000K", a unit
+  // that does not exist. Promoting at the rounding boundary prints "1M".
+  if (abs >= 999.5e9) return `${trim(value / 1e12)}T`;
+  if (abs >= 999.5e6) return `${trim(value / 1e9)}B`;
+  if (abs >= 999.5e3) return `${trim(value / 1e6)}M`;
+  if (abs >= 999.5) return `${trim(value / 1e3)}K`;
   return INTEGER.format(Math.round(value));
 }
 

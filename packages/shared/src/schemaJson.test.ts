@@ -53,6 +53,27 @@ Done.`),
     });
   });
 
+  it("decodes block comments containing a URL", () => {
+    // The `//` in the URL must not be treated as a line comment: stripping
+    // line comments first would delete the rest of the line and leave the
+    // block comment unterminated.
+    expect(
+      decodeLenientJson(`{
+        /* see https://example.com for details */
+        "enabled": true
+      }`),
+    ).toEqual({ enabled: true });
+  });
+
+  it("decodes line comments containing a block-comment opener", () => {
+    expect(
+      decodeLenientJson(`{
+        // disabled for now: /* keep this
+        "enabled": true
+      }`),
+    ).toEqual({ enabled: true });
+  });
+
   it("rejects malformed JSON after lenient preprocessing", () => {
     expect(() => decodeLenientJson('{ "enabled": true,, }')).toThrow();
   });

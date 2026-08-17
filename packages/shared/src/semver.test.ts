@@ -46,6 +46,21 @@ describe("semver helpers", () => {
     expect(compareSemverVersions("2.1.111-beta.1", "2.1.111")).toBeLessThan(0);
   });
 
+  it("keeps hyphenated prerelease tags intact", () => {
+    // The repo's own nightly tags are hyphenated, so dropping everything past
+    // the second hyphen made every nightly of a given date compare equal and
+    // reported an outdated CLI as current.
+    expect(parseSemver("1.2.3-nightly-20260901")).toEqual({
+      major: 1,
+      minor: 2,
+      patch: 3,
+      prerelease: ["nightly-20260901"],
+    });
+    expect(compareSemverVersions("0.5.0-nightly-20260101", "0.5.0-nightly-20260901")).toBeLessThan(
+      0,
+    );
+  });
+
   it("falls back to lexical comparison for malformed numeric segments", () => {
     expect(compareSemverVersions("1.2.3abc", "1.2.10")).toBeGreaterThan(0);
   });

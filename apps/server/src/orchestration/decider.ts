@@ -49,7 +49,13 @@ function isStaleRequestFailureDetail(payload: Record<string, unknown> | null): b
     detail.includes("stale pending user-input request") ||
     detail.includes("unknown pending user-input request") ||
     detail.includes("unknown pending user input request") ||
-    detail.includes("unknown pending codex user input request")
+    detail.includes("unknown pending codex user input request") ||
+    // No session means nothing can ever deliver the resolution: the provider
+    // callback the request is waiting on died with its session. Unlike a
+    // transient provider error there is nothing to retry, so the request is
+    // dead rather than open, and leaving it open would block settle/snooze/
+    // provider-switch for the life of the thread.
+    detail.includes("no active provider session is bound to this thread")
   );
 }
 

@@ -6,6 +6,7 @@ import {
   formatDateTimeShort,
   formatHourShort,
   formatRelativeHourShort,
+  formatTokens,
   makeWindow,
 } from "./usageFormat.ts";
 
@@ -69,5 +70,29 @@ describe("hourly usage formatting", () => {
     } finally {
       resolvedOptions.mockRestore();
     }
+  });
+});
+
+describe("token formatting", () => {
+  it("keeps three significant figures with a unit suffix", () => {
+    expect(formatTokens(804)).toBe("804");
+    expect(formatTokens(80_400)).toBe("80.4K");
+    expect(formatTokens(804_000)).toBe("804K");
+    expect(formatTokens(76_700_000)).toBe("76.7M");
+    expect(formatTokens(19_900_000_000)).toBe("19.9B");
+  });
+
+  it("promotes to the next unit instead of printing an impossible one", () => {
+    // Rounding to three significant figures can carry past the unit the
+    // threshold picked, which used to print "1000K" and "1000M".
+    expect(formatTokens(999_999)).toBe("1M");
+    expect(formatTokens(999_999_999)).toBe("1B");
+    expect(formatTokens(999_999_999_999)).toBe("1T");
+    expect(formatTokens(-999_999)).toBe("-1M");
+  });
+
+  it("keeps values just below the rounding boundary in their own unit", () => {
+    expect(formatTokens(999_400)).toBe("999K");
+    expect(formatTokens(999_400_000)).toBe("999M");
   });
 });
