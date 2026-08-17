@@ -55,7 +55,10 @@ import {
   ProviderService,
   type ProviderServiceShape,
 } from "../../provider/Services/ProviderService.ts";
-import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
+import {
+  checkpointRefForThreadTurn,
+  revertUndoCheckpointRefForThread,
+} from "../../checkpointing/Utils.ts";
 import { ServerConfig } from "../../config.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
 import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
@@ -1235,6 +1238,67 @@ describe("CheckpointReactor", () => {
       threadId: ThreadId.make("thread-1"),
       numTurns: 1,
     });
+  });
+
+  it("captures a revert-undo checkpoint so discarded work stays recoverable", async () => {
+    const harness = await createHarness();
+    const createdAt = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-undo"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+        createdAt,
+      }),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.diff.complete",
+        commandId: CommandId.make("cmd-undo-diff-1"),
+        threadId: ThreadId.make("thread-1"),
+        turnId: asTurnId("turn-1"),
+        completedAt: createdAt,
+        checkpointRef: checkpointRefForThreadTurn(ThreadId.make("thread-1"), 1),
+        status: "ready",
+        files: [],
+        checkpointTurnCount: 1,
+        createdAt,
+      }),
+    );
+
+    // Untracked work created after the last checkpoint: `git clean -fd` during
+    // restore deletes it, so it must survive in the undo checkpoint.
+    NodeFS.writeFileSync(NodePath.join(harness.cwd, "scratch.txt"), "unsaved\n", "utf8");
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.checkpoint.revert",
+        commandId: CommandId.make("cmd-revert-undo"),
+        threadId: ThreadId.make("thread-1"),
+        turnCount: 1,
+        createdAt,
+      }),
+    );
+
+    await waitForEvent(harness.engine, (event) => event.type === "thread.reverted");
+
+    const undoRef = revertUndoCheckpointRefForThread(ThreadId.make("thread-1"));
+    await waitForGitRefExists(harness.cwd, undoRef);
+
+    expect(NodeFS.existsSync(NodePath.join(harness.cwd, "scratch.txt"))).toBe(false);
+    expect(gitShowFileAtRef(harness.cwd, undoRef, "scratch.txt")).toBe("unsaved\n");
+    expect(gitShowFileAtRef(harness.cwd, undoRef, "README.md")).toBe("v3\n");
   });
 
   it("appends an error activity when revert is requested without an active session", async () => {

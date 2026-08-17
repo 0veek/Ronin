@@ -9,6 +9,21 @@ export function checkpointRefForThreadTurn(threadId: ThreadId, turnCount: number
   );
 }
 
+/**
+ * Ref holding the workspace state captured immediately before the most recent
+ * revert on this thread.
+ *
+ * Reverting restores the target tree and then runs `git clean`, which discards
+ * untracked work created since that checkpoint. This ref is the escape hatch:
+ * it is a sibling of the `turn/` refs, so per-turn stale cleanup never prunes
+ * it, and it is overwritten by the next revert on the same thread.
+ */
+export function revertUndoCheckpointRefForThread(threadId: ThreadId): CheckpointRef {
+  return CheckpointRef.make(
+    `${CHECKPOINT_REFS_PREFIX}/${Encoding.encodeBase64Url(threadId)}/revert-undo`,
+  );
+}
+
 export function resolveThreadWorkspaceCwd(input: {
   readonly thread: {
     readonly projectId: ProjectId;

@@ -25,6 +25,7 @@ import { parseTurnDiffFilesFromUnifiedDiff } from "../../checkpointing/Diffs.ts"
 import {
   checkpointRefForThreadTurn,
   resolveThreadWorkspaceCwd,
+  revertUndoCheckpointRefForThread,
 } from "../../checkpointing/Utils.ts";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -754,6 +755,24 @@ const make = Effect.gen(function* () {
       }).pipe(Effect.catch(() => Effect.void));
       return;
     }
+
+    // Restoring runs `git clean`, which discards untracked work created since
+    // the target checkpoint. Capture the current tree first so that work is
+    // recoverable from the undo ref instead of being lost outright.
+    yield* checkpointStore
+      .captureCheckpoint({
+        cwd: sessionRuntime.value.cwd,
+        checkpointRef: revertUndoCheckpointRefForThread(event.payload.threadId),
+      })
+      .pipe(
+        Effect.tapError((error) =>
+          Effect.logWarning("Failed to capture revert undo checkpoint", {
+            threadId: event.payload.threadId,
+            detail: error.message,
+          }),
+        ),
+        Effect.catch(() => Effect.void),
+      );
 
     const restored = yield* checkpointStore.restoreCheckpoint({
       cwd: sessionRuntime.value.cwd,

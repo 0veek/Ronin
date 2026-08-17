@@ -163,6 +163,16 @@ A saved snapshot of a thread workspace at a particular turn. In practice it is a
 
 The durable identifier for a filesystem checkpoint, stored as a Git ref. It is typed in [the contracts][1], constructed in [Utils.ts][22], and used by [CheckpointStore.ts][19].
 
+#### Revert undo checkpoint
+
+The workspace state captured immediately before a revert, stored at
+`refs/t3/checkpoints/<thread>/revert-undo` by [Utils.ts][22]. Reverting restores the
+target tree and then runs `git clean`, which discards untracked work created since
+that checkpoint; this ref is what makes that recoverable. It is a sibling of the
+`turn/` refs, so per-turn stale cleanup never prunes it, and each revert on a thread
+overwrites it. Recover with `git restore --source <ref> --worktree -- .` or inspect
+with `git show <ref>:<path>`. Captured in [CheckpointReactor.ts][6].
+
 #### Checkpoint baseline
 
 The starting checkpoint for diffing a thread timeline. This flow is surfaced through [RuntimeReceiptBus.ts][13], coordinated in [CheckpointReactor.ts][6], and supported by [Utils.ts][22].
