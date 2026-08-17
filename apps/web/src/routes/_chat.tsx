@@ -1,4 +1,11 @@
-import { Outlet, createFileRoute, redirect } from "@tanstack/react-router";
+import {
+  Outlet,
+  createFileRoute,
+  redirect,
+  useCanGoBack,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
@@ -23,6 +30,9 @@ import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 
 function ChatRouteGlobalShortcuts() {
+  const navigate = useNavigate();
+  const canGoBack = useCanGoBack();
+  const boardRouteActive = useLocation({ select: (location) => location.pathname === "/board" });
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
@@ -107,6 +117,20 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
+      if (command === "board.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        // Toggle, not just open: pressing the binding again leaves the board
+        // the way the sidebar's own nav buttons do.
+        if (boardRouteActive) {
+          if (canGoBack) window.history.back();
+          else void navigate({ to: "/" });
+          return;
+        }
+        void navigate({ to: "/board" });
+        return;
+      }
+
       if (command === "preview.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -158,9 +182,12 @@ function ChatRouteGlobalShortcuts() {
   }, [
     activeDraftThread,
     activeThread,
+    boardRouteActive,
+    canGoBack,
     clearSelection,
     handleNewThread,
     keybindings,
+    navigate,
     defaultProjectRef,
     previewOpen,
     projectGroupCount,

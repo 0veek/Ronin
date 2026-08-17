@@ -38,6 +38,9 @@ Commands are IDs like `terminal.toggle`, `commandPalette.toggle`, `preview.refre
 `chat.new`, and `chat.cycleWidth`. Project scripts are addressable as `script.{id}.run`,
 for example `script.test.run`.
 
+`board.toggle` opens the board and defaults to `mod+shift+b`. Pressing it again leaves the
+board.
+
 `filePicker.toggle` opens file search for the active project and defaults to `mod+p`.
 `projectSearch.toggle` searches inside the active project's files and defaults to `mod+shift+f`.
 Repeating either shortcut closes that search, and switching shortcuts replaces the open search.

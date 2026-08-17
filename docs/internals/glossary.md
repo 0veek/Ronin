@@ -47,6 +47,10 @@ A user-visible log item attached to a thread. In [the contracts][1], activities 
 
 A thread opened from one message of another thread, to ask about it without adding the question to the original conversation's context. It is an ordinary thread in every respect — same project, same checkout, its own history — plus a `sideChat` origin in [the contracts][1] naming its parent and the anchored message. Provenance only: deleting the parent does not delete the side chat. The sidebar files it under its parent (`groupSideChatsUnderParents` in [Sidebar.logic.ts][30]). See [side-chats.md][31].
 
+#### Board
+
+The full-page lane view of every thread at `/board`, rendered by `apps/web/src/components/board/`. Lanes are derived, never stored: `deriveBoardLane` in `board.logic.ts` walks the same predicates the sidebar partition uses — `effectiveSnoozed`, `threadNeedsYou`, `resolveSidebarThreadStatus`, `effectiveSettled` — in the same precedence order, so a lane can never claim a thread the sidebar files elsewhere. Dragging a card resolves through `resolveBoardDrop`, whose result is either an existing thread command (settle, un-settle, snooze, unsnooze) or an explicit refusal. See [board.md][38].
+
 ### Orchestration
 
 Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4].
@@ -237,3 +241,4 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [35]: ../../apps/server/src/quotaResume/quotaFailureClassification.ts
 [36]: ../../apps/server/src/quotaResume/QuotaResumeService.ts
 [37]: ../user/quota-resume.md
+[38]: ../user/board.md

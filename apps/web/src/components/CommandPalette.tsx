@@ -50,6 +50,7 @@ import {
   PlusIcon,
   RowsIcon,
   SettingsIcon,
+  SquareKanbanIcon,
   SquarePenIcon,
   TerminalIcon,
   TextSearchIcon,
@@ -147,6 +148,7 @@ import {
   resolveDefaultProviderModelSelection,
   type ProviderInstanceEntry,
 } from "../providerInstances";
+import { useBoardUiStore } from "../boardUiStore";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
 import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { Button } from "./ui/button";
@@ -1055,6 +1057,25 @@ function OpenCommandPaletteDialog(props: {
     [openProjectFromSearch, pickerProjects, projectGroupByTargetKey],
   );
 
+  const boardProjectItems = useMemo(
+    () =>
+      enumerateCommandPaletteItems(
+        buildProjectActionItems({
+          projects: pickerProjects,
+          valuePrefix: "board-in",
+          icon: projectFavicon,
+          runProject: async (project) => {
+            const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+            // Scope lives in the board's own store, so opening from here lands
+            // on the same board the user would have configured by hand.
+            useBoardUiStore.getState().setScopeKey(group?.projectKey ?? null);
+            await navigate({ to: "/board" });
+          },
+        }),
+      ),
+    [navigate, pickerProjects, projectFavicon, projectGroupByTargetKey],
+  );
+
   const projectThreadItems = useMemo(
     () =>
       enumerateCommandPaletteItems(
@@ -1656,6 +1677,32 @@ function OpenCommandPaletteDialog(props: {
       runKeybindingCommand("shortcuts.toggle");
     },
   });
+
+  actionItems.push({
+    kind: "action",
+    value: "action:board",
+    searchTerms: ["board", "kanban", "lanes", "columns", "overview", "triage"],
+    title: "Open board",
+    icon: <SquareKanbanIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "board.toggle",
+    run: async () => {
+      // Scope is deliberately left alone: this row advertises mod+shift+b, and
+      // the shortcut keeps whatever scope the board was last left on.
+      await navigate({ to: "/board" });
+    },
+  });
+
+  if (boardProjectItems.length > 0) {
+    actionItems.push({
+      kind: "submenu",
+      value: "action:board-in",
+      searchTerms: ["board", "kanban", "project", "scope", "pick", "choose"],
+      title: "Open board in...",
+      icon: <SquareKanbanIcon className={ITEM_ICON_CLASS} />,
+      addonIcon: <SquareKanbanIcon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "projects", label: "Projects", items: boardProjectItems }],
+    });
+  }
 
   actionItems.push({
     kind: "action",

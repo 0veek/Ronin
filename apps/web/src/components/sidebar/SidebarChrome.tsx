@@ -1,4 +1,4 @@
-import { ChartSplineIcon, GitPullRequestIcon, Settings2Icon } from "lucide-react";
+import { ChartSplineIcon, GitPullRequestIcon, Settings2Icon, SquareKanbanIcon } from "lucide-react";
 import { memo, useCallback, type ReactNode } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
@@ -18,7 +18,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUsageMeter } from "./SidebarUsageMeter";
 
-type SidebarFooterPage = "usage" | "pull-requests" | "settings";
+type SidebarFooterPage = "board" | "usage" | "pull-requests" | "settings";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   isElectron,
@@ -161,13 +161,15 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const canGoBack = useCanGoBack();
   const currentFooterPage = useLocation({
     select: (location): SidebarFooterPage | null =>
-      location.pathname === "/usage"
-        ? "usage"
-        : location.pathname === "/pull-requests"
-          ? "pull-requests"
-          : location.pathname === "/settings" || location.pathname.startsWith("/settings/")
-            ? "settings"
-            : null,
+      location.pathname === "/board"
+        ? "board"
+        : location.pathname === "/usage"
+          ? "usage"
+          : location.pathname === "/pull-requests"
+            ? "pull-requests"
+            : location.pathname === "/settings" || location.pathname.startsWith("/settings/")
+              ? "settings"
+              : null,
   });
   const { environments } = useEnvironments();
   // The page reads every connected server, so one of them offering pull requests is enough for
@@ -195,6 +197,11 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     },
     [canGoBack, closeMobileSidebar, currentFooterPage, navigate],
   );
+  const handleBoardClick = useCallback(() => {
+    leaveOrOpen("board", () => {
+      void navigate({ to: "/board" });
+    });
+  }, [leaveOrOpen, navigate]);
   const handlePullRequestsClick = useCallback(() => {
     leaveOrOpen("pull-requests", () => {
       void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
@@ -219,6 +226,13 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <div className="flex flex-col gap-2 p-[var(--sidebar-content-inset)]">
         <SidebarProviderUpdatePill />
         <nav aria-label="Workspace" className="flex items-center">
+          <SidebarFooterIconButton
+            isActive={currentFooterPage === "board"}
+            label="Board"
+            onClick={handleBoardClick}
+          >
+            <SquareKanbanIcon />
+          </SidebarFooterIconButton>
           {pullRequestsSupported ? (
             <SidebarFooterIconButton
               isActive={currentFooterPage === "pull-requests"}

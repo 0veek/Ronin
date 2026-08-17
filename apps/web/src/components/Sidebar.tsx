@@ -48,6 +48,7 @@ import {
   SearchIcon,
   ServerIcon,
   SettingsIcon,
+  SquareKanbanIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -71,6 +72,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { useBoardUiStore } from "../boardUiStore";
 import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
@@ -1990,6 +1992,21 @@ export default function Sidebar() {
     clearSelection();
   }, [clearSelection, projectScopeKey]);
 
+  const handleOpenProjectBoard = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setProjectScopeMenuOpen(false);
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+      // Pre-scope the board to this project, so it opens on the work the row names.
+      useBoardUiStore.getState().setScopeKey(projectGroup.projectKey);
+      void router.navigate({ to: "/board" });
+    },
+    [isMobile, router, setOpenMobile],
+  );
+
   const handleProjectSettings = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
       event.preventDefault();
@@ -3596,8 +3613,19 @@ export default function Sidebar() {
                                 left, so no information is lost. */}
                             <button
                               type="button"
-                              aria-label={`Project settings for ${project.displayName}`}
+                              aria-label={`Open board for ${project.displayName}`}
                               className="ml-auto inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-icon-muted outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                handleOpenProjectBoard(event, project);
+                              }}
+                            >
+                              <SquareKanbanIcon className="size-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Project settings for ${project.displayName}`}
+                              className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-icon-muted outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:bg-accent focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
                               onPointerDown={(event) => event.stopPropagation()}
                               onClick={(event) => {
                                 void handleProjectSettings(event, project);

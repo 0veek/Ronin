@@ -11,6 +11,9 @@ If reordering is unavailable for one environment, update the Ronin server runnin
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
 
+For the same threads laid out by what they are doing, side by side, see the
+[board](board.md).
+
 ## Needs you
 
 Threads that have stopped and cannot go on without you gather in a **Needs you** block at the top
