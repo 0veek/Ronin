@@ -16,6 +16,11 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { scrollToSettingsTarget } from "./settingsLayout";
+// Upstream builds its nav array here from a labels map plus a local icon
+// record. This fork keeps that data in `settingsNavigation.ts`, which also
+// carries per-page descriptions, search terms and the grouped ordering the
+// sidebar renders — so the Integrations page is registered there instead and
+// this file is unchanged by the port.
 import { SETTINGS_NAV_GROUPS, SETTINGS_PAGE_META } from "./settingsNavigation";
 import { searchSettings, type SettingsPath, type SettingsSearchItem } from "./settingsSearch";
 

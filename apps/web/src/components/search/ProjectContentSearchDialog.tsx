@@ -11,6 +11,8 @@ import { useProjectContentSearch } from "~/state/queries";
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { CommandPaletteContent } from "../CommandPaletteContent";
 import { ScrollArea } from "../ui/scroll-area";
+import { Toggle } from "../ui/toggle";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { HighlightedSearchLine } from "./HighlightedSearchLine";
 
 interface ProjectContentSearchDialogProps {
@@ -58,19 +60,28 @@ function SearchOptionButton(props: {
   readonly children: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={props.label}
-      aria-pressed={props.active}
-      title={props.label}
-      className={cn(
-        "flex size-8 shrink-0 items-center justify-center rounded-[5px] font-mono text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-        props.active && "bg-accent text-foreground shadow-sm",
-      )}
-      onClick={props.onClick}
-    >
-      {props.children}
-    </button>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          // `size="sm"` where upstream says `compact`: that variant arrived with
+          // upstream's control-geometry pass, which this fork deliberately did
+          // not take (see Batch 4 on `9885a845c`). Ronin's `sm` is the same
+          // geometry — h-8/min-w-8, sm:h-7/min-w-7 — so the rendered control is
+          // identical without adopting the variant set.
+          <Toggle
+            aria-label={props.label}
+            pressed={props.active}
+            className="size-8 rounded-[5px] font-mono text-muted-foreground data-pressed:text-foreground sm:size-7"
+            size="sm"
+            variant="ghost"
+            onClick={props.onClick}
+          />
+        }
+      >
+        {props.children}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{props.label}</TooltipPopup>
+    </Tooltip>
   );
 }
 

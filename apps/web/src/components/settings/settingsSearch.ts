@@ -25,6 +25,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": SETTINGS_PAGE_META["/settings/providers"].label,
   "/settings/skills": SETTINGS_PAGE_META["/settings/skills"].label,
   "/settings/automations": SETTINGS_PAGE_META["/settings/automations"].label,
+  "/settings/integrations": SETTINGS_PAGE_META["/settings/integrations"].label,
   "/settings/source-control": SETTINGS_PAGE_META["/settings/source-control"].label,
   "/settings/connections": SETTINGS_PAGE_META["/settings/connections"].label,
   "/settings/archived": SETTINGS_PAGE_META["/settings/archived"].label,
@@ -221,6 +222,30 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Ronin skills folder",
     to: "/settings/skills",
     targetId: "agent-skills",
+  },
+  {
+    id: "browser-default-viewport",
+    title: "Default browser viewport",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-default-zoom",
+    title: "Default browser zoom",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-default-appearance",
+    title: "Default browser appearance",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-auto-show-floating-preview",
+    title: "Auto-show floating preview",
+    to: "/settings/integrations",
+    targetId: "browser",
   },
   {
     id: "source-control",

@@ -14,6 +14,7 @@ import type {
   DesktopPreviewRecordingArtifact,
   DesktopPreviewRecordingFrame,
   DesktopPreviewScreenshotArtifact,
+  DesktopPreviewTabDefaults,
   PreviewAutomationActionEvent,
   PreviewAutomationClickInput,
   PreviewAutomationConsoleEntry,
@@ -204,6 +205,21 @@ const findZoomStep = (current: number): number => {
   );
   if (index < 0) return ZOOM_LEVELS.length - 1;
   return Math.abs(ZOOM_LEVELS[index]! - current) < ZOOM_EPSILON ? index : index - 1;
+};
+
+/**
+ * Clamp a client-supplied zoom factor onto the discrete ladder. The setting is
+ * chosen from the same ladder, but it arrives over IPC from a schema that only
+ * guarantees a positive number, so an out-of-band value snaps to the nearest
+ * step rather than leaving the guest at a zoom the zoom controls can't reach.
+ */
+const normalizeZoomFactor = (value: number | undefined): number => {
+  if (value === undefined || !Number.isFinite(value)) return DEFAULT_ZOOM_FACTOR;
+  let closest = ZOOM_LEVELS[0]!;
+  for (const level of ZOOM_LEVELS) {
+    if (Math.abs(level - value) < Math.abs(closest - value)) closest = level;
+  }
+  return closest;
 };
 
 const nextZoomLevel = (current: number, direction: "in" | "out"): number => {
@@ -1519,6 +1535,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const createTabUnlocked = Effect.fn("PreviewManager.createTabUnlocked")(function* (
     tabId: string,
+    defaults?: DesktopPreviewTabDefaults,
   ) {
     const updatedAt = yield* currentIso;
     const result = yield* SynchronizedRef.modify(
@@ -1537,9 +1554,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           navStatus: { kind: "Idle" },
           canGoBack: false,
           canGoForward: false,
-          zoomFactor: DEFAULT_ZOOM_FACTOR,
+          zoomFactor: normalizeZoomFactor(defaults?.zoomFactor),
           pictureInPicture: false,
-          colorScheme: "system",
+          colorScheme: defaults?.colorScheme ?? "system",
           controller: "none",
           updatedAt,
         };
@@ -1558,8 +1575,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     return result.state;
   });
 
-  const createTab = Effect.fn("PreviewManager.createTab")(function* (tabId: string) {
-    return yield* withTabLifecycleLock(tabId, createTabUnlocked(tabId));
+  const createTab = Effect.fn("PreviewManager.createTab")(function* (
+    tabId: string,
+    defaults?: DesktopPreviewTabDefaults,
+  ) {
+    return yield* withTabLifecycleLock(tabId, createTabUnlocked(tabId, defaults));
   });
 
   const closeTabUnlocked = Effect.fn("PreviewManager.closeTabUnlocked")(function* (tabId: string) {
@@ -3240,7 +3260,10 @@ export class PreviewManager extends Context.Service<
     readonly setMainWindow: (window: BrowserWindow) => Effect.Effect<void, PreviewManagerError>;
     readonly getBrowserSession: (scope?: string) => Effect.Effect<Session, PreviewManagerError>;
     readonly isBrowserPartition: (partition: string) => boolean;
-    readonly createTab: (tabId: string) => Effect.Effect<PreviewTabState, PreviewManagerError>;
+    readonly createTab: (
+      tabId: string,
+      defaults?: DesktopPreviewTabDefaults,
+    ) => Effect.Effect<PreviewTabState, PreviewManagerError>;
     readonly closeTab: (tabId: string) => Effect.Effect<void, PreviewManagerError>;
     readonly registerWebview: (
       tabId: string,

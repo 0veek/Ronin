@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `bab4b6f02` — `fix(web): align Windows update confirmation copy (#7208)` (2026-08-16) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                       |
-| **Ported on**                 | 2026-08-16                                                                            |
+|                               |                                                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `949feb61e` — `feat(web): configurable browser defaults in Settings → Integrations (#7082)` (2026-08-17) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                          |
+| **Ported on**                 | 2026-08-17                                                                                               |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.

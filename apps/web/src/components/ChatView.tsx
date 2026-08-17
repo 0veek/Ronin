@@ -6774,7 +6774,6 @@ function ChatViewContent(props: ChatViewProps) {
                   <button
                     type="button"
                     aria-label="Scroll to end"
-                    title="Scroll to end"
                     onClick={() => scrollToEnd(true)}
                     className="pointer-events-auto flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1 text-muted-foreground text-xs transition-colors duration-(--duration-fast) hover:bg-accent hover:text-foreground"
                   >

@@ -4,6 +4,7 @@ import { isThemeColor, themeColorToHex, type ThemeColorRole } from "../../themeP
 import { cn } from "../../lib/utils";
 import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export function getThemeRoleLabel(role: ThemeColorRole): string {
   const labels: Partial<Record<ThemeColorRole, string>> = {
     canvas: "Background",
@@ -440,20 +441,32 @@ function ThemeColorPicker({
 }) {
   return (
     <Popover>
-      <PopoverTrigger
-        render={
-          <button
-            aria-label={`Choose ${label} color`}
-            className="relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-foreground/30 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            onFocus={onInteract}
-            onPointerDown={onInteract}
-            title={`Choose ${label} color`}
-            type="button"
-          >
-            <span className="absolute inset-0 rounded-full" style={{ backgroundColor: value }} />
-          </button>
-        }
-      />
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <button
+                  aria-label={`Choose ${label} color`}
+                  className="relative flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-foreground/30 transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  onFocus={onInteract}
+                  onPointerDown={onInteract}
+                  type="button"
+                >
+                  {/* No `shadow-sm` on the swatch, unlike upstream: this fork's
+                      chrome separates with a hairline and space, never a drop
+                      shadow, and the swatch already carries a border. */}
+                  <span
+                    className="absolute inset-0 rounded-full"
+                    style={{ backgroundColor: value }}
+                  />
+                </button>
+              }
+            />
+          }
+        />
+        <TooltipPopup side="top">{`Choose ${label} color`}</TooltipPopup>
+      </Tooltip>
       <PopoverPopup
         align="end"
         className="overflow-hidden p-0 [--viewport-inline-padding:0px] [&_[data-slot=popover-viewport]]:p-0"
@@ -501,16 +514,24 @@ export const ThemeColorField = memo(function ThemeColorField({
       )}
       data-theme-color-role={role}
     >
-      <button
-        aria-label={`${selected ? "Hide" : "Show"} ${label} usage`}
-        aria-pressed={selected}
-        className="flex min-w-0 flex-1 cursor-pointer items-center rounded-(--control-radius) text-left text-sm text-muted-foreground outline-none transition-colors duration-(--duration-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={() => onToggleSelected?.(role)}
-        title={`${selected ? "Hide" : "Show"} where ${label} is used`}
-        type="button"
-      >
-        <span className="min-w-0 flex-1 truncate">{label}</span>
-      </button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            // Keeps Ronin's `--control-radius` and the shared duration token
+            // where upstream hardcodes `rounded-md` and drops the transition.
+            <button
+              aria-label={`${selected ? "Hide" : "Show"} ${label} usage`}
+              aria-pressed={selected}
+              className="flex min-w-0 flex-1 cursor-pointer items-center rounded-(--control-radius) text-left text-sm text-muted-foreground outline-none transition-colors duration-(--duration-fast) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => onToggleSelected?.(role)}
+              type="button"
+            >
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+            </button>
+          }
+        />
+        <TooltipPopup side="top">{`${selected ? "Hide" : "Show"} where ${label} is used`}</TooltipPopup>
+      </Tooltip>
       <div className="ml-auto flex shrink-0 items-center gap-2">
         <ThemeColorPicker
           label={label}

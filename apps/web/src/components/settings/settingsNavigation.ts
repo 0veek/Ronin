@@ -1,6 +1,7 @@
 import {
   ActivityIcon,
   ArchiveIcon,
+  BlocksIcon,
   BotIcon,
   BoxesIcon,
   ClockIcon,
@@ -21,6 +22,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/skills"
   | "/settings/automations"
+  | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/connections"
   | "/settings/archived";
@@ -75,6 +77,12 @@ export const SETTINGS_PAGE_META = {
     icon: ClockIcon,
     searchTerms: ["schedule", "cron", "recurring", "daily", "automation", "unattended"],
   },
+  "/settings/integrations": {
+    label: "Integrations",
+    description: "How the built-in browser opens and what it opens with.",
+    icon: BlocksIcon,
+    searchTerms: ["browser", "preview", "viewport", "zoom", "device", "appearance", "floating"],
+  },
   "/settings/source-control": {
     label: "Source control",
     description: "Git, branches, pull requests, and worktrees.",
@@ -120,7 +128,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   },
   {
     label: "Workspace",
-    paths: ["/settings/source-control", "/settings/connections"],
+    paths: ["/settings/integrations", "/settings/source-control", "/settings/connections"],
   },
   {
     label: "History",
