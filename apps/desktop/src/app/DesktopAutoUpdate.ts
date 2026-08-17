@@ -1,4 +1,5 @@
 import type { DesktopAppUpdateState } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Ref from "effect/Ref";
@@ -79,13 +80,39 @@ export function resolveUpdateSupport(input: {
 
 export function toErrorMessage(cause: unknown): string {
   const fallback = "The update failed for an unknown reason.";
-  // A blank Error must not surface as its stringified form ("Error:").
   if (cause instanceof Error) {
+    // Effect.tryPromise wraps the rejection in its own error and keeps the
+    // original on `cause`; the inner one is what the user can act on.
+    const inner = (cause as { cause?: unknown }).cause;
+    if (inner instanceof Error) {
+      const innerMessage = inner.message.trim();
+      if (innerMessage.length > 0) return innerMessage;
+    }
+    // A blank Error must not surface as its stringified form ("Error:").
     const message = cause.message.trim();
     return message.length > 0 ? message : fallback;
   }
   const text = String(cause).trim();
   return text.length > 0 ? text : fallback;
+}
+
+/**
+ * Effect hands `catchCause` a Cause, whose stringified form is an internal
+ * dump ("Cause([Fail(UnknownError: ...").  Squash back to the underlying
+ * error so the user reads the real failure.
+ */
+export function causeToErrorMessage(cause: Cause.Cause<unknown>): string {
+  return toErrorMessage(Cause.squash(cause));
+}
+
+/**
+ * electron-builder only writes `app-update.yml` into the package when the build
+ * had publish config. Without it the app cannot self-update at all -- that is a
+ * property of how it was built, not a failure worth alarming anyone about, so
+ * it degrades to the same link-out the web app uses.
+ */
+export function isMissingUpdateConfig(message: string): boolean {
+  return /app-update\.yml/i.test(message) && /ENOENT|no such file/i.test(message);
 }
 
 /** Progress arrives off the network and drives a bar, so clamp rather than trust. */
@@ -162,12 +189,22 @@ export const make = Effect.fnUntraced(function* (options: {
   updater.on("update-downloaded", ((info: { version?: string }) => {
     emit({ status: "ready", ...(info?.version ? { version: info.version } : {}) });
   }) as (payload: never) => void);
+  // A build with no embedded update config can never self-update, so report it
+  // as unsupported rather than as a failed attempt the user could retry.
+  const toFailureState = (message: string): DesktopAppUpdateState =>
+    isMissingUpdateConfig(message)
+      ? {
+          status: "unsupported",
+          message: "This build was packaged without update settings.",
+        }
+      : { status: "error", message };
+
   updater.on("error", ((cause: unknown) => {
-    emit({ status: "error", message: toErrorMessage(cause) });
+    emit(toFailureState(toErrorMessage(cause)));
   }) as (payload: never) => void);
 
-  const failWith = (cause: unknown) => {
-    const next: DesktopAppUpdateState = { status: "error", message: toErrorMessage(cause) };
+  const failWith = (cause: Cause.Cause<unknown>) => {
+    const next = toFailureState(causeToErrorMessage(cause));
     return publish(next).pipe(Effect.as(next));
   };
 

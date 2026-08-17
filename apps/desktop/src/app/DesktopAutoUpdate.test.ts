@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import * as Cause from "effect/Cause";
+
 import {
+  causeToErrorMessage,
+  isMissingUpdateConfig,
   normalizeBytesPerSecond,
   normalizePercent,
   resolveUpdateSupport,
@@ -86,5 +90,43 @@ describe("toErrorMessage", () => {
     expect(toErrorMessage(new Error("   "))).toBe("The update failed for an unknown reason.");
     expect(toErrorMessage("")).toBe("The update failed for an unknown reason.");
     expect(toErrorMessage("release not found")).toBe("release not found");
+  });
+
+  it("unwraps the error Effect.tryPromise wrapped", () => {
+    const wrapper = new Error("An error occurred in Effect.tryPromise");
+    (wrapper as { cause?: unknown }).cause = new Error("ENOENT: no such file or directory");
+    expect(toErrorMessage(wrapper)).toBe("ENOENT: no such file or directory");
+  });
+});
+
+describe("causeToErrorMessage", () => {
+  it("reports the underlying error rather than the Cause dump", () => {
+    const message = causeToErrorMessage(Cause.fail(new Error("release not found")));
+    expect(message).toBe("release not found");
+    // The raw Cause stringifies to "Cause([Fail(...", which must never reach a toast.
+    expect(message).not.toContain("Cause(");
+    expect(message).not.toContain("Fail(");
+  });
+});
+
+describe("isMissingUpdateConfig", () => {
+  it("recognises a package built without publish config", () => {
+    // Verbatim shape of the AppImage failure this replaced.
+    expect(
+      isMissingUpdateConfig(
+        "ENOENT: no such file or directory, open '/tmp/.mount_Ronin-zolfgh/resources/app-update.yml'",
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves real update failures alone", () => {
+    expect(isMissingUpdateConfig("net::ERR_CONNECTION_REFUSED")).toBe(false);
+    expect(isMissingUpdateConfig("Could not get code signature for running application")).toBe(
+      false,
+    );
+    // A different missing file is still a genuine error.
+    expect(
+      isMissingUpdateConfig("ENOENT: no such file or directory, open 'latest-linux.yml'"),
+    ).toBe(false);
   });
 });
