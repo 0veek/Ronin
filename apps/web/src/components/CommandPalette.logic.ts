@@ -81,6 +81,12 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommandDescriptor[] = [
     searchTerms: ["terminal", "close", "kill", "exit"],
   },
   {
+    command: "chat.askOnTheSide",
+    value: "action:chat-ask-on-the-side",
+    title: "Ask on the side",
+    searchTerms: ["side", "chat", "ask", "question", "aside", "branch", "context"],
+  },
+  {
     command: "diff.toggle",
     value: "action:diff-toggle",
     title: "Toggle diff",

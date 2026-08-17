@@ -41,7 +41,7 @@ No copy-pasting context between terminals. Ever again. ([docs](./docs/user/switc
 
 ### 💬 Ask on the side
 
-Some questions are worth asking and not worth keeping. Hover any answer, hit **Ask on the side**, and Ronin opens a fresh thread on that message — same project, same checkout, the message quoted into the composer where you can see and edit it.
+Some questions are worth asking and not worth keeping. **Select the part you're stuck on** — a small **Ask on the side** chip appears over the selection. Ronin opens a fresh thread on exactly that passage: same project, same checkout, the text quoted into the composer where you can see and edit it. `⌘⇧A` and the command palette do the same thing.
 
 The main thread never learns you asked. The side chat breadcrumbs back to where it came from, and files under its parent in the sidebar instead of drifting off into the list. ([docs](./docs/user/side-chats.md))
 

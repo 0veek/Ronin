@@ -300,6 +300,8 @@ import {
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { useQuotaResumeBanner } from "./chat/useQuotaResumeBanner";
+import { SideChatSelectionAction } from "./chat/SideChatSelectionAction";
+import { normalizeSelectedPassage } from "../sideChatSelection";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -1820,10 +1822,27 @@ function ChatViewContent(props: ChatViewProps) {
         : null,
     [activeThread?.sideChat, sideChatParentShell],
   );
+  const handleAskOnTheSideRef = useRef<((messageId: MessageId, passage?: string) => void) | null>(
+    null,
+  );
+  const handleAskOnTheSideFromSelection = useCallback(
+    (messageId: string, passage: string) => {
+      const message = activeThread?.messages.find((candidate) => candidate.id === messageId);
+      // The chip reads its id out of a DOM attribute, so it is only a string
+      // until a real message in this thread vouches for it.
+      if (!message) return;
+      handleAskOnTheSideRef.current?.(message.id, passage);
+    },
+    [activeThread?.messages],
+  );
   const handleAskOnTheSide = useCallback(
-    (messageId: MessageId) => {
+    (messageId: MessageId, passage?: string) => {
       if (!activeProjectRef || !activeThread) return;
+      // A selected passage beats the whole message: it is the part the reader
+      // actually stopped on, and quoting two thousand words to ask about one
+      // sentence defeats the point of starting somewhere clean.
       const anchored = activeThread.messages.find((message) => message.id === messageId);
+      const seedText = passage ?? anchored?.text;
       const sideChat = {
         parentThreadId: activeThread.id,
         anchorMessageId: messageId,
@@ -1837,7 +1856,7 @@ function ChatViewContent(props: ChatViewProps) {
         if (!created) return;
         const { setDraftThreadContext, setPrompt } = useComposerDraftStore.getState();
         setDraftThreadContext(created.draftId, { sideChat });
-        const seed = buildSideChatSeedPrompt(anchored?.text);
+        const seed = buildSideChatSeedPrompt(seedText);
         if (seed.length > 0) {
           setPrompt(created.draftId, seed);
         }
@@ -1845,6 +1864,32 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeProjectRef, activeThread, handleNewThread],
   );
+  handleAskOnTheSideRef.current = handleAskOnTheSide;
+  /**
+   * The keyboard and palette route into the same verb as the chip.
+   *
+   * A live selection wins, so the shortcut is the fast path for the same
+   * gesture. With nothing selected it falls back to the newest assistant
+   * message, which is what "ask on the side" means when you have not pointed
+   * at anything in particular.
+   */
+  const askOnTheSideFromCurrentSelection = useCallback(() => {
+    if (!isServerThread || !activeThread) return;
+    const selection = typeof window === "undefined" ? null : window.getSelection();
+    const selected = selection === null || selection.isCollapsed ? null : selection.toString();
+    const passage = selected === null ? null : normalizeSelectedPassage(selected);
+
+    const messages = activeThread.messages;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.role !== "assistant" || message.streaming) continue;
+      if (message.text.trim().length === 0) continue;
+      handleAskOnTheSide(message.id, passage !== null && passage.length > 0 ? passage : undefined);
+      return;
+    }
+  }, [activeThread, handleAskOnTheSide, isServerThread]);
+  const askOnTheSideFromCurrentSelectionRef = useRef<(() => void) | null>(null);
+  askOnTheSideFromCurrentSelectionRef.current = askOnTheSideFromCurrentSelection;
   const createForkThread = useCallback(
     (target: ForkSlashCommandTarget) => {
       if (!activeProjectRef) {
@@ -4945,6 +4990,11 @@ function ChatViewContent(props: ChatViewProps) {
         return true;
       }
 
+      if (command === "chat.askOnTheSide") {
+        askOnTheSideFromCurrentSelectionRef.current?.();
+        return true;
+      }
+
       if (command === "rightPanel.toggleMaximized") {
         toggleRightPanelMaximized();
         return true;
@@ -6670,6 +6720,10 @@ function ChatViewContent(props: ChatViewProps) {
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
+              <SideChatSelectionAction
+                enabled={isServerThread}
+                onAsk={handleAskOnTheSideFromSelection}
+              />
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}

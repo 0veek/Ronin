@@ -4,13 +4,25 @@ Sometimes you want to ask about an answer without the question becoming part of 
 "What does that flag actually do?" is worth asking, and worth keeping out of the context the agent
 carries into its next twenty turns.
 
-Hover any assistant message and press the **Ask on the side** button (next to Copy). Ronin opens a
-new thread in the same project and the same checkout, with that message quoted into the composer.
+**Select the part you have a question about.** A small **Ask on the side** chip appears over the
+selection; press it and Ronin opens a new thread in the same project and the same checkout, with
+just that passage quoted into the composer.
+
+Three ways in, all the same verb:
+
+| Way                                 | Seeds the side chat with          |
+| ----------------------------------- | --------------------------------- |
+| Select text → chip                  | the passage you selected          |
+| `⌘⇧A` / `Ctrl⇧A`                    | the selection, or the last answer |
+| Command palette → "Ask on the side" | the selection, or the last answer |
+
+There is also a button in the hover row of a completed answer, next to Copy.
 
 ## What carries over, and what does not
 
-- **The anchored message** is quoted into the composer. You can see it, edit it, or delete it before
-  sending — nothing is carried invisibly.
+- **The passage you selected** is quoted into the composer. You can see it, edit it, or delete it
+  before sending — nothing is carried invisibly. Selecting a sentence beats quoting a whole answer,
+  which is why selection is the primary way in.
 - **The checkout** is the same one the parent thread runs in, so you are asking about the tree the
   answer was about. No second worktree is created.
 - **Nothing else.** The side chat starts with no transcript. That is the point.

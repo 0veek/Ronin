@@ -401,6 +401,7 @@ describe("WORKSPACE_COMMANDS", () => {
       "diff.toggle",
       "rightPanel.toggle",
       "modelPicker.toggle",
+      "chat.askOnTheSide",
     ]);
 
     for (const entry of WORKSPACE_COMMANDS) {
