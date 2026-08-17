@@ -263,6 +263,36 @@ export const DesktopSshPasswordPromptCancelledResultSchema = Schema.Struct({
   message: Schema.String,
 });
 
+/**
+ * In-app update lifecycle for the packaged desktop app.
+ *
+ * "unsupported" covers every build that must not self-update: dev runs, and any
+ * package installed by a store or distro that owns its own updates. Those keep
+ * the web behaviour of linking out to the release page.
+ */
+export const DesktopAppUpdateStatusSchema = Schema.Literals([
+  "unsupported",
+  "idle",
+  "checking",
+  "available",
+  "downloading",
+  "ready",
+  "error",
+]);
+export type DesktopAppUpdateStatus = typeof DesktopAppUpdateStatusSchema.Type;
+
+export const DesktopAppUpdateStateSchema = Schema.Struct({
+  status: DesktopAppUpdateStatusSchema,
+  /** Version being offered, downloaded, or staged. Absent when idle. */
+  version: Schema.optionalKey(Schema.String),
+  /** 0-100 while downloading. */
+  percent: Schema.optionalKey(Schema.Number),
+  bytesPerSecond: Schema.optionalKey(Schema.Number),
+  /** Human-readable reason, only set with status "error". */
+  message: Schema.optionalKey(Schema.String),
+});
+export type DesktopAppUpdateState = typeof DesktopAppUpdateStateSchema.Type;
+
 export const DesktopSshEnvironmentEnsureOptionsSchema = Schema.Struct({
   issuePairingToken: Schema.optionalKey(Schema.Boolean),
 });
@@ -956,6 +986,18 @@ export interface DesktopBridge {
     readonly port?: number;
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
+  /**
+   * In-app update control. Optional so a renderer running against an older
+   * desktop build, or in the browser, falls back to linking out to the release.
+   */
+  appUpdate?: {
+    getState: () => Promise<DesktopAppUpdateState>;
+    check: () => Promise<DesktopAppUpdateState>;
+    download: () => Promise<DesktopAppUpdateState>;
+    /** Quits and relaunches into the staged version. Does not resolve on success. */
+    installAndRestart: () => Promise<void>;
+    onStateChange: (listener: (state: DesktopAppUpdateState) => void) => () => void;
+  };
   pickFolder: (options?: PickFolderOptions) => Promise<string | null>;
   /**
    * Multi-select JSON file picker that opens in the VS Code extensions

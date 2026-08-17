@@ -3,12 +3,30 @@
 ## App Release Notifications
 
 Ronin checks GitHub for the latest published app release after launch. When a newer version is
-available, a notification links to that release. The same status remains visible under
-**Settings** → **General** → **About**.
+available, a notification appears. The same status remains visible under **Settings** →
+**General** → **About**.
 
-Ronin does not download or install app binaries. Use **View release** to open GitHub, choose the
-installer for your platform, and update when you are ready. Dismissing the notification hides it
-for that release; a later release can notify you again.
+### Desktop app
+
+The desktop app updates itself. When a release is available the notification offers **Download**;
+Ronin fetches the release in the background and shows progress. When it finishes, choose
+**Restart now** and Ronin relaunches into the new version. If you quit before restarting, the
+update installs on the next launch.
+
+Ronin never downloads a release without you choosing to, so it does not spend your bandwidth in
+the background.
+
+Dismissing the notification hides it for that release; a later release can notify you again.
+
+### When Ronin links out instead
+
+Some builds cannot replace their own files, so the notification links to GitHub and you install the
+update yourself:
+
+- the web app
+- development builds
+- Linux installs from a package manager, which owns its own updates (AppImage builds self-update
+  normally)
 
 ## Keeping the App and Server Together
 

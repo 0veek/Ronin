@@ -142,6 +142,23 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       ipcRenderer.removeListener(IpcChannels.WINDOW_FULLSCREEN_STATE_CHANNEL, wrappedListener);
     };
   },
+  appUpdate: {
+    getState: () => ipcRenderer.invoke(IpcChannels.GET_APP_UPDATE_STATE_CHANNEL),
+    check: () => ipcRenderer.invoke(IpcChannels.CHECK_APP_UPDATE_CHANNEL),
+    download: () => ipcRenderer.invoke(IpcChannels.DOWNLOAD_APP_UPDATE_CHANNEL),
+    installAndRestart: () => ipcRenderer.invoke(IpcChannels.INSTALL_APP_UPDATE_CHANNEL),
+    onStateChange: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+        if (typeof state !== "object" || state === null) return;
+        listener(state as Parameters<typeof listener>[0]);
+      };
+
+      ipcRenderer.on(IpcChannels.APP_UPDATE_STATE_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.APP_UPDATE_STATE_CHANNEL, wrappedListener);
+      };
+    },
+  },
   preview: {
     createTab: (tabId, defaults) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, {

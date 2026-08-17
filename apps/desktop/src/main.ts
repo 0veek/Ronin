@@ -21,6 +21,7 @@ import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
 import * as DesktopIpc from "./ipc/DesktopIpc.ts";
+import * as IpcChannels from "./ipc/channels.ts";
 import * as ElectronApp from "./electron/ElectronApp.ts";
 import * as ElectronDialog from "./electron/ElectronDialog.ts";
 import * as ElectronMenu from "./electron/ElectronMenu.ts";
@@ -32,6 +33,7 @@ import * as ElectronTheme from "./electron/ElectronTheme.ts";
 import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
+import * as DesktopAutoUpdate from "./app/DesktopAutoUpdate.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
 import * as DesktopAssets from "./app/DesktopAssets.ts";
@@ -100,6 +102,37 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
     return DesktopSshEnvironment.layer({
       resolveCliRunner: Effect.sync(() => resolveDesktopSshCliRunner(environment)),
     });
+  }),
+);
+
+// electron-updater is loaded lazily: importing it eagerly pulls its Node-side
+// dependencies into every dev run, where updating is disabled anyway.
+const desktopAutoUpdateLayer = Layer.unwrap(
+  Effect.gen(function* () {
+    const platform = yield* HostProcessPlatform;
+    const support = DesktopAutoUpdate.resolveUpdateSupport({
+      isPackaged: Electron.app.isPackaged,
+      platform,
+      appImagePath: process.env.APPIMAGE,
+    });
+    const updater = support.supported
+      ? ((yield* Effect.promise(() => import("electron-updater"))).default
+          .autoUpdater as unknown as DesktopAutoUpdate.UpdaterLike)
+      : DesktopAutoUpdate.noopUpdater;
+    return Layer.effect(
+      DesktopAutoUpdate.DesktopAutoUpdate,
+      DesktopAutoUpdate.make({
+        updater,
+        support,
+        onStateChange: (state) => {
+          for (const window of Electron.BrowserWindow.getAllWindows()) {
+            if (!window.isDestroyed()) {
+              window.webContents.send(IpcChannels.APP_UPDATE_STATE_CHANNEL, state);
+            }
+          }
+        },
+      }),
+    );
   }),
 );
 
@@ -173,6 +206,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopShellEnvironment.layer,
+  desktopAutoUpdateLayer,
   desktopSshLayer,
 ).pipe(
   Layer.provideMerge(desktopBackendLayer),
