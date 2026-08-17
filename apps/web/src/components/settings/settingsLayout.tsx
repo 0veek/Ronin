@@ -290,7 +290,7 @@ function SettingsPageIntro({ meta }: { readonly meta: SettingsPageMeta }) {
   return (
     <header className="flex items-start gap-3.5 px-1 sm:px-2">
       <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-[var(--radius)] border border-border bg-card text-foreground">
-        <Icon aria-hidden className="size-5" strokeWidth={1.75} />
+        <Icon aria-hidden className="size-5" />
       </div>
       <div className="min-w-0">
         <div className="label-meta mb-0.5 text-muted-foreground/65">Settings</div>

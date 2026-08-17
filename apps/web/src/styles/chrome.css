@@ -307,6 +307,25 @@
     box-shadow: inset 0 0 0 1px var(--ring);
   }
 
+  /*
+   * The diffstat's underline: one hairline handed off from added to removed at
+   * the ratio the counts above it state. Same idea as the usage meter's row
+   * rule -- the measurement is the line that closes the row, not a chart parked
+   * beside it.
+   *
+   * A gradient rather than two elements, so a tree of a few hundred changed
+   * files adds a few hundred painted rules instead of twice that many nodes.
+   */
+  .diffstat-ink {
+    height: 1px;
+    margin-top: 0.1875rem;
+    background: linear-gradient(
+      to right,
+      var(--success) 0 var(--diffstat-add-share),
+      var(--destructive) var(--diffstat-add-share) 100%
+    );
+  }
+
   .chat-composer-horizontal-inset {
     padding-inline-start: calc(env(safe-area-inset-left) + var(--space-3));
     padding-inline-end: calc(env(safe-area-inset-right) + var(--space-3));

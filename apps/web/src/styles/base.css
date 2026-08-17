@@ -69,6 +69,69 @@
   animation-duration: 0s !important;
 }
 
+/*
+ * One optical stroke weight for every icon in the app.
+ *
+ * Lucide draws on a 24-unit grid at a fixed stroke-width of 2, so the stroke
+ * scales with the box: the same icon lands at 1.0px in a `size-3` row and
+ * 2.33px at `size-7`. That 2.3x spread across a single screen is what makes an
+ * icon set read as assembled rather than drawn, and it is the reason a handful
+ * of call sites had already started hand-tuning `strokeWidth` one component at
+ * a time.
+ *
+ * Each rule below is 28.8 / the rendered pixel size, which holds every icon at
+ * 1.2px on screen. 1.2 rather than a rounder number because it is what `size-4`
+ * and the 221 `size-3.5` icons already draw -- the dominant case is left alone
+ * and the outliers come to meet it, so this normalises without restyling the
+ * app.
+ *
+ * Scoped to `.lucide`, which lucide-react puts on every icon it renders, so the
+ * hand-drawn SVGs in Icons.tsx and the stage artwork keep the weights they were
+ * drawn with. CSS beats an SVG presentation attribute, so this also supersedes
+ * a `strokeWidth` prop on a lucide icon -- which is the intent, since those
+ * props were approximating this rule.
+ */
+svg.lucide {
+  stroke-width: 1.2;
+}
+
+svg.lucide.size-2\.5 {
+  stroke-width: 2.88;
+}
+
+svg.lucide.size-3 {
+  stroke-width: 2.4;
+}
+
+svg.lucide.size-3\.5 {
+  stroke-width: 2.06;
+}
+
+svg.lucide.size-4 {
+  stroke-width: 1.8;
+}
+
+svg.lucide.size-4\.5 {
+  stroke-width: 1.6;
+}
+
+svg.lucide.size-5,
+svg.lucide.h-5.w-5 {
+  stroke-width: 1.44;
+}
+
+svg.lucide.size-6 {
+  stroke-width: 1.2;
+}
+
+svg.lucide.size-7 {
+  stroke-width: 1.03;
+}
+
+svg.lucide.size-8 {
+  stroke-width: 0.9;
+}
+
 body {
   /* Reference the theme token (not a literal stack) so the Settings ->
      Appearance runtime override of --font-sans reaches all interface text. */

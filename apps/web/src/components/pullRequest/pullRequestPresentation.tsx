@@ -22,6 +22,7 @@ import { Children, isValidElement, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 
+import { DiffStatLabel } from "../chat/DiffStatLabel";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface StatePresentation {
@@ -243,7 +244,15 @@ export function PullRequestActorLabel({
   );
 }
 
-/** Added and removed lines, coloured the way every host colours them. */
+/**
+ * Added and removed lines on a pull request.
+ *
+ * The counts themselves are `DiffStatLabel`, the same mark the chat timeline
+ * and the changed-files tree draw. This had grown its own copy that disagreed
+ * on all three details a reader would notice -- `toLocaleString` against
+ * compact `1.2k`, `success-foreground` against `success`, and no ink rule -- so
+ * a pull request's +/- looked like a different app's from the diff panel's.
+ */
 export function PullRequestDiffStat({
   additions,
   deletions,
@@ -259,10 +268,13 @@ export function PullRequestDiffStat({
     return null;
   }
   return (
-    <span className={cn("inline-flex items-baseline gap-1 tabular-nums", className)}>
-      <span className="text-success-foreground">+{additions.toLocaleString()}</span>
-      <span className="text-error-foreground">-{deletions.toLocaleString()}</span>
-    </span>
+    <DiffStatLabel
+      additions={additions}
+      deletions={deletions}
+      className={cn("gap-1", className)}
+      ink
+      layout="inline"
+    />
   );
 }
 

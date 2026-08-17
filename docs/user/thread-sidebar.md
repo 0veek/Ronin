@@ -12,6 +12,20 @@ If reordering is unavailable for one environment, update the Ronin server runnin
 environment. Older servers can still pin and unpin threads, but do not understand synced ordering;
 their pinned threads keep the default newest-first order below the ones you have arranged.
 
+## Needs you
+
+Threads that have stopped and cannot go on without you gather in a **Needs you** block at the top
+of the sidebar: an agent waiting for approval, one that asked a question, and one that hit an error.
+They are listed longest-waiting first, so the thread that has been stuck the longest is always the
+one at the top.
+
+The block covers every environment you are connected to, and it follows your project filter — narrow
+to one project and it shows only that project's blocked work. It appears when something needs you
+and disappears on its own when nothing does, so there is nothing to dismiss.
+
+Snoozing still wins. A thread you have snoozed stays on the snoozed shelf until it wakes, even if an
+agent is waiting on it, because snoozing is you saying you will deal with it later.
+
 ## Settling threads
 
 Threads on closed pull requests always settle automatically. Merged pull requests also settle by

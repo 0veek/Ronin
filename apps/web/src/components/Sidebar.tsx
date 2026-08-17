@@ -137,7 +137,9 @@ import {
   groupSideChatsUnderParents,
   sortPinnedThreadsForSidebar,
   sortSettledThreadsForSidebar,
+  sortThreadsByBlockedDuration,
   sortThreadsForSidebar,
+  threadNeedsYou,
 } from "./Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
@@ -1267,7 +1269,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     <span role="status">Woke</span>
                   </button>
                 ) : (
-                  <span className="text-xs">
+                  <span className="text-xs tabular-nums">
                     {variantAction === "unsettle"
                       ? settledTimeLabel(thread)
                       : threadTimeLabel(thread)}
@@ -1991,6 +1993,7 @@ export default function Sidebar() {
   // archive keeps its original "remove from sidebar" meaning.
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
   const {
+    needsYouThreads,
     pinnedThreads,
     reorderablePinnedKeys,
     activeThreads,
@@ -2015,6 +2018,7 @@ export default function Sidebar() {
     const active: EnvironmentThreadShell[] = [];
     const snoozed: EnvironmentThreadShell[] = [];
     const settled: EnvironmentThreadShell[] = [];
+    const needsYou: EnvironmentThreadShell[] = [];
     for (const thread of visible) {
       // Threads on servers without the settlement capability (old server,
       // or descriptor not loaded yet) never classify as settled: the user
@@ -2038,6 +2042,16 @@ export default function Sidebar() {
       // stronger statement about when the thread matters again.)
       if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
         snoozed.push(thread);
+        // Blocked on the user outranks both the pin and the lifecycle: a
+        // thread that cannot move without an answer is the most urgent thing
+        // the sidebar can say, and burying it inside a project's run of rows
+        // is how it gets missed for twenty minutes.
+        //
+        // Snooze still outranks it, one rule above. A snoozed thread was
+        // deferred *by the user*, usually while already blocked, and honouring
+        // that is the whole point of the verb.
+      } else if (threadNeedsYou(thread)) {
+        needsYou.push(thread);
         // A pin otherwise overrides the lifecycle: pinned threads never
         // auto-settle out of sight. (The decider clears settled state on
         // pin and the pin on settle, so pin-vs-settled conflicts only
@@ -2064,6 +2078,7 @@ export default function Sidebar() {
     // sort, or mixed-version fleets would render different pinned orders on
     // web and mobile from the same data.
     return {
+      needsYouThreads: sortThreadsByBlockedDuration(needsYou),
       pinnedThreads: sortPinnedThreadsForSidebar(pinned),
       reorderablePinnedKeys: new Set(
         pinned
@@ -2100,8 +2115,14 @@ export default function Sidebar() {
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
   const searchableThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
-    [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
+    () => [
+      ...needsYouThreads,
+      ...pinnedThreads,
+      ...activeThreads,
+      ...snoozedThreads,
+      ...settledThreads,
+    ],
+    [activeThreads, needsYouThreads, pinnedThreads, settledThreads, snoozedThreads],
   );
   const threadSearchResults = useMemo(
     () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
@@ -2218,9 +2239,17 @@ export default function Sidebar() {
     return routeThread === undefined ? [] : [routeThread];
   }, [routeThreadKey, snoozedShelfExpanded, snoozedThreads]);
 
+  // Must stay in the same order the rows render in: this is what arrow-key
+  // traversal, adjacency after a delete, and row prewarming all walk.
   const orderedThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...visibleSnoozedThreads, ...renderedSettledThreads],
-    [pinnedThreads, activeThreads, visibleSnoozedThreads, renderedSettledThreads],
+    () => [
+      ...needsYouThreads,
+      ...pinnedThreads,
+      ...activeThreads,
+      ...visibleSnoozedThreads,
+      ...renderedSettledThreads,
+    ],
+    [needsYouThreads, pinnedThreads, activeThreads, visibleSnoozedThreads, renderedSettledThreads],
   );
   const orderedThreadKeys = useMemo(
     () =>
@@ -3626,7 +3655,7 @@ export default function Sidebar() {
                 {(() => {
                   const renderThreadRow = (
                     thread: EnvironmentThreadShell,
-                    section: "pinned" | "active" | "snoozed" | "settled",
+                    section: "needs-you" | "pinned" | "active" | "snoozed" | "settled",
                     sortable?: SortablePinnedRowBag,
                     // One indent level for a side chat filed under the thread
                     // it was opened from. Purely presentational — the row is
@@ -3640,7 +3669,8 @@ export default function Sidebar() {
                     // row: every other thread is a full card. Density comes
                     // from users (or the auto rules) actually parking work,
                     // not from the sidebar second-guessing what still matters.
-                    const isCard = section === "active" || section === "pinned";
+                    const isCard =
+                      section === "active" || section === "pinned" || section === "needs-you";
                     const rowVariant = isCard ? "card" : "slim";
                     return (
                       <SidebarThreadRow
@@ -3738,7 +3768,46 @@ export default function Sidebar() {
                   // Pinned rows render in the one shared pinned order; only
                   // reorder-capable rows register as sortable (legacy-server
                   // pins render in place as plain rows).
+                  // The needs-you queue leads the list. Deliberately not
+                  // collapsible, unlike Snoozed and Settled: those are large,
+                  // low-urgency piles a user parks and wants out of the way,
+                  // while this one is short, urgent, and empties itself the
+                  // moment the work is unblocked. A toggle here would only
+                  // offer a way to hide the thing the sidebar exists to say —
+                  // and the block already vanishes entirely at count 0, which
+                  // is the only "way out" it needs.
+                  //
+                  // Flat, not side-chat grouped: the sort order *is* the
+                  // meaning here (longest-blocked first), and indenting a
+                  // child under a parent that may not even be in the queue
+                  // would reshuffle it into saying something else.
+                  const needsYouItems: ReactNode[] = [];
+                  if (needsYouThreads.length > 0) {
+                    needsYouItems.push(
+                      <li key="needs-you-header" data-thread-selection-safe className="list-none">
+                        <h2
+                          data-testid="sidebar-needs-you-header"
+                          className="mt-1 mb-1 flex w-full items-center gap-2 px-2.5 text-xs font-medium text-status-attention-foreground"
+                        >
+                          <span>Needs you ({needsYouThreads.length})</span>
+                          <span aria-hidden className="h-px flex-1 bg-status-attention/20" />
+                        </h2>
+                      </li>,
+                    );
+                    for (const thread of needsYouThreads) {
+                      needsYouItems.push(renderThreadRow(thread, "needs-you"));
+                    }
+                    needsYouItems.push(
+                      <li
+                        key="needs-you-divider"
+                        aria-hidden
+                        data-testid="sidebar-needs-you-divider"
+                        className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
+                      />,
+                    );
+                  }
                   const items: ReactNode[] = [
+                    ...needsYouItems,
                     <SidebarDraftBlock
                       key="draft-sessions"
                       projectDisplayNameByKey={projectDisplayNameByKey}
@@ -3888,7 +3957,8 @@ export default function Sidebar() {
           ) : null}
           {!isSearchingThreads &&
           visibleDraftSessionCount === 0 &&
-          pinnedThreads.length +
+          needsYouThreads.length +
+            pinnedThreads.length +
             activeThreads.length +
             snoozedThreads.length +
             settledThreads.length ===

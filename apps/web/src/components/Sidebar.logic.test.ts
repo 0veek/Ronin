@@ -19,6 +19,8 @@ import {
   resolveSidebarStageBadgeLabel,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
+  sortThreadsByBlockedDuration,
+  threadNeedsYou,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
@@ -732,6 +734,74 @@ describe("resolveSidebarThreadStatus", () => {
 
   it("defaults to ready with no session", () => {
     expect(resolveSidebarThreadStatus({ ...idle, session: null })).toBe("ready");
+  });
+
+  describe("threadNeedsYou", () => {
+    it("claims the three statuses that cannot proceed without the user", () => {
+      expect(threadNeedsYou({ ...idle, hasPendingApprovals: true, session })).toBe(true);
+      expect(threadNeedsYou({ ...idle, hasPendingUserInput: true, session })).toBe(true);
+      expect(
+        threadNeedsYou({
+          ...idle,
+          session: { ...session, status: "error" as const, lastError: "boom" },
+        }),
+      ).toBe(true);
+    });
+
+    // The queue must never hold a thread whose row is not wearing one of the
+    // three markers, or the count promises work that is not visible in it.
+    it("leaves working, monitoring and ready alone", () => {
+      expect(threadNeedsYou({ ...idle, session })).toBe(false);
+      expect(threadNeedsYou({ ...idle, session: null })).toBe(false);
+      expect(
+        threadNeedsYou({ ...idle, session: null, backgroundLiveness: "monitoring" as const }),
+      ).toBe(false);
+      expect(
+        threadNeedsYou({ ...idle, session: null, backgroundLiveness: "working" as const }),
+      ).toBe(false);
+    });
+
+    it("agrees with resolveSidebarThreadStatus rather than re-deciding", () => {
+      // A running session with a pending approval is "approval", so it is
+      // blocked even though the agent is technically still alive.
+      const shell = { ...idle, hasPendingApprovals: true, session };
+      expect(resolveSidebarThreadStatus(shell)).toBe("approval");
+      expect(threadNeedsYou(shell)).toBe(true);
+    });
+  });
+});
+
+describe("sortThreadsByBlockedDuration", () => {
+  const thread = (id: string, updatedAt: string) => ({ id, updatedAt });
+
+  // The one list in the sidebar that leads with the oldest: the question is
+  // "what has been stuck longest", not "what changed most recently".
+  it("puts the longest-blocked thread first", () => {
+    expect(
+      sortThreadsByBlockedDuration([
+        thread("recent", "2026-03-09T10:00:00.000Z"),
+        thread("oldest", "2026-03-09T08:00:00.000Z"),
+        thread("middle", "2026-03-09T09:00:00.000Z"),
+      ]).map((entry) => entry.id),
+    ).toEqual(["oldest", "middle", "recent"]);
+  });
+
+  it("sinks an unparseable timestamp instead of poisoning the order", () => {
+    expect(
+      sortThreadsByBlockedDuration([
+        thread("valid", "2026-03-09T10:00:00.000Z"),
+        thread("garbage", "not a date"),
+      ]).map((entry) => entry.id),
+    ).toEqual(["garbage", "valid"]);
+  });
+
+  it("does not mutate its input", () => {
+    const threads = [
+      thread("recent", "2026-03-09T10:00:00.000Z"),
+      thread("oldest", "2026-03-09T08:00:00.000Z"),
+    ];
+    sortThreadsByBlockedDuration(threads);
+    expect(threads.map((entry) => entry.id)).toEqual(["recent", "oldest"]);
   });
 });
 

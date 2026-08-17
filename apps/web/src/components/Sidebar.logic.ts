@@ -467,7 +467,7 @@ export type SidebarThreadStatus =
   | "failed"
   | "ready";
 
-type SidebarThreadStatusInput = Pick<
+export type SidebarThreadStatusInput = Pick<
   SidebarThreadSummary,
   "hasPendingApprovals" | "hasPendingUserInput" | "session" | "backgroundLiveness"
 >;
@@ -496,6 +496,47 @@ export function resolveSidebarThreadStatus(thread: SidebarThreadStatusInput): Si
     return "monitoring";
   }
   return "ready";
+}
+
+// ── The needs-you queue ─────────────────────────────────────────────
+// Threads the agent has stopped on and cannot continue without the user.
+//
+// Deliberately the same three statuses the row's own marker already shows,
+// rather than a second opinion computed from the shell's raw flags: a queue
+// that disagreed with the markers beside it would be worse than no queue. Add
+// a status here only by adding it to resolveSidebarThreadStatus first.
+//
+// "monitoring" and "working" are the agent's problem, not the user's, and
+// "ready" is the resting state — a finished turn is news (the notifier says
+// so) but it is not *blocking* anyone.
+const NEEDS_YOU_STATUSES: ReadonlySet<SidebarThreadStatus> = new Set([
+  "approval",
+  "input",
+  "failed",
+]);
+
+export function threadNeedsYou(thread: SidebarThreadStatusInput): boolean {
+  return NEEDS_YOU_STATUSES.has(resolveSidebarThreadStatus(thread));
+}
+
+/**
+ * Longest-blocked first.
+ *
+ * The queue's question is "what has been stuck the longest", not "what broke
+ * most recently", so this is the one list in the sidebar that sorts oldest
+ * first — everything else leads with the newest.
+ *
+ * `updatedAt` stands in for the blocked-at instant the shell does not carry.
+ * That substitution is sound precisely because these threads are blocked: a
+ * thread waiting on a human is not changing, so its last update *is* the
+ * moment it started waiting.
+ */
+export function sortThreadsByBlockedDuration<T extends { updatedAt: string }>(
+  threads: readonly T[],
+): T[] {
+  return threads.toSorted(
+    (left, right) => parseTimestampMs(left.updatedAt) - parseTimestampMs(right.updatedAt),
+  );
 }
 
 /** NaN-safe Date.parse for sort comparators: a malformed timestamp must not

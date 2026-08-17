@@ -700,6 +700,7 @@ export default function DiffPanel({
             additions={diffLineStat.additions}
             deletions={diffLineStat.deletions}
             className="mr-1 text-2xs"
+            ink
             layout="inline"
           />
         )}

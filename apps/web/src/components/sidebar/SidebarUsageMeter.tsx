@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { ProviderRateLimits, RateLimitWindow } from "@t3tools/contracts";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import {
   PROVIDER_SHORT_LABEL,
@@ -37,6 +37,25 @@ import {
  */
 /** Past this, the row stops being informational and starts being a warning. */
 const CRITICAL_PERCENT = 90;
+
+/** Providers are branded slugs; anything else has no business in a var() name. */
+const PROVIDER_SLUG = /^[a-z0-9-]+$/;
+
+/**
+ * The provider's own ink, or the app's accent for one that has not been given
+ * any. Written as a var() fallback rather than a lookup table on purpose: the
+ * three tokens that exist live in tokens.css, and a fourth added there reaches
+ * this meter without a second edit here to keep in sync.
+ *
+ * Colour is what makes the block scannable. Every row drawing the same accent
+ * says only "some quota"; a row in Claude's orange says which one before the
+ * name beside it has been read.
+ */
+function providerInk(provider: string): string {
+  return PROVIDER_SLUG.test(provider)
+    ? `var(--provider-${provider}, var(--primary))`
+    : "var(--primary)";
+}
 
 function formatResetsAt(resetsAt: string | null): string | null {
   if (resetsAt === null) return null;
@@ -104,7 +123,7 @@ function UsageRow({ row, nowMs }: { row: UsageMeterRow; nowMs: number }) {
                   {window === null ? "—" : RATE_LIMIT_WINDOW_SHORT_LABEL[window.kind]}
                 </span>
                 {countdown === null ? null : (
-                  <span className="text-[10px] text-muted-foreground/45">
+                  <span className="text-[10px] text-muted-foreground/45 tabular-nums">
                     {" · "}
                     {countdown === "now" ? "resetting" : `resets in ${countdown}`}
                   </span>
@@ -129,11 +148,15 @@ function UsageRow({ row, nowMs }: { row: UsageMeterRow; nowMs: number }) {
             <span className="mt-1 block h-px w-full bg-sidebar-border" role="presentation">
               {percent === null ? null : (
                 <span
-                  className={cn(
-                    "block h-px origin-left transition-[scale] duration-(--duration-slow) ease-out",
-                    isCritical ? "bg-destructive" : "bg-primary",
-                  )}
-                  style={{ scale: `${percent / 100} 1` }}
+                  className="block h-px origin-left bg-(--usage-ink) transition-[scale] duration-(--duration-slow) ease-out"
+                  style={
+                    {
+                      scale: `${percent / 100} 1`,
+                      "--usage-ink": isCritical
+                        ? "var(--destructive)"
+                        : providerInk(entry.provider),
+                    } as CSSProperties
+                  }
                 />
               )}
             </span>
