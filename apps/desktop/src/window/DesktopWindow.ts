@@ -28,6 +28,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import { makeQuitHoldHandler } from "./QuitHold.ts";
+import { getWindowVibrancyOptions, resolveWindowBackgroundColor } from "./WindowVibrancy.ts";
 
 // Matches --workspace-topbar-height in apps/web/src/styles/tokens.css. The
 // renderer reads this back through env(titlebar-area-height), so the two must
@@ -234,7 +235,15 @@ function syncWindowAppearance(
       return;
     }
 
-    window.setBackgroundColor(getInitialWindowBackgroundColor(shouldUseDarkColors));
+    // Re-asserting the opaque fill here would paint over the OS material the
+    // window was created with, so a vibrant window keeps its alpha-zero fill
+    // and lets the renderer's own tokens carry the light/dark change.
+    window.setBackgroundColor(
+      resolveWindowBackgroundColor({
+        opaqueColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+        platform,
+      }),
+    );
     const { titleBarOverlay } = getWindowTitleBarOptions(shouldUseDarkColors, platform);
     if (typeof titleBarOverlay === "object") {
       window.setTitleBarOverlay(titleBarOverlay);
@@ -328,10 +337,14 @@ export const make = Effect.gen(function* () {
       show: false,
       autoHideMenuBar: true,
       ...(environment.platform === "darwin" ? { disableAutoHideCursor: true } : {}),
-      backgroundColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+      backgroundColor: resolveWindowBackgroundColor({
+        opaqueColor: getInitialWindowBackgroundColor(shouldUseDarkColors),
+        platform: environment.platform,
+      }),
       ...iconOption,
       title: environment.displayName,
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
+      ...getWindowVibrancyOptions(environment.platform),
       webPreferences: {
         preload: environment.preloadPath,
         backgroundThrottling: false,

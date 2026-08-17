@@ -31,6 +31,7 @@ import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
+import { resolveWindowVibrancy } from "../../window/WindowVibrancy.ts";
 
 const ContextMenuPosition = Schema.Struct({
   x: Schema.Number,
@@ -54,6 +55,15 @@ export const getAppBranding = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getAppBranding")(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     return environment.branding;
+  }),
+});
+
+export const getWindowVibrancy = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_WINDOW_VIBRANCY_CHANNEL,
+  result: Schema.NullOr(Schema.Literals(["vibrancy", "acrylic"])),
+  handler: Effect.fn("desktop.ipc.window.getWindowVibrancy")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    return resolveWindowVibrancy(environment.platform);
   }),
 });
 

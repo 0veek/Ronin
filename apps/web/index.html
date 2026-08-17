@@ -232,6 +232,22 @@
           }
         };
 
+        // Read before anything paints. When the OS draws a material behind the
+        // window, the chrome fill below must never land -- even one frame of it
+        // reads as a flash of solid color over the user's desktop.
+        let windowVibrancy = null;
+        try {
+          windowVibrancy = window.desktopBridge?.getWindowVibrancy?.() ?? null;
+        } catch {
+          // A preload too old to answer means no material to preserve.
+        }
+        if (windowVibrancy) {
+          document.documentElement.dataset.windowVibrancy = windowVibrancy;
+        }
+        const setChromeBackgroundColor = (color) => {
+          document.documentElement.style.backgroundColor = windowVibrancy ? "transparent" : color;
+        };
+
         // The runtime decodes the same literal CSS formats into OKLCH. Keep
         // contextual colors out: they cannot be resolved from stored data.
         const SYSTEM_COLOR_KEYWORD =
@@ -457,7 +473,7 @@
               : isDark
                 ? DARK_BACKGROUND
                 : LIGHT_BACKGROUND;
-          document.documentElement.style.backgroundColor = chromeColor;
+          setChromeBackgroundColor(chromeColor);
           if (hasSelection) {
             const splashColors = customSplash ?? builtInSplash ?? fallbackSplash;
             for (const [name, value] of Object.entries(splashColors)) {
@@ -477,7 +493,7 @@
           delete document.documentElement.dataset.themeSelected;
           document.documentElement.classList.toggle("dark", prefersDark);
           const fallbackColor = prefersDark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
-          document.documentElement.style.backgroundColor = fallbackColor;
+          setChromeBackgroundColor(fallbackColor);
           setThemeColor(fallbackColor);
         }
       })();

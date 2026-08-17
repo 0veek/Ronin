@@ -880,6 +880,14 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
   input: PreviewAutomationWaitForInput,
 });
 
+/**
+ * Which system-drawn window material sits behind the renderer, or `null` when
+ * the platform draws none. The renderer needs this to decide whether its own
+ * chrome should paint an opaque fill (no material) or a translucent scrim that
+ * lets the OS blur through (material present).
+ */
+export type DesktopWindowVibrancy = "vibrancy" | "acrylic";
+
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
   /**
@@ -889,6 +897,12 @@ export interface DesktopBridge {
    * regardless of OS settings.
    */
   getSystemLocale?: () => string | null;
+  /**
+   * Read synchronously by the pre-paint theme script in index.html, because a
+   * window that is vibrant must never paint its opaque chrome fill even for one
+   * frame -- that frame reads as a flash of solid color over the desktop.
+   */
+  getWindowVibrancy?: () => DesktopWindowVibrancy | null;
   // One bootstrap per pool instance currently registered with bootstrap
   // info (omits instances whose backend hasn't produced a config yet).
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.

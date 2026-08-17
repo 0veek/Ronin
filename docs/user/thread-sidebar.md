@@ -19,6 +19,16 @@ default; turn off **Auto-settle merged threads** in **Settings → General** if 
 remain active. The separate inactivity setting controls whether quiet threads settle after a chosen
 number of days.
 
+## Sidebar glass
+
+The sidebar is drawn as a pane of frosted glass, lit from the wordmark at the top. Each theme casts
+its own tint through the material, so the glass changes colour when you change themes.
+
+On macOS and Windows 11 the sidebar also picks up the system's own background blur, so your desktop
+shows faintly through it. Turn on **Reduce transparency** in your operating system's accessibility
+settings to make the sidebar solid again; the lighting and texture stay, only the see-through part
+goes away. Other platforms draw the glass without the system blur, and look the same either way.
+
 ## Environment artwork
 
 Dev and Nightly environments can identify themselves with artwork at the top of the sidebar and in

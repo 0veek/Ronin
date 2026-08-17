@@ -36,6 +36,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;
   },
+  getWindowVibrancy: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_WINDOW_VIBRANCY_CHANNEL);
+    return result === "vibrancy" || result === "acrylic" ? result : null;
+  },
   getLocalEnvironmentBootstraps: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL);
     if (!Array.isArray(result)) {

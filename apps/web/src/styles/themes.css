@@ -28,6 +28,18 @@
   --sidebar-row-selected: var(--color-white);
   --sidebar-border: var(--color-zinc-200);
   --sidebar-stage-fade: var(--sidebar);
+  /* Glass, lit from the wordmark. Two colors and five strengths; the recipe
+     that spends them lives in chrome.css. A light pane has almost no headroom
+     above its own fill, so the rim and rake spend what there is on white and
+     the foot does the deepening. */
+  --sidebar-glass-lift: #fff;
+  --sidebar-glass-shade: var(--color-zinc-900);
+  --sidebar-glass-tint: var(--ring);
+  --sidebar-glass-rim: 90%;
+  --sidebar-glass-edge: 45%;
+  --sidebar-glass-rake: 55%;
+  --sidebar-glass-foot: 5%;
+  --sidebar-glass-cast: 4%;
   background-color: var(--sidebar);
 }
 
@@ -53,6 +65,17 @@
   /* The stage-channel header art must ramp to THIS panel's surface, not the
      global chrome background, or the fade shows a seam. */
   --sidebar-stage-fade: var(--card);
+  /* A dark pane is nearly all headroom, so the same eight tokens buy a far
+     more legible material here: the rim reads as a true lit edge and the rake
+     as light entering the slab. */
+  --sidebar-glass-lift: #fff;
+  --sidebar-glass-shade: #000;
+  --sidebar-glass-tint: var(--ring);
+  --sidebar-glass-rim: 24%;
+  --sidebar-glass-edge: 9%;
+  --sidebar-glass-rake: 8%;
+  --sidebar-glass-foot: 20%;
+  --sidebar-glass-cast: 5%;
 }
 
 /* Keep this block after the sidebar compatibility overrides so navigation
@@ -368,4 +391,49 @@ html.dark[data-theme-id] [data-app-sidebar] {
 
 .theme-json-constant {
   color: var(--app-theme-accent-surface-foreground, var(--color-violet-600));
+}
+
+/*
+ * Vibrant windows.
+ *
+ * When the OS draws a material behind the window (macOS vibrancy, Windows 11
+ * acrylic), the sidebar's slab rides on that blur instead of on a flat fill.
+ * Only the base fill changes; every layer of the material in chrome.css is
+ * identical either way.
+ *
+ * The scrim is deliberate. Fully transparent glass is a readability bug rather
+ * than a stronger effect -- sidebar text has to survive an arbitrary desktop
+ * behind it, and the OS blur alone does not guarantee that.
+ *
+ * These live at the end of this file, not next to the recipe in chrome.css,
+ * because the themed `html[data-theme-id] [data-app-sidebar]` block above
+ * re-asserts an opaque fill at the same specificity. themes.css is imported
+ * after chrome.css, so a rule there would tie and lose on order.
+ */
+html[data-window-vibrancy],
+html[data-window-vibrancy] body {
+  background-color: transparent;
+}
+
+html[data-window-vibrancy] [data-app-sidebar] {
+  --sidebar-glass-fill: color-mix(in srgb, var(--sidebar) 58%, transparent);
+  background-color: transparent;
+}
+
+/*
+ * The way out, and the only one a user needs: "Reduce transparency" in macOS
+ * Accessibility and its Windows counterpart. The OS keeps drawing its material,
+ * but the scrim goes fully opaque so nothing shows through -- the material in
+ * chrome.css stays exactly as it is, because the rim, rake and tooth were never
+ * the transparent part.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  html[data-window-vibrancy] [data-app-sidebar] {
+    --sidebar-glass-fill: var(--sidebar);
+  }
+
+  html[data-window-vibrancy],
+  html[data-window-vibrancy] body {
+    background-color: var(--app-chrome-background);
+  }
 }

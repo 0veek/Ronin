@@ -550,6 +550,97 @@
   );
 }
 
+/*
+ * Sidebar glass: a slab of frosted glass standing on edge, lit by one source at
+ * the wordmark. Light enters top-left, scatters down through the material, and
+ * has run out by the usage panel. Every layer below encodes that one light --
+ * the top edge catches it, the trailing edge refracts it through the slab's
+ * thickness, the rake carries it down, and the foot is where it dies. That is
+ * also why the usage panel reads as deeper in the material than the thread
+ * list: it is further from the lamp, not merely lower in a gradient.
+ *
+ * There is deliberately no backdrop-filter here, and adding one would be worse
+ * than useless. The sidebar is a layout sibling with nothing but a flat fill
+ * behind it, so a real blur would sample a solid color, hand it back unchanged,
+ * and charge a full-viewport recomposite every frame for the privilege -- the
+ * exact cost the .surface-menu note above records this project removing. What
+ * the eye reads as "frosted" is the rim, the tint, and the tooth, none of which
+ * need to sample anything.
+ *
+ * So it is one background-image stack on an element that already paints: no new
+ * compositor layer, no will-change, nothing animated. One paint at mount, and
+ * then nothing for the rest of the session.
+ *
+ * These rules are unlayered on purpose. `bg-sidebar` and `surface-grain` are
+ * Tailwind utilities, and Tailwind's utility layer outranks its component
+ * layer, so a @layer components rule here would lose the background it is
+ * trying to compose with. The grain is re-declared as the last stack entry
+ * rather than left to the utility, which is what keeps the frost tooth.
+ */
+[data-app-sidebar] [data-slot="sidebar-inner"] {
+  background-color: var(--sidebar-glass-fill, var(--sidebar));
+  background-image:
+    /* The lit rim, brightest at the wordmark and gone by the fold. */
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--sidebar-glass-lift) var(--sidebar-glass-rim), transparent),
+      color-mix(
+          in srgb,
+          var(--sidebar-glass-lift) calc(var(--sidebar-glass-rim) * 0.3),
+          transparent
+        )
+        42%,
+      transparent 84%
+    ),
+    /* The slab's thickness, where the glass meets the content it sits beside. */
+    linear-gradient(
+      to left,
+      color-mix(in srgb, var(--sidebar-glass-lift) var(--sidebar-glass-edge), transparent),
+      transparent
+    ),
+    /* The light itself, entering at the mark. */
+    radial-gradient(
+      118% 44% at 0% 0%,
+      color-mix(in srgb, var(--sidebar-glass-lift) var(--sidebar-glass-rake), transparent),
+      transparent 70%
+    ),
+    /* Where it runs out. */
+    linear-gradient(
+      to bottom,
+      transparent 52%,
+      color-mix(in srgb, var(--sidebar-glass-shade) var(--sidebar-glass-foot), transparent)
+    ),
+    /* Glass is never neutral; each theme casts its own through --ring. */
+    linear-gradient(
+      color-mix(in srgb, var(--sidebar-glass-tint) var(--sidebar-glass-cast), transparent),
+      color-mix(in srgb, var(--sidebar-glass-tint) var(--sidebar-glass-cast), transparent)
+    ),
+    /* The etched tooth. */ var(--surface-grain);
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
+  background-size:
+    100% 1.5px,
+    2px 100%,
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    var(--surface-grain-size);
+  background-position:
+    top left,
+    top right,
+    top left,
+    bottom left,
+    top left,
+    top left;
+}
+
+/* The material is decoration carrying no information, and every layer of it is
+   a color mix the forced palette has no way to honor. */
+@media (forced-colors: active) {
+  [data-app-sidebar] [data-slot="sidebar-inner"] {
+    background-image: none;
+  }
+}
+
 /* Composer chips are non-editable decorators, so the browser skips them when
    painting text selection; this overlay stands in for the native highlight. */
 .composer-inline-chip[data-composer-chip-selected]::after {

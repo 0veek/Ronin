@@ -27,6 +27,7 @@ import {
   focusWindow,
   getAppBranding,
   getSystemLocale,
+  getWindowVibrancy,
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
   getWindowFullscreenState,
@@ -45,6 +46,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
 
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getSystemLocale);
+  yield* ipc.handleSync(getWindowVibrancy);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handle(getLocalEnvironmentBearerToken);

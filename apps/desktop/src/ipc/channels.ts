@@ -11,6 +11,7 @@ export const GET_WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:get-window-fullscree
 export const WINDOW_FULLSCREEN_STATE_CHANNEL = "desktop:window-fullscreen-state";
 export const GET_APP_BRANDING_CHANNEL = "desktop:get-app-branding";
 export const GET_SYSTEM_LOCALE_CHANNEL = "desktop:get-system-locale";
+export const GET_WINDOW_VIBRANCY_CHANNEL = "desktop:get-window-vibrancy";
 export const GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL = "desktop:get-local-environment-bootstraps";
 export const GET_LOCAL_ENVIRONMENT_BEARER_TOKEN_CHANNEL =
   "desktop:get-local-environment-bearer-token";
