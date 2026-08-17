@@ -27,8 +27,11 @@ import {
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
+  readProject,
+  readThreadDetail,
   readThreadShell,
 } from "../state/entities";
+import { downloadThreadExport } from "../lib/threadExport";
 import { readLocalApi } from "../localApi";
 import { useUiStateStore } from "../uiStateStore";
 import { useCopyToClipboard } from "./useCopyToClipboard";
@@ -124,6 +127,7 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
+        const threadDetail = readThreadDetail(threadRef);
         const items = buildThreadActionMenuItems({
           branch: thread.branch ?? null,
           isPinned: thread.pinnedAt != null,
@@ -142,6 +146,7 @@ export function useThreadActionMenu(input: {
           canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
           isRegeneratingTitle,
           isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
+          canExport: (threadDetail?.messages.length ?? 0) > 0,
           supports,
           snoozePresets,
         });
@@ -256,6 +261,24 @@ export function useThreadActionMenu(input: {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "export-markdown":
+          case "export-json": {
+            if (!threadDetail) return;
+            downloadThreadExport(
+              {
+                threadId: thread.id,
+                title: thread.title,
+                projectTitle:
+                  readProject(scopeProjectRef(threadRef.environmentId, thread.projectId))?.title ??
+                  null,
+                branch: thread.branch ?? null,
+                createdAt: thread.createdAt,
+                messages: threadDetail.messages,
+              },
+              action === "export-markdown" ? "md" : "json",
+            );
+            return;
+          }
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>

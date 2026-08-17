@@ -10,6 +10,7 @@ const baseState: ThreadActionMenuState = {
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
+  canExport: true,
   supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
@@ -27,7 +28,15 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["rename", "mark-unread", "copy-path", "copy-thread-id", "archive", "delete"]);
+    ).toEqual([
+      "rename",
+      "mark-unread",
+      "copy-path",
+      "copy-thread-id",
+      "export",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("includes branch items only for threads with a branch", () => {
@@ -80,6 +89,18 @@ describe("buildThreadActionMenuItems", () => {
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
     ).toContain("archive");
+  });
+
+  it("offers both export formats under one entry", () => {
+    const exportItem = buildThreadActionMenuItems(baseState).find((item) => item.id === "export");
+    expect(exportItem?.children?.map((child) => child.id)).toEqual([
+      "export-markdown",
+      "export-json",
+    ]);
+  });
+
+  it("hides export when the thread has no loaded transcript", () => {
+    expect(ids({ ...baseState, canExport: false })).not.toContain("export");
   });
 
   it("disables archive while the thread is running", () => {

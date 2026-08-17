@@ -21,6 +21,9 @@ export type ThreadActionMenuId =
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
+  | "export"
+  | "export-markdown"
+  | "export-json"
   | "archive"
   | "delete";
 
@@ -33,6 +36,8 @@ export interface ThreadActionMenuState {
   readonly isRegeneratingTitle: boolean;
   /** Archive rejects a thread with an active turn, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
+  /** Export builds the transcript from the loaded thread, so it needs one in hand. */
+  readonly canExport: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly snooze: boolean;
@@ -105,6 +110,20 @@ export function buildThreadActionMenuItems(
     { id: "copy-path", label: "Copy path", icon: "copy" },
     ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
     { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
+    // Export reads the loaded transcript in the client, so it is only offered
+    // where the thread's messages are actually in hand.
+    ...(state.canExport
+      ? [
+          {
+            id: "export" as const,
+            label: "Export conversation",
+            children: [
+              { id: "export-markdown" as const, label: "Markdown (.md)" },
+              { id: "export-json" as const, label: "JSON (.json)" },
+            ],
+          },
+        ]
+      : []),
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle
     // (stays visible in the Settled shelf) and Delete (clears history for

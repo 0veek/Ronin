@@ -103,7 +103,8 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
+import { readProject, readThreadDetail, useProjects, useThreadShells } from "../state/entities";
+import { downloadThreadExport } from "../lib/threadExport";
 import { environmentServerConfigsAtom, primaryServerKeybindingsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
@@ -3099,6 +3100,7 @@ export default function Sidebar() {
         const isPinned = thread.pinnedAt != null;
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const threadDetail = readThreadDetail(threadRef);
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
@@ -3110,6 +3112,7 @@ export default function Sidebar() {
               isRegeneratingTitle,
               isRunning:
                 thread.session?.status === "running" && thread.session.activeTurnId != null,
+              canExport: (threadDetail?.messages.length ?? 0) > 0,
               supports: {
                 settlement: supportsSettlement,
                 snooze: supportsSnooze,
@@ -3213,6 +3216,24 @@ export default function Sidebar() {
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
+          case "export-markdown":
+          case "export-json": {
+            if (!threadDetail) return;
+            downloadThreadExport(
+              {
+                threadId: thread.id,
+                title: thread.title,
+                projectTitle:
+                  readProject(scopeProjectRef(thread.environmentId, thread.projectId))?.title ??
+                  null,
+                branch: thread.branch ?? null,
+                createdAt: thread.createdAt,
+                messages: threadDetail.messages,
+              },
+              clicked.value === "export-markdown" ? "md" : "json",
+            );
+            return;
+          }
           case "archive": {
             if (confirmThreadArchive) {
               const confirmed = await settlePromise(() =>

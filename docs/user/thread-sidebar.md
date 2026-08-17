@@ -35,6 +35,16 @@ To search what you have archived, open **Settings → Archive**. The search box 
 thread titles and the messages inside them, and shows the matching line underneath each result so
 you can tell why it matched. Unarchive from the same row to bring a thread back.
 
+## Exporting a conversation
+
+Right-click a thread — in the sidebar or from the chat header menu — and choose **Export
+conversation** to save the transcript as Markdown or JSON. Markdown is for reading and sharing;
+JSON keeps the message roles, timestamps, and which provider wrote each reply.
+
+The file is built from the transcript your client already has, so exporting works the same over a
+remote connection and never writes anything on the machine running the agent. A reply that is still
+being written is left out, and the entry only appears once a thread's transcript is open.
+
 ## Settling threads
 
 Threads on closed pull requests always settle automatically. Merged pull requests also settle by
