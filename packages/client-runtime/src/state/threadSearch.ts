@@ -20,16 +20,19 @@ export interface ThreadSearchResultsState {
 const ThreadSearchKey = Schema.Tuple([
   Schema.Array(EnvironmentId),
   OrchestrationSearchThreadsInput.fields.query,
+  Schema.Boolean,
 ]);
 const decodeThreadSearchKey = Schema.decodeUnknownSync(ThreadSearchKey);
 
 export function makeThreadSearchKey(
   environmentIds: ReadonlyArray<EnvironmentId>,
   query: string,
+  includeArchived: boolean,
 ): string {
   return JSON.stringify([
     [...environmentIds].sort((left, right) => left.localeCompare(right)),
     query,
+    includeArchived,
   ]);
 }
 
@@ -52,17 +55,18 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
   readonly getSearchAtom: (
     environmentId: EnvironmentId,
     query: string,
+    includeArchived: boolean,
   ) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationSearchThreadsResult, E>>;
   readonly labelPrefix: string;
 }) {
   return Atom.family((key: string) =>
     Atom.make((get): ThreadSearchResultsState => {
-      const [environmentIds, query] = parseThreadSearchKey(key);
+      const [environmentIds, query, includeArchived] = parseThreadSearchKey(key);
       const matches: EnvironmentThreadSearchMatch[] = [];
       let isLoading = false;
 
       for (const environmentId of environmentIds) {
-        const result = get(options.getSearchAtom(environmentId, query));
+        const result = get(options.getSearchAtom(environmentId, query, includeArchived));
         isLoading ||= result.waiting;
         const value = Option.getOrNull(AsyncResult.value(result));
         if (value !== null) {

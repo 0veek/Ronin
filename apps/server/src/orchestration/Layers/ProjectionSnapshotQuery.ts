@@ -126,6 +126,8 @@ const ProjectionCountsRowSchema = Schema.Struct({
 const ProjectionThreadSearchRequest = Schema.Struct({
   pattern: Schema.String,
   limit: Schema.Int,
+  includeArchived: Schema.Int,
+  projectId: Schema.NullOr(ProjectId),
 });
 const ProjectionThreadSearchRow = Schema.Struct({
   threadId: ThreadId,
@@ -133,6 +135,7 @@ const ProjectionThreadSearchRow = Schema.Struct({
   source: OrchestrationThreadSearchSource,
   matchText: Schema.String,
   messageCreatedAt: Schema.NullOr(IsoDateTime),
+  archived: Schema.Int,
 });
 const WorkspaceRootLookupInput = Schema.Struct({
   workspaceRoot: Schema.String,
@@ -805,7 +808,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
   const searchActiveThreadRows = SqlSchema.findAll({
     Request: ProjectionThreadSearchRequest,
     Result: ProjectionThreadSearchRow,
-    execute: ({ pattern, limit }) =>
+    execute: ({ pattern, limit, includeArchived, projectId }) =>
       sql`
         WITH ranked AS (
           SELECT
@@ -817,6 +820,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             END AS source,
             messages.text AS match_text,
             messages.created_at AS message_created_at,
+            CASE WHEN threads.archived_at IS NULL THEN 0 ELSE 1 END AS archived,
             CASE messages.role
               WHEN 'user' THEN 0
               ELSE 1
@@ -838,7 +842,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           INNER JOIN projection_projects AS projects
             ON projects.project_id = threads.project_id
           WHERE threads.deleted_at IS NULL
-            AND threads.archived_at IS NULL
+            AND (${includeArchived} = 1 OR threads.archived_at IS NULL)
+            AND (${projectId} IS NULL OR threads.project_id = ${projectId})
             AND projects.deleted_at IS NULL
             AND messages.is_streaming = 0
             AND (
@@ -859,10 +864,12 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           source,
           match_text AS "matchText",
-          message_created_at AS "messageCreatedAt"
+          message_created_at AS "messageCreatedAt",
+          archived
         FROM ranked
         WHERE thread_match_rank = 1
         ORDER BY
+          archived ASC,
           match_rank ASC,
           thread_updated_at DESC,
           thread_id ASC
@@ -2304,6 +2311,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     const rows = yield* searchActiveThreadRows({
       pattern: `%${escapedQuery}%`,
       limit: input.limit ?? 50,
+      includeArchived: input.includeArchived === true ? 1 : 0,
+      projectId: input.projectId ?? null,
     }).pipe(
       Effect.mapError(
         toPersistenceSqlOrDecodeError(
@@ -2319,6 +2328,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         source: row.source,
         snippet: buildSearchSnippet(row.matchText, input.query),
         messageCreatedAt: row.messageCreatedAt,
+        archived: row.archived === 1,
       })),
     };
   });

@@ -5,6 +5,7 @@ import {
   ExternalLinkIcon,
   GithubIcon,
   LoaderIcon,
+  SearchIcon,
   SettingsIcon,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
@@ -97,6 +98,8 @@ import {
 } from "../ui/dialog";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
+import { useThreadSearch } from "../../state/queries";
+import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
   DEFAULT_CODE_FONT_STACK,
   DEFAULT_SANS_FONT_STACK,
@@ -2325,6 +2328,15 @@ export function ArchivedThreadsPanel() {
     isLoading: isLoadingArchive,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(environmentIds);
+  const [searchQuery, setSearchQuery] = useState("");
+  const trimmedQuery = searchQuery.trim();
+  // Archived threads are excluded from routine search, so this panel opts in
+  // explicitly - it is the one place where finding archived work is the point.
+  const contentSearch = useThreadSearch(environmentIds, trimmedQuery, true);
+  const contentMatchByKey = useMemo(
+    () => new Map(contentSearch.matches.map((match) => [threadSearchMatchKey(match), match])),
+    [contentSearch.matches],
+  );
 
   const archivedGroups = useMemo(() => {
     const projectsByEnvironmentAndId = new Map(
@@ -2352,6 +2364,7 @@ export function ArchivedThreadsPanel() {
     );
 
     const archivedProjects = Array.from(projectsByEnvironmentAndId.values());
+    const lowerQuery = trimmedQuery.toLowerCase();
     const groups: Array<{
       readonly project: (typeof archivedProjects)[number];
       readonly threads: Array<(typeof threads)[number]>;
@@ -2360,7 +2373,20 @@ export function ArchivedThreadsPanel() {
       const projectThreads: Array<(typeof threads)[number]> = [];
       for (const thread of threads) {
         if (thread.projectId === project.id && thread.environmentId === project.environmentId) {
-          projectThreads.push(thread);
+          // Title match is instant and local; the content match arrives from the
+          // server, so a thread stays listed if either one hits.
+          const matches =
+            lowerQuery.length === 0 ||
+            thread.title.toLowerCase().includes(lowerQuery) ||
+            contentMatchByKey.has(
+              threadSearchMatchKey({
+                environmentId: thread.environmentId,
+                threadId: thread.id,
+              }),
+            );
+          if (matches) {
+            projectThreads.push(thread);
+          }
         }
       }
       if (projectThreads.length > 0) {
@@ -2375,7 +2401,7 @@ export function ArchivedThreadsPanel() {
       }
     }
     return groups;
-  }, [archivedSnapshots]);
+  }, [archivedSnapshots, contentMatchByKey, trimmedQuery]);
 
   const handleArchivedThreadContextMenu = useCallback(
     async (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
@@ -2425,8 +2451,29 @@ export function ArchivedThreadsPanel() {
     [confirmAndDeleteThread, refreshArchivedThreads, unarchiveThread],
   );
 
+  const hasQuery = trimmedQuery.length > 0;
+
   return (
     <SettingsPageContainer>
+      <div className="relative">
+        <SearchIcon
+          aria-hidden
+          className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          aria-label="Search archived threads"
+          autoCapitalize="off"
+          autoComplete="off"
+          className="pl-9"
+          maxLength={200}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+          }}
+          placeholder="Search archived threads by title or message"
+          type="search"
+          value={searchQuery}
+        />
+      </div>
       {archivedGroups.length === 0 ? (
         <SettingsSection
           id={isLoadingArchive ? undefined : searchableSetting("archive").id}
@@ -2435,7 +2482,7 @@ export function ArchivedThreadsPanel() {
           <SettingsRow
             title={
               <span className="inline-flex items-center gap-2">
-                {isLoadingArchive ? (
+                {isLoadingArchive || contentSearch.isPending ? (
                   <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
                 ) : (
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
@@ -2444,13 +2491,20 @@ export function ArchivedThreadsPanel() {
                   ? "Loading archived threads"
                   : archiveError
                     ? "Could not load archived threads"
-                    : "No archived threads"}
+                    : hasQuery
+                      ? contentSearch.isPending
+                        ? "Searching archived threads"
+                        : "No matching archived threads"
+                      : "No archived threads"}
               </span>
             }
             description={
               isLoadingArchive
                 ? "Checking connected environments."
-                : (archiveError ?? "Archived threads will appear here.")
+                : (archiveError ??
+                  (hasQuery
+                    ? `Nothing archived matches "${trimmedQuery}".`
+                    : "Archived threads will appear here."))
             }
           />
         </SettingsSection>
@@ -2502,6 +2556,20 @@ export function ArchivedThreadsPanel() {
                     Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
                     {" \u00b7 Created "}
                     {formatRelativeTimeLabel(thread.createdAt)}
+                    {(() => {
+                      const match = contentMatchByKey.get(
+                        threadSearchMatchKey({
+                          environmentId: thread.environmentId,
+                          threadId: thread.id,
+                        }),
+                      );
+                      return match ? (
+                        <span className="mt-1 block truncate text-muted-foreground/80 italic">
+                          {match.source === "user" ? "You: " : "Agent: "}
+                          {match.snippet}
+                        </span>
+                      ) : null;
+                    })()}
                   </>
                 }
                 control={

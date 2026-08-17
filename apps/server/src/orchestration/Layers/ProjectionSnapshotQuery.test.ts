@@ -1826,6 +1826,43 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         (yield* snapshotQuery.searchThreads({ query: "hidden needle" })).matches,
         [],
       );
+
+      const archivedOptIn = yield* snapshotQuery.searchThreads({
+        query: "hidden needle",
+        includeArchived: true,
+      });
+      assert.deepStrictEqual(
+        archivedOptIn.matches.map((match) => [match.threadId, match.archived]),
+        [[ThreadId.make("thread-hidden"), true]],
+      );
+
+      // Live threads outrank archived ones when both match.
+      const mixed = yield* snapshotQuery.searchThreads({
+        query: "needle",
+        includeArchived: true,
+      });
+      assert.deepStrictEqual(
+        mixed.matches.map((match) => [match.threadId, match.archived]),
+        [
+          [ThreadId.make("thread-active"), false],
+          [ThreadId.make("thread-hidden"), true],
+        ],
+      );
+
+      assert.deepStrictEqual(
+        (yield* snapshotQuery.searchThreads({
+          query: "user needle",
+          projectId: ProjectId.make("project-search"),
+        })).matches.map((match) => match.threadId),
+        [ThreadId.make("thread-active")],
+      );
+      assert.deepStrictEqual(
+        (yield* snapshotQuery.searchThreads({
+          query: "user needle",
+          projectId: ProjectId.make("project-other"),
+        })).matches,
+        [],
+      );
       yield* sql`
         UPDATE projection_threads
         SET deleted_at = '2026-05-01T00:00:20.000Z'

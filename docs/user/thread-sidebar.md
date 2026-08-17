@@ -26,6 +26,15 @@ and disappears on its own when nothing does, so there is nothing to dismiss.
 Snoozing still wins. A thread you have snoozed stays on the snoozed shelf until it wakes, even if an
 agent is waiting on it, because snoozing is you saying you will deal with it later.
 
+## Finding archived threads
+
+The command palette searches the titles and messages of your live threads. Archived threads are
+left out on purpose, so searching while you work stays focused on what is still open.
+
+To search what you have archived, open **Settings → Archive**. The search box there matches both
+thread titles and the messages inside them, and shows the matching line underneath each result so
+you can tell why it matched. Unarchive from the same row to bring a thread back.
+
 ## Settling threads
 
 Threads on closed pull requests always settle automatically. Merged pull requests also settle by
