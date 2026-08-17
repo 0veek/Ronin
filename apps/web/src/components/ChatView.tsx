@@ -6671,6 +6671,7 @@ function ChatViewContent(props: ChatViewProps) {
             sideChatChildren={sideChatChildren}
             isServerThread={isServerThread}
             changeRequestState={activeThreadPr?.state ?? null}
+            activeProjectId={activeProject?.id}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}

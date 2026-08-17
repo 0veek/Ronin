@@ -218,6 +218,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/skills",
   },
   {
+    id: "automations",
+    title: "Automations",
+    to: "/settings/automations",
+  },
+  {
     id: "portable-skills",
     title: "Ronin skills folder",
     to: "/settings/skills",

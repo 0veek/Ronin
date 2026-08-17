@@ -1,7 +1,11 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveRenameCommit, shouldShowOpenInPicker } from "./ChatHeader";
+import {
+  resolveRenameCommit,
+  shouldShowCreateAutomation,
+  shouldShowOpenInPicker,
+} from "./ChatHeader";
 
 describe("shouldShowOpenInPicker", () => {
   const primaryEnvironmentId = EnvironmentId.make("environment-primary");
@@ -57,6 +61,48 @@ describe("shouldShowOpenInPicker", () => {
         activeThreadEnvironmentId: primaryEnvironmentId,
         primaryEnvironmentId,
         remoteOpenMode: "remote-links",
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldShowCreateAutomation", () => {
+  const primaryEnvironmentId = EnvironmentId.make("environment-primary");
+  const activeProjectId = ProjectId.make("project-1");
+
+  it("shows the control for a project on the primary environment", () => {
+    expect(
+      shouldShowCreateAutomation({
+        activeProjectId,
+        activeThreadEnvironmentId: primaryEnvironmentId,
+        primaryEnvironmentId,
+      }),
+    ).toBe(true);
+  });
+
+  it("hides the control on a remote environment", () => {
+    expect(
+      shouldShowCreateAutomation({
+        activeProjectId,
+        activeThreadEnvironmentId: EnvironmentId.make("environment-remote"),
+        primaryEnvironmentId,
+      }),
+    ).toBe(false);
+  });
+
+  it("hides the control when there is no project or no primary environment", () => {
+    expect(
+      shouldShowCreateAutomation({
+        activeProjectId: undefined,
+        activeThreadEnvironmentId: primaryEnvironmentId,
+        primaryEnvironmentId,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowCreateAutomation({
+        activeProjectId,
+        activeThreadEnvironmentId: primaryEnvironmentId,
+        primaryEnvironmentId: null,
       }),
     ).toBe(false);
   });

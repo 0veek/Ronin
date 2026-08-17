@@ -34,6 +34,7 @@ import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
   BoxIcon,
+  ClockIcon,
   ColumnsIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
@@ -68,6 +69,7 @@ import {
 } from "react";
 import { useAtomValue } from "@effect/atom-react";
 
+import { createAutomationSearch } from "../automationDraft";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -1692,6 +1694,37 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  const automationProjectId =
+    contextualProjectRef !== null &&
+    primaryEnvironmentId !== null &&
+    contextualProjectRef.environmentId === primaryEnvironmentId
+      ? contextualProjectRef.projectId
+      : undefined;
+  actionItems.push({
+    kind: "action",
+    value: "action:new-automation",
+    searchTerms: [
+      "automation",
+      "schedule",
+      "cron",
+      "recurring",
+      "daily",
+      "unattended",
+      "new automation",
+    ],
+    title: "New automation",
+    ...(automationProjectId !== undefined && contextualProjectGroup
+      ? { description: contextualProjectGroup.displayName }
+      : {}),
+    icon: <ClockIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({
+        to: "/settings/automations",
+        search: createAutomationSearch(automationProjectId),
+      });
+    },
+  });
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   const sourceSelectionViewValue =

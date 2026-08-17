@@ -9,13 +9,7 @@
  *
  * @module AutomationsSettingsPanel
  */
-import type {
-  Automation,
-  AutomationId,
-  AutomationSchedule,
-  ProjectId,
-  ThreadEnvMode,
-} from "@t3tools/contracts";
+import type { Automation, ModelSelection } from "@t3tools/contracts";
 import {
   MAX_AUTOMATION_INTERVAL_MINUTES,
   MIN_AUTOMATION_INTERVAL_MINUTES,
@@ -23,8 +17,19 @@ import {
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
 import { ClockIcon, PencilIcon, PlayIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import {
+  type AutomationDraftState,
+  type AutomationsSearch,
+  draftFromAutomation,
+  draftSchedule,
+  draftToCreateInput,
+  draftToUpdateInput,
+  isDraftComplete,
+  startAutomationDraft,
+  startAutomationDraftFromSearch,
+} from "~/automationDraft";
 import {
   formatSchedule,
   formatNextRun,
@@ -44,115 +49,32 @@ import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
+import { AutomationModelField } from "./AutomationModelField";
+import { searchableSetting } from "./settingsSearch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
-type ScheduleKind = AutomationSchedule["_tag"];
-
-interface DraftState {
-  /** The automation being edited, or null when this draft is a new one. */
-  readonly editing: AutomationId | null;
-  readonly projectId: string;
-  readonly title: string;
-  readonly prompt: string;
-  readonly kind: ScheduleKind;
-  readonly everyMinutes: number;
-  readonly timeOfDayText: string;
-  readonly weekdays: ReadonlyArray<number>;
-  readonly onceAtText: string;
-  readonly envMode: ThreadEnvMode;
-}
-
-const EMPTY_DRAFT: DraftState = {
-  editing: null,
-  projectId: "",
-  title: "",
-  prompt: "",
-  kind: "daily",
-  everyMinutes: 60,
-  timeOfDayText: "09:00",
-  weekdays: [1, 2, 3, 4, 5],
-  onceAtText: "",
-  // Worktree by default: unattended work landing in the checkout somebody is
-  // using is the single worst thing an automation can do.
-  envMode: "worktree",
-};
-
-/**
- * The draft as a schedule, or `null` when it is not one yet.
- *
- * Returning null rather than a partial schedule is what lets the Save button
- * stay disabled on a half-typed time instead of saving something surprising.
- */
-function draftSchedule(draft: DraftState): AutomationSchedule | null {
-  switch (draft.kind) {
-    case "interval": {
-      if (
-        !Number.isInteger(draft.everyMinutes) ||
-        draft.everyMinutes < MIN_AUTOMATION_INTERVAL_MINUTES ||
-        draft.everyMinutes > MAX_AUTOMATION_INTERVAL_MINUTES
-      ) {
-        return null;
-      }
-      return { _tag: "interval", everyMinutes: draft.everyMinutes };
-    }
-    case "daily": {
-      const timeOfDay = parseTimeOfDay(draft.timeOfDayText);
-      if (timeOfDay === null) return null;
-      return { _tag: "daily", timeOfDay, weekdays: draft.weekdays };
-    }
-    case "once": {
-      const at = Date.parse(draft.onceAtText);
-      if (Number.isNaN(at)) return null;
-      return { _tag: "once", at: new Date(at).toISOString() };
-    }
-  }
-}
-
-/**
- * An existing automation as an editable draft.
- *
- * The fields a schedule kind does not use keep the empty draft's defaults, so
- * switching kind mid-edit lands on something sensible rather than blank.
- */
-function draftFromAutomation(automation: Automation): DraftState {
-  return {
-    ...EMPTY_DRAFT,
-    editing: automation.id,
-    projectId: String(automation.projectId),
-    title: automation.title,
-    prompt: automation.prompt,
-    envMode: automation.envMode,
-    kind: automation.schedule._tag,
-    ...(automation.schedule._tag === "interval"
-      ? { everyMinutes: automation.schedule.everyMinutes }
-      : {}),
-    ...(automation.schedule._tag === "daily"
-      ? {
-          timeOfDayText: formatTimeOfDay(automation.schedule.timeOfDay),
-          weekdays: automation.schedule.weekdays,
-        }
-      : {}),
-    ...(automation.schedule._tag === "once"
-      ? { onceAtText: automation.schedule.at.slice(0, 16) }
-      : {}),
-  };
-}
-
-function isDraftComplete(draft: DraftState): boolean {
-  return (
-    draft.projectId.length > 0 &&
-    draft.title.trim().length > 0 &&
-    draft.prompt.trim().length > 0 &&
-    draftSchedule(draft) !== null
-  );
-}
-
-export function AutomationsSettingsPanel() {
+export function AutomationsSettingsPanel({
+  createIntent,
+}: {
+  readonly createIntent?: AutomationsSearch;
+} = {}) {
   const { environmentId, automations, runs, create, update, remove, runNow } = useAutomations();
   const projects = useProjects();
   const navigate = useNavigate();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
-  const [draft, setDraft] = useState<DraftState | null>(null);
+  const [draft, setDraft] = useState<AutomationDraftState | null>(null);
+  const createKey = createIntent?.create === true ? `create:${createIntent.projectId ?? ""}` : null;
+  const [appliedCreateKey, setAppliedCreateKey] = useState<string | null>(null);
+  if (createKey !== null && createKey !== appliedCreateKey) {
+    const next = startAutomationDraftFromSearch(
+      createIntent ?? {},
+      projects.map((project) => String(project.id)),
+    );
+    if (next !== null) {
+      setDraft(next);
+      setAppliedCreateKey(createKey);
+    }
+  }
 
   const projectTitleById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.title])),
@@ -165,33 +87,28 @@ export function AutomationsSettingsPanel() {
 
   const formatInstant = (iso: string) => formatDayAwareTimestamp(iso, timestampFormat);
 
+  useEffect(() => {
+    if (createIntent?.create !== true || appliedCreateKey === null) return;
+    void navigate({ to: "/settings/automations", search: {}, replace: true });
+  }, [appliedCreateKey, createIntent?.create, navigate]);
+
   const startDraft = () => {
-    setDraft({ ...EMPTY_DRAFT, projectId: projects[0]?.id ?? "" });
+    setDraft(startAutomationDraft(projects[0]?.id ?? ""));
   };
 
   const saveDraft = async () => {
     if (draft === null) return;
-    const schedule = draftSchedule(draft);
-    if (schedule === null) return;
     if (draft.editing === null) {
-      await create({
-        projectId: draft.projectId as ProjectId,
-        title: draft.title.trim(),
-        prompt: draft.prompt.trim(),
-        schedule,
-        envMode: draft.envMode,
-      });
+      const input = draftToCreateInput(draft);
+      if (input === null) return;
+      await create(input);
     } else {
       // Project is deliberately not patchable: moving an automation between
       // projects would change which checkout it writes to, which is a new
       // automation rather than an edit.
-      await update({
-        id: draft.editing,
-        title: draft.title.trim(),
-        prompt: draft.prompt.trim(),
-        schedule,
-        envMode: draft.envMode,
-      });
+      const input = draftToUpdateInput(draft);
+      if (input === null) return;
+      await update(input);
     }
     setDraft(null);
   };
@@ -199,8 +116,7 @@ export function AutomationsSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SettingsSection
-        id="automations"
-        title="Automations"
+        {...searchableSetting("automations")}
         headerAction={
           draft === null && projects.length > 0 ? (
             <Button size="xs" variant="outline" onClick={startDraft}>
@@ -223,6 +139,7 @@ export function AutomationsSettingsPanel() {
             projects={projects.map((project) => ({
               id: String(project.id),
               title: project.title,
+              defaultModelSelection: project.defaultModelSelection,
             }))}
             onChange={setDraft}
             onCancel={() => setDraft(null)}
@@ -332,7 +249,7 @@ function AutomationRow({
       title={automation.title}
       description={`${projectTitle} · ${formatSchedule(automation.schedule)}${
         automation.envMode === "worktree" ? " · new worktree" : " · current checkout"
-      }`}
+      }${automation.modelSelection === null ? "" : ` · ${automation.modelSelection.model}`}`}
       status={
         <span className="inline-flex items-center gap-1.5 text-2xs text-secondary-label">
           <ClockIcon aria-hidden className="size-3" />
@@ -383,9 +300,13 @@ function AutomationDraftForm({
   onCancel,
   onSave,
 }: {
-  readonly draft: DraftState;
-  readonly projects: ReadonlyArray<{ readonly id: string; readonly title: string }>;
-  readonly onChange: (draft: DraftState) => void;
+  readonly draft: AutomationDraftState;
+  readonly projects: ReadonlyArray<{
+    readonly id: string;
+    readonly title: string;
+    readonly defaultModelSelection: ModelSelection | null;
+  }>;
+  readonly onChange: (draft: AutomationDraftState) => void;
   readonly onCancel: () => void;
   readonly onSave: () => void;
 }) {
@@ -495,6 +416,14 @@ function AutomationDraftForm({
           </Select>
         </label>
       </div>
+
+      <AutomationModelField
+        modelSelection={draft.modelSelection}
+        projectDefaultModelSelection={
+          projects.find((project) => project.id === draft.projectId)?.defaultModelSelection ?? null
+        }
+        onChange={(modelSelection) => onChange({ ...draft, modelSelection })}
+      />
 
       {draft.kind === "daily" ? (
         <div className="space-y-2">

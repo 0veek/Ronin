@@ -8,7 +8,13 @@ Manage them in **Settings → Automations**.
 
 ## Creating one
 
-Each automation needs a name, a project, a prompt, and a schedule.
+Each automation needs a name, a project, a prompt, and a schedule. You can start one from
+**Settings → Automations**, from the clock in a thread's title bar, or from the command
+palette (**New automation**).
+
+**Model** chooses which provider and model runs the prompt. The default is the project's
+default — the same one a new thread would use. Pin a specific model when the job should
+keep that provider even if the project default later changes.
 
 **Repeats** offers three shapes:
 

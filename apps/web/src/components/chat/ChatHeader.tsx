@@ -1,6 +1,7 @@
 import {
   type EnvironmentId,
   type EditorId,
+  type ProjectId,
   type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
@@ -11,7 +12,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ChangeRequestStateLike } from "@t3tools/client-runtime/state/thread-settled";
-import { ChevronDownIcon, MessagesSquareIcon } from "lucide-react";
+import { ChevronDownIcon, ClockIcon, MessagesSquareIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -23,9 +24,11 @@ import {
 } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { createAutomationSearch } from "~/automationDraft";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
+import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import ProjectScriptsControl, {
@@ -67,6 +70,7 @@ interface ChatHeaderProps {
   isServerThread: boolean;
   /** PR state feeding the settled classification, resolved by ChatView. */
   changeRequestState: ChangeRequestStateLike | null;
+  activeProjectId: ProjectId | undefined;
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
   activeProjectFaviconPath: string | null;
@@ -121,6 +125,21 @@ export function shouldShowOpenInPicker(input: {
   return input.remoteOpenMode !== "local-exec";
 }
 
+/**
+ * Automations run on the primary environment's clock against its projects.
+ * Offering the control on a remote thread would save a schedule this server
+ * cannot fire.
+ */
+export function shouldShowCreateAutomation(input: {
+  readonly activeProjectId: ProjectId | undefined;
+  readonly activeThreadEnvironmentId: EnvironmentId;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+}): boolean {
+  if (input.activeProjectId === undefined) return false;
+  if (input.primaryEnvironmentId === null) return false;
+  return input.activeThreadEnvironmentId === input.primaryEnvironmentId;
+}
+
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
@@ -130,6 +149,7 @@ export const ChatHeader = memo(function ChatHeader({
   sideChatChildren,
   isServerThread,
   changeRequestState,
+  activeProjectId,
   activeProjectName,
   activeProjectCwd,
   activeProjectFaviconPath,
@@ -159,6 +179,11 @@ export const ChatHeader = memo(function ChatHeader({
     activeThreadEnvironmentId,
     primaryEnvironmentId,
     remoteOpenMode: remoteOpenState.mode,
+  });
+  const showCreateAutomation = shouldShowCreateAutomation({
+    activeProjectId,
+    activeThreadEnvironmentId,
+    primaryEnvironmentId,
   });
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
@@ -404,6 +429,33 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
+        {showCreateAutomation && activeProjectId !== undefined ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="w-7 px-0 sm:w-6 @3xl/header-actions:w-auto! @3xl/header-actions:px-[calc(--spacing(2)-1px)]"
+                  aria-label="New automation"
+                  data-toolbar-control=""
+                  onClick={() => {
+                    void navigate({
+                      to: "/settings/automations",
+                      search: createAutomationSearch(activeProjectId),
+                    });
+                  }}
+                />
+              }
+            >
+              <ClockIcon className="size-3.5" />
+              <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
+                New automation
+              </span>
+            </TooltipTrigger>
+            <TooltipPopup side="top">New automation</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {activeProjectScripts && (
           <ProjectScriptsControl
             scripts={activeProjectScripts}

@@ -69,6 +69,7 @@ describe("searchSettings", () => {
     expect(searchSettings("dark")[0]?.to).toBe("/settings/appearance");
     expect(searchSettings("git")[0]?.to).toBe("/settings/source-control");
     expect(searchSettings("ssh")[0]?.to).toBe("/settings/connections");
+    expect(searchSettings("automation")[0]?.to).toBe("/settings/automations");
   });
 
   it("returns no results for an empty query", () => {
@@ -88,6 +89,7 @@ describe("searchSettings", () => {
   it("serves anchor props to panels from the catalog", () => {
     expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Word wrap" });
     expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
+    expect(searchableSetting("automations")).toEqual({ id: "automations", title: "Automations" });
   });
 
   it("routes appearance settings to their current section", () => {
