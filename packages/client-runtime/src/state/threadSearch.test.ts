@@ -18,8 +18,8 @@ const envA = EnvironmentId.make("env-a");
 const envB = EnvironmentId.make("env-b");
 
 it("creates stable keys regardless of environment order", () => {
-  expect(makeThreadSearchKey([envB, envA], "needle", false)).toBe(
-    makeThreadSearchKey([envA, envB], "needle", false),
+  expect(makeThreadSearchKey([envB, envA], "needle", "active")).toBe(
+    makeThreadSearchKey([envA, envB], "needle", "active"),
   );
 });
 
@@ -28,8 +28,8 @@ it("creates keys without array methods unavailable in Hermes", () => {
   Reflect.deleteProperty(Array.prototype, "toSorted");
 
   try {
-    expect(makeThreadSearchKey([envB, envA], "needle", false)).toBe(
-      '[["env-a","env-b"],"needle",false]',
+    expect(makeThreadSearchKey([envB, envA], "needle", "active")).toBe(
+      '[["env-a","env-b"],"needle","active"]',
     );
   } finally {
     if (descriptor !== undefined) {
@@ -38,9 +38,9 @@ it("creates keys without array methods unavailable in Hermes", () => {
   }
 });
 
-it("keys archived-inclusive searches separately", () => {
-  expect(makeThreadSearchKey([envA], "needle", true)).not.toBe(
-    makeThreadSearchKey([envA], "needle", false),
+it("keys each search scope separately", () => {
+  expect(makeThreadSearchKey([envA], "needle", "archived")).not.toBe(
+    makeThreadSearchKey([envA], "needle", "active"),
   );
 });
 
@@ -66,7 +66,6 @@ it("merges successful environments and silently ignores failures", () => {
         source: "user",
         snippet: "needle",
         messageCreatedAt: "2026-07-30T00:00:00.000Z",
-        archived: false,
       },
     ],
   };
@@ -83,7 +82,7 @@ it("merges successful environments and silently ignores failures", () => {
   });
   const registry = AtomRegistry.make();
 
-  const state = registry.get(searchAtom(makeThreadSearchKey([envB, envA], "needle", false)));
+  const state = registry.get(searchAtom(makeThreadSearchKey([envB, envA], "needle", "active")));
   expect(state).toEqual({
     matches: [{ ...result.matches[0], environmentId: envA }],
     isLoading: false,

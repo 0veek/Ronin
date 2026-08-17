@@ -127,6 +127,8 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
+        // This menu only ever acts on the thread being read, whose detail atom
+        // the chat view already holds — so this is a read, not a new fetch.
         const threadDetail = readThreadDetail(threadRef);
         const items = buildThreadActionMenuItems({
           branch: thread.branch ?? null,

@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   OrchestrationSearchThreadsInput,
+  OrchestrationThreadSearchScope,
   type OrchestrationSearchThreadsResult,
   type OrchestrationThreadSearchMatch,
 } from "@t3tools/contracts";
@@ -20,19 +21,19 @@ export interface ThreadSearchResultsState {
 const ThreadSearchKey = Schema.Tuple([
   Schema.Array(EnvironmentId),
   OrchestrationSearchThreadsInput.fields.query,
-  Schema.Boolean,
+  OrchestrationThreadSearchScope,
 ]);
 const decodeThreadSearchKey = Schema.decodeUnknownSync(ThreadSearchKey);
 
 export function makeThreadSearchKey(
   environmentIds: ReadonlyArray<EnvironmentId>,
   query: string,
-  includeArchived: boolean,
+  scope: OrchestrationThreadSearchScope,
 ): string {
   return JSON.stringify([
     [...environmentIds].sort((left, right) => left.localeCompare(right)),
     query,
-    includeArchived,
+    scope,
   ]);
 }
 
@@ -55,18 +56,18 @@ export function createThreadSearchResultsAtomFamily<E>(options: {
   readonly getSearchAtom: (
     environmentId: EnvironmentId,
     query: string,
-    includeArchived: boolean,
+    scope: OrchestrationThreadSearchScope,
   ) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationSearchThreadsResult, E>>;
   readonly labelPrefix: string;
 }) {
   return Atom.family((key: string) =>
     Atom.make((get): ThreadSearchResultsState => {
-      const [environmentIds, query, includeArchived] = parseThreadSearchKey(key);
+      const [environmentIds, query, scope] = parseThreadSearchKey(key);
       const matches: EnvironmentThreadSearchMatch[] = [];
       let isLoading = false;
 
       for (const environmentId of environmentIds) {
-        const result = get(options.getSearchAtom(environmentId, query, includeArchived));
+        const result = get(options.getSearchAtom(environmentId, query, scope));
         isLoading ||= result.waiting;
         const value = Option.getOrNull(AsyncResult.value(result));
         if (value !== null) {

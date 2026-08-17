@@ -2330,9 +2330,9 @@ export function ArchivedThreadsPanel() {
   } = useArchivedThreadSnapshots(environmentIds);
   const [searchQuery, setSearchQuery] = useState("");
   const trimmedQuery = searchQuery.trim();
-  // Archived threads are excluded from routine search, so this panel opts in
-  // explicitly - it is the one place where finding archived work is the point.
-  const contentSearch = useThreadSearch(environmentIds, trimmedQuery, true);
+  // The archive is the one place where finding archived work is the point, so
+  // this is the only caller that searches that shelf.
+  const contentSearch = useThreadSearch(environmentIds, trimmedQuery, "archived");
   const contentMatchByKey = useMemo(
     () => new Map(contentSearch.matches.map((match) => [threadSearchMatchKey(match), match])),
     [contentSearch.matches],

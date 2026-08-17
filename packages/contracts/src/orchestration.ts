@@ -1754,16 +1754,21 @@ export type OrchestrationThreadSearchSource = typeof OrchestrationThreadSearchSo
 
 // The server's SQLite client is synchronous and single-connection. Bound both
 // scan input and response size so a search cannot monopolize that connection.
+/**
+ * Which shelf a search covers.
+ *
+ * The two are disjoint on purpose: routine search stays focused on live work,
+ * and the archive is browsed deliberately, from its own page. Nothing wants
+ * both at once, so nothing has to rank one against the other.
+ */
+export const OrchestrationThreadSearchScope = Schema.Literals(["active", "archived"]);
+export type OrchestrationThreadSearchScope = typeof OrchestrationThreadSearchScope.Type;
+
 export const OrchestrationSearchThreadsInput = Schema.Struct({
   query: TrimmedString.check(Schema.isMinLength(2), Schema.isMaxLength(200)),
   limit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
-  /** Restrict matches to one project. Omit to search every project. */
-  projectId: Schema.optionalKey(ProjectId),
-  /**
-   * Archived threads are excluded by default so routine search stays focused on
-   * live work. Opt in to reach threads that were archived rather than deleted.
-   */
-  includeArchived: Schema.optionalKey(Schema.Boolean),
+  /** Defaults to `active`, which is what every server before this field did. */
+  scope: Schema.optionalKey(OrchestrationThreadSearchScope),
 });
 export type OrchestrationSearchThreadsInput = typeof OrchestrationSearchThreadsInput.Type;
 
@@ -1773,8 +1778,6 @@ export const OrchestrationThreadSearchMatch = Schema.Struct({
   source: OrchestrationThreadSearchSource,
   snippet: Schema.String.check(Schema.isMaxLength(240)),
   messageCreatedAt: Schema.NullOr(IsoDateTime),
-  /** True when the matched thread is archived, so results can be labelled. */
-  archived: Schema.Boolean,
 });
 export type OrchestrationThreadSearchMatch = typeof OrchestrationThreadSearchMatch.Type;
 

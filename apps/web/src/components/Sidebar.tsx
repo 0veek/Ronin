@@ -3100,7 +3100,11 @@ export default function Sidebar() {
         const isPinned = thread.pinnedAt != null;
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
-        const threadDetail = readThreadDetail(threadRef);
+        // Only the open thread's transcript is already in hand. Reading any
+        // other row's detail here would mount its stream-backed atom and pull a
+        // full transcript over the socket just because it was right-clicked.
+        const threadDetail =
+          routeThreadKeyRef.current === threadKey ? readThreadDetail(threadRef) : null;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({

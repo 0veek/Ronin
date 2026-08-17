@@ -4300,7 +4300,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
                     source: "assistant",
                     snippet: "Search reached the final response.",
                     messageCreatedAt: now,
-                    archived: false,
                   },
                 ],
               }),
@@ -4376,7 +4375,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           source: "assistant",
           snippet: "Search reached the final response.",
           messageCreatedAt: now,
-          archived: false,
         },
       ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),

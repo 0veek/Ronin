@@ -1827,41 +1827,28 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         [],
       );
 
-      const archivedOptIn = yield* snapshotQuery.searchThreads({
+      const archivedScope = yield* snapshotQuery.searchThreads({
         query: "hidden needle",
-        includeArchived: true,
+        scope: "archived",
       });
       assert.deepStrictEqual(
-        archivedOptIn.matches.map((match) => [match.threadId, match.archived]),
-        [[ThreadId.make("thread-hidden"), true]],
+        archivedScope.matches.map((match) => match.threadId),
+        [ThreadId.make("thread-hidden")],
       );
 
-      // Live threads outrank archived ones when both match.
-      const mixed = yield* snapshotQuery.searchThreads({
-        query: "needle",
-        includeArchived: true,
-      });
+      // The two scopes are disjoint: live threads never crowd out archived
+      // results, which is what the archive page depends on.
       assert.deepStrictEqual(
-        mixed.matches.map((match) => [match.threadId, match.archived]),
-        [
-          [ThreadId.make("thread-active"), false],
-          [ThreadId.make("thread-hidden"), true],
-        ],
+        (yield* snapshotQuery.searchThreads({ query: "needle", scope: "archived" })).matches.map(
+          (match) => match.threadId,
+        ),
+        [ThreadId.make("thread-hidden")],
       );
-
       assert.deepStrictEqual(
-        (yield* snapshotQuery.searchThreads({
-          query: "user needle",
-          projectId: ProjectId.make("project-search"),
-        })).matches.map((match) => match.threadId),
+        (yield* snapshotQuery.searchThreads({ query: "needle", scope: "active" })).matches.map(
+          (match) => match.threadId,
+        ),
         [ThreadId.make("thread-active")],
-      );
-      assert.deepStrictEqual(
-        (yield* snapshotQuery.searchThreads({
-          query: "user needle",
-          projectId: ProjectId.make("project-other"),
-        })).matches,
-        [],
       );
       yield* sql`
         UPDATE projection_threads
