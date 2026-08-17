@@ -441,18 +441,25 @@
 /*
  * Provider series identity, for the stats page.
  *
- * Brand marks cannot carry a chart: two of the three ship as black-on-light and
+ * Brand marks cannot carry a chart: several ship as black-on-light and
  * white-on-dark, so a series painted in its own brand color is invisible in one
- * mode. These are a categorical palette instead — orange, aqua, blue, in that
- * fixed slot order — stepped once per mode against that mode's canvas rather
- * than flipped from a single set. The hues stay brand-sympathetic (Claude's
- * orange, OpenAI's green, a cool blue for Grok) so the association survives.
+ * mode. These are a categorical palette instead — orange, aqua, blue, magenta,
+ * in that fixed slot order — stepped once per mode against that mode's canvas
+ * rather than flipped from a single set. The hues stay brand-sympathetic
+ * (Claude's orange, OpenAI's green, a cool blue for Grok) so the association
+ * survives.
  *
  * Validated as a set: inside the OKLCH lightness band for each mode, above the
  * chroma floor, and clear of the protanopia/deuteranopia collapse threshold on
- * every pair, not just neighbours, since all three can overlap in the plot.
+ * every pair, not just neighbours, since all of them can overlap in the plot.
  * Aqua sits just under 3:1 on the light canvas, which is why every series value
  * is also printed as text beside its mark.
+ *
+ * Magenta is darker than its neighbours rather than matching their lightness,
+ * and that is what makes it work: under protanopia magenta and blue collapse to
+ * the same hue, so lightness is the only channel left to separate them. Sitting
+ * it a step below blue holds the set's existing worst-pair distance exactly,
+ * instead of buying a prettier swatch by quietly loosening the guarantee.
  *
  * Deliberately outside the themeable roles, like the other identity colors:
  * which series is Claude must not change with the editor theme.
@@ -461,6 +468,7 @@
   --provider-claude: #eb6834;
   --provider-codex: #1baf7a;
   --provider-grok: #2a78d6;
+  --provider-antigravity: #a73f9c;
   /* Peak opacity of an area wash. Dark canvases swallow a fill that reads
      correctly on white, so the two modes carry their own value. */
   --provider-area-opacity: 0.14;
@@ -469,6 +477,7 @@
     --provider-claude: #d95926;
     --provider-codex: #199e70;
     --provider-grok: #3987e5;
+    --provider-antigravity: #a34ca4;
     --provider-area-opacity: 0.22;
   }
 }

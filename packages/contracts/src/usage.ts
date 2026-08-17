@@ -3,9 +3,11 @@
  *
  * Each environment scans the provider CLIs' own on-disk session transcripts
  * (`~/.claude/projects/**\/*.jsonl`, `~/.codex/sessions/**\/*.jsonl`,
- * `~/.grok/sessions/**\/updates.jsonl`) rather than relying on Ronin's own
- * orchestration projections, so usage stays complete even for turns that were
- * never driven through Ronin. This mirrors the approach `ccusage` takes.
+ * `~/.grok/sessions/**\/updates.jsonl`,
+ * `~/.gemini/antigravity-cli/conversations/*.db`) rather than relying on
+ * Ronin's own orchestration projections, so usage stays complete even for turns
+ * that were never driven through Ronin. This mirrors the approach `ccusage`
+ * takes.
  *
  * Environments return pre-aggregated `(day, hourStart?, provider, model)`
  * buckets. Raw transcript records never cross the wire.
@@ -21,9 +23,9 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  * client renders partial coverage when an environment reports an older version
  * rather than failing the whole page.
  */
-export const USAGE_CONTRACT_VERSION = 5 as const;
+export const USAGE_CONTRACT_VERSION = 6 as const;
 
-export const UsageProviderKind = Schema.Literals(["claude", "codex", "grok"]);
+export const UsageProviderKind = Schema.Literals(["claude", "codex", "grok", "antigravity"]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
 /**

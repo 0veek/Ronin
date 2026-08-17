@@ -17,6 +17,7 @@ import * as NodeReadline from "node:readline";
 
 import type { UsageProviderKind } from "@t3tools/contracts";
 
+import { type AntigravityStepRow, parseAntigravityConversation } from "./antigravityTranscripts.ts";
 import {
   initialCodexScanState,
   mightCarryUsage,
@@ -83,6 +84,45 @@ export async function listTranscriptFiles(
 }
 
 /**
+ * Lists Antigravity conversation stores under `root` touched at or after
+ * `sinceMs`.
+ *
+ * The reported size and mtime cover the write-ahead log as well as the database
+ * itself, because they are the scan cache's key and the database file alone is
+ * a poor witness to change: SQLite appends to the `-wal` sibling and only folds
+ * it back on a checkpoint, so a conversation can gain half a megabyte of turns
+ * while its `.db` keeps the same size and mtime for hours. Keyed on the pair,
+ * every write invalidates.
+ */
+export async function listAntigravityConversations(
+  root: string,
+  sinceMs: number,
+): Promise<readonly TranscriptFile[]> {
+  let entries;
+  try {
+    entries = await NodeFSP.readdir(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const found: TranscriptFile[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith(".db")) continue;
+    const child = NodePath.join(root, entry.name);
+    try {
+      const database = await NodeFSP.stat(child);
+      const log = await NodeFSP.stat(`${child}-wal`).catch(() => null);
+      const size = database.size + (log?.size ?? 0);
+      const mtimeMs = Math.max(database.mtimeMs, log?.mtimeMs ?? 0);
+      if (mtimeMs >= sinceMs) found.push({ path: child, size, mtimeMs });
+    } catch {
+      // Vanished between readdir and stat.
+    }
+  }
+  return found;
+}
+
+/**
  * Filesystem identity of a directory, as `device:inode`.
  *
  * Used to tell "two servers reading the same transcript directory" apart from
@@ -98,6 +138,108 @@ export async function readDirectoryVolumeId(path: string): Promise<string> {
   }
 }
 
+/** The two rowsets an Antigravity conversation store contributes. */
+interface ConversationRows {
+  readonly steps: readonly AntigravityStepRow[];
+  readonly generations: readonly (Uint8Array | null)[];
+}
+
+type ConversationReader = (filePath: string) => ConversationRows;
+
+/**
+ * Opens conversation stores read-only, on whichever SQLite binding this runtime
+ * has.
+ *
+ * Node and Bun ship incompatible built-ins -- Bun has no `node:sqlite` and Node
+ * has no `bin:sqlite` -- so the binding is resolved once, the same way the
+ * persistence layer picks its client. Read-only is not a detail: this is the
+ * developer's live Antigravity install, open in another process, and a scan must
+ * never be able to write to it.
+ */
+let conversationReader: Promise<ConversationReader | null> | null = null;
+
+/** Column reads, defensive because both bindings type a row as `unknown`. */
+function blobColumn(row: unknown, column: string): Uint8Array | null {
+  const value = (row as Record<string, unknown> | null)?.[column];
+  return value instanceof Uint8Array ? value : null;
+}
+
+function stepRow(row: unknown): AntigravityStepRow {
+  const idx = Number((row as Record<string, unknown> | null)?.["idx"]);
+  return { idx: Number.isFinite(idx) ? idx : -1, metadata: blobColumn(row, "metadata") };
+}
+
+function toRows(steps: readonly unknown[], generations: readonly unknown[]): ConversationRows {
+  return {
+    steps: steps.map(stepRow),
+    generations: generations.map((row) => blobColumn(row, "data")),
+  };
+}
+
+const STEPS_QUERY = "select idx, metadata from steps";
+const GENERATIONS_QUERY = "select data from gen_metadata";
+
+function loadConversationReader(): Promise<ConversationReader | null> {
+  conversationReader ??= (async (): Promise<ConversationReader> => {
+    if (process.versions.bun !== undefined) {
+      const { Database } = await import(/* @vite-ignore */ "bun:sqlite");
+      return (filePath: string) => {
+        const database = new Database(filePath, { readonly: true });
+        try {
+          return toRows(
+            database.query(STEPS_QUERY).all() as readonly unknown[],
+            database.query(GENERATIONS_QUERY).all() as readonly unknown[],
+          );
+        } finally {
+          database.close();
+        }
+      };
+    }
+
+    const { DatabaseSync } = await import("node:sqlite");
+    return (filePath: string) => {
+      const database = new DatabaseSync(filePath, { readOnly: true });
+      try {
+        return toRows(
+          database.prepare(STEPS_QUERY).all(),
+          database.prepare(GENERATIONS_QUERY).all(),
+        );
+      } finally {
+        database.close();
+      }
+    };
+  })().catch(() => null);
+
+  return conversationReader;
+}
+
+/**
+ * Reads one Antigravity conversation store, or `null` when it could not be
+ * opened.
+ *
+ * A store the CLI is mid-write on is a normal transient failure -- a read-only
+ * connection cannot always attach to a WAL database whose shared-memory file it
+ * may not create -- and `null` keeps it out of the scan cache so the next scan
+ * tries again.
+ */
+async function readAntigravityRecords(filePath: string): Promise<readonly UsageRecord[] | null> {
+  const read = await loadConversationReader();
+  if (read === null) return null;
+
+  let rows: ConversationRows;
+  try {
+    rows = read(filePath);
+  } catch {
+    return null;
+  }
+
+  return parseAntigravityConversation({
+    conversationId: NodePath.basename(filePath, ".db"),
+    steps: rows.steps,
+    generations: rows.generations,
+  });
+}
+
 /**
  * Streams one transcript and returns the usage records it contains, or `null`
  * when the file could not be read.
@@ -111,12 +253,15 @@ export async function readDirectoryVolumeId(path: string): Promise<string> {
  * their own, so those still have to pass through the reducer to keep model
  * attribution correct. Claude and Grok lines are each self-contained, so they
  * need no rolling state; a Grok turn can name several models at once and so
- * yields a record per model.
+ * yields a record per model. Antigravity is not line-based at all and takes the
+ * SQLite path above.
  */
 export async function readTranscriptRecords(
   filePath: string,
   provider: UsageProviderKind,
 ): Promise<readonly UsageRecord[] | null> {
+  if (provider === "antigravity") return readAntigravityRecords(filePath);
+
   const records: UsageRecord[] = [];
   const codexState = initialCodexScanState();
 

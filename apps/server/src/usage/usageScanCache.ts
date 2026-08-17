@@ -37,6 +37,12 @@ export interface CachedFile {
 export type ScanCache = Map<string, CachedFile>;
 
 /**
+ * Providers a serialised entry may claim. Listed rather than derived from the
+ * contract's schema so a decode stays a plain predicate on cold start.
+ */
+const CACHEABLE_PROVIDERS = new Set<string>(["claude", "codex", "grok", "antigravity"]);
+
+/**
  * Row layout for the serialised form. Positional and interned rather than
  * object-per-record: on a 30-day window that is the difference between a file
  * measured in tens of megabytes and one under six.
@@ -139,7 +145,7 @@ export function decodeScanCache(document: unknown): ScanCache {
     if (typeof raw !== "object" || raw === null) continue;
     const entry = raw as Partial<SerializedFile>;
     if (typeof entry.s !== "number" || typeof entry.m !== "number") continue;
-    if (entry.p !== "claude" && entry.p !== "codex" && entry.p !== "grok") continue;
+    if (typeof entry.p !== "string" || !CACHEABLE_PROVIDERS.has(entry.p)) continue;
     if (!isRecordArray(entry.r)) continue;
 
     const provider: UsageProviderKind = entry.p;

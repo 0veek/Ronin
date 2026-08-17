@@ -88,6 +88,12 @@ export function normalizeModelName(model: string): string {
  * `<synthetic>` marks locally generated messages that were never billed. Bare
  * family names ("opus", "sonnet") are genuinely ambiguous across generations,
  * so we report them as unpriced instead of guessing a generation.
+ *
+ * `gemini-default` is the same case from Antigravity: it is the name the CLI
+ * records for the utility generations it runs for itself, and it names a
+ * selection rule rather than a model. It is a sixth of Antigravity's records
+ * and a thirtieth of its tokens, so pinning it to a guess would move the
+ * headline for no reason to believe the guess.
  */
 const UNPRICEABLE_MODELS = new Set([
   "<synthetic>",
@@ -96,17 +102,22 @@ const UNPRICEABLE_MODELS = new Set([
   "sonnet",
   "haiku",
   "fable",
+  "gemini-default",
 ]);
 
 /**
- * The Grok CLI runs harness-tuned variants (`grok-4.5-build`) that the rate
- * table only publishes under their base id (`grok-4.5`). The variant is what
- * the transcript records and what we display, so the alias applies to the
- * lookup alone. Cost itself comes from Grok's own reported figure; this is what
- * lets cache savings be computed for it at all.
+ * Names a provider records that the rate table publishes under another spelling.
+ *
+ * The Grok CLI runs harness-tuned variants (`grok-4.5-build`) the table only
+ * carries under their base id, and Antigravity records Google's models by their
+ * released name while the table still carries some of them under the `-preview`
+ * id they shipped as. Either way the recorded name is what we display, so the
+ * alias applies to the lookup alone.
  */
-function aliasModelName(normalized: string): string | null {
-  return normalized.endsWith("-build") ? normalized.slice(0, -"-build".length) : null;
+function aliasModelNames(normalized: string): readonly string[] {
+  if (normalized.endsWith("-build")) return [normalized.slice(0, -"-build".length)];
+  if (normalized.startsWith("gemini-")) return [`${normalized}-preview`];
+  return [];
 }
 
 export function lookupRate(table: RateTable, model: string): ModelRate | null {
@@ -114,8 +125,11 @@ export function lookupRate(table: RateTable, model: string): ModelRate | null {
   if (normalized.length === 0 || UNPRICEABLE_MODELS.has(normalized)) return null;
   const exact = table.get(normalized);
   if (exact !== undefined) return exact;
-  const alias = aliasModelName(normalized);
-  return alias === null ? null : (table.get(alias) ?? null);
+  for (const alias of aliasModelNames(normalized)) {
+    const rate = table.get(alias);
+    if (rate !== undefined) return rate;
+  }
+  return null;
 }
 
 export interface PricedUsage {

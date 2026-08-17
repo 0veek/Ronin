@@ -41,6 +41,7 @@ import { resolveGrokHome } from "../rateLimits/providerRateLimitSources.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
 import { parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
+  listAntigravityConversations,
   listTranscriptFiles,
   readDirectoryVolumeId,
   readTranscriptRecords,
@@ -239,6 +240,21 @@ export const make = Effect.gen(function* () {
         dir: path.join(resolveGrokHome(), ".grok", "sessions"),
         fileName: "updates.jsonl",
       },
+      // Antigravity keeps two stores side by side under one home: `agy` writes
+      // to `antigravity-cli`, the editor to `antigravity`. Both are the same
+      // format on the same account's quota, so both are walked. Records carry a
+      // conversation-scoped dedupe key, so a conversation visible to both is
+      // still counted once.
+      {
+        provider: "antigravity" as const,
+        dir: path.join(NodeOS.homedir(), ".gemini", "antigravity-cli", "conversations"),
+        fileName: undefined,
+      },
+      {
+        provider: "antigravity" as const,
+        dir: path.join(NodeOS.homedir(), ".gemini", "antigravity", "conversations"),
+        fileName: undefined,
+      },
     ];
   });
 
@@ -390,7 +406,11 @@ export const make = Effect.gen(function* () {
       }
 
       walkedRoots.push(dir);
-      const files = yield* Effect.promise(() => listTranscriptFiles(dir, windowStartMs, fileName));
+      const files = yield* Effect.promise(() =>
+        provider === "antigravity"
+          ? listAntigravityConversations(dir, windowStartMs)
+          : listTranscriptFiles(dir, windowStartMs, fileName),
+      );
       let scannedFiles = 0;
       let skippedFiles = 0;
       // Distinct per directory. Buckets carry per-cell session counts, but a

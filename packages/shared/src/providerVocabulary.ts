@@ -1,5 +1,5 @@
 /**
- * What the three quota-reporting providers are called, and in what order.
+ * What the providers Ronin reports usage for are called, and in what order.
  *
  * This used to be four separate maps -- one in the usage page, one in the
  * sidebar meter, one in the composer's status dialog, one in the settings
@@ -18,10 +18,16 @@ import type { RateLimitWindow, UsageProviderKind } from "@t3tools/contracts";
  * decide which series sits above another; it fixes the reading order of
  * legends, tables and hover rows, and -- because the series colors were
  * validated as an ordered set -- which hue each provider owns. Anything that
- * lists all three reads them in this order, so a reader never has to re-map
- * color to provider crossing from one panel to the next.
+ * lists them all reads them in this order, so a reader never has to re-map
+ * color to provider crossing from one panel to the next. New providers append
+ * rather than sort in, so an existing provider never changes hue.
  */
-export const PROVIDER_ORDER: readonly UsageProviderKind[] = ["claude", "codex", "grok"];
+export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
+  "claude",
+  "codex",
+  "grok",
+  "antigravity",
+];
 
 /**
  * The canonical name. Each is the vendor's own product name, which is why the
@@ -32,6 +38,7 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok",
+  antigravity: "Antigravity",
 };
 
 /**
@@ -41,11 +48,16 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
  * ~64px at the default 16rem sidebar and would truncate the canonical name
  * mid-word. Everywhere else, use `PROVIDER_LABEL` -- a second name in a place
  * that had room for the first is how the two drifted apart before.
+ *
+ * Antigravity is the canonical name unshortened, because there is no shorter
+ * true form of it. That costs nothing today: the meter reads quota, and
+ * Antigravity publishes none, so it has no row there.
  */
 export const PROVIDER_SHORT_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude",
   codex: "Codex",
   grok: "Grok",
+  antigravity: "Antigravity",
 };
 
 /**

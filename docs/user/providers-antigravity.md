@@ -38,6 +38,17 @@ Switching model applies to the next message in the same conversation. Because th
 
 Antigravity can write commit messages, pull-request titles and bodies, branch names, and thread titles. Those run as their own sandboxed `agy` print-mode call, so a commit message can never edit your working tree.
 
+## Usage
+
+Antigravity appears on the [Stats page](./usage.md) alongside Codex, Claude Code, and Grok. Ronin
+reads the conversation stores Antigravity keeps under `~/.gemini`, so work you did in the Antigravity
+editor counts the same as work you drove from a Ronin thread, and a conversation both of them can see
+is still counted once.
+
+Antigravity does not publish a quota endpoint the way Claude Code, Codex, and Grok do, so it has no
+row in the sidebar's usage meter. The Stats page still answers what it burned; there is just nothing
+to say about how much of a plan window is left.
+
 ## Updates
 
 The provider card offers **Update**, which runs `agy update`. Antigravity ships a downloaded binary rather than a package Ronin can query, so the card cannot tell you in advance that a new version is waiting — run the update when you want to pick one up. See [Updating](./updating.md).

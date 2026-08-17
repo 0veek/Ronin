@@ -88,6 +88,7 @@ describe("buildDayColumns", () => {
       // A provider that did not run in the window still gets a band, so the
       // series index a path is built from stays the palette slot.
       { provider: "grok", value: 0 },
+      { provider: "antigravity", value: 0 },
     ]);
   });
 

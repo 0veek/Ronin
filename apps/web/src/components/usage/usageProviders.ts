@@ -1,6 +1,6 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
 
-import { ClaudeAI, GrokIcon, type Icon, OpenAI } from "../Icons";
+import { AntigravityIcon, ClaudeAI, GrokIcon, type Icon, OpenAI } from "../Icons";
 
 /*
  * Names and order now live in `@t3tools/shared/providerVocabulary`, because the
@@ -26,6 +26,7 @@ export const PROVIDER_COLOR: Record<UsageProviderKind, string> = {
   claude: "var(--provider-claude)",
   codex: "var(--provider-codex)",
   grok: "var(--provider-grok)",
+  antigravity: "var(--provider-antigravity)",
 };
 
 /**
@@ -40,4 +41,5 @@ export const PROVIDER_MARK: Record<UsageProviderKind, Icon> = {
   claude: ClaudeAI,
   codex: OpenAI,
   grok: GrokIcon,
+  antigravity: AntigravityIcon,
 };
