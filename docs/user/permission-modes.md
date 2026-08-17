@@ -43,6 +43,3 @@ translates the mode into its approval policy and sandbox level, so **Supervised*
 with prompting enabled and a restricted workspace while **Full access** disables both. The
 labels above describe what you get; the exact per-provider translation is internal and may
 change.
-
-Mobile offers the same four modes. It labels the first one **Approve actions** rather than
-**Supervised**.

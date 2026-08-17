@@ -4,8 +4,7 @@ Pin a thread from its context menu to keep it in the pinned section above your a
 Pinned threads are shown independently of their project, including when you connect to more than
 one environment.
 
-On web and desktop, drag a pinned thread to change its position. On mobile, open the thread's menu
-and choose **Move up** or **Move down**. The order is stored by the server and appears on your
+Drag a pinned thread to change its position. The order is stored by the server and appears on your
 other connected devices.
 
 If reordering is unavailable for one environment, update the Ronin server running in that
@@ -67,4 +66,4 @@ goes away. Other platforms draw the glass without the system blur, and look the 
 Dev and Nightly environments can identify themselves with artwork at the top of the sidebar and in
 the send button. Choose **Artwork**, **Version pill**, or **None** in Settings under environment
 identification. Artwork is recolored to match each built-in theme. Custom themes use the **Version
-pill** fallback because their colors are not controlled by T3 Code.
+pill** fallback because their colors are not controlled by Ronin.

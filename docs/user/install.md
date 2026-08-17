@@ -20,39 +20,38 @@ This starts the Ronin server on your machine and opens the local web app. Use
 ## Desktop App
 
 Download the latest release from
-[GitHub Releases](https://github.com/0veek/Ronin/releases), or install from a package
-registry.
+[GitHub Releases](https://github.com/0veek/Ronin/releases) and pick the file for your machine:
 
-Windows:
+| Platform            | File                    |
+| ------------------- | ----------------------- |
+| macOS (Apple check) | `*-arm64.dmg`           |
+| macOS (Intel)       | `*-x64.dmg`             |
+| Linux               | `*-x64.AppImage`        |
+| Windows             | `*-x64.exe` (installer) |
 
-```bash
-winget install T3Tools.T3Code
-```
-
-macOS:
-
-```bash
-brew install --cask t3-code
-```
-
-Arch Linux:
-
-```bash
-yay -S t3code-bin
-```
+Ronin is not in any package registry yet, so there is nothing to `winget`, `brew`, or `yay`.
+The app updates itself: it checks for new releases and tells you when one is out. See
+[Updating](./updating.md).
 
 ## Providers
 
 Ronin drives provider CLIs; it does not ship them. Install the CLI for each provider you want
 to use, then authenticate it.
 
-| Provider   | CLI                                                   | Default binary | Log in with           |
-| ---------- | ----------------------------------------------------- | -------------- | --------------------- |
-| Codex      | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex`        | `codex login`         |
-| Claude     | [Claude Code](https://claude.com/product/claude-code) | `claude`       | `claude auth login`   |
-| Cursor     | [Cursor CLI](https://cursor.com/cli)                  | `cursor-agent` | `agent login`         |
-| Grok Build | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
-| OpenCode   | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
+| Provider    | CLI                                                   | Default binary | Log in with           |
+| ----------- | ----------------------------------------------------- | -------------- | --------------------- |
+| Codex       | [Codex CLI](https://developers.openai.com/codex/cli)  | `codex`        | `codex login`         |
+| Claude      | [Claude Code](https://claude.com/product/claude-code) | `claude`       | `claude auth login`   |
+| Cursor      | [Cursor CLI](https://cursor.com/cli)                  | `cursor-agent` | `agent login`         |
+| Grok Build  | [Grok Build CLI](https://x.ai/cli)                    | `grok`         | `grok login`          |
+| OpenCode    | [OpenCode](https://opencode.ai)                       | `opencode`     | `opencode auth login` |
+| Antigravity | Antigravity CLI                                       | `agy`          | the CLI's own sign-in |
+| Droid       | Factory Droid CLI                                     | `droid`        | `droid`               |
+| Kilo        | Kilo CLI (`@kilocode/cli`)                            | `kilo`         | the CLI's own sign-in |
+| Pi          | Pi (`@earendil-works/pi-coding-agent`)                | `pi`           | the CLI's own sign-in |
+
+Each provider has its own page under [Providers](./providers-codex.md) with the details that
+differ — what a provider cannot do, how its models are listed, and how it updates.
 
 Cursor is the one to watch: install Cursor CLI, which provides the `cursor-agent` binary that
 Ronin looks for, but authenticate with `agent login`, not `cursor-agent login`.
