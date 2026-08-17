@@ -45,6 +45,19 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverRetryResourceTelemetry]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverGetUsageSummary]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetProviderRateLimits]: AuthOrchestrationReadScope,
+  [WS_METHODS.serverGetQuotaResumes]: AuthOrchestrationReadScope,
+  // Both mutate a thread: cancelling drops a queued turn, running it now
+  // starts one. Read-only clients see the countdown but cannot act on it.
+  [WS_METHODS.serverCancelQuotaResume]: AuthOrchestrationOperateScope,
+  [WS_METHODS.serverRunQuotaResumeNow]: AuthOrchestrationOperateScope,
+  [WS_METHODS.automationsList]: AuthOrchestrationReadScope,
+  [WS_METHODS.automationsRuns]: AuthOrchestrationReadScope,
+  // Every mutation here can cause an unattended turn to run, so they all sit
+  // behind operate scope rather than read.
+  [WS_METHODS.automationsCreate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.automationsUpdate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.automationsDelete]: AuthOrchestrationOperateScope,
+  [WS_METHODS.automationsRunNow]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverTranscribeAudio]: AuthOrchestrationOperateScope,
   [WS_METHODS.serverGetSpeechToTextKeyStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetSkillsCatalog]: AuthOrchestrationReadScope,

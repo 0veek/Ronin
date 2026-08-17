@@ -3,6 +3,7 @@ import {
   ArchiveIcon,
   BotIcon,
   BoxesIcon,
+  ClockIcon,
   GitBranchIcon,
   KeyboardIcon,
   Link2Icon,
@@ -19,6 +20,7 @@ export type SettingsPath =
   | "/settings/speech-to-text"
   | "/settings/providers"
   | "/settings/skills"
+  | "/settings/automations"
   | "/settings/source-control"
   | "/settings/connections"
   | "/settings/archived";
@@ -67,6 +69,12 @@ export const SETTINGS_PAGE_META = {
     icon: BoxesIcon,
     searchTerms: ["skill", "workflow", "instruction", "agent"],
   },
+  "/settings/automations": {
+    label: "Automations",
+    description: "Prompts a project runs on a schedule.",
+    icon: ClockIcon,
+    searchTerms: ["schedule", "cron", "recurring", "daily", "automation", "unattended"],
+  },
   "/settings/source-control": {
     label: "Source control",
     description: "Git, branches, pull requests, and worktrees.",
@@ -108,7 +116,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   },
   {
     label: "Agents",
-    paths: ["/settings/providers", "/settings/skills"],
+    paths: ["/settings/providers", "/settings/skills", "/settings/automations"],
   },
   {
     label: "Workspace",

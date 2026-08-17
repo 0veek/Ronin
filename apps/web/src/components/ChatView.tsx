@@ -219,6 +219,10 @@ import {
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
+import { buildSideChatSeedPrompt } from "../sideChatSeed";
+
+/** Stable empty list so a thread with no side chats never re-renders the header. */
+const EMPTY_SIDE_CHAT_CHILDREN: ReadonlyArray<{ threadId: ThreadId; title: string }> = [];
 import {
   appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
@@ -257,6 +261,7 @@ import {
   useThread,
   useThreadRefs,
   useThreadShell,
+  useThreadShells,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -294,6 +299,7 @@ import {
   threadChangeRequestSnapshotsAtom,
 } from "./ThreadStatusIndicators";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { useQuotaResumeBanner } from "./chat/useQuotaResumeBanner";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -1766,6 +1772,78 @@ function ChatViewContent(props: ChatViewProps) {
       scheduleComposerFocus();
     },
     [composerDraftTarget, setComposerDraftPrompt],
+  );
+  /**
+   * Open a fresh thread anchored to one message of this one.
+   *
+   * Same project and the same checkout as the parent — reusing
+   * `worktreePath` rather than asking for a new worktree, because a question
+   * about an answer is asked against the tree that answer was about, and
+   * spinning up a second checkout to ask it would be both slow and wrong.
+   *
+   * The anchored text is quoted into the composer instead of being sent, so
+   * the user writes their question with the context visible and can still
+   * change their mind before any of it reaches a provider.
+   */
+  // Resolved from the shell rather than the detail snapshot: the parent may
+  // not be the loaded thread, and its title is all this crumb needs.
+  const sideChatParentRef = useMemo(
+    () =>
+      activeThread?.sideChat
+        ? scopeThreadRef(activeThread.environmentId, activeThread.sideChat.parentThreadId)
+        : null,
+    [activeThread?.environmentId, activeThread?.sideChat],
+  );
+  const sideChatParentShell = useThreadShell(sideChatParentRef);
+  // The reverse of the breadcrumb: which threads were opened off this one.
+  // Read from the shell list rather than a dedicated query — the sidebar
+  // already keeps every shell in memory, so this costs a filter.
+  const allThreadShells = useThreadShells();
+  const sideChatChildren = useMemo(() => {
+    if (!activeThread || !isServerThread) return EMPTY_SIDE_CHAT_CHILDREN;
+    const children = allThreadShells.filter(
+      (shell) =>
+        shell.environmentId === activeThread.environmentId &&
+        shell.sideChat?.parentThreadId === activeThread.id,
+    );
+    return children.length === 0
+      ? EMPTY_SIDE_CHAT_CHILDREN
+      : children.map((shell) => ({ threadId: shell.id, title: shell.title }));
+  }, [activeThread, allThreadShells, isServerThread]);
+  const sideChatParent = useMemo(
+    () =>
+      activeThread?.sideChat && sideChatParentShell
+        ? {
+            threadId: activeThread.sideChat.parentThreadId,
+            title: sideChatParentShell.title,
+          }
+        : null,
+    [activeThread?.sideChat, sideChatParentShell],
+  );
+  const handleAskOnTheSide = useCallback(
+    (messageId: MessageId) => {
+      if (!activeProjectRef || !activeThread) return;
+      const anchored = activeThread.messages.find((message) => message.id === messageId);
+      const sideChat = {
+        parentThreadId: activeThread.id,
+        anchorMessageId: messageId,
+      } as const;
+      void (async () => {
+        const created = await handleNewThread(activeProjectRef, {
+          envMode: activeThread.worktreePath ? "worktree" : "local",
+          worktreePath: activeThread.worktreePath,
+          branch: activeThread.branch,
+        });
+        if (!created) return;
+        const { setDraftThreadContext, setPrompt } = useComposerDraftStore.getState();
+        setDraftThreadContext(created.draftId, { sideChat });
+        const seed = buildSideChatSeedPrompt(anchored?.text);
+        if (seed.length > 0) {
+          setPrompt(created.draftId, seed);
+        }
+      })();
+    },
+    [activeProjectRef, activeThread, handleNewThread],
   );
   const createForkThread = useCallback(
     (target: ForkSlashCommandTarget) => {
@@ -4562,6 +4640,14 @@ function ChatViewContent(props: ChatViewProps) {
       }
     }
   }, [activeThread, environmentId, interruptThreadTurn, setThreadError]);
+  // Identifies one failure, so re-rendering does not re-fetch but a second
+  // failure on the same thread does.
+  const activeThreadSessionFailureKey = useMemo(() => {
+    const session = activeThread?.session;
+    if (!session || session.status !== "error") return null;
+    return `${session.updatedAt}\u0000${session.lastError ?? ""}`;
+  }, [activeThread?.session]);
+  const quotaResumeBannerItem = useQuotaResumeBanner(activeThreadId, activeThreadSessionFailureKey);
   const backgroundLivenessBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (activeBackgroundLiveness === null || !activeThread) {
       return null;
@@ -4679,11 +4765,16 @@ function ChatViewContent(props: ChatViewProps) {
     const calmSystemItems = systemComposerBannerItems.filter((item) => !isUrgentSystemItem(item));
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
+    // Ahead of background liveness: a queued resume is the only banner that
+    // explains why an idle-looking thread is about to start work by itself,
+    // and its Cancel is the only way to stop that before it happens.
+    const quotaResumeItems = quotaResumeBannerItem === null ? [] : [quotaResumeBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...urgentSystemItems,
+        ...quotaResumeItems,
         ...backgroundLivenessItems,
         ...calmSystemItems,
         ...wokeThreadItems,
@@ -4692,6 +4783,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     return [
       ...urgentSystemItems,
+      ...quotaResumeItems,
       ...backgroundLivenessItems,
       ...calmSystemItems,
       ...wokeThreadItems,
@@ -4743,6 +4835,7 @@ function ChatViewContent(props: ChatViewProps) {
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
+    quotaResumeBannerItem,
     showBranchMismatchBanner,
     systemComposerBannerItems,
     wokeThreadBannerItem,
@@ -5504,6 +5597,12 @@ function ChatViewContent(props: ChatViewProps) {
                       interactionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
+                      // Carried from the draft, so a side chat keeps its link
+                      // to the message it was opened from even if the user
+                      // sat on the question for a while before sending.
+                      ...(localDraftThread?.sideChat
+                        ? { sideChat: localDraftThread.sideChat }
+                        : {}),
                       createdAt: activeThread.createdAt,
                     },
                   }
@@ -6504,6 +6603,8 @@ function ChatViewContent(props: ChatViewProps) {
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
             activeThreadTitle={activeThread.title}
+            sideChatParent={sideChatParent}
+            sideChatChildren={sideChatChildren}
             isServerThread={isServerThread}
             changeRequestState={activeThreadPr?.state ?? null}
             activeProjectName={activeProject?.title}
@@ -6591,6 +6692,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenTurnDiff={onOpenTurnDiff}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
+                onAskOnTheSide={isServerThread ? handleAskOnTheSide : null}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
                 markdownCwd={gitCwd ?? undefined}

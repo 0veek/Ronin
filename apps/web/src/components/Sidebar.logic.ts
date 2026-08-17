@@ -545,6 +545,65 @@ export function sortThreadsForSidebar<
   );
 }
 
+/**
+ * Move each side chat directly under the thread it was opened from.
+ *
+ * A side chat sorted by its own timestamp lands wherever it happens to fall,
+ * which reads as an unrelated thread with a confusing title. Filing it under
+ * its parent is the whole reason the link is persisted.
+ *
+ * A side chat whose parent is not in this list keeps its own position and its
+ * own indent level: the parent may be settled, snoozed, archived, or in
+ * another project, and hiding the child because its parent moved on would
+ * lose it entirely.
+ *
+ * Only one level deep. A side chat of a side chat files under the one it came
+ * from, not under the root — nesting further buys nothing and costs the row
+ * its readable width.
+ */
+export function groupSideChatsUnderParents<
+  T extends {
+    readonly id: string;
+    readonly sideChat?: { readonly parentThreadId: string } | null | undefined;
+  },
+>(threads: readonly T[]): Array<{ readonly thread: T; readonly depth: 0 | 1 }> {
+  const childrenByParentId = new Map<string, T[]>();
+  const presentIds = new Set(threads.map((thread) => thread.id));
+  const rooted: T[] = [];
+
+  for (const thread of threads) {
+    const parentId = thread.sideChat?.parentThreadId;
+    if (parentId !== undefined && parentId !== thread.id && presentIds.has(parentId)) {
+      const siblings = childrenByParentId.get(parentId);
+      if (siblings === undefined) childrenByParentId.set(parentId, [thread]);
+      else siblings.push(thread);
+    } else {
+      rooted.push(thread);
+    }
+  }
+
+  const rows: Array<{ readonly thread: T; readonly depth: 0 | 1 }> = [];
+  // Depth-first with the indent clamped at one level. Walking rather than
+  // reading one level of children is what keeps a side chat of a side chat on
+  // screen: it hangs off a thread that is itself nested, so a single lookup
+  // from the roots would never reach it and the row would vanish.
+  const emitted = new Set<string>();
+  const emit = (thread: T, depth: 0 | 1): void => {
+    if (emitted.has(thread.id)) return;
+    emitted.add(thread.id);
+    rows.push({ thread, depth });
+    for (const child of childrenByParentId.get(thread.id) ?? []) {
+      emit(child, 1);
+    }
+  };
+  for (const thread of rooted) emit(thread, 0);
+  // A cycle (a and b naming each other) leaves both out of `rooted` and out of
+  // every walk. Appending the leftovers keeps them reachable rather than
+  // silently dropping threads because of corrupt provenance.
+  for (const thread of threads) emit(thread, 0);
+  return rows;
+}
+
 // Pinned-reorder key math and the keyed sort live in client-runtime
 // (state/thread-sort) so web and mobile compute identical pinned orders.
 export {

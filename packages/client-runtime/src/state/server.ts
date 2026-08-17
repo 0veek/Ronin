@@ -125,6 +125,23 @@ export class ServerUpdateTerminalError extends Schema.TaggedErrorClass<ServerUpd
  */
 export const PROVIDER_RATE_LIMIT_POLL_MS = 120_000;
 
+/**
+ * Parked-turn polling.
+ *
+ * This does NOT watch for a quota window resetting — the reset instant is
+ * captured once when the turn is parked, and the replay is fired by a timer on
+ * the server. The countdown ticks locally off `resumeAt`. All this interval
+ * governs is how quickly a row appears or disappears on its own.
+ *
+ * So it is a backstop, not the mechanism: the banner appears promptly because
+ * the client refreshes this list when a turn actually fails (see
+ * `useThreadQuotaResume`), and both mutations refresh it too. That leaves the
+ * poll covering only the cases nothing told us about — a resume firing while
+ * you watch, or a row parked by another window — which are worth two minutes,
+ * not fifteen seconds, of an almost-always-empty payload.
+ */
+export const QUOTA_RESUME_POLL_MS = 120_000;
+
 const SERVER_UPDATE_RESUME_TIMEOUT = Duration.minutes(4);
 
 export function matchesServerUpdateReadyEvent(
@@ -758,6 +775,46 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetProviderRateLimits,
       staleTimeMs: PROVIDER_RATE_LIMIT_POLL_MS,
       refreshIntervalMs: PROVIDER_RATE_LIMIT_POLL_MS,
+    }),
+    quotaResumes: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:quota-resumes",
+      tag: WS_METHODS.serverGetQuotaResumes,
+      staleTimeMs: QUOTA_RESUME_POLL_MS,
+      refreshIntervalMs: QUOTA_RESUME_POLL_MS,
+    }),
+    automations: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:automations",
+      tag: WS_METHODS.automationsList,
+      staleTimeMs: 10_000,
+    }),
+    automationRuns: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:automation-runs",
+      tag: WS_METHODS.automationsRuns,
+      staleTimeMs: 10_000,
+    }),
+    createAutomation: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:create-automation",
+      tag: WS_METHODS.automationsCreate,
+    }),
+    updateAutomation: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:update-automation",
+      tag: WS_METHODS.automationsUpdate,
+    }),
+    deleteAutomation: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:delete-automation",
+      tag: WS_METHODS.automationsDelete,
+    }),
+    runAutomationNow: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:run-automation-now",
+      tag: WS_METHODS.automationsRunNow,
+    }),
+    cancelQuotaResume: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:cancel-quota-resume",
+      tag: WS_METHODS.serverCancelQuotaResume,
+    }),
+    runQuotaResumeNow: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:run-quota-resume-now",
+      tag: WS_METHODS.serverRunQuotaResumeNow,
     }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {

@@ -58,6 +58,11 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
+import { QuotaResumeReactorLive } from "./orchestration/Layers/QuotaResumeReactor.ts";
+import * as QuotaResumeService from "./quotaResume/QuotaResumeService.ts";
+import * as AutomationScheduler from "./automation/AutomationScheduler.ts";
+import * as AutomationService from "./automation/AutomationService.ts";
+import * as AutomationStore from "./automation/AutomationStore.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
@@ -244,6 +249,16 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ProviderCommandReactorLive),
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
+  Layer.provideMerge(QuotaResumeReactorLive),
+  // Sits inside the reactor group rather than beside RateLimitLayerLive
+  // because it needs the orchestration engine to dispatch the replay, and
+  // that is only in scope here.
+  Layer.provideMerge(QuotaResumeService.layer),
+  // Same reasoning as quota resume: firing an automation means dispatching a
+  // turn, which only the orchestration engine in this group can do.
+  Layer.provideMerge(AutomationScheduler.layer),
+  Layer.provideMerge(AutomationService.layer),
+  Layer.provideMerge(AutomationStore.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 

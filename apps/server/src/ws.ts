@@ -33,6 +33,7 @@ import {
   OrchestrationGetSnapshotError,
   OrchestrationSearchThreadsError,
   OrchestrationGetTurnDiffError,
+  AUTOMATION_RUN_HISTORY_LIMIT,
   ORCHESTRATION_WS_METHODS,
   type ProjectId,
   type ProjectEntriesFailure,
@@ -115,6 +116,9 @@ import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as RateLimitService from "./rateLimits/RateLimitService.ts";
+import * as QuotaResumeService from "./quotaResume/QuotaResumeService.ts";
+import * as AutomationService from "./automation/AutomationService.ts";
+import { prepareThreadWorktree } from "./git/prepareThreadWorktree.ts";
 import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -429,6 +433,8 @@ const makeWsRpcLayer = (
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
       const rateLimits = yield* RateLimitService.RateLimitService;
+      const quotaResume = yield* QuotaResumeService.QuotaResumeService;
+      const automations = yield* AutomationService.AutomationService;
       const speechToText = yield* SpeechToTextService.SpeechToTextService;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -945,47 +951,28 @@ const makeWsRpcLayer = (
                 interactionMode: bootstrap.createThread.interactionMode,
                 branch: bootstrap.createThread.branch,
                 worktreePath: bootstrap.createThread.worktreePath,
+                ...(bootstrap.createThread.sideChat === undefined
+                  ? {}
+                  : { sideChat: bootstrap.createThread.sideChat }),
                 createdAt: bootstrap.createThread.createdAt,
               });
               createdThread = true;
             }
 
             if (bootstrap?.prepareWorktree) {
-              let worktreeBaseRef = bootstrap.prepareWorktree.baseBranch;
-              // "Start from origin" is a stored default; repos without an
-              // origin remote fall back to the local base branch instead of
-              // failing the whole bootstrap on `git fetch origin`.
-              const startFromOrigin =
-                bootstrap.prepareWorktree.startFromOrigin === true &&
-                (yield* gitWorkflow.remoteExists({
-                  cwd: bootstrap.prepareWorktree.projectCwd,
-                  remoteName: "origin",
-                }));
-              if (startFromOrigin) {
-                yield* gitWorkflow.fetchRemote({
-                  cwd: bootstrap.prepareWorktree.projectCwd,
-                  remoteName: "origin",
-                });
-                const resolvedRemoteBase = yield* gitWorkflow.resolveRemoteTrackingCommit({
-                  cwd: bootstrap.prepareWorktree.projectCwd,
-                  refName: bootstrap.prepareWorktree.baseBranch,
-                  fallbackRemoteName: "origin",
-                });
-                worktreeBaseRef = resolvedRemoteBase.commitSha;
-              }
-              const worktree = yield* gitWorkflow.createWorktree({
-                cwd: bootstrap.prepareWorktree.projectCwd,
-                refName: worktreeBaseRef,
-                newRefName: bootstrap.prepareWorktree.branch,
-                baseRefName: bootstrap.prepareWorktree.baseBranch,
-                path: null,
+              const worktree = yield* prepareThreadWorktree({
+                gitWorkflow,
+                projectCwd: bootstrap.prepareWorktree.projectCwd,
+                baseBranch: bootstrap.prepareWorktree.baseBranch,
+                branch: bootstrap.prepareWorktree.branch,
+                startFromOrigin: bootstrap.prepareWorktree.startFromOrigin === true,
               });
-              targetWorktreePath = worktree.worktree.path;
+              targetWorktreePath = worktree.path;
               yield* orchestrationEngine.dispatch({
                 type: "thread.meta.update",
                 commandId: yield* serverCommandId("bootstrap-thread-meta-update"),
                 threadId: command.threadId,
-                branch: worktree.worktree.refName,
+                branch: worktree.refName,
                 worktreePath: targetWorktreePath,
               });
               yield* refreshGitStatus(targetWorktreePath);
@@ -1632,6 +1619,65 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetProviderRateLimits, rateLimits.readSnapshot, {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.automationsList]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsList,
+            automations
+              .list(input.projectId ?? null)
+              .pipe(Effect.map((list) => ({ automations: list }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsCreate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsCreate,
+            automations.create(input).pipe(Effect.map((automation) => ({ automation }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsUpdate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsUpdate,
+            automations.update(input).pipe(Effect.map((automation) => ({ automation }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsDelete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsDelete,
+            automations.remove(input.id).pipe(Effect.map((deleted) => ({ deleted }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsRunNow]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsRunNow,
+            automations.runNow(input.id).pipe(Effect.map((run) => ({ run }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.automationsRuns]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.automationsRuns,
+            automations
+              .listRuns({
+                automationId: input.automationId ?? null,
+                limit: input.limit ?? AUTOMATION_RUN_HISTORY_LIMIT,
+              })
+              .pipe(Effect.map((runs) => ({ runs }))),
+            { "rpc.aggregate": "automations" },
+          ),
+        [WS_METHODS.serverGetQuotaResumes]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverGetQuotaResumes, quotaResume.readSnapshot, {
+            "rpc.aggregate": "server",
+          }),
+        [WS_METHODS.serverCancelQuotaResume]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverCancelQuotaResume,
+            quotaResume.cancel(input.threadId).pipe(Effect.map((cancelled) => ({ cancelled }))),
+            { "rpc.aggregate": "server" },
+          ),
+        [WS_METHODS.serverRunQuotaResumeNow]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverRunQuotaResumeNow,
+            quotaResume.runNow(input.threadId).pipe(Effect.map((started) => ({ started }))),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.serverGetSkillsCatalog]: (input) =>
           observeRpcEffect(
             WS_METHODS.serverGetSkillsCatalog,

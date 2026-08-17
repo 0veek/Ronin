@@ -56,6 +56,7 @@ import {
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
+  MessagesSquareIcon,
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
@@ -143,6 +144,11 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertUserMessage: (messageId: MessageId) => void;
+  /**
+   * Open a side chat anchored to a message. Absent when there is nowhere to
+   * open one into — a draft thread has no project yet.
+   */
+  onAskOnTheSide: ((messageId: MessageId) => void) | null;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
@@ -224,6 +230,7 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onAskOnTheSide?: ((messageId: MessageId) => void) | null;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   activeThreadEnvironmentId: EnvironmentId;
@@ -270,6 +277,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
+  onAskOnTheSide = null,
   isRevertingCheckpoint,
   onImageExpand,
   activeThreadEnvironmentId,
@@ -518,6 +526,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onAskOnTheSide,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -534,6 +543,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onAskOnTheSide,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -1146,6 +1156,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         />
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-(--duration-base) focus-within:opacity-100 group-hover/assistant:opacity-100">
+            <AskOnTheSideButton messageId={row.message.id} streaming={row.message.streaming} />
             <AssistantCopyButton row={row} />
             {!row.message.streaming && (
               <Tooltip>
@@ -1163,6 +1174,45 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * Opens a fresh thread anchored to this answer.
+ *
+ * Hidden while the message streams: anchoring half an answer quotes something
+ * that is about to change, and the button would move under the cursor as the
+ * text grows.
+ */
+function AskOnTheSideButton({
+  messageId,
+  streaming,
+}: {
+  readonly messageId: MessageId;
+  readonly streaming: boolean;
+}) {
+  const ctx = use(TimelineRowCtx);
+  if (streaming || ctx.onAskOnTheSide === null) return null;
+  const onAskOnTheSide = ctx.onAskOnTheSide;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Ask about this on the side"
+            onClick={() => onAskOnTheSide(messageId)}
+          >
+            <MessagesSquareIcon className="size-3.5" />
+          </Button>
+        }
+      />
+      <TooltipPopup side="top" className="max-w-72">
+        Open a new thread on this message, in the same checkout. The question stays out of this
+        conversation&apos;s context.
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 

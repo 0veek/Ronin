@@ -3,6 +3,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
   type EnvironmentId,
+  MessageId,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -16,6 +17,7 @@ import {
   type ScopedProjectRef,
   type ScopedThreadRef,
   ThreadId,
+  type ThreadSideChatOrigin,
 } from "@t3tools/contracts";
 import {
   parseScopedProjectKey,
@@ -217,6 +219,17 @@ const PersistedDraftThreadState = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   envMode: DraftThreadEnvModeSchema,
   startFromOrigin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Provenance for a draft opened from a message in another thread. It rides
+  // the draft rather than being applied at send time because the draft is the
+  // only thing that survives the user closing the tab mid-question.
+  sideChat: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Struct({
+        parentThreadId: ThreadId,
+        anchorMessageId: Schema.NullOr(MessageId),
+      }),
+    ),
+  ),
   promotedTo: Schema.optionalKey(
     Schema.NullOr(
       Schema.Struct({
@@ -321,6 +334,7 @@ export interface DraftSessionState {
   worktreePath: string | null;
   envMode: DraftThreadEnvMode;
   startFromOrigin: boolean;
+  sideChat?: ThreadSideChatOrigin | null;
   promotedTo?: ScopedThreadRef | null;
 }
 
@@ -385,6 +399,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
+      sideChat?: ThreadSideChatOrigin | null;
     },
   ) => void;
   /** Creates or updates the draft session tracked for a concrete project ref. */
@@ -400,6 +415,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
+      sideChat?: ThreadSideChatOrigin | null;
     },
   ) => void;
   /** Updates mutable draft-session metadata without touching composer content. */
@@ -414,6 +430,7 @@ interface ComposerDraftStoreState {
       startFromOrigin?: boolean;
       runtimeMode?: RuntimeMode;
       interactionMode?: ProviderInteractionMode;
+      sideChat?: ThreadSideChatOrigin | null;
     },
   ) => void;
   clearProjectDraftThreadId: (projectRef: ScopedProjectRef) => void;
@@ -1373,6 +1390,7 @@ function createDraftThreadState(
     startFromOrigin?: boolean;
     runtimeMode?: RuntimeMode;
     interactionMode?: ProviderInteractionMode;
+    sideChat?: ThreadSideChatOrigin | null;
   },
 ): DraftThreadState {
   // A project change (including switching environments within a logical
@@ -1413,6 +1431,7 @@ function createDraftThreadState(
     envMode:
       options?.envMode ?? (nextWorktreePath ? "worktree" : (existingThread?.envMode ?? "local")),
     startFromOrigin: nextStartFromOrigin,
+    sideChat: options?.sideChat ?? existingThread?.sideChat ?? null,
     promotedTo: null,
   };
 }
@@ -2237,6 +2256,7 @@ function toHydratedDraftThreadState(
     worktreePath: persistedDraftThread.worktreePath,
     envMode: persistedDraftThread.envMode,
     startFromOrigin: persistedDraftThread.startFromOrigin,
+    sideChat: persistedDraftThread.sideChat ?? null,
     promotedTo: persistedDraftThread.promotedTo
       ? scopeThreadRef(
           persistedDraftThread.promotedTo.environmentId as EnvironmentId,

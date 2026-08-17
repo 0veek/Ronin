@@ -12,6 +12,7 @@ import {
 } from "./model.ts";
 import { ModelSelection } from "./orchestration.ts";
 import { ProviderInstanceConfig, ProviderInstanceId } from "./providerInstance.ts";
+import { DEFAULT_QUOTA_RESUME_MAXIMUM_WAIT, QuotaResumeMaximumWait } from "./quotaResume.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -680,6 +681,17 @@ export const SkillsServerSettings = Schema.Struct({
 });
 export type SkillsServerSettings = typeof SkillsServerSettings.Type;
 
+/**
+ * How long Ronin will hold a turn that died on a spent subscription window
+ * before replaying it. See {@link ./quotaResume.ts}.
+ */
+export const QuotaResumeServerSettings = Schema.Struct({
+  maximumWait: QuotaResumeMaximumWait.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_QUOTA_RESUME_MAXIMUM_WAIT)),
+  ),
+});
+export type QuotaResumeServerSettings = typeof QuotaResumeServerSettings.Type;
+
 export const ServerSettings = Schema.Struct({
   enableProviderUpdateChecks: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   backgroundActivity: BackgroundActivitySettings,
@@ -754,6 +766,7 @@ export const ServerSettings = Schema.Struct({
   speechToText: SpeechToTextSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   skills: SkillsServerSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  quotaResume: QuotaResumeServerSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -944,6 +957,11 @@ export const ServerSettingsPatch = Schema.Struct({
   skills: Schema.optionalKey(
     Schema.Struct({
       disabled: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isMaxLength(256)))),
+    }),
+  ),
+  quotaResume: Schema.optionalKey(
+    Schema.Struct({
+      maximumWait: Schema.optionalKey(QuotaResumeMaximumWait),
     }),
   ),
 });

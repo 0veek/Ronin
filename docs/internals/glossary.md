@@ -10,6 +10,7 @@ This is a living glossary for Ronin. It explains what common terms mean in this 
 - [Thread timeline](#thread-timeline)
 - [Orchestration](#orchestration)
 - [Provider runtime](#provider-runtime)
+- [Scheduled work](#scheduled-work)
 - [Checkpointing](#checkpointing)
 
 ## Concepts
@@ -41,6 +42,10 @@ A single user-to-assistant work cycle inside a thread. It starts with user input
 #### Activity
 
 A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
+
+#### Side chat
+
+A thread opened from one message of another thread, to ask about it without adding the question to the original conversation's context. It is an ordinary thread in every respect — same project, same checkout, its own history — plus a `sideChat` origin in [the contracts][1] naming its parent and the anchored message. Provenance only: deleting the parent does not delete the side chat. The sidebar files it under its parent (`groupSideChatsUnderParents` in [Sidebar.logic.ts][30]). See [side-chats.md][31].
 
 ### Orchestration
 
@@ -132,6 +137,20 @@ Controls how assistant text reaches the thread timeline. In [the contracts][1], 
 
 A point-in-time view of state. The word is used in multiple layers, including orchestration, provider, and checkpointing. See [ProjectionSnapshotQuery.ts][10], [ProviderAdapter.ts][15], and [CheckpointStore.ts][19].
 
+### Scheduled work
+
+#### Automation
+
+A saved prompt plus a rule for when to send it, scoped to one project. Configuration rather than history, so it lives in its own `automations` table instead of the event log — replaying events must never re-fire a schedule. Shape is in [the automation contracts][32]; the rules are in [AutomationService.ts][33]. See [automations.md][34].
+
+#### Automation run
+
+One firing of an automation. Records only whether the turn _started_ (`started`, `skipped`, `failed`) — what the agent then did is the thread's business, and duplicating a turn outcome here would be a second source of truth. Firing expands to `thread.create`, optional worktree preparation, then `thread.turn.start`, because the `bootstrap` field on a turn-start command is a WebSocket-layer convenience the decider does not understand.
+
+#### Parked turn
+
+A turn that died because a provider's subscription window was spent, held in memory and replayed once the window resets. Deliberately not part of the read model: it is scheduler state with a live clock, and it does not survive a restart. Classification lives in [quotaFailureClassification.ts][35], scheduling in [QuotaResumeService.ts][36]. See [quota-resume.md][37].
+
 ### Checkpointing
 
 Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6].
@@ -200,3 +219,11 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [27]: ../../apps/server/src/provider/skillsCatalog.ts
 [28]: ../user/agent-skills.md
 [29]: ../../packages/contracts/src/server.ts
+[30]: ../../apps/web/src/components/Sidebar.logic.ts
+[31]: ../user/side-chats.md
+[32]: ../../packages/contracts/src/automation.ts
+[33]: ../../apps/server/src/automation/AutomationService.ts
+[34]: ../user/automations.md
+[35]: ../../apps/server/src/quotaResume/quotaFailureClassification.ts
+[36]: ../../apps/server/src/quotaResume/QuotaResumeService.ts
+[37]: ../user/quota-resume.md

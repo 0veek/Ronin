@@ -178,6 +178,28 @@ import {
 } from "./resourceTelemetry.ts";
 import { ProviderRateLimitsSnapshot, RateLimitReadError } from "./rateLimit.ts";
 import {
+  AutomationCreateInput,
+  AutomationDeleteInput,
+  AutomationDeleteResult,
+  AutomationError,
+  AutomationListInput,
+  AutomationListResult,
+  AutomationMutationResult,
+  AutomationRunNowInput,
+  AutomationRunNowResult,
+  AutomationRunsInput,
+  AutomationRunsResult,
+  AutomationUpdateInput,
+} from "./automation.ts";
+import {
+  QuotaResumeCancelInput,
+  QuotaResumeCancelResult,
+  QuotaResumeError,
+  QuotaResumeRunNowInput,
+  QuotaResumeRunNowResult,
+  QuotaResumeSnapshot,
+} from "./quotaResume.ts";
+import {
   SpeechToTextError,
   SpeechToTextKeyStatus,
   SpeechToTextSetKeyInput,
@@ -280,10 +302,21 @@ export const WS_METHODS = {
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
   serverGetProviderRateLimits: "server.getProviderRateLimits",
+  serverGetQuotaResumes: "server.getQuotaResumes",
+  serverCancelQuotaResume: "server.cancelQuotaResume",
+  serverRunQuotaResumeNow: "server.runQuotaResumeNow",
   serverTranscribeAudio: "server.transcribeAudio",
   serverGetSpeechToTextKeyStatus: "server.getSpeechToTextKeyStatus",
   serverSetSpeechToTextKey: "server.setSpeechToTextKey",
   serverGetSkillsCatalog: "server.getSkillsCatalog",
+
+  // Automation methods
+  automationsList: "automations.list",
+  automationsCreate: "automations.create",
+  automationsUpdate: "automations.update",
+  automationsDelete: "automations.delete",
+  automationsRunNow: "automations.runNow",
+  automationsRuns: "automations.runs",
 
   // Pull request methods
   pullRequestsList: "pullRequests.list",
@@ -445,6 +478,60 @@ export const WsServerGetProviderRateLimitsRpc = Rpc.make(WS_METHODS.serverGetPro
   payload: Schema.Struct({}),
   success: ProviderRateLimitsSnapshot,
   error: Schema.Union([EnvironmentAuthorizationError, RateLimitReadError]),
+});
+
+export const WsServerGetQuotaResumesRpc = Rpc.make(WS_METHODS.serverGetQuotaResumes, {
+  payload: Schema.Struct({}),
+  success: QuotaResumeSnapshot,
+  error: EnvironmentAuthorizationError,
+});
+
+export const WsServerCancelQuotaResumeRpc = Rpc.make(WS_METHODS.serverCancelQuotaResume, {
+  payload: QuotaResumeCancelInput,
+  success: QuotaResumeCancelResult,
+  error: Schema.Union([EnvironmentAuthorizationError, QuotaResumeError]),
+});
+
+export const WsServerRunQuotaResumeNowRpc = Rpc.make(WS_METHODS.serverRunQuotaResumeNow, {
+  payload: QuotaResumeRunNowInput,
+  success: QuotaResumeRunNowResult,
+  error: Schema.Union([EnvironmentAuthorizationError, QuotaResumeError]),
+});
+
+export const WsAutomationsListRpc = Rpc.make(WS_METHODS.automationsList, {
+  payload: AutomationListInput,
+  success: AutomationListResult,
+  error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+});
+
+export const WsAutomationsCreateRpc = Rpc.make(WS_METHODS.automationsCreate, {
+  payload: AutomationCreateInput,
+  success: AutomationMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+});
+
+export const WsAutomationsUpdateRpc = Rpc.make(WS_METHODS.automationsUpdate, {
+  payload: AutomationUpdateInput,
+  success: AutomationMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+});
+
+export const WsAutomationsDeleteRpc = Rpc.make(WS_METHODS.automationsDelete, {
+  payload: AutomationDeleteInput,
+  success: AutomationDeleteResult,
+  error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+});
+
+export const WsAutomationsRunNowRpc = Rpc.make(WS_METHODS.automationsRunNow, {
+  payload: AutomationRunNowInput,
+  success: AutomationRunNowResult,
+  error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+});
+
+export const WsAutomationsRunsRpc = Rpc.make(WS_METHODS.automationsRuns, {
+  payload: AutomationRunsInput,
+  success: AutomationRunsResult,
+  error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
 });
 
 export const WsServerTranscribeAudioRpc = Rpc.make(WS_METHODS.serverTranscribeAudio, {
@@ -1027,6 +1114,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
   WsServerGetProviderRateLimitsRpc,
+  WsServerGetQuotaResumesRpc,
+  WsServerCancelQuotaResumeRpc,
+  WsServerRunQuotaResumeNowRpc,
+  WsAutomationsListRpc,
+  WsAutomationsCreateRpc,
+  WsAutomationsUpdateRpc,
+  WsAutomationsDeleteRpc,
+  WsAutomationsRunNowRpc,
+  WsAutomationsRunsRpc,
   WsServerTranscribeAudioRpc,
   WsServerGetSpeechToTextKeyStatusRpc,
   WsServerGetSkillsCatalogRpc,

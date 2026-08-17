@@ -627,6 +627,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             snoozedAt: null,
             pinnedAt: null,
             pinOrderKey: null,
+            sideChatParentThreadId: event.payload.sideChat?.parentThreadId ?? null,
+            sideChatAnchorMessageId: event.payload.sideChat?.anchorMessageId ?? null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,

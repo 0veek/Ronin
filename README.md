@@ -39,6 +39,12 @@ The feature no other harness has: **hand a live conversation to a different agen
 
 No copy-pasting context between terminals. Ever again. ([docs](./docs/user/switching-providers.md))
 
+### 💬 Ask on the side
+
+Some questions are worth asking and not worth keeping. Hover any answer, hit **Ask on the side**, and Ronin opens a fresh thread on that message — same project, same checkout, the message quoted into the composer where you can see and edit it.
+
+The main thread never learns you asked. The side chat breadcrumbs back to where it came from, and files under its parent in the sidebar instead of drifting off into the list. ([docs](./docs/user/side-chats.md))
+
 ### 📊 Stats that count everything
 
 The Stats page reads each provider CLI's **own session transcripts** — so every token is counted, including the turns you ran in a bare terminal, on every connected machine, deduplicated across environments. API-equivalent cost, cache savings, per-model breakdowns, and an hourly-resolution chart for the last 24 hours.
@@ -46,6 +52,20 @@ The Stats page reads each provider CLI's **own session transcripts** — so ever
 Every provider owns one color across the whole page — chart, share bars, tables — in a palette validated for color-blind safety in light and dark alike. Grok even records its **exact** per-turn cost in an undocumented tick format; we reverse-engineered it, so that dollar figure is real, not an estimate.
 
 And in your peripheral vision: the sidebar meter shows how much of each subscription window is left and **when it resets, to the minute** — so you know if you can keep working for the next hour without opening anything.
+
+### ⏳ Hit a limit? Ronin waits for you
+
+A turn that dies because your five-hour window ran dry isn't a failure you can act on — the only remedy is to wait. So Ronin waits.
+
+It parks your message, shows a countdown above the composer, and **sends it again the moment the window resets**. Walk away, come back to the answer. Cancel it or fire it early from the banner; set how long Ronin is willing to hold on for in Settings.
+
+It only does this for a genuinely spent subscription window — not a passing throttle, and never for a billing or auth failure that waiting can't fix. ([docs](./docs/user/quota-resume.md))
+
+### 🖼 Previews, inline
+
+When an agent builds something you're meant to _look_ at — a coverage report, a chart, a mockup — it writes an HTML file and links to it. Ronin renders the page **right there in the transcript** instead of handing you a link to click.
+
+Relative assets load, scripts run, and the frame is sandboxed to an opaque origin, so the page can't reach Ronin's session, storage, or cookies. ([docs](./docs/user/inline-previews.md))
 
 ### 🔀 Git as a first-class citizen
 
@@ -62,6 +82,12 @@ First-party themes (Tsukimi, Aizome, Urushi, the pure-black **OLED Void** family
 ### 🧰 Skills and slash commands, portable across agents
 
 Drop a `SKILL.md` in `~/.ronin/skills` once and **every provider can use it** — Codex, Claude, Grok, all of them. Same for slash commands: `/clear`, `/compact`, `/model`, `/review`, `/fork`, `/status` and friends work everywhere, alongside each provider's native commands. ([skills](./docs/user/agent-skills.md) · [commands](./docs/user/slash-commands.md))
+
+### ⏰ Work that runs without you
+
+Save a prompt, give it a schedule, and Ronin runs it in your project — every weekday at nine, every six hours, or once at a time you pick. Each run opens **a real thread you can read afterwards**, so there's no separate log format to learn and nothing special about a scheduled turn once it starts.
+
+Runs default to their own worktree, so unattended work never lands in the checkout you're using. A job the machine slept through still fires when it wakes; one that's hours stale is skipped and says so. The run history tells you what actually happened. ([docs](./docs/user/automations.md))
 
 ### 📱 Remote from anywhere
 
@@ -81,7 +107,7 @@ No GPU-pegging animations, no token-by-token repaint storms, no lying spinners. 
 
 - **Agent notifications** — a system ping when an agent finishes, fails, or waits for an approval while you're elsewhere; click it to land on the thread ([docs](./docs/user/notifications.md))
 - **Native on Windows** — no WSL layer: Ronin drives the same Windows CLIs you run in PowerShell, and finds them wherever npm, Scoop, WinGet, Chocolatey, Volta, or Bun put them ([docs](./docs/user/install.md))
-- **Live preview** — tabs, navigation, screenshots, recordings of the app your agent is building
+- **Live browser preview** — tabs, navigation, screenshots, recordings of the app your agent is building
 - **Composer-first workspace** — "What should we build?" with provider, model, effort and plan controls in one card
 - **Markdown that renders** — images, diffs, code, all inline in the transcript
 - **Editor hand-off** — Ronin finds your installed editors and opens any file where you actually work
@@ -186,10 +212,14 @@ Artifacts ship as `Ronin-${version}-${arch}.${ext}` for Linux, Windows, and macO
 | Using Ronin        | [docs/user/install.md](./docs/user/install.md)                         |
 | Keybindings        | [docs/user/keybindings.md](./docs/user/keybindings.md)                 |
 | Switching provider | [docs/user/switching-providers.md](./docs/user/switching-providers.md) |
+| Side chats         | [docs/user/side-chats.md](./docs/user/side-chats.md)                   |
+| Automations        | [docs/user/automations.md](./docs/user/automations.md)                 |
+| Inline previews    | [docs/user/inline-previews.md](./docs/user/inline-previews.md)         |
 | Agent skills       | [docs/user/agent-skills.md](./docs/user/agent-skills.md)               |
 | Slash commands     | [docs/user/slash-commands.md](./docs/user/slash-commands.md)           |
 | Source control     | [docs/user/source-control.md](./docs/user/source-control.md)           |
 | Stats & usage      | [docs/user/usage.md](./docs/user/usage.md)                             |
+| Waiting out limits | [docs/user/quota-resume.md](./docs/user/quota-resume.md)               |
 | Remote / Tailscale | [docs/user/remote-access.md](./docs/user/remote-access.md)             |
 | Architecture       | [docs/internals/overview.md](./docs/internals/overview.md)             |
 | Glossary           | [docs/internals/glossary.md](./docs/internals/glossary.md)             |

@@ -44,9 +44,11 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
+import { remarkHtmlPreview } from "../markdown-html-preview";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+import { InlineHtmlPreview } from "./chat/InlineHtmlPreview";
 import {
   resolveExternalWebLinkHost,
   showExternalLinkContextMenu,
@@ -185,6 +187,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
+    p: [...(defaultSchema.attributes?.p ?? []), "dataHtmlPreview"],
   },
   protocols: {
     ...defaultSchema.protocols,
@@ -195,6 +198,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
 const CHAT_MARKDOWN_REMARK_PLUGINS = [
   remarkGfm,
   remarkGithubAlerts,
+  remarkHtmlPreview,
   remarkNormalizeListItemIndentation,
   remarkPreserveCodeMeta,
   remarkTagInlineCode,
@@ -203,6 +207,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS = [
 const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
   remarkGfm,
   remarkGithubAlerts,
+  remarkHtmlPreview,
   remarkNormalizeListItemIndentation,
   remarkBreaks,
   remarkPreserveCodeMeta,
@@ -1686,6 +1691,26 @@ function ChatMarkdown({
 
     return {
       p({ node: _node, children, ...props }) {
+        // A paragraph that is nothing but a link to a local HTML file becomes
+        // the page itself. `remarkHtmlPreview` decides which paragraphs
+        // qualify; this only needs the path it left behind, and falls back to
+        // an ordinary paragraph whenever there is no thread to scope the
+        // signed asset URL to.
+        const htmlPreviewPath = (props as Record<string, unknown>)["data-html-preview"];
+        if (typeof htmlPreviewPath === "string" && htmlPreviewPath.length > 0 && threadRef) {
+          return (
+            <InlineHtmlPreview
+              path={htmlPreviewPath}
+              threadRef={threadRef}
+              label={typeof children === "string" ? children : undefined}
+              onOpenInPanel={
+                isPreviewSupportedInRuntime()
+                  ? (path) => void openMarkdownFileInPreview(path)
+                  : (path) => openFileInPanel(path, undefined)
+              }
+            />
+          );
+        }
         return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
       },
       blockquote({ node: _node, children, ...props }) {

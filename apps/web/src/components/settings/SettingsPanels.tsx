@@ -14,6 +14,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   type BackgroundActivityProfile,
   ProviderDriverKind,
+  type QuotaResumeMaximumWait,
   type ScopedThreadRef,
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
@@ -160,6 +161,16 @@ const TIMESTAMP_FORMAT_LABELS = {
   "12-hour": "12-hour",
   "24-hour": "24-hour",
 } as const;
+
+// Phrased as the wait rather than the feature, because the ceiling is the
+// only decision here: a five-hour window is worth sitting out unattended, a
+// weekly one usually is not.
+const QUOTA_RESUME_WAIT_LABELS: Record<QuotaResumeMaximumWait, string> = {
+  off: "Never",
+  "6h": "Wait up to 6 hours",
+  "24h": "Wait up to 24 hours",
+  unlimited: "Wait however long",
+};
 
 const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
   balanced: "Balanced",
@@ -378,6 +389,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
         : []),
+      ...(settings.quotaResume.maximumWait !== DEFAULT_UNIFIED_SETTINGS.quotaResume.maximumWait
+        ? ["Resume after limit resets"]
+        : []),
       ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
@@ -421,6 +435,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.enableProviderUpdateChecks,
+      settings.quotaResume.maximumWait,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
       settings.sidebarProjectGroupingMode,
@@ -1871,6 +1886,56 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Check provider versions"
             />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("resume-after-limit")}
+          description="When a turn stops because a Claude, Codex, or Grok subscription window is spent, hold the message and send it again once the window resets."
+          resetAction={
+            settings.quotaResume.maximumWait !==
+            DEFAULT_UNIFIED_SETTINGS.quotaResume.maximumWait ? (
+              <SettingResetButton
+                label="resume after limit resets"
+                onClick={() =>
+                  updateSettings({
+                    quotaResume: {
+                      maximumWait: DEFAULT_UNIFIED_SETTINGS.quotaResume.maximumWait,
+                    },
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.quotaResume.maximumWait}
+              onValueChange={(value) => {
+                if (value === "off" || value === "6h" || value === "24h" || value === "unlimited") {
+                  updateSettings({ quotaResume: { maximumWait: value } });
+                }
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-44" aria-label="Resume after limit resets">
+                <SelectValue>
+                  {QUOTA_RESUME_WAIT_LABELS[settings.quotaResume.maximumWait]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="off">
+                  {QUOTA_RESUME_WAIT_LABELS.off}
+                </SelectItem>
+                <SelectItem hideIndicator value="6h">
+                  {QUOTA_RESUME_WAIT_LABELS["6h"]}
+                </SelectItem>
+                <SelectItem hideIndicator value="24h">
+                  {QUOTA_RESUME_WAIT_LABELS["24h"]}
+                </SelectItem>
+                <SelectItem hideIndicator value="unlimited">
+                  {QUOTA_RESUME_WAIT_LABELS.unlimited}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

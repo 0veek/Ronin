@@ -247,6 +247,28 @@ export const OrchestrationProject = Schema.Struct({
 });
 export type OrchestrationProject = typeof OrchestrationProject.Type;
 
+/**
+ * A thread's link back to the message it was opened from.
+ *
+ * A side chat is an ordinary thread in every respect — same project, same
+ * checkout, full provider surface, its own history. The only thing this adds
+ * is provenance: which conversation it came out of, and which message in it.
+ * That is enough for both ends to link to each other and for the sidebar to
+ * file it under its parent instead of beside it.
+ *
+ * Provenance, not containment: deleting the parent does not delete the side
+ * chat, and a side chat can outlive the question that started it.
+ */
+export const ThreadSideChatOrigin = Schema.Struct({
+  parentThreadId: ThreadId,
+  /**
+   * The message the user asked about. Null when the side chat was opened from
+   * the thread as a whole rather than from one message.
+   */
+  anchorMessageId: Schema.NullOr(MessageId),
+});
+export type ThreadSideChatOrigin = typeof ThreadSideChatOrigin.Type;
+
 export const OrchestrationMessageRole = Schema.Literals(["user", "assistant", "system"]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
@@ -415,6 +437,9 @@ export const OrchestrationThread = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   // Pending-only state. Optional so older servers remain compatible.
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  // Optional on the wire so snapshots from servers that predate side chats
+  // still decode; absent and null both mean "an ordinary thread".
+  sideChat: Schema.optional(Schema.NullOr(ThreadSideChatOrigin)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -473,6 +498,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
+  sideChat: Schema.optional(Schema.NullOr(ThreadSideChatOrigin)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -681,6 +707,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  sideChat: Schema.optional(ThreadSideChatOrigin),
   createdAt: IsoDateTime,
 });
 
@@ -872,6 +899,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  sideChat: Schema.optional(ThreadSideChatOrigin),
   createdAt: IsoDateTime,
 });
 
@@ -1213,6 +1241,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  sideChat: Schema.optional(ThreadSideChatOrigin),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

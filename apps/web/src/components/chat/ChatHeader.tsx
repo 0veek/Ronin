@@ -11,7 +11,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ChangeRequestStateLike } from "@t3tools/client-runtime/state/thread-settled";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, MessagesSquareIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -21,6 +21,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { buildThreadRouteParams } from "~/threadRoutes";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -49,6 +52,17 @@ interface ChatHeaderProps {
   activeThreadId: ThreadId;
   draftId?: DraftId;
   activeThreadTitle: string;
+  /**
+   * The thread this one was opened from, when it is a side chat. Rendered as
+   * a breadcrumb crumb rather than a banner: it is provenance, which is what
+   * the rest of this bar already is.
+   */
+  sideChatParent: { readonly threadId: ThreadId; readonly title: string } | null;
+  /**
+   * Threads opened off this one. The other half of the side-chat link: without
+   * it the parent has no idea the conversation continued somewhere else.
+   */
+  sideChatChildren: ReadonlyArray<{ readonly threadId: ThreadId; readonly title: string }>;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
   /** PR state feeding the settled classification, resolved by ChatView. */
@@ -112,6 +126,8 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   draftId,
   activeThreadTitle,
+  sideChatParent,
+  sideChatChildren,
   isServerThread,
   changeRequestState,
   activeProjectName,
@@ -131,6 +147,7 @@ export const ChatHeader = memo(function ChatHeader({
   onUpdateProjectScript,
   onDeleteProjectScript,
 }: ChatHeaderProps) {
+  const navigate = useNavigate();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const fileScripts = useT3ProjectFileScripts(
     activeThreadEnvironmentId,
@@ -262,6 +279,37 @@ export const ChatHeader = memo(function ChatHeader({
             <WorkspaceBreadcrumbSeparator />
           </>
         ) : null}
+        {sideChatParent !== null ? (
+          <>
+            <WorkspaceBreadcrumbItem>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      className="inline-flex min-w-0 cursor-pointer items-center gap-1.5 rounded-(--control-radius) hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => {
+                        void navigate({
+                          to: "/$environmentId/$threadId",
+                          params: buildThreadRouteParams(
+                            scopeThreadRef(activeThreadEnvironmentId, sideChatParent.threadId),
+                          ),
+                        });
+                      }}
+                    />
+                  }
+                >
+                  <MessagesSquareIcon aria-hidden className="size-3.5 shrink-0" />
+                  <span className="max-w-40 truncate">{sideChatParent.title}</span>
+                </TooltipTrigger>
+                <TooltipPopup side="top">
+                  Asked on the side of {sideChatParent.title} — back to that thread
+                </TooltipPopup>
+              </Tooltip>
+            </WorkspaceBreadcrumbItem>
+            <WorkspaceBreadcrumbSeparator />
+          </>
+        ) : null}
         <WorkspaceBreadcrumbItem current className="flex-1">
           {renamingTitle !== null ? (
             <input
@@ -311,6 +359,43 @@ export const ChatHeader = memo(function ChatHeader({
             </Tooltip>
           )}
         </WorkspaceBreadcrumbItem>
+        {sideChatChildren.length > 0 ? (
+          <WorkspaceBreadcrumbItem>
+            <Menu>
+              <MenuTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label={`${sideChatChildren.length} side ${
+                      sideChatChildren.length === 1 ? "chat" : "chats"
+                    } from this thread`}
+                    className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-(--control-radius) px-1 text-muted-foreground text-xs hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+                  />
+                }
+              >
+                <MessagesSquareIcon aria-hidden className="size-3.5" />
+                {sideChatChildren.length}
+              </MenuTrigger>
+              <MenuPopup align="start">
+                {sideChatChildren.map((child) => (
+                  <MenuItem
+                    key={child.threadId}
+                    onClick={() => {
+                      void navigate({
+                        to: "/$environmentId/$threadId",
+                        params: buildThreadRouteParams(
+                          scopeThreadRef(activeThreadEnvironmentId, child.threadId),
+                        ),
+                      });
+                    }}
+                  >
+                    {child.title}
+                  </MenuItem>
+                ))}
+              </MenuPopup>
+            </Menu>
+          </WorkspaceBreadcrumbItem>
+        ) : null}
       </WorkspaceBreadcrumb>
       <div
         data-chat-header-actions

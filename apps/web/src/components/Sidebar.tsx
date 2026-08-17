@@ -134,6 +134,7 @@ import {
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
   sortLogicalProjectsForSidebar,
+  groupSideChatsUnderParents,
   sortPinnedThreadsForSidebar,
   sortSettledThreadsForSidebar,
   sortThreadsForSidebar,
@@ -739,6 +740,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     threadKey: string,
     snapshot: ThreadChangeRequestSnapshot | null,
   ) => void;
+  /** One indent level when this row is a side chat filed under its parent. */
+  depth?: 0 | 1;
 }) {
   const {
     isRenaming,
@@ -1337,6 +1340,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       {...(sortable?.listeners ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+        // Indent rather than a nesting container: the row keeps its own
+        // hit area, drag behaviour, and content-visibility budget, and the
+        // list stays flat for the virtualizer.
+        props.depth === 1 && "ps-3",
         sortable?.isDragging && "z-20 opacity-80",
       )}
     >
@@ -3621,6 +3628,10 @@ export default function Sidebar() {
                     thread: EnvironmentThreadShell,
                     section: "pinned" | "active" | "snoozed" | "settled",
                     sortable?: SortablePinnedRowBag,
+                    // One indent level for a side chat filed under the thread
+                    // it was opened from. Purely presentational — the row is
+                    // an ordinary thread row in every other respect.
+                    depth: 0 | 1 = 0,
                   ) => {
                     const threadKey = scopedThreadKey(
                       scopeThreadRef(thread.environmentId, thread.id),
@@ -3642,6 +3653,7 @@ export default function Sidebar() {
                         key={`${threadKey}:${rowVariant}`}
                         thread={thread}
                         variant={rowVariant}
+                        depth={depth}
                         // Snoozed rows wake; settled rows un-settle (explicit
                         // settles clear the override, auto-settled rows get
                         // pinned active); cards settle.
@@ -3751,6 +3763,10 @@ export default function Sidebar() {
                           .filter((threadKey) => reorderablePinnedKeys.has(threadKey))}
                         strategy={verticalListSortingStrategy}
                       >
+                        {/* Pinned rows keep their flat, user-arranged order:
+                            side-chat grouping would reshuffle a list the user
+                            dragged into place, and the drag machinery keys off
+                            this exact sequence. */}
                         {orderedPinnedThreads.map((thread) => {
                           const threadKey = scopedThreadKey(
                             scopeThreadRef(thread.environmentId, thread.id),
@@ -3777,8 +3793,8 @@ export default function Sidebar() {
                       />,
                     );
                   }
-                  for (const thread of activeThreads) {
-                    items.push(renderThreadRow(thread, "active"));
+                  for (const row of groupSideChatsUnderParents(activeThreads)) {
+                    items.push(renderThreadRow(row.thread, "active", undefined, row.depth));
                   }
                   // Snoozed shelf: between the inbox and Settled — out of the
                   // way, never gone. The header always renders while anything
@@ -3815,8 +3831,8 @@ export default function Sidebar() {
                         </button>
                       </li>,
                     );
-                    for (const thread of visibleSnoozedThreads) {
-                      items.push(renderThreadRow(thread, "snoozed"));
+                    for (const row of groupSideChatsUnderParents(visibleSnoozedThreads)) {
+                      items.push(renderThreadRow(row.thread, "snoozed", undefined, row.depth));
                     }
                   }
                   if (settledThreads.length > 0) {
@@ -3850,8 +3866,8 @@ export default function Sidebar() {
                       </li>,
                     );
                   }
-                  for (const thread of renderedSettledThreads) {
-                    items.push(renderThreadRow(thread, "settled"));
+                  for (const row of groupSideChatsUnderParents(renderedSettledThreads)) {
+                    items.push(renderThreadRow(row.thread, "settled", undefined, row.depth));
                   }
                   return items;
                 })()}

@@ -24,6 +24,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/speech-to-text": SETTINGS_PAGE_META["/settings/speech-to-text"].label,
   "/settings/providers": SETTINGS_PAGE_META["/settings/providers"].label,
   "/settings/skills": SETTINGS_PAGE_META["/settings/skills"].label,
+  "/settings/automations": SETTINGS_PAGE_META["/settings/automations"].label,
   "/settings/source-control": SETTINGS_PAGE_META["/settings/source-control"].label,
   "/settings/connections": SETTINGS_PAGE_META["/settings/connections"].label,
   "/settings/archived": SETTINGS_PAGE_META["/settings/archived"].label,
@@ -146,6 +147,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "provider-update-checks",
     title: "Provider update checks",
+    to: "/settings/general",
+  },
+  {
+    id: "resume-after-limit",
+    title: "Resume after limit resets",
     to: "/settings/general",
   },
   {
