@@ -267,12 +267,16 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Extract<ComposerSlashCommand, "plan" | "default"> | null {
+): Extract<ComposerSlashCommand, "plan" | "debug" | "default"> | null {
   const invocation = parseComposerSlashInvocation(text);
   if (!invocation || invocation.args.length > 0) {
     return null;
   }
-  if (invocation.command === "plan" || invocation.command === "default") {
+  if (
+    invocation.command === "plan" ||
+    invocation.command === "debug" ||
+    invocation.command === "default"
+  ) {
     return invocation.command;
   }
   return null;

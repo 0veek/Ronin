@@ -38,6 +38,11 @@ import {
   toggleWeekday,
   WEEKDAY_OPTIONS,
 } from "~/automationPresentation";
+import {
+  automationFailurePolicyOptions,
+  automationFailurePolicyValue,
+  stopAfterConsecutiveFailuresFromPolicyValue,
+} from "~/lib/automationFailurePolicy";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useProjects } from "~/state/entities";
 import { useAutomations } from "~/state/automations";
@@ -416,6 +421,48 @@ function AutomationDraftForm({
           </Select>
         </label>
       </div>
+
+      <label className="block space-y-1.5">
+        <span className="font-medium text-xs">On failure</span>
+        <Select
+          value={automationFailurePolicyValue(draft.stopAfterConsecutiveFailures)}
+          onValueChange={(value) =>
+            onChange({
+              ...draft,
+              stopAfterConsecutiveFailures: stopAfterConsecutiveFailuresFromPolicyValue(
+                String(value),
+              ),
+            })
+          }
+        >
+          <SelectTrigger className="w-full sm:max-w-72" aria-label="On failure">
+            <SelectValue>
+              {
+                automationFailurePolicyOptions(
+                  automationFailurePolicyValue(draft.stopAfterConsecutiveFailures),
+                ).find(
+                  (option) =>
+                    option.value ===
+                    automationFailurePolicyValue(draft.stopAfterConsecutiveFailures),
+                )?.label
+              }
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {automationFailurePolicyOptions(
+              automationFailurePolicyValue(draft.stopAfterConsecutiveFailures),
+            ).map((option) => (
+              <SelectItem hideIndicator key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
+        <span className="text-2xs text-secondary-label">
+          Counts runs that never started. A successful start resets the count; hitting the limit
+          pauses the schedule until you turn it back on.
+        </span>
+      </label>
 
       <AutomationModelField
         modelSelection={draft.modelSelection}

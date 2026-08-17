@@ -27,6 +27,12 @@ keep that provider even if the project default later changes.
 Times are the machine's local time, so "every weekday at 09:00" stays at nine through a
 daylight-saving change rather than drifting an hour.
 
+**On failure** decides how many times a run can fail to start before the schedule pauses
+itself. The default is three; you can stop after one, after five, or keep retrying. A
+successful start resets the count. Hitting the limit turns the automation off and says why
+— turning the switch back on is the only way out, and a manual rerun keeps that evidence
+until you do.
+
 **Runs in** decides where the work lands:
 
 - **A new worktree** (the default) gives each run its own checkout. Unattended edits never touch the
@@ -36,9 +42,9 @@ daylight-saving change rather than drifting an hour.
 
 ## Watching them
 
-Each row shows its schedule in words and when it goes next. The switch pauses an automation without
-deleting it; the play button runs it immediately (which also re-anchors an interval schedule from
-now).
+Each row shows its schedule in words and when it goes next. A row that hit its failure
+limit says so instead of "Paused". The switch pauses an automation without deleting it; the
+play button runs it immediately (which also re-anchors an interval schedule from now).
 
 **Recent runs** below lists what actually happened, newest first, with a link into the thread each
 run opened. A run that did not start says why.

@@ -104,6 +104,12 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommandDescriptor[] = [
     title: "Change model",
     searchTerms: ["model", "picker", "provider", "switch", "change"],
   },
+  {
+    command: "chat.cycleWidth",
+    value: "action:chat-cycle-width",
+    title: "Cycle chat width",
+    searchTerms: ["chat", "width", "column", "reading", "wide", "full", "standard", "focused"],
+  },
 ];
 
 /**

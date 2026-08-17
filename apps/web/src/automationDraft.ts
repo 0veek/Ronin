@@ -18,6 +18,7 @@ import type {
   ThreadEnvMode,
 } from "@t3tools/contracts";
 import {
+  DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES,
   MAX_AUTOMATION_INTERVAL_MINUTES,
   MIN_AUTOMATION_INTERVAL_MINUTES,
 } from "@t3tools/contracts";
@@ -44,6 +45,8 @@ export interface AutomationDraftState {
    * changes.
    */
   readonly modelSelection: ModelSelection | null;
+  /** Null means keep retrying after start failures. */
+  readonly stopAfterConsecutiveFailures: number | null;
 }
 
 export const EMPTY_AUTOMATION_DRAFT: AutomationDraftState = {
@@ -60,6 +63,7 @@ export const EMPTY_AUTOMATION_DRAFT: AutomationDraftState = {
   // using is the single worst thing an automation can do.
   envMode: "worktree",
   modelSelection: null,
+  stopAfterConsecutiveFailures: DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES,
 };
 
 export interface AutomationsSearch {
@@ -135,6 +139,7 @@ export function draftFromAutomation(automation: Automation): AutomationDraftStat
     prompt: automation.prompt,
     envMode: automation.envMode,
     modelSelection: automation.modelSelection,
+    stopAfterConsecutiveFailures: automation.stopAfterConsecutiveFailures,
     kind: automation.schedule._tag,
     ...(automation.schedule._tag === "interval"
       ? { everyMinutes: automation.schedule.everyMinutes }
@@ -192,6 +197,7 @@ export function draftToCreateInput(draft: AutomationDraftState): AutomationCreat
     schedule,
     envMode: draft.envMode,
     modelSelection: draft.modelSelection,
+    stopAfterConsecutiveFailures: draft.stopAfterConsecutiveFailures,
   };
 }
 
@@ -206,5 +212,6 @@ export function draftToUpdateInput(draft: AutomationDraftState): AutomationUpdat
     schedule,
     envMode: draft.envMode,
     modelSelection: draft.modelSelection,
+    stopAfterConsecutiveFailures: draft.stopAfterConsecutiveFailures,
   };
 }

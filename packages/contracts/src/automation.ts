@@ -15,10 +15,12 @@
  *
  * @module automation
  */
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
   IsoDateTime,
+  NonNegativeInt,
   PositiveInt,
   ProjectId,
   ThreadId,
@@ -83,6 +85,20 @@ export type AutomationSchedule = typeof AutomationSchedule.Type;
 export const AUTOMATION_MAX_PROMPT_CHARS = 20_000;
 export const AUTOMATION_MAX_TITLE_CHARS = 120;
 
+/** Consecutive start-failures before the scheduler pauses the automation. */
+export const DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES = 3;
+
+/**
+ * Why an automation is off. Only the scheduler's own reasons live here —
+ * the thread still owns what the agent did after a turn started.
+ *
+ * - `failures`: hit the consecutive start-failure threshold.
+ * - `schedule`: a one-shot that already fired.
+ * - `user`: the switch was turned off on purpose.
+ */
+export const AutomationDisabledReason = Schema.Literals(["failures", "schedule", "user"]);
+export type AutomationDisabledReason = typeof AutomationDisabledReason.Type;
+
 /**
  * How a run ended, from the scheduler's point of view.
  *
@@ -121,6 +137,18 @@ export const Automation = Schema.Struct({
   /** Null uses the project's default, exactly as a new thread would. */
   modelSelection: Schema.NullOr(ModelSelection),
   enabled: Schema.Boolean,
+  /**
+   * Consecutive failed *starts* allowed before the scheduler turns it off.
+   * Null means keep retrying. Missing rows decode as the default of three.
+   */
+  stopAfterConsecutiveFailures: Schema.NullOr(PositiveInt).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES)),
+  ),
+  consecutiveFailureCount: NonNegativeInt.pipe(Schema.withDecodingDefault(Effect.succeed(0))),
+  disabledReason: Schema.NullOr(AutomationDisabledReason).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  disabledAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   /** When it last fired. Null before the first run. */
@@ -152,6 +180,7 @@ export const AutomationCreateInput = Schema.Struct({
   envMode: ThreadEnvMode,
   modelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   enabled: Schema.optional(Schema.Boolean),
+  stopAfterConsecutiveFailures: Schema.optional(Schema.NullOr(PositiveInt)),
 });
 export type AutomationCreateInput = typeof AutomationCreateInput.Type;
 
@@ -168,6 +197,7 @@ export const AutomationUpdateInput = Schema.Struct({
   envMode: Schema.optional(ThreadEnvMode),
   modelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   enabled: Schema.optional(Schema.Boolean),
+  stopAfterConsecutiveFailures: Schema.optional(Schema.NullOr(PositiveInt)),
 });
 export type AutomationUpdateInput = typeof AutomationUpdateInput.Type;
 
@@ -210,6 +240,79 @@ export const AutomationRunsResult = Schema.Struct({
   runs: Schema.Array(AutomationRun),
 });
 export type AutomationRunsResult = typeof AutomationRunsResult.Type;
+
+/**
+ * Fold a scheduler outcome into the automation's durable failure policy.
+ *
+ * Skips never count. A successful start resets the streak, but only while the
+ * automation is still enabled — a manual rerun of a disabled row keeps the
+ * evidence until someone turns the switch back on. Crossing the threshold
+ * pauses the schedule and records why.
+ */
+export function applyAutomationRunOutcome(input: {
+  readonly automation: Automation;
+  readonly outcome: AutomationRun["outcome"];
+  readonly nowIso: string;
+}): Automation {
+  const { automation, outcome, nowIso } = input;
+  if (outcome === "skipped") {
+    return automation;
+  }
+
+  if (outcome === "started") {
+    if (!automation.enabled || automation.consecutiveFailureCount === 0) {
+      return automation;
+    }
+    return {
+      ...automation,
+      consecutiveFailureCount: 0,
+    };
+  }
+
+  if (!automation.enabled) {
+    return automation;
+  }
+
+  const consecutiveFailureCount = automation.consecutiveFailureCount + 1;
+  const threshold = automation.stopAfterConsecutiveFailures;
+  const hitThreshold = threshold !== null && consecutiveFailureCount >= threshold;
+  if (!hitThreshold) {
+    return { ...automation, consecutiveFailureCount };
+  }
+
+  return {
+    ...automation,
+    enabled: false,
+    nextRunAt: null,
+    consecutiveFailureCount,
+    disabledReason: "failures",
+    disabledAt: nowIso,
+  };
+}
+
+/** Apply the enable switch. Turning it on is the only way out of a failure stop. */
+export function applyAutomationEnabledChange(input: {
+  readonly automation: Automation;
+  readonly enabled: boolean;
+  readonly nowIso: string;
+}): Automation {
+  if (input.enabled) {
+    return {
+      ...input.automation,
+      enabled: true,
+      consecutiveFailureCount: 0,
+      disabledReason: null,
+      disabledAt: null,
+    };
+  }
+  return {
+    ...input.automation,
+    enabled: false,
+    nextRunAt: null,
+    disabledReason: input.automation.disabledReason ?? "user",
+    disabledAt: input.automation.disabledAt ?? input.nowIso,
+  };
+}
 
 export class AutomationError extends Schema.TaggedErrorClass<AutomationError>()("AutomationError", {
   reason: Schema.Literals(["notFound", "projectNotFound", "readFailed", "writeFailed"]),

@@ -7,7 +7,9 @@ Type `/` in the composer to browse built-in commands, provider skills, and the s
 - `/clear` starts a fresh thread in the current project.
 - `/compact` asks the current provider to free context, or tells you when it already does that automatically.
 - `/model` opens the model picker for this thread.
-- `/plan` and `/default` switch plan mode when that beta setting is on.
+- `/plan` switches this thread into plan mode when that beta setting is on.
+- `/debug` switches this thread into [debug mode](./debug-mode.md). Works with every provider.
+- `/default` returns the thread to normal build mode.
 - `/review` drafts a review prompt for uncommitted changes or the branch diff. You can also send `/review base` or `/review focus on auth`.
 - `/fork` starts a new thread in the same project. Choose the current checkout or a new worktree, or send `/fork local` / `/fork worktree`.
 - `/side` starts a parallel thread in the same project.

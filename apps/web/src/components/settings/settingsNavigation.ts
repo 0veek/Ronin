@@ -45,7 +45,7 @@ export const SETTINGS_PAGE_META = {
     label: "Appearance",
     description: "Themes, typography, and editor presentation.",
     icon: PaletteIcon,
-    searchTerms: ["theme", "dark", "light", "color", "font", "typography", "editor"],
+    searchTerms: ["theme", "dark", "light", "color", "font", "typography", "editor", "width"],
   },
   "/settings/keybindings": {
     label: "Keybindings",

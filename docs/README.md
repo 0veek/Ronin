@@ -6,6 +6,7 @@
 - [Permission modes](./user/permission-modes.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Slash commands](./user/slash-commands.md)
+- [Debug mode](./user/debug-mode.md)
 - [Agent skills](./user/agent-skills.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Checkpoints and restoring](./user/checkpoints.md)

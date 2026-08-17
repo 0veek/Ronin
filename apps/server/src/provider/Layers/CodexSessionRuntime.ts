@@ -40,6 +40,7 @@ import { buildCodexInitializeParams, registerCodexSkillRoots } from "./CodexProv
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import { buildCodexDeveloperInstructions } from "../CodexDeveloperInstructions.ts";
+import { toNativeInteractionMode } from "../DebugModeInstructions.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -342,17 +343,18 @@ function buildCodexCollaborationMode(input: {
   readonly model?: string;
   readonly effort?: EffectCodexSchema.V2TurnStartParams__ReasoningEffort;
 }): EffectCodexSchema.V2TurnStartParams__CollaborationMode | undefined {
-  if (input.interactionMode === undefined) {
+  const nativeMode = toNativeInteractionMode(input.interactionMode);
+  if (nativeMode === undefined) {
     return undefined;
   }
   const model = normalizeCodexModelSlug(input.model) ?? DEFAULT_MODEL;
   const reasoningEffort = input.effort ?? "medium";
   return {
-    mode: input.interactionMode,
+    mode: nativeMode,
     settings: {
       model,
       reasoning_effort: reasoningEffort,
-      developer_instructions: buildCodexDeveloperInstructions(input.interactionMode, {
+      developer_instructions: buildCodexDeveloperInstructions(nativeMode, {
         model,
         reasoningEffort,
       }),

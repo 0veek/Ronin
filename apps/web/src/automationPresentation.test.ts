@@ -88,6 +88,10 @@ const automation = (overrides: Partial<Automation>): Automation =>
     envMode: "worktree",
     modelSelection: null,
     enabled: true,
+    stopAfterConsecutiveFailures: 3,
+    consecutiveFailureCount: 0,
+    disabledReason: null,
+    disabledAt: null,
     createdAt: "2026-08-17T00:00:00.000Z",
     updatedAt: "2026-08-17T00:00:00.000Z",
     lastRunAt: null,
@@ -100,6 +104,19 @@ describe("formatNextRun", () => {
 
   it("says paused rather than showing a stale time", () => {
     expect(formatNextRun(automation({ enabled: false }), formatter)).toBe("Paused");
+  });
+
+  it("explains a failure stop instead of a generic pause", () => {
+    expect(
+      formatNextRun(
+        automation({
+          enabled: false,
+          consecutiveFailureCount: 3,
+          disabledReason: "failures",
+        }),
+        formatter,
+      ),
+    ).toBe("Stopped after 3 failed runs");
   });
 
   it("says so when nothing is scheduled", () => {

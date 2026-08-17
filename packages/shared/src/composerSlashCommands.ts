@@ -3,6 +3,7 @@ export const BUILT_IN_COMPOSER_SLASH_COMMANDS = [
   "compact",
   "model",
   "plan",
+  "debug",
   "default",
   "review",
   "fork",
@@ -49,6 +50,11 @@ export const COMPOSER_SLASH_COMMAND_DEFINITIONS: Record<
     command: "plan",
     label: "/plan",
     description: "Switch this thread into plan mode",
+  },
+  debug: {
+    command: "debug",
+    label: "/debug",
+    description: "Switch this thread into debug mode: reproduce, fix, then verify",
   },
   default: {
     command: "default",
@@ -113,8 +119,12 @@ export function getAvailableComposerSlashCommands(input: {
 
   const commands: BuiltInComposerSlashCommand[] = ["clear", "compact", "model"];
   if (input.planModeEnabled) {
-    commands.push("plan", "default");
+    commands.push("plan");
   }
+  // Debug mode is carried by prompt instructions rather than a native provider
+  // mode, so it works everywhere and is not gated on the plan-mode flag.
+  // "/default" comes with it: it is the only way back out.
+  commands.push("debug", "default");
   commands.push("review");
   if (input.canOfferForkCommand !== false) {
     commands.push("fork");
@@ -125,7 +135,7 @@ export function getAvailableComposerSlashCommands(input: {
   commands.push("status");
 
   return commands.filter((command) => {
-    if (command === "model" || command === "plan" || command === "default") {
+    if (command === "model" || command === "plan" || command === "debug" || command === "default") {
       return true;
     }
     // Leave native provider commands alone. Claude's /status and /clear are

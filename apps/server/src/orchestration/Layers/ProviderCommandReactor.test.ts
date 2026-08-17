@@ -41,6 +41,7 @@ import {
   ProviderAdapterRequestError,
   ProviderOperationUnsupportedError,
 } from "../../provider/Errors.ts";
+import { PROVIDER_DEBUG_MODE_PROMPT_PREFIX } from "../../provider/DebugModeInstructions.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -654,6 +655,74 @@ describe("ProviderCommandReactor", () => {
     expect(request?.input).toContain('<skill name="project-portable-test"');
     expect(request?.input).toContain("# Portable instructions");
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ cwd: workspaceRoot });
+  });
+
+  it("prefixes the turn with debug instructions in debug mode", async () => {
+    const harness = await createHarness();
+
+    // The thread is the source of truth for interaction mode: the client sets
+    // it before sending, and the turn-start event inherits it from the thread.
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.interaction-mode.set",
+        commandId: CommandId.make("cmd-set-debug-mode"),
+        threadId: ThreadId.make("thread-1"),
+        interactionMode: "debug",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-debug"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-debug"),
+          role: "user",
+          text: "the sidebar count is wrong",
+          attachments: [],
+        },
+        interactionMode: "debug",
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const request = harness.sendTurn.mock.calls[0]?.[0] as
+      | { readonly input?: string; readonly interactionMode?: string }
+      | undefined;
+    expect(request?.input).toContain(PROVIDER_DEBUG_MODE_PROMPT_PREFIX);
+    // The user's own message must survive alongside the instructions.
+    expect(request?.input).toContain("the sidebar count is wrong");
+    // Debug travels to the adapter as its own mode; adapters map it natively.
+    expect(request?.interactionMode).toBe("debug");
+  });
+
+  it("leaves a default-mode turn free of debug instructions", async () => {
+    const harness = await createHarness();
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-no-debug"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-no-debug"),
+          role: "user",
+          text: "add a button",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    const request = harness.sendTurn.mock.calls[0]?.[0] as { readonly input?: string } | undefined;
+    expect(request?.input).not.toContain(PROVIDER_DEBUG_MODE_PROMPT_PREFIX);
   });
 
   it("does not inline a disabled skill", async () => {

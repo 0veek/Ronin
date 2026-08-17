@@ -31,6 +31,7 @@ import {
 } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
+import { getChatWidthCssVariables, normalizeChatWidthMode } from "~/lib/chatWidth";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -160,6 +161,7 @@ function FontAppearanceSync() {
   const fontSizePrompt = useClientSettings((settings) => settings.fontSizePrompt);
   const fontSizeCode = useClientSettings((settings) => settings.fontSizeCode);
   const fontSmoothing = useClientSettings((settings) => settings.fontSmoothing);
+  const chatWidth = useClientSettings((settings) => normalizeChatWidthMode(settings.chatWidth));
 
   useEffect(() => {
     applyAppearanceFontVariables(document.documentElement, {
@@ -180,6 +182,21 @@ function FontAppearanceSync() {
     fontSizePrompt,
     fontSmoothing,
   ]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const variables = getChatWidthCssVariables(chatWidth);
+    for (const [name, value] of Object.entries(variables)) {
+      root.style.setProperty(name, value);
+    }
+    root.dataset.chatWidth = chatWidth;
+    return () => {
+      for (const name of Object.keys(variables)) {
+        root.style.removeProperty(name);
+      }
+      delete root.dataset.chatWidth;
+    };
+  }, [chatWidth]);
 
   return null;
 }

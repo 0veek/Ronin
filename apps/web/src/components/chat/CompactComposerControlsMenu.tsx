@@ -14,9 +14,9 @@ import {
 export const CompactComposerControlsMenu = memo(function CompactComposerControlsMenu(props: {
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
-  showInteractionModeToggle: boolean;
+  showPlanMode: boolean;
   traitsMenuContent?: ReactNode;
-  onToggleInteractionMode: () => void;
+  onInteractionModeChange: (mode: ProviderInteractionMode) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
@@ -40,22 +40,20 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             <MenuDivider />
           </>
         ) : null}
-        {props.showInteractionModeToggle ? (
-          <>
-            <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Mode</div>
-            <MenuRadioGroup
-              value={props.interactionMode}
-              onValueChange={(value) => {
-                if (!value || value === props.interactionMode) return;
-                props.onToggleInteractionMode();
-              }}
-            >
-              <MenuRadioItem value="default">Chat</MenuRadioItem>
-              <MenuRadioItem value="plan">Plan</MenuRadioItem>
-            </MenuRadioGroup>
-            <MenuDivider />
-          </>
-        ) : null}
+        <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Mode</div>
+        <MenuRadioGroup
+          value={props.interactionMode}
+          onValueChange={(value) => {
+            if (!value || value === props.interactionMode) return;
+            props.onInteractionModeChange(value as ProviderInteractionMode);
+          }}
+        >
+          <MenuRadioItem value="default">Build</MenuRadioItem>
+          {/* Plan is provider- and flag-gated; Debug is prompt-only, so it always applies. */}
+          {props.showPlanMode ? <MenuRadioItem value="plan">Plan</MenuRadioItem> : null}
+          <MenuRadioItem value="debug">Debug</MenuRadioItem>
+        </MenuRadioGroup>
+        <MenuDivider />
         <div className="px-2 py-1.5 font-medium text-muted-foreground text-xs">Access</div>
         <MenuRadioGroup
           value={props.runtimeMode}

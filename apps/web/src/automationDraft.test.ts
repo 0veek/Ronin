@@ -30,6 +30,10 @@ const automation = (overrides: Partial<Automation> = {}): Automation =>
     envMode: "worktree",
     modelSelection: null,
     enabled: true,
+    stopAfterConsecutiveFailures: 3,
+    consecutiveFailureCount: 0,
+    disabledReason: null,
+    disabledAt: null,
     createdAt: "2026-08-17T00:00:00.000Z",
     updatedAt: "2026-08-17T00:00:00.000Z",
     lastRunAt: null,
@@ -122,6 +126,15 @@ describe("isDraftComplete / save payloads", () => {
 
   it("writes null when the run should follow the project default", () => {
     expect(draftToCreateInput({ ...complete, modelSelection: null })?.modelSelection).toBeNull();
+  });
+
+  it("defaults to stopping after three start failures and can keep retrying", () => {
+    expect(EMPTY_AUTOMATION_DRAFT.stopAfterConsecutiveFailures).toBe(3);
+    expect(draftToCreateInput(complete)?.stopAfterConsecutiveFailures).toBe(3);
+    expect(
+      draftToCreateInput({ ...complete, stopAfterConsecutiveFailures: null })
+        ?.stopAfterConsecutiveFailures,
+    ).toBeNull();
   });
 
   it("refuses to build a schedule from an out-of-range interval", () => {

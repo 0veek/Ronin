@@ -11,6 +11,8 @@
  */
 import {
   type Automation,
+  applyAutomationEnabledChange,
+  applyAutomationRunOutcome,
   AutomationError,
   AutomationId,
   type AutomationRun,
@@ -18,6 +20,7 @@ import {
   type AutomationCreateInput,
   type AutomationUpdateInput,
   CommandId,
+  DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES,
   MessageId,
   type ProjectId,
   ThreadId,
@@ -134,6 +137,13 @@ export const make = Effect.gen(function* () {
       envMode: input.envMode,
       modelSelection: input.modelSelection ?? null,
       enabled: input.enabled ?? true,
+      stopAfterConsecutiveFailures:
+        input.stopAfterConsecutiveFailures === undefined
+          ? DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES
+          : input.stopAfterConsecutiveFailures,
+      consecutiveFailureCount: 0,
+      disabledReason: null,
+      disabledAt: null,
       createdAt,
       updatedAt: createdAt,
       lastRunAt: null,
@@ -156,14 +166,24 @@ export const make = Effect.gen(function* () {
     }
     const nowMs = yield* Clock.currentTimeMillis;
     const updatedAt = yield* nowIso;
+    const withToggle =
+      input.enabled === undefined
+        ? existing.value
+        : applyAutomationEnabledChange({
+            automation: existing.value,
+            enabled: input.enabled,
+            nowIso: updatedAt,
+          });
     const merged: Automation = {
-      ...existing.value,
+      ...withToggle,
       ...(input.title === undefined ? {} : { title: input.title }),
       ...(input.prompt === undefined ? {} : { prompt: input.prompt }),
       ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
       ...(input.envMode === undefined ? {} : { envMode: input.envMode }),
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
-      ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+      ...(input.stopAfterConsecutiveFailures === undefined
+        ? {}
+        : { stopAfterConsecutiveFailures: input.stopAfterConsecutiveFailures }),
       updatedAt,
     };
     // Re-armed from now rather than from the old next-run time: changing a
@@ -341,8 +361,15 @@ export const make = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
     const lastRunAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
     // A manual run counts as a run: it re-anchors an interval schedule, which
-    // is what "run it now, then keep going from here" should mean.
-    yield* store.upsert(reschedule({ ...automation, lastRunAt }, nowMs));
+    // is what "run it now, then keep going from here" should mean. Failure
+    // evidence is folded in here so a play-button rerun cannot wipe a streak
+    // unless the turn actually started and the row is still enabled.
+    const withOutcome = applyAutomationRunOutcome({
+      automation: { ...automation, lastRunAt },
+      outcome: run.outcome,
+      nowIso: lastRunAt,
+    });
+    yield* store.upsert(reschedule(withOutcome, nowMs));
     return run;
   });
 
@@ -378,14 +405,25 @@ export const make = Effect.gen(function* () {
 
       if (!shouldFireNow({ nextRunAtMs: dueMs, nowMs })) continue;
 
-      yield* fire(automation);
-      const fired: Automation = {
-        ...automation,
-        lastRunAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
-        // A one-shot disables itself rather than lingering as a row that can
-        // never fire again.
-        ...(automation.schedule._tag === "once" ? { enabled: false } : {}),
-      };
+      const run = yield* fire(automation);
+      const lastRunAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
+      const withOutcome = applyAutomationRunOutcome({
+        automation: { ...automation, lastRunAt },
+        outcome: run.outcome,
+        nowIso: lastRunAt,
+      });
+      // A one-shot is done after it is attempted, unless the failure policy
+      // already paused it — that reason must stay visible.
+      const fired: Automation =
+        automation.schedule._tag === "once" && withOutcome.enabled
+          ? {
+              ...withOutcome,
+              enabled: false,
+              nextRunAt: null,
+              disabledReason: "schedule",
+              disabledAt: lastRunAt,
+            }
+          : withOutcome;
       yield* store.upsert(reschedule(fired, nowMs));
     }
   }).pipe(

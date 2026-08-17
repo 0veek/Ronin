@@ -26,8 +26,10 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  DEFAULT_CHAT_WIDTH,
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
+  type ChatWidthMode,
   type EnvironmentIdentificationMode,
   MAX_CODE_FONT_SIZE,
   MAX_INTERFACE_FONT_SIZE,
@@ -68,6 +70,7 @@ import {
 } from "../../hooks/useTheme";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { isChatWidthMode } from "../../lib/chatWidth";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import {
   getCustomModelOptionsByInstance,
@@ -79,7 +82,7 @@ import {
   sortProviderInstanceEntries,
 } from "../../providerInstances";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
-import { isMacPlatform } from "../../lib/utils";
+import { cn, isMacPlatform } from "../../lib/utils";
 import { primaryServerObservabilityAtom, primaryServerProvidersAtom } from "../../state/server";
 import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
@@ -385,6 +388,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         ? ["Auto-settle merged threads"]
         : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
+      ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
       ...getChangedTypographySettingLabels(settings),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
@@ -451,6 +455,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.sidebarThreadPreviewCount,
       settings.timestampFormat,
       settings.wordWrap,
+      settings.chatWidth,
       settings.skills,
       followSystem,
       theme,
@@ -523,6 +528,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     updateSettings({
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
+      chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
@@ -919,10 +925,68 @@ export function AppearanceSettingsPanel() {
             }
           />
         ) : null}
+
+        <ChatWidthRow />
       </SettingsSection>
 
       <TypographySection />
     </SettingsPageContainer>
+  );
+}
+
+const CHAT_WIDTH_OPTIONS = [
+  { value: "standard", label: "Standard" },
+  { value: "wide", label: "Wide" },
+  { value: "full", label: "Full" },
+] as const satisfies ReadonlyArray<{ value: ChatWidthMode; label: string }>;
+
+function ChatWidthRow() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  return (
+    <SettingsRow
+      {...searchableSetting("chat-width")}
+      description="How wide the chat column grows. Wide and Full give tables and dense tool output more room."
+      resetAction={
+        settings.chatWidth !== DEFAULT_CHAT_WIDTH ? (
+          <SettingResetButton
+            label="chat width"
+            onClick={() => updateSettings({ chatWidth: DEFAULT_CHAT_WIDTH })}
+          />
+        ) : null
+      }
+      control={
+        <div
+          className="flex rounded-lg border border-border p-0.5"
+          role="radiogroup"
+          aria-label="Chat width"
+        >
+          {CHAT_WIDTH_OPTIONS.map((option) => {
+            const selected = settings.chatWidth === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                className={cn(
+                  "min-w-16 rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                  selected
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                onClick={() => {
+                  if (!isChatWidthMode(option.value)) return;
+                  updateSettings({ chatWidth: option.value });
+                }}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      }
+    />
   );
 }
 

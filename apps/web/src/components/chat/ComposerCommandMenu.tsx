@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import {
   BotIcon,
+  BugIcon,
   EraserIcon,
   GitForkIcon,
   InfoIcon,
@@ -123,6 +124,7 @@ const SLASH_COMMAND_ICONS: Record<ComposerSlashCommand, LucideIcon> = {
   compact: Minimize2Icon,
   model: Layers2Icon,
   plan: PencilRulerIcon,
+  debug: BugIcon,
   default: BotIcon,
   review: ScanSearchIcon,
   fork: GitForkIcon,

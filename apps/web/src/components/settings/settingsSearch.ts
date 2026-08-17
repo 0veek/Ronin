@@ -111,6 +111,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "chat-width",
+    title: "Chat width",
+    to: "/settings/appearance",
+    targetId: "appearance",
+  },
+  {
     id: "project-grouping",
     title: "Project grouping",
     to: "/settings/general",

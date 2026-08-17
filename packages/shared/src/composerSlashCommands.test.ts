@@ -43,7 +43,7 @@ describe("getAvailableComposerSlashCommands", () => {
       planModeEnabled: false,
       nativeCommandNames: ["status", "clear", "compact"],
     });
-    expect(commands).toEqual(["model", "review", "fork", "side"]);
+    expect(commands).toEqual(["model", "debug", "default", "review", "fork", "side"]);
   });
 
   it("omits plan mode commands when the beta flag is off", () => {
@@ -53,6 +53,25 @@ describe("getAvailableComposerSlashCommands", () => {
         nativeCommandNames: [],
       }),
     ).not.toContain("plan");
+  });
+
+  it("offers /debug even when plan mode is off, since debug is prompt-only", () => {
+    const commands = getAvailableComposerSlashCommands({
+      planModeEnabled: false,
+      nativeCommandNames: [],
+    });
+    expect(commands).toContain("debug");
+    // The way back out has to come with it.
+    expect(commands).toContain("default");
+  });
+
+  it("keeps /debug even when the provider lists a native debug command", () => {
+    expect(
+      getAvailableComposerSlashCommands({
+        planModeEnabled: false,
+        nativeCommandNames: ["debug"],
+      }),
+    ).toContain("debug");
   });
 });
 

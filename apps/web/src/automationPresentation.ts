@@ -87,8 +87,15 @@ export function formatSchedule(schedule: AutomationSchedule): string {
  * `formatter` is injected so the caller's timestamp preference decides the
  * wording, and so this stays testable without a locale.
  */
+export function formatStoppedReason(automation: Automation): string | null {
+  if (automation.enabled || automation.disabledReason !== "failures") return null;
+  return automation.consecutiveFailureCount === 1
+    ? "Stopped after a failed run"
+    : `Stopped after ${automation.consecutiveFailureCount} failed runs`;
+}
+
 export function formatNextRun(automation: Automation, formatter: (iso: string) => string): string {
-  if (!automation.enabled) return "Paused";
+  if (!automation.enabled) return formatStoppedReason(automation) ?? "Paused";
   if (automation.nextRunAt === null) return "Not scheduled";
   return `Next ${formatter(automation.nextRunAt)}`;
 }

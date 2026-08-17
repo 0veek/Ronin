@@ -402,6 +402,7 @@ describe("WORKSPACE_COMMANDS", () => {
       "rightPanel.toggle",
       "modelPicker.toggle",
       "chat.askOnTheSide",
+      "chat.cycleWidth",
     ]);
 
     for (const entry of WORKSPACE_COMMANDS) {

@@ -101,6 +101,10 @@ describe("searchSettings", () => {
       id: "word-wrap",
       to: "/settings/appearance",
     });
+    expect(searchSettings("chat width")[0]).toMatchObject({
+      id: "chat-width",
+      to: "/settings/appearance",
+    });
     expect(searchSettings("environment identification")[0]).toMatchObject({
       id: "environment-identification",
       to: "/settings/appearance",

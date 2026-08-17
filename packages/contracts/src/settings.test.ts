@@ -49,6 +49,21 @@ describe("ClientSettings glass opacity", () => {
   });
 });
 
+describe("ClientSettings chat width", () => {
+  it("defaults to the historical reading column", () => {
+    expect(decodeClientSettings({}).chatWidth).toBe("standard");
+  });
+
+  it("accepts each preset and rejects unknown values", () => {
+    for (const mode of ["standard", "wide", "full"] as const) {
+      expect(decodeClientSettings({ chatWidth: mode }).chatWidth).toBe(mode);
+      expect(decodeClientSettingsPatch({ chatWidth: mode }).chatWidth).toBe(mode);
+    }
+    expect(() => decodeClientSettings({ chatWidth: "focused" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ chatWidth: "compact" })).toThrow();
+  });
+});
+
 describe("ClientSettings environment identification", () => {
   it("defaults to artwork and accepts each presentation mode", () => {
     expect(decodeClientSettings({}).environmentIdentificationMode).toBe("artwork");

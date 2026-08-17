@@ -50,6 +50,10 @@ const automation = (overrides: Partial<Automation> = {}): Automation => ({
   envMode: "local",
   modelSelection: null,
   enabled: true,
+  stopAfterConsecutiveFailures: 3,
+  consecutiveFailureCount: 0,
+  disabledReason: null,
+  disabledAt: null,
   createdAt: "2026-08-17T00:00:00.000Z",
   updatedAt: "2026-08-17T00:00:00.000Z",
   lastRunAt: null,
@@ -308,6 +312,61 @@ describe("AutomationService.fire", () => {
       const state = yield* runNowWith(harness);
 
       expect(state.stored.get("automation-1")?.lastRunAt).not.toBeNull();
+    }),
+  );
+
+  it.effect("counts a failed start and pauses at the threshold", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({ failTurnStart: true });
+      harness.state.stored.set(
+        "automation-1",
+        automation({ stopAfterConsecutiveFailures: 1, consecutiveFailureCount: 0 }),
+      );
+
+      const state = yield* runNowWith(harness);
+      const stored = state.stored.get("automation-1");
+
+      expect(state.runs.at(-1)?.outcome).toBe("failed");
+      expect(stored?.enabled).toBe(false);
+      expect(stored?.consecutiveFailureCount).toBe(1);
+      expect(stored?.disabledReason).toBe("failures");
+      expect(stored?.nextRunAt).toBeNull();
+    }),
+  );
+
+  it.effect("resets the streak after a successful start", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      harness.state.stored.set("automation-1", automation({ consecutiveFailureCount: 2 }));
+
+      const state = yield* runNowWith(harness);
+
+      expect(state.runs.at(-1)?.outcome).toBe("started");
+      expect(state.stored.get("automation-1")?.consecutiveFailureCount).toBe(0);
+    }),
+  );
+
+  it.effect("keeps failure evidence when a disabled row is rerun by hand", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      harness.state.stored.set(
+        "automation-1",
+        automation({
+          enabled: false,
+          consecutiveFailureCount: 3,
+          disabledReason: "failures",
+          disabledAt: "2026-08-17T00:30:00.000Z",
+          nextRunAt: null,
+        }),
+      );
+
+      const state = yield* runNowWith(harness);
+      const stored = state.stored.get("automation-1");
+
+      expect(state.runs.at(-1)?.outcome).toBe("started");
+      expect(stored?.enabled).toBe(false);
+      expect(stored?.consecutiveFailureCount).toBe(3);
+      expect(stored?.disabledReason).toBe("failures");
     }),
   );
 });

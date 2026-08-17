@@ -10,6 +10,7 @@
  */
 import {
   Automation,
+  type AutomationDisabledReason,
   AutomationError,
   AutomationId,
   AutomationRun,
@@ -31,6 +32,11 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 const decodeSchedule = Schema.decodeUnknownSync(AutomationSchedule);
 const decodeModelSelection = Schema.decodeUnknownSync(Schema.NullOr(ModelSelection));
 
+function decodeDisabledReason(value: unknown): AutomationDisabledReason | null {
+  if (value === "failures" || value === "schedule" || value === "user") return value;
+  return null;
+}
+
 interface AutomationDbRow {
   readonly automationId: string;
   readonly projectId: string;
@@ -40,6 +46,10 @@ interface AutomationDbRow {
   readonly envMode: string;
   readonly modelSelectionJson: string | null;
   readonly enabled: number;
+  readonly stopAfterConsecutiveFailures: number | null;
+  readonly consecutiveFailureCount: number;
+  readonly disabledReason: string | null;
+  readonly disabledAt: string | null;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly lastRunAt: string | null;
@@ -68,6 +78,10 @@ function toAutomation(row: AutomationDbRow): Automation {
         ? null
         : decodeModelSelection(JSON.parse(row.modelSelectionJson)),
     enabled: row.enabled === 1,
+    stopAfterConsecutiveFailures: row.stopAfterConsecutiveFailures,
+    consecutiveFailureCount: row.consecutiveFailureCount,
+    disabledReason: decodeDisabledReason(row.disabledReason),
+    disabledAt: row.disabledAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     lastRunAt: row.lastRunAt,
@@ -139,6 +153,10 @@ export const make = Effect.gen(function* () {
               env_mode AS "envMode",
               model_selection_json AS "modelSelectionJson",
               enabled,
+              stop_after_consecutive_failures AS "stopAfterConsecutiveFailures",
+              consecutive_failure_count AS "consecutiveFailureCount",
+              disabled_reason AS "disabledReason",
+              disabled_at AS "disabledAt",
               created_at AS "createdAt",
               updated_at AS "updatedAt",
               last_run_at AS "lastRunAt",
@@ -156,6 +174,10 @@ export const make = Effect.gen(function* () {
               env_mode AS "envMode",
               model_selection_json AS "modelSelectionJson",
               enabled,
+              stop_after_consecutive_failures AS "stopAfterConsecutiveFailures",
+              consecutive_failure_count AS "consecutiveFailureCount",
+              disabled_reason AS "disabledReason",
+              disabled_at AS "disabledAt",
               created_at AS "createdAt",
               updated_at AS "updatedAt",
               last_run_at AS "lastRunAt",
@@ -179,6 +201,10 @@ export const make = Effect.gen(function* () {
           env_mode AS "envMode",
           model_selection_json AS "modelSelectionJson",
           enabled,
+          stop_after_consecutive_failures AS "stopAfterConsecutiveFailures",
+          consecutive_failure_count AS "consecutiveFailureCount",
+          disabled_reason AS "disabledReason",
+          disabled_at AS "disabledAt",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           last_run_at AS "lastRunAt",
@@ -201,6 +227,10 @@ export const make = Effect.gen(function* () {
         env_mode,
         model_selection_json,
         enabled,
+        stop_after_consecutive_failures,
+        consecutive_failure_count,
+        disabled_reason,
+        disabled_at,
         created_at,
         updated_at,
         last_run_at,
@@ -215,6 +245,10 @@ export const make = Effect.gen(function* () {
         ${automation.envMode},
         ${automation.modelSelection === null ? null : JSON.stringify(automation.modelSelection)},
         ${automation.enabled ? 1 : 0},
+        ${automation.stopAfterConsecutiveFailures},
+        ${automation.consecutiveFailureCount},
+        ${automation.disabledReason},
+        ${automation.disabledAt},
         ${automation.createdAt},
         ${automation.updatedAt},
         ${automation.lastRunAt},
@@ -229,6 +263,10 @@ export const make = Effect.gen(function* () {
         env_mode = excluded.env_mode,
         model_selection_json = excluded.model_selection_json,
         enabled = excluded.enabled,
+        stop_after_consecutive_failures = excluded.stop_after_consecutive_failures,
+        consecutive_failure_count = excluded.consecutive_failure_count,
+        disabled_reason = excluded.disabled_reason,
+        disabled_at = excluded.disabled_at,
         updated_at = excluded.updated_at,
         last_run_at = excluded.last_run_at,
         next_run_at = excluded.next_run_at
@@ -255,6 +293,10 @@ export const make = Effect.gen(function* () {
           env_mode AS "envMode",
           model_selection_json AS "modelSelectionJson",
           enabled,
+          stop_after_consecutive_failures AS "stopAfterConsecutiveFailures",
+          consecutive_failure_count AS "consecutiveFailureCount",
+          disabled_reason AS "disabledReason",
+          disabled_at AS "disabledAt",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           last_run_at AS "lastRunAt",

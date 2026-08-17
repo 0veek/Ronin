@@ -199,7 +199,9 @@ import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentSettings,
+  useUpdateClientSettings,
 } from "../hooks/useSettings";
+import { cycleChatWidthMode, normalizeChatWidthMode } from "../lib/chatWidth";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
@@ -1577,13 +1579,17 @@ function ChatViewContent(props: ChatViewProps) {
   // the branch mismatch banner.
   const [, setThreadErrorBannerDismissTick] = useState(0);
   const runtimeMode = composerRuntimeMode ?? activeThread?.runtimeMode ?? DEFAULT_RUNTIME_MODE;
-  // Plan mode is legacy (Settings → Beta). With the flag off the effective
-  // mode is forced to "default" — even for threads with a stored plan mode —
-  // so nobody is trapped in plan mode while its toggle is hidden. The next
-  // send persists "default" back to the thread.
-  const interactionMode = settings.planModeEnabled
-    ? (composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE)
-    : DEFAULT_INTERACTION_MODE;
+  // Plan mode is legacy (Settings → Beta). With the flag off a stored plan mode
+  // is forced back to "default" so nobody is trapped in it while its toggle is
+  // hidden; the next send persists "default" to the thread. Debug mode is not
+  // gated on that flag — it is prompt-only and works on every provider — so it
+  // survives here.
+  const storedInteractionMode =
+    composerInteractionMode ?? activeThread?.interactionMode ?? DEFAULT_INTERACTION_MODE;
+  const interactionMode =
+    storedInteractionMode === "plan" && !settings.planModeEnabled
+      ? DEFAULT_INTERACTION_MODE
+      : storedInteractionMode;
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const canCheckoutPullRequestIntoThread = isLocalDraftThread;
   const activeThreadId = activeThread?.id ?? null;
@@ -1960,6 +1966,8 @@ function ChatViewContent(props: ChatViewProps) {
     ? `${activeProject.environmentId}:${activeProject.workspaceRoot}`
     : null;
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const chatWidth = useClientSettings((settings) => normalizeChatWidthMode(settings.chatWidth));
+  const updateClientSettings = useUpdateClientSettings();
   const clientSettingsHydrated = useClientSettingsHydrated();
   const [pendingFileSurfaceIdsByProject, setPendingFileSurfaceIdsByProject] = useState<
     ReadonlyMap<string, ReadonlySet<string>>
@@ -5069,6 +5077,11 @@ function ChatViewContent(props: ChatViewProps) {
         return true;
       }
 
+      if (command === "chat.cycleWidth") {
+        updateClientSettings({ chatWidth: cycleChatWidthMode(chatWidth) });
+        return true;
+      }
+
       const scriptId = projectScriptIdFromCommand(command);
       if (!scriptId || !activeProject) return false;
       const script = activeProject.scripts.find((entry) => entry.id === scriptId);
@@ -5080,6 +5093,7 @@ function ChatViewContent(props: ChatViewProps) {
       activeProject,
       activeRightPanelSurface,
       addTerminalSurface,
+      chatWidth,
       closePanelTerminal,
       closeTerminal,
       composerRef,
@@ -5094,6 +5108,7 @@ function ChatViewContent(props: ChatViewProps) {
       toggleRightPanel,
       toggleRightPanelMaximized,
       toggleTerminalVisibility,
+      updateClientSettings,
     ],
   );
 
@@ -5363,7 +5378,11 @@ function ChatViewContent(props: ChatViewProps) {
       }),
     );
     if (slashInvocation && availableAppCommands.has(slashInvocation.command)) {
-      if (slashInvocation.command === "plan" || slashInvocation.command === "default") {
+      if (
+        slashInvocation.command === "plan" ||
+        slashInvocation.command === "debug" ||
+        slashInvocation.command === "default"
+      ) {
         handleInteractionModeChange(slashInvocation.command);
         promptRef.current = "";
         clearComposerDraftContent(composerDraftTarget);
@@ -6847,7 +6866,11 @@ function ChatViewContent(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <div className={cn("composer-surface relative mx-auto w-full max-w-3xl")}>
+                    <div
+                      className={cn(
+                        "composer-surface relative mx-auto w-full max-w-[var(--app-chat-max-width,48rem)]",
+                      )}
+                    >
                       <div className="relative z-10 w-full">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer

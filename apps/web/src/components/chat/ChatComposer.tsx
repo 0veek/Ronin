@@ -103,7 +103,7 @@ import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
-import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
+import { ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import { searchSlashCommandItems } from "./composerSlashCommandSearch";
 import {
@@ -211,6 +211,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import {
   BotIcon,
+  BugIcon,
   CircleAlertIcon,
   PencilRulerIcon,
   type LucideIcon,
@@ -242,6 +243,27 @@ import { mergeProviderSkillCatalogs, searchProviderSkills } from "../../provider
 import { useEnvironmentSkillsCatalog } from "../../state/skillsCatalog";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
+
+const interactionModeConfig: Record<
+  ProviderInteractionMode,
+  { label: string; description: string; icon: LucideIcon }
+> = {
+  default: {
+    label: "Build",
+    description: "Normal chat. The agent answers and edits as usual.",
+    icon: BotIcon,
+  },
+  plan: {
+    label: "Plan",
+    description: "Agree on a plan before any code is written.",
+    icon: PencilRulerIcon,
+  },
+  debug: {
+    label: "Debug",
+    description: "Reproduce, find the root cause, fix, then verify.",
+    icon: BugIcon,
+  },
+};
 
 const runtimeModeConfig: Record<
   RuntimeMode,
@@ -311,51 +333,62 @@ function isInsideComposerFloatingLayer(element: Element): boolean {
 }
 
 const ComposerFooterModeControls = memo(function ComposerFooterModeControls(props: {
-  showInteractionModeToggle: boolean;
+  showPlanMode: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
-  onToggleInteractionMode: () => void;
+  onInteractionModeChange: (mode: ProviderInteractionMode) => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   const runtimeModeOption = runtimeModeConfig[props.runtimeMode];
   const RuntimeModeIcon = runtimeModeOption.icon;
-  const interactionModeTooltip =
-    props.interactionMode === "plan"
-      ? "Plan mode — click to return to normal build mode"
-      : "Default mode — click to enter plan mode";
+  // Plan is provider- and flag-gated; Build and Debug always apply because
+  // debug is carried by prompt instructions rather than a native mode.
+  const interactionModeOptions: ProviderInteractionMode[] = props.showPlanMode
+    ? ["default", "plan", "debug"]
+    : ["default", "debug"];
+  const interactionModeOption = interactionModeConfig[props.interactionMode];
+  const InteractionModeIcon = interactionModeOption.icon;
 
-  const interactionModeToggle = props.showInteractionModeToggle ? (
+  const interactionModeToggle = (
     <>
       <Separator orientation="vertical" className="mx-0.5 hidden h-4 sm:block" />
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <ComposerControl
-              className={cn(
-                "shrink-0 whitespace-nowrap",
-                props.interactionMode === "plan"
-                  ? "bg-accent text-accent-foreground hover:bg-accent/80"
-                  : "text-secondary-label hover:text-foreground",
-              )}
-              type="button"
-              onClick={props.onToggleInteractionMode}
-              aria-label={interactionModeTooltip}
-            />
-          }
+        <Select
+          value={props.interactionMode}
+          onValueChange={(value) => props.onInteractionModeChange(value!)}
         >
-          {props.interactionMode === "plan" ? (
-            <ComposerControlIcon icon={PencilRulerIcon} className="text-current opacity-100" />
-          ) : (
-            <ComposerControlIcon icon={BotIcon} opticalSize="large" />
-          )}
-          <span className="sr-only sm:not-sr-only">
-            {props.interactionMode === "plan" ? "Plan" : "Build"}
-          </span>
-        </TooltipTrigger>
-        <TooltipPopup side="top">{interactionModeTooltip}</TooltipPopup>
+          <TooltipTrigger
+            render={<ComposerSelectControl className="font-medium" aria-label="Interaction mode" />}
+          >
+            <ComposerControlIcon icon={InteractionModeIcon} />
+            <SelectValue>{interactionModeOption.label}</SelectValue>
+          </TooltipTrigger>
+          <SelectPopup alignItemWithTrigger={false}>
+            {interactionModeOptions.map((mode) => {
+              const option = interactionModeConfig[mode];
+              const OptionIcon = option.icon;
+              return (
+                <SelectItem key={mode} value={mode} hideIndicator className="min-w-64 py-2">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="grid min-w-0 flex-1 gap-0.5">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                        <OptionIcon className="size-3.5 shrink-0 text-muted-foreground" />
+                        {option.label}
+                      </span>
+                      <span className="text-muted-foreground text-xs leading-4">
+                        {option.description}
+                      </span>
+                    </div>
+                  </div>
+                </SelectItem>
+              );
+            })}
+          </SelectPopup>
+        </Select>
+        <TooltipPopup side="top">{interactionModeOption.description}</TooltipPopup>
       </Tooltip>
     </>
-  ) : null;
+  );
 
   return (
     <>
@@ -611,7 +644,7 @@ export interface ChatComposerProps {
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
   onAppSlashCommand?: (
-    command: Exclude<BuiltInComposerSlashCommand, "model" | "plan" | "default">,
+    command: Exclude<BuiltInComposerSlashCommand, "model" | "plan" | "debug" | "default">,
   ) => void;
 
   focusComposer: () => void;
@@ -1763,7 +1796,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
-        if (item.command === "plan" || item.command === "default") {
+        if (item.command === "plan" || item.command === "debug" || item.command === "default") {
           void handleInteractionModeChange(item.command);
           const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
             expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
@@ -3302,9 +3335,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
-                      showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
+                      showPlanMode={composerProviderControls.showInteractionModeToggle}
                       traitsMenuContent={providerTraitsMenuContent}
-                      onToggleInteractionMode={toggleInteractionMode}
+                      onInteractionModeChange={handleInteractionModeChange}
                       onRuntimeModeChange={handleRuntimeModeChange}
                     />
                   ) : (
@@ -3319,12 +3352,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         </>
                       ) : null}
                       <ComposerFooterModeControls
-                        showInteractionModeToggle={
-                          composerProviderControls.showInteractionModeToggle
-                        }
+                        showPlanMode={composerProviderControls.showInteractionModeToggle}
                         interactionMode={interactionMode}
                         runtimeMode={runtimeMode}
-                        onToggleInteractionMode={toggleInteractionMode}
+                        onInteractionModeChange={handleInteractionModeChange}
                         onRuntimeModeChange={handleRuntimeModeChange}
                       />
                     </>

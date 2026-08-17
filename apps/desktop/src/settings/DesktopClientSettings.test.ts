@@ -34,6 +34,7 @@ const clientSettings: ClientSettings = {
   fontSizeTerminal: 12,
   fontSmoothing: true,
   glassOpacity: 80,
+  chatWidth: "standard",
   planModeEnabled: false,
   providerModelPreferences: {},
   sidebarAutoSettleAfterDays: 3,

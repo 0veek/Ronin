@@ -13,6 +13,7 @@ import {
   type ProviderHandoffActivityPayload,
   type ProviderHandoffMode,
   type ProviderInstanceId,
+  type ProviderInteractionMode,
   type ProviderSwitchActivityPayload,
   type ProjectId,
   type OrchestrationSession,
@@ -46,6 +47,10 @@ import {
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ServerConfig } from "../../config.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import {
+  debugModePromptOverheadChars,
+  withProviderDebugModePrompt,
+} from "../../provider/DebugModeInstructions.ts";
 import {
   buildInlineSkillInstructions,
   resolveInvokedSkills,
@@ -1010,9 +1015,12 @@ const make = Effect.gen(function* () {
     readonly messageText: string;
     readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
-    readonly interactionMode?: "default" | "plan";
+    readonly interactionMode?: ProviderInteractionMode;
     readonly createdAt: string;
   }) {
+    // Debug mode prepends its instructions after the skills and handoff brief
+    // are built, so reserve the room here rather than overflowing the turn.
+    const debugPromptChars = debugModePromptOverheadChars(input.interactionMode);
     const thread = yield* resolveThread(input.threadId);
     if (!thread) {
       return yield* Effect.die(
@@ -1058,7 +1066,10 @@ const make = Effect.gen(function* () {
               nativeSkillPaths: (activeProvider?.skills ?? []).map((skill) => skill.path),
               maxChars: Math.max(
                 0,
-                PROVIDER_SEND_TURN_MAX_INPUT_CHARS - input.messageText.length - 2048,
+                PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
+                  input.messageText.length -
+                  debugPromptChars -
+                  2048,
               ),
             }),
           ).pipe(Effect.orElseSucceed(() => ""));
@@ -1079,6 +1090,7 @@ const make = Effect.gen(function* () {
         0,
         PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
           handoffWrapOverhead(messageWithSkills) -
+          debugPromptChars -
           PROVIDER_HANDOFF_BRIEF_RESERVED_CHARS,
       ),
     });
@@ -1127,7 +1139,12 @@ const make = Effect.gen(function* () {
             contextText: handoffBrief.text,
             messageText: messageWithSkills,
           });
-    const normalizedInput = toNonEmptyProviderInput(messageWithHandoff);
+    const normalizedInput = toNonEmptyProviderInput(
+      withProviderDebugModePrompt({
+        interactionMode: input.interactionMode,
+        text: messageWithHandoff,
+      }),
+    );
     const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()

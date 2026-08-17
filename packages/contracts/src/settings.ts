@@ -115,6 +115,39 @@ export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
 
 /**
+ * Max width of the centered chat column (transcript + composer).
+ *
+ * - standard: the historical reading column (`max-w-3xl` / 48rem).
+ * - wide: more room for tables and dense tool output.
+ * - full: grow with the window.
+ */
+export const CHAT_WIDTH_MODES = ["standard", "wide", "full"] as const;
+export const ChatWidthMode = Schema.Literals(CHAT_WIDTH_MODES);
+export type ChatWidthMode = typeof ChatWidthMode.Type;
+export const DEFAULT_CHAT_WIDTH: ChatWidthMode = "standard";
+export const CHAT_MAX_WIDTH_BY_MODE = {
+  standard: "48rem",
+  wide: "72rem",
+  full: "100%",
+} as const satisfies Record<ChatWidthMode, string>;
+
+export function isChatWidthMode(value: unknown): value is ChatWidthMode {
+  return typeof value === "string" && (CHAT_WIDTH_MODES as readonly string[]).includes(value);
+}
+
+export function normalizeChatWidthMode(
+  value: unknown,
+  fallback: ChatWidthMode = DEFAULT_CHAT_WIDTH,
+): ChatWidthMode {
+  return isChatWidthMode(value) ? value : fallback;
+}
+
+export function cycleChatWidthMode(mode: ChatWidthMode): ChatWidthMode {
+  const index = CHAT_WIDTH_MODES.indexOf(mode);
+  return CHAT_WIDTH_MODES[(index + 1) % CHAT_WIDTH_MODES.length] ?? DEFAULT_CHAT_WIDTH;
+}
+
+/**
  * A user-chosen font family (a single name or a comma-separated list). Empty
  * means "use the app default"; clients compose their own fallback stacks.
  */
@@ -164,6 +197,7 @@ export const ClientSettingsSchema = Schema.Struct({
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
   ),
+  chatWidth: ChatWidthMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHAT_WIDTH))),
   fontSizeInterface: InterfaceFontSize.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_INTERFACE_FONT_SIZE)),
   ),
@@ -1013,6 +1047,7 @@ export const ClientSettingsPatch = Schema.Struct({
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  chatWidth: Schema.optionalKey(ChatWidthMode),
   fontSizeInterface: Schema.optionalKey(InterfaceFontSize),
   fontSizePrompt: Schema.optionalKey(PromptFontSize),
   fontSizeCode: Schema.optionalKey(CodeFontSize),
