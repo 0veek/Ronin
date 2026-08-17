@@ -4537,6 +4537,82 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     };
   });
 
+  /**
+   * Stop one live task and make the stop authoritative for the UI.
+   *
+   * `stopTask` only acknowledges the control request; its task_notification can
+   * lose the race with a following interrupt, so an acknowledged stop emits its
+   * own terminal row. Bounded by a per-task timeout because a wedged child's
+   * promise may never settle — catching rejection is not enough.
+   *
+   * Returns whether the task actually settled, so a caller acting on one
+   * user-visible request can report a stop that did not happen. `interruptTurn`
+   * ignores the answer: it always follows up with `interrupt()`.
+   */
+  const stopLiveTask = Effect.fn("stopLiveTask")(function* (
+    context: ClaudeSessionContext,
+    taskId: string,
+  ) {
+    if (!context.query.stopTask) {
+      return false;
+    }
+    const stopAcknowledged = yield* Effect.tryPromise({
+      // Invoke through the query object: SDK methods rely on `this`.
+      try: () => context.query.stopTask!(taskId),
+      catch: () => undefined,
+    }).pipe(
+      Effect.timeoutOption("3 seconds"),
+      Effect.orElseSucceed(() => Option.none()),
+    );
+    if (Option.isNone(stopAcknowledged) || !context.liveTaskIds.delete(taskId)) {
+      return false;
+    }
+
+    const stamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      type: "task.completed",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+      payload: {
+        taskId: RuntimeTaskId.make(taskId),
+        status: "stopped",
+        ...taskLinkageFor(context.taskAgents, taskId),
+      },
+      providerRefs: nativeProviderRefs(context),
+    });
+    return true;
+  });
+
+  /**
+   * Stop one subagent while its parent turn keeps running — the Agents-surface
+   * stop control, as opposed to `interruptTurn`'s stop-everything.
+   *
+   * Fails when the task did not settle. Unlike `interruptTurn` there is no
+   * backstop here, so reporting success for a stop that did nothing would
+   * leave the agent running and spending tokens behind a UI that says
+   * otherwise.
+   */
+  const stopAgent: NonNullable<ClaudeAdapterShape["stopAgent"]> = Effect.fn("stopAgent")(
+    function* (threadId, taskId) {
+      const context = yield* requireSession(threadId);
+      const stopped = yield* stopLiveTask(context, taskId).pipe(
+        Effect.catchCause(() => Effect.succeed(false)),
+      );
+      if (!stopped) {
+        return yield* Effect.fail(
+          toRequestError(
+            threadId,
+            "task/stop",
+            new Error(`Claude did not stop task ${taskId}; it may have already finished.`),
+          ),
+        );
+      }
+    },
+  );
+
   const interruptTurn: ClaudeAdapterShape["interruptTurn"] = Effect.fn("interruptTurn")(
     function* (threadId, _turnId) {
       const context = yield* requireSession(threadId);
@@ -4546,49 +4622,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       // Stop every live task first (best-effort per task: one refusal must
       // not strand the rest or block the turn interrupt), then interrupt.
       if (context.query.stopTask && context.liveTaskIds.size > 0) {
-        const liveIds = Array.from(context.liveTaskIds);
-        // Bounded: a wedged child's stopTask promise may never settle
-        // (Effect.ignore handles rejection, not non-resolution), and the
+        // Whole-fleet budget on top of stopLiveTask's per-task timeout: the
         // parent interrupt below MUST still run — Stop matters most during
-        // runaway fleets (review finding). Per-task timeout keeps one hung
-        // child from consuming the whole budget.
+        // runaway fleets (review finding).
         yield* Effect.forEach(
-          liveIds,
-          (taskId) =>
-            Effect.gen(function* () {
-              const stopAcknowledged = yield* Effect.tryPromise({
-                // Invoke through the query object: SDK methods rely on `this`.
-                try: () => context.query.stopTask!(taskId),
-                catch: () => undefined,
-              }).pipe(
-                Effect.timeoutOption("3 seconds"),
-                Effect.orElseSucceed(() => Option.none()),
-              );
-              if (Option.isNone(stopAcknowledged) || !context.liveTaskIds.delete(taskId)) {
-                return;
-              }
-
-              // stopTask only acknowledges the control request. Its separate
-              // task_notification can lose the race with interrupt(), so make
-              // the acknowledged stop authoritative for the durable UI state.
-              const stamp = yield* makeEventStamp();
-              yield* offerRuntimeEvent({
-                type: "task.completed",
-                eventId: stamp.eventId,
-                provider: PROVIDER,
-                createdAt: stamp.createdAt,
-                threadId: context.session.threadId,
-                ...(context.turnState
-                  ? { turnId: asCanonicalTurnId(context.turnState.turnId) }
-                  : {}),
-                payload: {
-                  taskId: RuntimeTaskId.make(taskId),
-                  status: "stopped",
-                  ...taskLinkageFor(context.taskAgents, taskId),
-                },
-                providerRefs: nativeProviderRefs(context),
-              });
-            }).pipe(Effect.ignore),
+          Array.from(context.liveTaskIds),
+          (taskId) => stopLiveTask(context, taskId).pipe(Effect.ignore),
           { concurrency: 8, discard: true },
         ).pipe(Effect.timeoutOption("10 seconds"), Effect.ignore);
       }
@@ -4706,6 +4745,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     startSession,
     sendTurn,
     interruptTurn,
+    stopAgent,
     readThread,
     rollbackThread,
     respondToRequest,

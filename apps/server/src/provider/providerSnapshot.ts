@@ -57,6 +57,8 @@ export interface ServerProviderPresentation {
   readonly badgeLabel?: string;
   readonly showInteractionModeToggle?: boolean;
   readonly requiresNewThreadForModelChange?: boolean;
+  /** Set by drivers whose adapter implements `stopAgent`. */
+  readonly supportsAgentStop?: boolean;
 }
 
 export type ServerProviderDraft = Omit<ServerProvider, "instanceId" | "driver">;
@@ -238,6 +240,9 @@ export function buildServerProvider(input: {
       : {}),
     ...(typeof input.presentation.requiresNewThreadForModelChange === "boolean"
       ? { requiresNewThreadForModelChange: input.presentation.requiresNewThreadForModelChange }
+      : {}),
+    ...(typeof input.presentation.supportsAgentStop === "boolean"
+      ? { supportsAgentStop: input.presentation.supportsAgentStop }
       : {}),
     enabled: input.enabled,
     installed: input.probe.installed,

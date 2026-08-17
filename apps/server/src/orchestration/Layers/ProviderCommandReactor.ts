@@ -88,6 +88,7 @@ type ProviderIntentEvent = Extract<
       | "thread.provider-switched"
       | "thread.turn-start-requested"
       | "thread.turn-interrupt-requested"
+      | "thread.agent-stop-requested"
       | "thread.approval-response-requested"
       | "thread.user-input-response-requested"
       | "thread.session-stop-requested";
@@ -404,6 +405,7 @@ const make = Effect.gen(function* () {
     readonly kind:
       | "provider.turn.start.failed"
       | "provider.turn.interrupt.failed"
+      | "provider.agent.stop.failed"
       | "provider.approval.respond.failed"
       | "provider.user-input.respond.failed"
       | "provider.session.stop.failed";
@@ -1580,6 +1582,53 @@ const make = Effect.gen(function* () {
     yield* providerService.interruptTurn({ threadId: event.payload.threadId });
   });
 
+  /**
+   * Stop a single subagent, leaving its parent turn running.
+   *
+   * Reports rather than escalates when the provider cannot target one child:
+   * falling back to a turn interrupt here would kill work the user did not ask
+   * to stop.
+   */
+  const processAgentStopRequested = Effect.fn("processAgentStopRequested")(function* (
+    event: Extract<ProviderIntentEvent, { type: "thread.agent-stop-requested" }>,
+  ) {
+    const thread = yield* resolveThread(event.payload.threadId);
+    if (!thread) {
+      return;
+    }
+    const hasSession = thread.session && thread.session.status !== "stopped";
+    if (!hasSession) {
+      return yield* appendProviderFailureActivity({
+        threadId: event.payload.threadId,
+        kind: "provider.agent.stop.failed",
+        summary: "Stopping the agent failed",
+        detail: "No active provider session is bound to this thread.",
+        turnId: null,
+        createdAt: event.payload.createdAt,
+      });
+    }
+
+    yield* providerService
+      .stopAgent({
+        threadId: event.payload.threadId,
+        taskId: event.payload.taskId,
+      })
+      .pipe(
+        // Includes ProviderOperationUnsupportedError: a client that asks a
+        // provider without per-agent stop must be told, not logged at.
+        Effect.catchCause((cause) =>
+          appendProviderFailureActivity({
+            threadId: event.payload.threadId,
+            kind: "provider.agent.stop.failed",
+            summary: "Stopping the agent failed",
+            detail: Cause.pretty(cause),
+            turnId: null,
+            createdAt: event.payload.createdAt,
+          }),
+        ),
+      );
+  });
+
   const processApprovalResponseRequested = Effect.fn("processApprovalResponseRequested")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.approval-response-requested" }>,
   ) {
@@ -1806,6 +1855,9 @@ const make = Effect.gen(function* () {
       case "thread.turn-interrupt-requested":
         yield* processTurnInterruptRequested(event);
         return;
+      case "thread.agent-stop-requested":
+        yield* processAgentStopRequested(event);
+        return;
       case "thread.approval-response-requested":
         yield* processApprovalResponseRequested(event);
         return;
@@ -1852,6 +1904,7 @@ const make = Effect.gen(function* () {
         event.type === "thread.provider-switched" ||
         event.type === "thread.turn-start-requested" ||
         event.type === "thread.turn-interrupt-requested" ||
+        event.type === "thread.agent-stop-requested" ||
         event.type === "thread.approval-response-requested" ||
         event.type === "thread.user-input-response-requested" ||
         event.type === "thread.session-stop-requested"

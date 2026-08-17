@@ -2918,6 +2918,19 @@ function ChatViewContent(props: ChatViewProps) {
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
     return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
+  // Keyed off the session's own instance, not the composer selection: the
+  // Agents panel shows agents the running session spawned, so what matters is
+  // whether *that* provider can stop one.
+  const canStopAgents = useMemo(() => {
+    const instanceId = activeThread?.session?.providerInstanceId;
+    if (!instanceId) {
+      return false;
+    }
+    return (
+      providerStatuses.find((status) => status.instanceId === instanceId)?.supportsAgentStop ??
+      false
+    );
+  }, [activeThread?.session?.providerInstanceId, providerStatuses]);
   const providerStatusBannerKey = getProviderStatusBannerKey(activeProviderStatus);
   const [dismissedProviderStatusBannerKey, setDismissedProviderStatusBannerKey] = useState<
     string | null
@@ -6595,6 +6608,7 @@ function ChatViewContent(props: ChatViewProps) {
         model={agentPanelModel}
         environmentId={activeThreadRef?.environmentId ?? null}
         threadId={activeThreadRef?.threadId ?? null}
+        canStopAgents={canStopAgents}
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       activeProject &&

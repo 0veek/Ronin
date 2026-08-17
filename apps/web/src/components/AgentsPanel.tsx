@@ -20,14 +20,41 @@ import type {
 import {
   formatSubagentModelLabel,
   formatSubagentTokenCount,
+  isActiveSubagentStatus,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { RuntimeTaskId, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
+import { Bot, Braces, Check, ChevronDown, ChevronRight, Square, X } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
+import { threadEnvironment } from "~/state/threads";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { ScrollArea } from "~/components/ui/scroll-area";
+
+/**
+ * Stop-one-agent action, shared with every row in the tree.
+ *
+ * A context rather than five levels of prop drilling: rows are nested inside
+ * workflow groups inside phase sections, and none of the intermediate
+ * components otherwise care about stopping.
+ *
+ * `null` when nothing here can be stopped — no thread to act on, or a provider
+ * without per-agent stop — which is what hides the control entirely.
+ */
+const StopAgentContext = createContext<((agent: RuntimeSubagent) => Promise<void>) | null>(null);
+
+/**
+ * Whether this row is the kind of thing a stop can target at all.
+ *
+ * Workflow members are excluded: their ids are client-facing slot ids
+ * (`<coordinator>:wf:<index>`) synthesized from the coordinator's progress
+ * array, not provider task ids, so no provider can act on them. The
+ * coordinator itself carries a real task id and stopping it ends the run.
+ */
+function isStoppableAgent(agent: RuntimeSubagent): boolean {
+  return agent.kind !== "workflow_agent" && isActiveSubagentStatus(agent.status);
+}
 
 /**
  * In-flight states all present as Working (one steady state, per the
@@ -136,8 +163,59 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
   );
 }
 
-/** Flat, non-interactive agent status line. No unfold. */
+/**
+ * Stop control for one live agent.
+ *
+ * Shares the elapsed cell rather than adding a column: the timer and the
+ * button are never visible at once, so the row keeps its fixed height and
+ * nothing reflows when a fleet settles. Revealed on hover and on keyboard
+ * focus — an always-visible kill button next to every agent reads as noise
+ * and invites misclicks.
+ *
+ * No tooltip by design: the panel renders up to a hundred rows and repaints on
+ * a hot progress stream, so a tooltip root per row is real cost for a label one
+ * row at a time can show. The aria-label carries the same text.
+ */
+function AgentStopButton({ agent }: { agent: RuntimeSubagent }) {
+  const stopAgent = useContext(StopAgentContext);
+  const [stopping, setStopping] = useState(false);
+
+  // A stopped agent that comes back (Codex idle → running) must be stoppable
+  // again, and a stop that failed must not leave the row inert.
+  useEffect(() => {
+    if (!isActiveSubagentStatus(agent.status)) {
+      setStopping(false);
+    }
+  }, [agent.status]);
+
+  if (!stopAgent || !isStoppableAgent(agent)) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        setStopping(true);
+        void stopAgent(agent).finally(() => setStopping(false));
+      }}
+      aria-label={stopping ? `Stopping ${agent.title}` : `Stop ${agent.title}`}
+      aria-busy={stopping}
+      className={cn(
+        "pointer-events-none absolute inset-y-0 right-0 my-auto inline-flex size-5 items-center justify-center rounded-sm opacity-0 transition-opacity",
+        "text-muted-foreground hover:bg-accent hover:text-destructive-foreground focus-visible:opacity-100",
+        "group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto",
+        stopping && "pointer-events-auto text-muted-foreground/50 opacity-100",
+      )}
+    >
+      <Square aria-hidden className="size-2.5 fill-current" />
+    </button>
+  );
+}
+
+/** Flat agent status line. No unfold; the only control is Stop. */
 function AgentRow({ agent }: { agent: RuntimeSubagent }) {
+  const stopAgent = useContext(StopAgentContext);
+  const stoppable = stopAgent !== null && isStoppableAgent(agent);
   const visuals = STATUS_VISUALS[agent.status];
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -153,7 +231,7 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
   ].filter((value): value is string => value !== null);
 
   return (
-    <div className="grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
+    <div className="group grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
       <span className="col-start-1 row-start-1 flex items-center">
         <StatusDot status={agent.status} />
       </span>
@@ -165,13 +243,16 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
           </span>
         ) : null}
       </span>
-      <span className="col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
-        <span className="inline-flex items-center gap-1">
+      <span className="relative col-start-3 row-start-1 min-w-14 text-right font-mono text-[.7rem] text-muted-foreground/80">
+        <span
+          className={cn("inline-flex items-center gap-1", stoppable && "group-hover:invisible")}
+        >
           <AgentElapsed agent={agent} />
           {agent.status === "completed" ? (
             <Check aria-hidden className="size-3 text-success" />
           ) : null}
         </span>
+        <AgentStopButton agent={agent} />
       </span>
       <span
         className={cn(
@@ -522,11 +603,30 @@ export function AgentsPanel({
   model,
   environmentId = null,
   threadId = null,
+  canStopAgents = false,
 }: {
   model: AgentPanelModel;
   environmentId?: EnvironmentId | null;
   threadId?: ThreadId | null;
+  /** Whether this thread's provider can stop one agent; gates the control. */
+  canStopAgents?: boolean;
 }) {
+  // reportFailure stays on: a stop that did not happen is exactly what the
+  // user needs told, since the agent keeps running and spending tokens.
+  const stopThreadAgent = useAtomCommand(threadEnvironment.stopAgent);
+  const stopAgent = useCallback(
+    async (agent: RuntimeSubagent) => {
+      if (!environmentId || !threadId) {
+        return;
+      }
+      await stopThreadAgent({
+        environmentId,
+        input: { threadId, taskId: RuntimeTaskId.make(agent.id) },
+      });
+    },
+    [environmentId, threadId, stopThreadAgent],
+  );
+
   if (!model.hasAgents) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -541,41 +641,45 @@ export function AgentsPanel({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="flex flex-col gap-2 p-2">
-          {model.workflows.map((group) => (
-            <WorkflowSection
-              key={group.workflow.id}
-              group={group}
-              environmentId={environmentId}
-              threadId={threadId}
-            />
-          ))}
-          {model.directAgents.length > 0 ? (
-            <section>
-              <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                Direct spawns
-              </div>
-              {model.directAgents.map((agent) => (
-                <AgentRow key={agent.id} agent={agent} />
-              ))}
-            </section>
-          ) : null}
-        </div>
-      </ScrollArea>
-      <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
-        <span className="flex items-center gap-2">
-          {model.runningCount + model.waitingCount > 0 ? (
-            <span className="text-info-foreground">
-              ● {model.runningCount + model.waitingCount} working
-            </span>
-          ) : null}
-          {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
-          {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
-        </span>
-        <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
-      </footer>
-    </div>
+    <StopAgentContext.Provider
+      value={environmentId && threadId && canStopAgents ? stopAgent : null}
+    >
+      <div className="flex h-full min-h-0 flex-col">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex flex-col gap-2 p-2">
+            {model.workflows.map((group) => (
+              <WorkflowSection
+                key={group.workflow.id}
+                group={group}
+                environmentId={environmentId}
+                threadId={threadId}
+              />
+            ))}
+            {model.directAgents.length > 0 ? (
+              <section>
+                <div className="px-1.5 pt-1 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+                  Direct spawns
+                </div>
+                {model.directAgents.map((agent) => (
+                  <AgentRow key={agent.id} agent={agent} />
+                ))}
+              </section>
+            ) : null}
+          </div>
+        </ScrollArea>
+        <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
+          <span className="flex items-center gap-2">
+            {model.runningCount + model.waitingCount > 0 ? (
+              <span className="text-info-foreground">
+                ● {model.runningCount + model.waitingCount} working
+              </span>
+            ) : null}
+            {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
+            {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
+          </span>
+          <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
+        </footer>
+      </div>
+    </StopAgentContext.Provider>
   );
 }

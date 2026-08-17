@@ -41,6 +41,23 @@ T3 Code looks for Claude skills in the Claude config directory's `skills` folder
 
 If the same skill name exists in more than one folder, the later folder wins.
 
+## Stopping One Agent
+
+When a Claude thread spawns subagents, the Agents panel lists them with live status, activity, and
+token usage. Hover a running agent and a stop button appears at the right of its row.
+
+Stopping one agent leaves everything else alone: its siblings keep working and the turn that
+spawned it keeps running. The row settles to Stopped and its token usage stays on the panel.
+
+If the agent finished on its own just before you clicked, or Claude declines the request, Ronin
+tells you the stop did not happen rather than showing a row that quietly keeps running.
+
+Inside a workflow, individual members cannot be stopped one at a time — stop the workflow itself
+from its coordinator row. To stop everything at once, the whole fleet and the turn with it, use
+Stop in the composer.
+
+Other providers do not offer per-agent stop yet, so the button only appears on Claude threads.
+
 ## I Want Work And Personal Claude Accounts
 
 Use a different Claude config directory for each account.

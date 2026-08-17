@@ -18,6 +18,7 @@ import {
   ProviderItemId,
   ProviderRuntimeEvent,
   type RuntimeMode,
+  RuntimeTaskId,
   ThreadId,
   ProviderInstanceId,
 } from "@t3tools/contracts";
@@ -38,6 +39,7 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import { CLAUDE_PRESENTATION } from "./ClaudeProvider.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
@@ -1574,6 +1576,119 @@ describe("ClaudeAdapterLive", () => {
         assert.equal(turnCompleted.payload.state, "interrupted");
         assert.equal(turnCompleted.payload.errorMessage, undefined);
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  // The snapshot flag is what makes the client render a Stop control, so it
+  // must not outlive the adapter method it advertises.
+  it.effect("advertises agent-stop support in step with the adapter", () =>
+    Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      assert.equal(typeof adapter.stopAgent, "function");
+      assert.equal(CLAUDE_PRESENTATION.supportsAgentStop, true);
+    }).pipe(Effect.provide(makeHarness().layer)),
+  );
+
+  it.effect("stopAgent stops one task and leaves the turn running", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const taskEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type.startsWith("task.")),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "spawn agents",
+        attachments: [],
+      });
+
+      harness.query.emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-doomed",
+        description: "Agent A",
+        task_type: "local_agent",
+        uuid: "task-doomed-uuid",
+        session_id: "sdk-session",
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "task-spared",
+        description: "Agent B",
+        task_type: "local_agent",
+        uuid: "task-spared-uuid",
+        session_id: "sdk-session",
+      } as unknown as SDKMessage);
+
+      yield* Fiber.join(taskEventsFiber);
+
+      const stoppedTaskEventFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "task.completed"),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      yield* adapter.stopAgent!(session.threadId, RuntimeTaskId.make("task-doomed"));
+
+      // The sibling keeps running and the parent turn is never interrupted —
+      // that is the whole difference from interruptTurn.
+      assert.deepEqual(harness.query.stopTaskCalls, ["task-doomed"]);
+      assert.equal(harness.query.interruptCalls.length, 0);
+
+      const stoppedTaskEvents = Array.from(yield* Fiber.join(stoppedTaskEventFiber));
+      const stoppedTaskEvent = stoppedTaskEvents[0];
+      assert.equal(stoppedTaskEvent?.type, "task.completed");
+      if (stoppedTaskEvent?.type === "task.completed") {
+        assert.equal(String(stoppedTaskEvent.payload.taskId), "task-doomed");
+        assert.equal(stoppedTaskEvent.payload.status, "stopped");
+        assert.equal(stoppedTaskEvent.payload.title, "Agent A");
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  // The workflow-member case: those rows carry synthesized `:wf:` slot ids the
+  // SDK never registered, so a stop aimed at one must surface as a failure
+  // rather than report a success that did not happen.
+  it.effect("stopAgent fails when the task is not live", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "spawn agents",
+        attachments: [],
+      });
+
+      const exit = yield* Effect.exit(
+        adapter.stopAgent!(session.threadId, RuntimeTaskId.make("task-never-started:wf:2")),
+      );
+
+      assert.equal(exit._tag, "Failure");
+      assert.equal(harness.query.interruptCalls.length, 0);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

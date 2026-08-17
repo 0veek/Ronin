@@ -117,6 +117,26 @@ export class ProviderUnsupportedError extends Schema.TaggedErrorClass<ProviderUn
 }
 
 /**
+ * ProviderOperationUnsupportedError - The provider runs, but not this operation.
+ *
+ * Distinct from `ProviderUnsupportedError`, which means the driver itself is
+ * missing. This one carries the provider that was routed to so the failure can
+ * be reported as "Claude cannot do this", not as a generic error.
+ */
+export class ProviderOperationUnsupportedError extends Schema.TaggedErrorClass<ProviderOperationUnsupportedError>()(
+  "ProviderOperationUnsupportedError",
+  {
+    provider: Schema.String,
+    operation: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Provider '${this.provider}' does not support ${this.operation}`;
+  }
+}
+
+/**
  * ProviderInstanceNotFoundError - Lookup against the instance registry failed.
  *
  * Distinct from `ProviderUnsupportedError`: the driver is registered, but no
@@ -197,6 +217,7 @@ export type ProviderAdapterError =
 export type ProviderServiceError =
   | ProviderValidationError
   | ProviderUnsupportedError
+  | ProviderOperationUnsupportedError
   | ProviderInstanceNotFoundError
   | ProviderSessionNotFoundError
   | ProviderSessionDirectoryPersistenceError

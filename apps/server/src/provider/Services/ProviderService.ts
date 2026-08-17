@@ -20,6 +20,7 @@ import type {
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
+  ProviderStopAgentInput,
   ProviderStopSessionInput,
   ThreadId,
   ProviderTurnStartResult,
@@ -74,6 +75,14 @@ export interface ProviderServiceShape {
   readonly interruptTurn: (
     input: ProviderInterruptTurnInput,
   ) => Effect.Effect<void, ProviderServiceError>;
+
+  /**
+   * Stop one running subagent without interrupting its parent turn.
+   *
+   * Fails with an unsupported-operation error when the routed provider has no
+   * `stopAgent`, so callers can report it instead of guessing at a fallback.
+   */
+  readonly stopAgent: (input: ProviderStopAgentInput) => Effect.Effect<void, ProviderServiceError>;
 
   /**
    * Respond to a provider approval request.

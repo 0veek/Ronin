@@ -190,6 +190,12 @@ export const ServerProvider = Schema.Struct({
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
+  /**
+   * Whether this driver can stop one subagent without interrupting the turn
+   * that spawned it. Absent on drivers that cannot, so clients hide the
+   * control rather than offering one that fails.
+   */
+  supportsAgentStop: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,
   version: Schema.NullOr(TrimmedNonEmptyString),

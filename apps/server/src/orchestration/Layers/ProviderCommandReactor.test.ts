@@ -19,6 +19,7 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  RuntimeTaskId,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -36,7 +37,10 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { deriveServerPaths, ServerConfig } from "../../config.ts";
 import { TextGenerationError } from "@t3tools/contracts";
-import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import {
+  ProviderAdapterRequestError,
+  ProviderOperationUnsupportedError,
+} from "../../provider/Errors.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -243,6 +247,11 @@ describe("ProviderCommandReactor", () => {
       }),
     );
     const interruptTurn = vi.fn((_: unknown) => Effect.void);
+    // Typed with an error channel so tests can make a stop fail the way an
+    // adapter without stopAgent does.
+    const stopAgent = vi.fn(
+      (_: unknown): Effect.Effect<void, ProviderOperationUnsupportedError> => Effect.void,
+    );
     const respondToRequest = vi.fn<ProviderServiceShape["respondToRequest"]>(() => Effect.void);
     const respondToUserInput = vi.fn<ProviderServiceShape["respondToUserInput"]>(() => Effect.void);
     const stopSession = vi.fn((input: unknown) =>
@@ -351,6 +360,7 @@ describe("ProviderCommandReactor", () => {
       startSession: startSession as ProviderServiceShape["startSession"],
       sendTurn: sendTurn as ProviderServiceShape["sendTurn"],
       interruptTurn: interruptTurn as ProviderServiceShape["interruptTurn"],
+      stopAgent: stopAgent as ProviderServiceShape["stopAgent"],
       respondToRequest: respondToRequest as ProviderServiceShape["respondToRequest"],
       respondToUserInput: respondToUserInput as ProviderServiceShape["respondToUserInput"],
       stopSession: stopSession as ProviderServiceShape["stopSession"],
@@ -542,6 +552,7 @@ describe("ProviderCommandReactor", () => {
       startSession,
       sendTurn,
       interruptTurn,
+      stopAgent,
       respondToRequest,
       respondToUserInput,
       stopSession,
@@ -2674,6 +2685,137 @@ describe("ProviderCommandReactor", () => {
     expect(harness.interruptTurn.mock.calls[0]?.[0]).toEqual({
       threadId: "thread-1",
     });
+  });
+
+  it("reacts to thread.agent.stop by stopping only that agent", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-agent-stop"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "running",
+          providerName: "claudeAgent",
+          runtimeMode: "approval-required",
+          activeTurnId: asTurnId("turn-1"),
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.agent.stop",
+        commandId: CommandId.make("cmd-agent-stop"),
+        threadId: ThreadId.make("thread-1"),
+        taskId: RuntimeTaskId.make("task-7"),
+        createdAt: now,
+      }),
+    );
+
+    await waitFor(() => harness.stopAgent.mock.calls.length === 1);
+    expect(harness.stopAgent.mock.calls[0]?.[0]).toEqual({
+      threadId: "thread-1",
+      taskId: "task-7",
+    });
+    // Stopping one agent must never take the parent turn down with it.
+    expect(harness.interruptTurn.mock.calls.length).toBe(0);
+  });
+
+  it("reports agent stop as failed when no provider session is bound", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-agent-stop-stopped"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "stopped",
+          providerName: "claudeAgent",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.agent.stop",
+        commandId: CommandId.make("cmd-agent-stop-no-session"),
+        threadId: ThreadId.make("thread-1"),
+        taskId: RuntimeTaskId.make("task-7"),
+        createdAt: now,
+      }),
+    );
+
+    await harness.drain();
+
+    expect(harness.stopAgent.mock.calls.length).toBe(0);
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(
+      thread?.activities.some((activity) => activity.kind === "provider.agent.stop.failed"),
+    ).toBe(true);
+  });
+
+  it("reports agent stop as failed when the provider cannot stop one agent", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    // Stands in for every provider whose adapter omits stopAgent: the service
+    // rejects, and the user must hear about it rather than the reactor logging.
+    harness.stopAgent.mockImplementation(() =>
+      Effect.fail(
+        new ProviderOperationUnsupportedError({ provider: "codex", operation: "stopAgent" }),
+      ),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-agent-stop-unsupported"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "running",
+          providerName: "codex",
+          runtimeMode: "approval-required",
+          activeTurnId: asTurnId("turn-1"),
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.agent.stop",
+        commandId: CommandId.make("cmd-agent-stop-unsupported"),
+        threadId: ThreadId.make("thread-1"),
+        taskId: RuntimeTaskId.make("task-7"),
+        createdAt: now,
+      }),
+    );
+
+    await harness.drain();
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(
+      thread?.activities.some((activity) => activity.kind === "provider.agent.stop.failed"),
+    ).toBe(true);
   });
 
   it("starts a fresh session when only projected session state exists", async () => {

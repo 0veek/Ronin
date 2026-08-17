@@ -18,6 +18,7 @@ import {
   ProviderRespondToUserInputInput,
   ProviderSendTurnInput,
   ProviderSessionStartInput,
+  ProviderStopAgentInput,
   ProviderStopSessionInput,
   type ProviderInstanceId,
   type ProviderDriverKind,
@@ -47,7 +48,12 @@ import {
   providerTurnMetricAttributes,
   withMetrics,
 } from "../../observability/Metrics.ts";
-import { type ProviderAdapterError, ProviderValidationError } from "../Errors.ts";
+import {
+  type ProviderAdapterError,
+  ProviderOperationUnsupportedError,
+  ProviderSessionNotFoundError,
+  ProviderValidationError,
+} from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
 import * as ProviderService from "../Services/ProviderService.ts";
@@ -769,6 +775,55 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const stopAgent: ProviderServiceMethod<"stopAgent"> = Effect.fn("stopAgent")(
+    function* (rawInput) {
+      const input = yield* decodeInputOrValidationError({
+        operation: "ProviderService.stopAgent",
+        schema: ProviderStopAgentInput,
+        payload: rawInput,
+      });
+      let metricProvider = "unknown";
+      return yield* Effect.gen(function* () {
+        // No recovery: the tasks being stopped only exist inside a live session,
+        // so booting one here would spend a provider process to stop nothing.
+        const routed = yield* resolveRoutableSession({
+          threadId: input.threadId,
+          operation: "ProviderService.stopAgent",
+          allowRecovery: false,
+        });
+        metricProvider = routed.adapter.provider;
+        yield* Effect.annotateCurrentSpan({
+          "provider.operation": "stop-agent",
+          "provider.kind": routed.adapter.provider,
+          "provider.thread_id": input.threadId,
+          "provider.task_id": input.taskId,
+        });
+        if (!routed.adapter.stopAgent) {
+          return yield* Effect.fail(
+            new ProviderOperationUnsupportedError({
+              provider: routed.adapter.provider,
+              operation: "stopAgent",
+            }),
+          );
+        }
+        if (!routed.isActive) {
+          return yield* Effect.fail(new ProviderSessionNotFoundError({ threadId: input.threadId }));
+        }
+        // Called through the adapter so the receiver survives class-based or
+        // proxied adapters.
+        yield* routed.adapter.stopAgent(routed.threadId, input.taskId);
+      }).pipe(
+        withMetrics({
+          counter: providerTurnsTotal,
+          outcomeAttributes: () =>
+            providerMetricAttributes(metricProvider, {
+              operation: "stop-agent",
+            }),
+        }),
+      );
+    },
+  );
+
   const respondToRequest: ProviderServiceMethod<"respondToRequest"> = Effect.fn("respondToRequest")(
     function* (rawInput) {
       const input = yield* decodeInputOrValidationError({
@@ -1099,6 +1154,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     startSession,
     sendTurn,
     interruptTurn,
+    stopAgent,
     respondToRequest,
     respondToUserInput,
     stopSession,
