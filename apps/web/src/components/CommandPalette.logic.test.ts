@@ -404,6 +404,7 @@ describe("WORKSPACE_COMMANDS", () => {
       "chat.askOnTheSide",
       "chat.captureTask",
       "chat.secondOpinion",
+      "buildSystem.run",
       "chat.cycleWidth",
       "digest.show",
     ]);

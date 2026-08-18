@@ -21,6 +21,7 @@ import {
   ProviderDriverKind,
   RuntimeMode,
   TerminalOpenInput,
+  isBuildSystemRunActive,
 } from "@t3tools/contracts";
 import {
   connectionStatusTitle,
@@ -260,6 +261,7 @@ import {
 } from "@t3tools/client-runtime/state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useEnvironments, usePrimaryEnvironment } from "../state/environments";
+import { findBuildSystemRunForThread, useBuildSystems } from "../state/buildSystems";
 import {
   useProject,
   useProjects,
@@ -317,6 +319,9 @@ import { useSecondOpinion } from "../hooks/useSecondOpinion";
 import type { SecondOpinionEntrant } from "../secondOpinion";
 import { SecondOpinionBanner } from "./chat/SecondOpinionBanner";
 import { SecondOpinionDialog } from "./chat/SecondOpinionDialog";
+import { BuildSystemRunBanner } from "./chat/BuildSystemRunBanner";
+import { BuildSystemRunDialog } from "./chat/BuildSystemRunDialog";
+import { BuildSystemRunPrompt } from "./chat/BuildSystemRunPrompt";
 import { TurnReplayDialog } from "./chat/TurnReplayDialog";
 import { normalizeSelectedPassage } from "../sideChatSelection";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
@@ -2027,6 +2032,17 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeProject, activeProjectRef]);
   const openSecondOpinionRef = useRef<(() => void) | null>(null);
   openSecondOpinionRef.current = openSecondOpinion;
+  const buildSystems = useBuildSystems();
+  const [buildSystemRunOpen, setBuildSystemRunOpen] = useState(false);
+  const openBuildSystemRun = useCallback(() => {
+    setBuildSystemRunOpen(true);
+  }, []);
+  const openBuildSystemRunRef = useRef<(() => void) | null>(null);
+  openBuildSystemRunRef.current = openBuildSystemRun;
+  const activeBuildSystemRun = useMemo(
+    () => findBuildSystemRunForThread(buildSystems.runs, activeThread?.id),
+    [activeThread?.id, buildSystems.runs],
+  );
   /**
    * The catch-up digest.
    *
@@ -5248,6 +5264,11 @@ function ChatViewContent(props: ChatViewProps) {
         return true;
       }
 
+      if (command === "buildSystem.run") {
+        openBuildSystemRunRef.current?.();
+        return true;
+      }
+
       if (command === "digest.show") {
         openDigestRef.current?.();
         return true;
@@ -6993,6 +7014,27 @@ function ChatViewContent(props: ChatViewProps) {
                 }
               />
             ) : null}
+            {activeBuildSystemRun !== null ? (
+              <BuildSystemRunBanner
+                activeThreadId={activeThread.id}
+                run={activeBuildSystemRun}
+                shells={allThreadShells.filter(
+                  (shell) => shell.environmentId === activeThread.environmentId,
+                )}
+                onCancel={() => {
+                  void buildSystems.cancelRun(activeBuildSystemRun.id);
+                }}
+                onOpenThread={(entrant) =>
+                  void navigate({
+                    to: "/$environmentId/$threadId",
+                    params: buildThreadRouteParams({
+                      environmentId: entrant.environmentId,
+                      threadId: entrant.id,
+                    }),
+                  })
+                }
+              />
+            ) : null}
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
@@ -7107,6 +7149,25 @@ function ChatViewContent(props: ChatViewProps) {
                     >
                       <div className="relative z-10 w-full">
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
+                          {activeBuildSystemRun !== null ? (
+                            <div className="mb-2">
+                              <BuildSystemRunPrompt
+                                run={activeBuildSystemRun}
+                                onReply={(reply) => {
+                                  void buildSystems.replyUser({
+                                    runId: activeBuildSystemRun.id,
+                                    reply,
+                                  });
+                                }}
+                                onResolveGate={(input) => {
+                                  void buildSystems.resolveGate({
+                                    runId: activeBuildSystemRun.id,
+                                    ...input,
+                                  });
+                                }}
+                              />
+                            </div>
+                          ) : null}
                           <ChatComposer
                             composerRef={composerRef}
                             composerDraftTarget={composerDraftTarget}
@@ -7124,7 +7185,14 @@ function ChatViewContent(props: ChatViewProps) {
                             phase={phase}
                             isConnecting={isConnecting}
                             isSendBusy={isSendBusy}
-                            sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
+                            sendDisabledReason={
+                              threadDetailLoading
+                                ? "Messages loading"
+                                : activeBuildSystemRun !== null &&
+                                    isBuildSystemRunActive(activeBuildSystemRun.status)
+                                  ? "Run in progress — cancel to take over"
+                                  : null
+                            }
                             isPreparingWorktree={isPreparingWorktree}
                             environmentUnavailable={activeEnvironmentUnavailableState}
                             activePendingApproval={activePendingApproval}
@@ -7460,6 +7528,30 @@ function ChatViewContent(props: ChatViewProps) {
         }}
         onStart={startSecondOpinion}
         prompt={secondOpinionPrompt ?? ""}
+      />
+      <BuildSystemRunDialog
+        open={buildSystemRunOpen}
+        buildSystems={buildSystems.buildSystems}
+        onOpenChange={setBuildSystemRunOpen}
+        onStart={(input) => {
+          void buildSystems.startRun(input).then((started) => {
+            setBuildSystemRunOpen(false);
+            if (
+              started === null ||
+              started.orchestratorThreadId === null ||
+              environmentId === null
+            ) {
+              return;
+            }
+            void navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams({
+                environmentId,
+                threadId: started.orchestratorThreadId,
+              }),
+            });
+          });
+        }}
       />
       <ComposerSlashTargetPicker
         open={isSlashReviewPickerOpen}

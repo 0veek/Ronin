@@ -602,6 +602,62 @@ export function sortThreadsForSidebar<
  * from, not under the root — nesting further buys nothing and costs the row
  * its readable width.
  */
+/**
+ * Pull teammate threads immediately under their orchestrator.
+ *
+ * A run's threads are ordinary threads; this is only a reading order so a
+ * team does not scatter across the project's inbox.
+ */
+export function groupBuildSystemThreadsUnderOrchestrator<T extends { readonly id: string }>(
+  threads: readonly T[],
+  runs: ReadonlyArray<{
+    readonly orchestratorThreadId: string | null;
+    readonly roleThreads: ReadonlyArray<{ readonly threadId: string }>;
+    readonly status: string;
+  }>,
+): T[] {
+  const byId = new Map(threads.map((thread) => [thread.id, thread]));
+  const childIds = new Set<string>();
+  const childrenByParent = new Map<string, T[]>();
+  for (const run of runs) {
+    if (
+      run.status === "completed" ||
+      run.status === "failed" ||
+      run.status === "cancelled" ||
+      run.orchestratorThreadId === null
+    ) {
+      continue;
+    }
+    if (!byId.has(run.orchestratorThreadId)) continue;
+    const children: T[] = [];
+    for (const entry of run.roleThreads) {
+      const child = byId.get(entry.threadId);
+      if (child === undefined || entry.threadId === run.orchestratorThreadId) continue;
+      children.push(child);
+      childIds.add(entry.threadId);
+    }
+    if (children.length > 0) childrenByParent.set(run.orchestratorThreadId, children);
+  }
+  const ordered: T[] = [];
+  const emitted = new Set<string>();
+  for (const thread of threads) {
+    if (childIds.has(thread.id)) continue;
+    if (emitted.has(thread.id)) continue;
+    emitted.add(thread.id);
+    ordered.push(thread);
+    for (const child of childrenByParent.get(thread.id) ?? []) {
+      if (emitted.has(child.id)) continue;
+      emitted.add(child.id);
+      ordered.push(child);
+    }
+  }
+  for (const thread of threads) {
+    if (emitted.has(thread.id)) continue;
+    ordered.push(thread);
+  }
+  return ordered;
+}
+
 export function groupSideChatsUnderParents<
   T extends {
     readonly id: string;

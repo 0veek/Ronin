@@ -20,6 +20,7 @@ import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$proje
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAutomationsRouteImport } from './routes/settings.automations'
+import { Route as SettingsBuildSystemsRouteImport } from './routes/settings.build-systems'
 import { Route as SettingsConnectionsRouteImport } from './routes/settings.connections'
 import { Route as SettingsDiagnosticsRouteImport } from './routes/settings.diagnostics'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
@@ -84,6 +85,11 @@ const SettingsArchivedRoute = SettingsArchivedRouteImport.update({
 const SettingsAutomationsRoute = SettingsAutomationsRouteImport.update({
   id: '/automations',
   path: '/automations',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsBuildSystemsRoute = SettingsBuildSystemsRouteImport.update({
+  id: '/build-systems',
+  path: '/build-systems',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
@@ -154,6 +160,7 @@ export interface FileRoutesByFullPath {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/automations': typeof SettingsAutomationsRoute
+  '/settings/build-systems': typeof SettingsBuildSystemsRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByTo {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/automations': typeof SettingsAutomationsRoute
+  '/settings/build-systems': typeof SettingsBuildSystemsRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -201,6 +209,7 @@ export interface FileRoutesById {
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/automations': typeof SettingsAutomationsRoute
+  '/settings/build-systems': typeof SettingsBuildSystemsRoute
   '/settings/connections': typeof SettingsConnectionsRoute
   '/settings/diagnostics': typeof SettingsDiagnosticsRoute
   '/settings/general': typeof SettingsGeneralRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/automations'
+    | '/settings/build-systems'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -249,6 +259,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/automations'
+    | '/settings/build-systems'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/automations'
+    | '/settings/build-systems'
     | '/settings/connections'
     | '/settings/diagnostics'
     | '/settings/general'
@@ -372,6 +384,13 @@ declare module '@tanstack/react-router' {
       path: '/automations'
       fullPath: '/settings/automations'
       preLoaderRoute: typeof SettingsAutomationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/build-systems': {
+      id: '/settings/build-systems'
+      path: '/build-systems'
+      fullPath: '/settings/build-systems'
+      preLoaderRoute: typeof SettingsBuildSystemsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/connections': {
@@ -476,6 +495,7 @@ interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsAutomationsRoute: typeof SettingsAutomationsRoute
+  SettingsBuildSystemsRoute: typeof SettingsBuildSystemsRoute
   SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   SettingsDiagnosticsRoute: typeof SettingsDiagnosticsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
@@ -491,6 +511,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsAutomationsRoute: SettingsAutomationsRoute,
+  SettingsBuildSystemsRoute: SettingsBuildSystemsRoute,
   SettingsConnectionsRoute: SettingsConnectionsRoute,
   SettingsDiagnosticsRoute: SettingsDiagnosticsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,

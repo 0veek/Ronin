@@ -34,6 +34,7 @@ import {
   OrchestrationSearchThreadsError,
   OrchestrationGetTurnDiffError,
   AUTOMATION_RUN_HISTORY_LIMIT,
+  BUILD_SYSTEM_RUN_HISTORY_LIMIT,
   ORCHESTRATION_WS_METHODS,
   type ProjectId,
   type ProjectEntriesFailure,
@@ -118,6 +119,7 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as RateLimitService from "./rateLimits/RateLimitService.ts";
 import * as QuotaResumeService from "./quotaResume/QuotaResumeService.ts";
 import * as AutomationService from "./automation/AutomationService.ts";
+import * as BuildSystemService from "./buildSystem/BuildSystemService.ts";
 import { prepareThreadWorktree } from "./git/prepareThreadWorktree.ts";
 import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
@@ -435,6 +437,7 @@ const makeWsRpcLayer = (
       const rateLimits = yield* RateLimitService.RateLimitService;
       const quotaResume = yield* QuotaResumeService.QuotaResumeService;
       const automations = yield* AutomationService.AutomationService;
+      const buildSystems = yield* BuildSystemService.BuildSystemService;
       const speechToText = yield* SpeechToTextService.SpeechToTextService;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -1665,6 +1668,78 @@ const makeWsRpcLayer = (
               .pipe(Effect.map((runs) => ({ runs }))),
             { "rpc.aggregate": "automations" },
           ),
+        [WS_METHODS.buildSystemsList]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsList,
+            buildSystems
+              .list(input.projectId ?? null)
+              .pipe(Effect.map((list) => ({ buildSystems: list }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsCreate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsCreate,
+            buildSystems.create(input).pipe(Effect.map((buildSystem) => ({ buildSystem }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsUpdate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsUpdate,
+            buildSystems.update(input).pipe(Effect.map((buildSystem) => ({ buildSystem }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsDelete]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsDelete,
+            buildSystems.remove(input.id).pipe(Effect.map((deleted) => ({ deleted }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsRunStart]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsRunStart,
+            buildSystems.startRun(input).pipe(Effect.map((run) => ({ run }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsRunCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsRunCancel,
+            buildSystems.cancelRun(input.runId).pipe(Effect.map((run) => ({ run }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsRunResolveGate]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsRunResolveGate,
+            buildSystems
+              .resolveGate({
+                runId: input.runId,
+                approved: input.approved,
+                note: input.note ?? null,
+              })
+              .pipe(Effect.map((run) => ({ run }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsRunReply]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsRunReply,
+            buildSystems.replyUser(input).pipe(Effect.map((run) => ({ run }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsRuns]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.buildSystemsRuns,
+            buildSystems
+              .listRuns({
+                buildSystemId: input.buildSystemId ?? null,
+                projectId: input.projectId ?? null,
+                limit: input.limit ?? BUILD_SYSTEM_RUN_HISTORY_LIMIT,
+              })
+              .pipe(Effect.map((runs) => ({ runs }))),
+            { "rpc.aggregate": "buildSystems" },
+          ),
+        [WS_METHODS.buildSystemsRunGet]: (input) =>
+          observeRpcEffect(WS_METHODS.buildSystemsRunGet, buildSystems.getRun(input.runId), {
+            "rpc.aggregate": "buildSystems",
+          }),
         [WS_METHODS.serverGetQuotaResumes]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetQuotaResumes, quotaResume.readSnapshot, {
             "rpc.aggregate": "server",

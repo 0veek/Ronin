@@ -18,6 +18,7 @@
 - [Review usage](./user/usage.md)
 - [Resume after a limit resets](./user/quota-resume.md)
 - [Automations](./user/automations.md)
+- [Build systems](./user/build-systems.md)
 - [Side chats](./user/side-chats.md)
 - [Captured tasks](./user/captured-tasks.md)
 - [Inline previews](./user/inline-previews.md)

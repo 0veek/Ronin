@@ -11,6 +11,7 @@ import {
   MicIcon,
   PaletteIcon,
   Settings2Icon,
+  UsersIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,6 +23,7 @@ export type SettingsPath =
   | "/settings/providers"
   | "/settings/skills"
   | "/settings/automations"
+  | "/settings/build-systems"
   | "/settings/integrations"
   | "/settings/source-control"
   | "/settings/connections"
@@ -77,6 +79,12 @@ export const SETTINGS_PAGE_META = {
     icon: ClockIcon,
     searchTerms: ["schedule", "cron", "recurring", "daily", "automation", "unattended"],
   },
+  "/settings/build-systems": {
+    label: "Build systems",
+    description: "Teams of models that share a task and a workspace.",
+    icon: UsersIcon,
+    searchTerms: ["team", "crew", "orchestrator", "multi-agent", "delegate", "build system"],
+  },
   "/settings/integrations": {
     label: "Integrations",
     description: "How the built-in browser opens and what it opens with.",
@@ -124,7 +132,12 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
   },
   {
     label: "Agents",
-    paths: ["/settings/providers", "/settings/skills", "/settings/automations"],
+    paths: [
+      "/settings/providers",
+      "/settings/skills",
+      "/settings/automations",
+      "/settings/build-systems",
+    ],
   },
   {
     label: "Workspace",

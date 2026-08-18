@@ -12,7 +12,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ChangeRequestStateLike } from "@t3tools/client-runtime/state/thread-settled";
-import { ChevronDownIcon, ClockIcon, MessagesSquareIcon } from "lucide-react";
+import { ChevronDownIcon, ClockIcon, MessagesSquareIcon, UsersIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -25,6 +25,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { createAutomationSearch } from "~/automationDraft";
+import { createBuildSystemSearch } from "~/buildSystemDraft";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
@@ -454,6 +455,33 @@ export const ChatHeader = memo(function ChatHeader({
               </span>
             </TooltipTrigger>
             <TooltipPopup side="top">New automation</TooltipPopup>
+          </Tooltip>
+        ) : null}
+        {showCreateAutomation && activeProjectId !== undefined ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="w-7 px-0 sm:w-6 @3xl/header-actions:w-auto! @3xl/header-actions:px-[calc(--spacing(2)-1px)]"
+                  aria-label="New build system"
+                  data-toolbar-control=""
+                  onClick={() => {
+                    void navigate({
+                      to: "/settings/build-systems",
+                      search: createBuildSystemSearch(activeProjectId),
+                    });
+                  }}
+                />
+              }
+            >
+              <UsersIcon className="size-3.5" />
+              <span className="sr-only @3xl/header-actions:not-sr-only @3xl/header-actions:ml-0.5">
+                New team
+              </span>
+            </TooltipTrigger>
+            <TooltipPopup side="top">New build system</TooltipPopup>
           </Tooltip>
         ) : null}
         {activeProjectScripts && (

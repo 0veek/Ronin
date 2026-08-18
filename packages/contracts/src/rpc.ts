@@ -194,6 +194,25 @@ import {
   AutomationUpdateInput,
 } from "./automation.ts";
 import {
+  BuildSystemCreateInput,
+  BuildSystemDeleteInput,
+  BuildSystemDeleteResult,
+  BuildSystemError,
+  BuildSystemListInput,
+  BuildSystemListResult,
+  BuildSystemMutationResult,
+  BuildSystemRunCancelInput,
+  BuildSystemRunGetInput,
+  BuildSystemRunGetResult,
+  BuildSystemRunMutationResult,
+  BuildSystemRunReplyInput,
+  BuildSystemRunResolveGateInput,
+  BuildSystemRunStartInput,
+  BuildSystemRunsInput,
+  BuildSystemRunsResult,
+  BuildSystemUpdateInput,
+} from "./buildSystem.ts";
+import {
   QuotaResumeCancelInput,
   QuotaResumeCancelResult,
   QuotaResumeError,
@@ -319,6 +338,16 @@ export const WS_METHODS = {
   automationsDelete: "automations.delete",
   automationsRunNow: "automations.runNow",
   automationsRuns: "automations.runs",
+  buildSystemsList: "buildSystems.list",
+  buildSystemsCreate: "buildSystems.create",
+  buildSystemsUpdate: "buildSystems.update",
+  buildSystemsDelete: "buildSystems.delete",
+  buildSystemsRunStart: "buildSystems.runs.start",
+  buildSystemsRunCancel: "buildSystems.runs.cancel",
+  buildSystemsRunResolveGate: "buildSystems.runs.resolveGate",
+  buildSystemsRunReply: "buildSystems.runs.reply",
+  buildSystemsRuns: "buildSystems.runs.list",
+  buildSystemsRunGet: "buildSystems.runs.get",
 
   // Pull request methods
   pullRequestsList: "pullRequests.list",
@@ -535,6 +564,66 @@ export const WsAutomationsRunsRpc = Rpc.make(WS_METHODS.automationsRuns, {
   payload: AutomationRunsInput,
   success: AutomationRunsResult,
   error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+});
+
+export const WsBuildSystemsListRpc = Rpc.make(WS_METHODS.buildSystemsList, {
+  payload: BuildSystemListInput,
+  success: BuildSystemListResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsCreateRpc = Rpc.make(WS_METHODS.buildSystemsCreate, {
+  payload: BuildSystemCreateInput,
+  success: BuildSystemMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsUpdateRpc = Rpc.make(WS_METHODS.buildSystemsUpdate, {
+  payload: BuildSystemUpdateInput,
+  success: BuildSystemMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsDeleteRpc = Rpc.make(WS_METHODS.buildSystemsDelete, {
+  payload: BuildSystemDeleteInput,
+  success: BuildSystemDeleteResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsRunStartRpc = Rpc.make(WS_METHODS.buildSystemsRunStart, {
+  payload: BuildSystemRunStartInput,
+  success: BuildSystemRunMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsRunCancelRpc = Rpc.make(WS_METHODS.buildSystemsRunCancel, {
+  payload: BuildSystemRunCancelInput,
+  success: BuildSystemRunMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsRunResolveGateRpc = Rpc.make(WS_METHODS.buildSystemsRunResolveGate, {
+  payload: BuildSystemRunResolveGateInput,
+  success: BuildSystemRunMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsRunReplyRpc = Rpc.make(WS_METHODS.buildSystemsRunReply, {
+  payload: BuildSystemRunReplyInput,
+  success: BuildSystemRunMutationResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsRunsRpc = Rpc.make(WS_METHODS.buildSystemsRuns, {
+  payload: BuildSystemRunsInput,
+  success: BuildSystemRunsResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
+});
+
+export const WsBuildSystemsRunGetRpc = Rpc.make(WS_METHODS.buildSystemsRunGet, {
+  payload: BuildSystemRunGetInput,
+  success: BuildSystemRunGetResult,
+  error: Schema.Union([EnvironmentAuthorizationError, BuildSystemError]),
 });
 
 export const WsServerTranscribeAudioRpc = Rpc.make(WS_METHODS.serverTranscribeAudio, {
@@ -1132,6 +1221,16 @@ export const WsRpcGroup = RpcGroup.make(
   WsAutomationsDeleteRpc,
   WsAutomationsRunNowRpc,
   WsAutomationsRunsRpc,
+  WsBuildSystemsListRpc,
+  WsBuildSystemsCreateRpc,
+  WsBuildSystemsUpdateRpc,
+  WsBuildSystemsDeleteRpc,
+  WsBuildSystemsRunStartRpc,
+  WsBuildSystemsRunCancelRpc,
+  WsBuildSystemsRunResolveGateRpc,
+  WsBuildSystemsRunReplyRpc,
+  WsBuildSystemsRunsRpc,
+  WsBuildSystemsRunGetRpc,
   WsServerTranscribeAudioRpc,
   WsServerGetSpeechToTextKeyStatusRpc,
   WsServerGetSkillsCatalogRpc,

@@ -137,6 +137,7 @@ import {
   shouldCreateNewThreadInCurrentProject,
   resolveWorkingStartedAt,
   sortLogicalProjectsForSidebar,
+  groupBuildSystemThreadsUnderOrchestrator,
   groupSideChatsUnderParents,
   sortPinnedThreadsForSidebar,
   sortSettledThreadsForSidebar,
@@ -144,6 +145,11 @@ import {
   sortThreadsForSidebar,
   threadNeedsYou,
 } from "./Sidebar.logic";
+import {
+  buildSystemTeammateThreadIds,
+  isBuildSystemThreadAwaitingUser,
+  useBuildSystems,
+} from "../state/buildSystems";
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   ThreadWorktreeIndicator,
@@ -2028,6 +2034,11 @@ export default function Sidebar() {
   // merging, no optimistic holds. Archived threads remain hidden here —
   // archive keeps its original "remove from sidebar" meaning.
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const { runs: buildSystemRuns } = useBuildSystems();
+  const buildSystemTeammateIds = useMemo(
+    () => buildSystemTeammateThreadIds(buildSystemRuns),
+    [buildSystemRuns],
+  );
   const {
     needsYouThreads,
     pinnedThreads,
@@ -2086,7 +2097,10 @@ export default function Sidebar() {
         // Snooze still outranks it, one rule above. A snoozed thread was
         // deferred *by the user*, usually while already blocked, and honouring
         // that is the whole point of the verb.
-      } else if (threadNeedsYou(thread)) {
+      } else if (
+        threadNeedsYou(thread) ||
+        isBuildSystemThreadAwaitingUser(buildSystemRuns, thread.id)
+      ) {
         needsYou.push(thread);
         // A pin otherwise overrides the lifecycle: pinned threads never
         // auto-settle out of sight. (The decider clears settled state on
@@ -2144,6 +2158,7 @@ export default function Sidebar() {
     serverConfigs,
     snoozeWakeTick,
     threads,
+    buildSystemRuns,
   ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
@@ -3940,8 +3955,12 @@ export default function Sidebar() {
                       />,
                     );
                   }
-                  for (const row of groupSideChatsUnderParents(activeThreads)) {
-                    items.push(renderThreadRow(row.thread, "active", undefined, row.depth));
+                  for (const row of groupSideChatsUnderParents(
+                    groupBuildSystemThreadsUnderOrchestrator(activeThreads, buildSystemRuns),
+                  )) {
+                    const depth =
+                      row.depth === 1 || buildSystemTeammateIds.has(row.thread.id) ? 1 : 0;
+                    items.push(renderThreadRow(row.thread, "active", undefined, depth));
                   }
                   // Snoozed shelf: between the inbox and Settled — out of the
                   // way, never gone. The header always renders while anything

@@ -32,5 +32,6 @@ export * from "./usage.ts";
 export * from "./rateLimit.ts";
 export * from "./quotaResume.ts";
 export * from "./automation.ts";
+export * from "./buildSystem.ts";
 export * from "./speechToText.ts";
 export * from "./rpc.ts";

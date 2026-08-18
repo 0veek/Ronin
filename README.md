@@ -38,6 +38,10 @@ An agent that's been here before **resumes its own session**. A newcomer gets a 
 
 Same prompt, two (or more) models, each in its own worktree. Press **Compare**, pick who should answer, and read them as ordinary threads with chips to jump between. Keep the one you like; delete the rest. ([docs](./docs/user/second-opinion.md))
 
+### 👥 A team, not just a model
+
+Claude leads, Codex implements, Grok reviews — or any roster you name. You define the roles; the lead hands work around in **one shared worktree** until the task is done. Gate a role if you want to see it coming. Not the default; you build the team. ([docs](./docs/user/build-systems.md))
+
 ### 💬 Ask on the side
 
 Select the passage you're stuck on. A chip appears — **Ask on the side** opens a fresh thread on exactly that text, same project, same checkout. The main thread never learns you asked. ([docs](./docs/user/side-chats.md))
@@ -183,6 +187,7 @@ Artifacts ship as `Ronin-${version}-${arch}.${ext}`. On Windows, Ronin runs nati
 | Side chats         | [docs/user/side-chats.md](./docs/user/side-chats.md)                   |
 | Board              | [docs/user/board.md](./docs/user/board.md)                             |
 | Automations        | [docs/user/automations.md](./docs/user/automations.md)                 |
+| Build systems      | [docs/user/build-systems.md](./docs/user/build-systems.md)             |
 | Stats & usage      | [docs/user/usage.md](./docs/user/usage.md)                             |
 | Remote / Tailscale | [docs/user/remote-access.md](./docs/user/remote-access.md)             |
 

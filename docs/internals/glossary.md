@@ -163,6 +163,30 @@ A saved prompt plus a rule for when to send it, scoped to one project. Configura
 
 One firing of an automation. Records only whether the turn _started_ (`started`, `skipped`, `failed`) — what the agent then did is the thread's business, and duplicating a turn outcome here would be a second source of truth. Firing expands to `thread.create`, optional worktree preparation, then `thread.turn.start`, because the `bootstrap` field on a turn-start command is a WebSocket-layer convenience the decider does not understand.
 
+#### Build system
+
+A per-project team: one orchestrator model and named teammate roles, each with its own model. Configuration, not history, so it lives in `build_systems` rather than the event log. Shape is in [the build system contracts][42]; the rules are in [BuildSystemService.ts][43]. See [build-systems.md][44] and [the coordinator notes][45].
+
+#### Orchestrator
+
+The lead model of a build system. It does not edit files. It ends each turn with a `t3-directive` block the server parses, then the coordinator starts the next teammate or asks the user.
+
+#### Teammate
+
+A named role on a build system. One persistent thread per role per run, sharing the orchestrator's worktree, so session memory survives across delegations.
+
+#### Delegation
+
+One handoff from the orchestrator to a teammate: the coordinator starts that role's turn with a brief, waits for the turn to settle, and reports the result back.
+
+#### Gate
+
+A teammate marked "ask first". A `delegate` to that role pauses the run in `waiting-gate` until the user approves or denies it.
+
+#### Build system run
+
+One launch of a team against a task. Snapshots the roster at start so later edits cannot rewrite a conversation that already happened. Status and pending prompt live on the run; the interesting sequence is in `build_system_run_steps`.
+
 #### Parked turn
 
 A turn that died because a provider's subscription window was spent, held in memory and replayed once the window resets. Deliberately not part of the read model: it is scheduler state with a live clock, and it does not survive a restart. Classification lives in [quotaFailureClassification.ts][35], scheduling in [QuotaResumeService.ts][36]. See [quota-resume.md][37].
@@ -257,3 +281,7 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [39]: ../user/captured-tasks.md
 [40]: ../user/turn-replay.md
 [41]: ../user/second-opinion.md
+[42]: ../../packages/contracts/src/buildSystem.ts
+[43]: ../../apps/server/src/buildSystem/BuildSystemService.ts
+[44]: ../user/build-systems.md
+[45]: ./build-systems.md

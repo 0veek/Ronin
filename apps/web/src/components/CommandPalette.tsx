@@ -54,6 +54,7 @@ import {
   SquarePenIcon,
   TerminalIcon,
   TextSearchIcon,
+  UsersIcon,
   XIcon,
 } from "lucide-react";
 import {
@@ -71,6 +72,7 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 
 import { createAutomationSearch } from "../automationDraft";
+import { createBuildSystemSearch } from "../buildSystemDraft";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -1789,6 +1791,22 @@ function OpenCommandPaletteDialog(props: {
       await navigate({
         to: "/settings/automations",
         search: createAutomationSearch(automationProjectId),
+      });
+    },
+  });
+  actionItems.push({
+    kind: "action",
+    value: "action:new-build-system",
+    searchTerms: ["build", "system", "team", "crew", "orchestrator", "multi agent", "new team"],
+    title: "New build system",
+    ...(automationProjectId !== undefined && contextualProjectGroup
+      ? { description: contextualProjectGroup.displayName }
+      : {}),
+    icon: <UsersIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({
+        to: "/settings/build-systems",
+        search: createBuildSystemSearch(automationProjectId),
       });
     },
   });

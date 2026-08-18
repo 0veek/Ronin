@@ -70,6 +70,7 @@ describe("searchSettings", () => {
     expect(searchSettings("git")[0]?.to).toBe("/settings/source-control");
     expect(searchSettings("ssh")[0]?.to).toBe("/settings/connections");
     expect(searchSettings("automation")[0]?.to).toBe("/settings/automations");
+    expect(searchSettings("build system")[0]?.to).toBe("/settings/build-systems");
   });
 
   it("returns no results for an empty query", () => {

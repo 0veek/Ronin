@@ -808,6 +808,51 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:run-automation-now",
       tag: WS_METHODS.automationsRunNow,
     }),
+    buildSystems: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:build-systems",
+      tag: WS_METHODS.buildSystemsList,
+      staleTimeMs: 10_000,
+    }),
+    buildSystemRuns: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:build-system-runs",
+      tag: WS_METHODS.buildSystemsRuns,
+      staleTimeMs: 2_000,
+      refreshIntervalMs: 2_000,
+    }),
+    buildSystemRun: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:build-system-run",
+      tag: WS_METHODS.buildSystemsRunGet,
+      staleTimeMs: 2_000,
+      refreshIntervalMs: 2_000,
+    }),
+    createBuildSystem: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:create-build-system",
+      tag: WS_METHODS.buildSystemsCreate,
+    }),
+    updateBuildSystem: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:update-build-system",
+      tag: WS_METHODS.buildSystemsUpdate,
+    }),
+    deleteBuildSystem: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:delete-build-system",
+      tag: WS_METHODS.buildSystemsDelete,
+    }),
+    startBuildSystemRun: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:start-build-system-run",
+      tag: WS_METHODS.buildSystemsRunStart,
+    }),
+    cancelBuildSystemRun: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:cancel-build-system-run",
+      tag: WS_METHODS.buildSystemsRunCancel,
+    }),
+    resolveBuildSystemGate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:resolve-build-system-gate",
+      tag: WS_METHODS.buildSystemsRunResolveGate,
+    }),
+    replyBuildSystemRun: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:reply-build-system-run",
+      tag: WS_METHODS.buildSystemsRunReply,
+    }),
     cancelQuotaResume: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:cancel-quota-resume",
       tag: WS_METHODS.serverCancelQuotaResume,

@@ -114,6 +114,12 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommandDescriptor[] = [
     ],
   },
   {
+    command: "buildSystem.run",
+    value: "action:run-build-system",
+    title: "Run a build system",
+    searchTerms: ["build", "system", "team", "crew", "orchestrator", "multi", "agent", "delegate"],
+  },
+  {
     command: "diff.toggle",
     value: "action:diff-toggle",
     title: "Toggle diff",

@@ -75,6 +75,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "chat.askOnTheSide",
   "chat.captureTask",
   "chat.secondOpinion",
+  "buildSystem.run",
   "chat.cycleWidth",
   "board.toggle",
   "digest.show",

@@ -28,6 +28,7 @@ import {
   shouldNavigateAfterProjectRemoval,
   shouldClearThreadSelectionOnMouseDown,
   sortLogicalProjectsForSidebar,
+  groupBuildSystemThreadsUnderOrchestrator,
   sortSettledThreadsForSidebar,
   pinOrderKeyBetween,
   planPinnedReorder,
@@ -1723,5 +1724,19 @@ describe("sortLogicalProjectsForSidebar", () => {
         (project) => project.projectKey,
       ),
     ).toEqual(["logical-newer", "logical-older"]);
+  });
+});
+
+describe("groupBuildSystemThreadsUnderOrchestrator", () => {
+  it("pulls teammate threads under the orchestrator without dropping anyone", () => {
+    const threads = [{ id: "a" }, { id: "impl" }, { id: "b" }, { id: "orch" }, { id: "rev" }];
+    const ordered = groupBuildSystemThreadsUnderOrchestrator(threads, [
+      {
+        status: "delegating",
+        orchestratorThreadId: "orch",
+        roleThreads: [{ threadId: "impl" }, { threadId: "rev" }],
+      },
+    ]);
+    expect(ordered.map((thread) => thread.id)).toEqual(["a", "b", "orch", "impl", "rev"]);
   });
 });

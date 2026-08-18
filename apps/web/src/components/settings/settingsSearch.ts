@@ -25,6 +25,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/providers": SETTINGS_PAGE_META["/settings/providers"].label,
   "/settings/skills": SETTINGS_PAGE_META["/settings/skills"].label,
   "/settings/automations": SETTINGS_PAGE_META["/settings/automations"].label,
+  "/settings/build-systems": SETTINGS_PAGE_META["/settings/build-systems"].label,
   "/settings/integrations": SETTINGS_PAGE_META["/settings/integrations"].label,
   "/settings/source-control": SETTINGS_PAGE_META["/settings/source-control"].label,
   "/settings/connections": SETTINGS_PAGE_META["/settings/connections"].label,
@@ -227,6 +228,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "automations",
     title: "Automations",
     to: "/settings/automations",
+  },
+  {
+    id: "build-systems",
+    title: "Build systems",
+    to: "/settings/build-systems",
   },
   {
     id: "portable-skills",

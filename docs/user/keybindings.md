@@ -35,8 +35,8 @@ Examples: `mod+j`, `mod+shift+d`, `ctrl+l`, `cmd+k`.
 ## Commands
 
 Commands are IDs like `terminal.toggle`, `commandPalette.toggle`, `preview.refresh`,
-`chat.new`, and `chat.cycleWidth`. Project scripts are addressable as `script.{id}.run`,
-for example `script.test.run`.
+`chat.new`, `chat.cycleWidth`, and `buildSystem.run`. Project scripts are addressable as
+`script.{id}.run`, for example `script.test.run`.
 
 `board.toggle` opens the board and defaults to `mod+shift+b`. Pressing it again leaves the
 board.

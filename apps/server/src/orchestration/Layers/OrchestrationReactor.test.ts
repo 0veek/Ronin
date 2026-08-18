@@ -10,6 +10,7 @@ import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { QuotaResumeReactor } from "../Services/QuotaResumeReactor.ts";
+import { BuildSystemRunReactor } from "../Services/BuildSystemRunReactor.ts";
 import { OrchestrationReactor } from "../Services/OrchestrationReactor.ts";
 import { makeOrchestrationReactor } from "./OrchestrationReactor.ts";
 
@@ -23,7 +24,7 @@ describe("OrchestrationReactor", () => {
     runtime = null;
   });
 
-  it("starts provider ingestion, provider command, checkpoint, thread deletion, and quota resume reactors", async () => {
+  it("starts provider ingestion, provider command, checkpoint, thread deletion, quota resume, and build system reactors", async () => {
     const started: string[] = [];
 
     runtime = ManagedRuntime.make(
@@ -73,6 +74,15 @@ describe("OrchestrationReactor", () => {
             drain: Effect.void,
           }),
         ),
+        Layer.provideMerge(
+          Layer.succeed(BuildSystemRunReactor, {
+            start: () => {
+              started.push("build-system-run-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+          }),
+        ),
       ),
     );
 
@@ -86,6 +96,7 @@ describe("OrchestrationReactor", () => {
       "checkpoint-reactor",
       "thread-deletion-reactor",
       "quota-resume-reactor",
+      "build-system-run-reactor",
     ]);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));

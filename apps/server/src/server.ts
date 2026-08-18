@@ -59,10 +59,13 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import { QuotaResumeReactorLive } from "./orchestration/Layers/QuotaResumeReactor.ts";
+import { BuildSystemRunReactorLive } from "./orchestration/Layers/BuildSystemRunReactor.ts";
 import * as QuotaResumeService from "./quotaResume/QuotaResumeService.ts";
 import * as AutomationScheduler from "./automation/AutomationScheduler.ts";
 import * as AutomationService from "./automation/AutomationService.ts";
 import * as AutomationStore from "./automation/AutomationStore.ts";
+import * as BuildSystemService from "./buildSystem/BuildSystemService.ts";
+import * as BuildSystemStore from "./buildSystem/BuildSystemStore.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
@@ -251,6 +254,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(QuotaResumeReactorLive),
+  Layer.provideMerge(BuildSystemRunReactorLive),
   // Sits inside the reactor group rather than beside RateLimitLayerLive
   // because it needs the orchestration engine to dispatch the replay, and
   // that is only in scope here.
@@ -260,6 +264,8 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(AutomationScheduler.layer),
   Layer.provideMerge(AutomationService.layer),
   Layer.provideMerge(AutomationStore.layer),
+  Layer.provideMerge(BuildSystemService.layer),
+  Layer.provideMerge(BuildSystemStore.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 

@@ -17,9 +17,10 @@ For the same threads laid out by what they are doing, side by side, see the
 ## Needs you
 
 Threads that have stopped and cannot go on without you gather in a **Needs you** block at the top
-of the sidebar: an agent waiting for approval, one that asked a question, and one that hit an error.
-They are listed longest-waiting first, so the thread that has been stuck the longest is always the
-one at the top.
+of the sidebar: an agent waiting for approval, one that asked a question, one that hit an error, and
+the lead thread of a [build system](build-systems.md) that is waiting for you to approve a gated
+role or answer a question. They are listed longest-waiting first, so the thread that has been stuck
+the longest is always the one at the top.
 
 The block covers every environment you are connected to, and it follows your project filter — narrow
 to one project and it shows only that project's blocked work. It appears when something needs you

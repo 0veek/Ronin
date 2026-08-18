@@ -60,6 +60,7 @@ import Migration0044 from "./Migrations/044_Automations.ts";
 import Migration0045 from "./Migrations/045_AutomationFailurePolicy.ts";
 import Migration0046 from "./Migrations/046_ProjectionThreadsQueuedPrompt.ts";
 import Migration0047 from "./Migrations/047_ProjectionThreadsComparisonGroup.ts";
+import Migration0048 from "./Migrations/048_BuildSystems.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -119,6 +120,7 @@ export const migrationEntries = [
   [45, "AutomationFailurePolicy", Migration0045],
   [46, "ProjectionThreadsQueuedPrompt", Migration0046],
   [47, "ProjectionThreadsComparisonGroup", Migration0047],
+  [48, "BuildSystems", Migration0048],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
