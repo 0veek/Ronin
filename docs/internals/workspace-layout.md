@@ -41,7 +41,6 @@ the task commands.
 - `assets/`: brand and app icon sources per channel (`dev`, `nightly`, `prod`).
 - `patches/`: pnpm patches for pinned upstream dependencies.
 - `oxlint-plugin-t3code/`: repo-specific lint rules.
-- `experiments/`: throwaway prototypes. Not part of the shipped build.
 - `docs/`: this documentation tree.
 
 ## Import conventions
