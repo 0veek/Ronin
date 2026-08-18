@@ -15,7 +15,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   onClose,
 }: ExpandedImageDialogProps) {
   const [imageOffset, setImageOffset] = useState(0);
-  const index = (preview.index + imageOffset + preview.images.length) % preview.images.length;
+  const count = preview.images.length;
+  // imageOffset is unbounded, so normalize any integer offset back into range.
+  const index = count > 0 ? (((preview.index + imageOffset) % count) + count) % count : 0;
 
   const navigateImage = useCallback((direction: -1 | 1) => {
     setImageOffset((current) => current + direction);
