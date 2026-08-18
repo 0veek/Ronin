@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                          |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `949feb61e` — `feat(web): configurable browser defaults in Settings → Integrations (#7082)` (2026-08-17) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                          |
-| **Ported on**                 | 2026-08-17                                                                                               |
+|                               |                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `cebac353d` — `fix(mobile): show structured input option descriptions (#7321)` (2026-08-18) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                             |
+| **Ported on**                 | 2026-08-18                                                                                  |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -622,3 +622,100 @@ footer layout, message timeline), `packages/shared` (terminal labels test), repo
 (`CLAUDE.md`). No contract, provider, desktop-IPC, connection-mode or user-doc surface is touched by
 what was ported — the commit-dialog fix is presentation-only and reversible by nature (the full path
 stays available in the row's tooltip).
+
+## Batch 7 — reviewed through `cebac353d` (7 commits)
+
+Reviewed `949feb61e..cebac353d`, snapshotted at `cebac353d` for the whole run.
+
+> **Log gap, not a review gap.** Commit `3a253cdb3` moved the watermark from `bab4b6f02` to
+> `949feb61e` without appending the batch section for that range. Those commits were judged (the
+> watermark is authoritative and their work is in the tree — preview defaults, PR rate limits, the
+> Integrations panel), but their per-commit verdicts were never written down. This batch does not
+> re-review them.
+
+### Ported (4)
+
+| Upstream    | Title                                                                      | Notes                                              |
+| ----------- | -------------------------------------------------------------------------- | -------------------------------------------------- |
+| `cd096b9ad` | feat(server): let users withhold browser access from agents (#7083)        | **adapted** — see below                            |
+| `c7e6d711d` | feat(web): make review verdicts legible in the pull request detail (#7077) | **adapted** — one import conflict, both sides kept |
+| `a4cc1367b` | fix(web): show all usage breakdown periods (#7219)                         | **adapted** — same bug here, different render path |
+| `3723722f7` | test(web): remove duplicate lookup assertion (#7364)                       | clean                                              |
+
+`cd096b9ad` is the substantial one: a server-authoritative `enableAgentBrowserAccess` setting that
+withholds the MCP credential, so the preview toolset is never attached to a provider session and the
+prompt text describing those tools is dropped with it. Four fork-specific decisions:
+
+- **Branding.** Ronin's Codex prompt block is `RONIN_BROWSER_TOOL_INSTRUCTIONS` describing the
+  `ronin` MCP server, not upstream's `T3_CODE_BROWSER_TOOL_INSTRUCTIONS` / `t3-code`. The two
+  exported constants became the `codexPlanModeDeveloperInstructions(browserToolsAvailable)` /
+  `codexDefaultModeDeveloperInstructions(browserToolsAvailable)` functions upstream introduced, but
+  they gate Ronin's block under Ronin's names.
+- **`nativeMode` preserved.** Ronin's `buildCodexCollaborationMode` passes `nativeMode` to
+  `buildCodexDeveloperInstructions`, where upstream passes `input.interactionMode`. Only the new
+  third argument was added; the fork's choice of first argument stands.
+- **A vacuous assertion fixed.** Upstream's new deny-path test asserts
+  `doesNotMatch(/T3 Code collaborative browser/)`. Against Ronin's "## Ronin collaborative browser"
+  heading that passes whether or not the block is present, so it would have tested nothing. Changed
+  to `/Ronin collaborative browser/`.
+- **Cut surface + fork divergence in the new tests.** `AnalyticsService` does not exist in this repo
+  at all, so `Layer.provide(AnalyticsService.layerTest)` was dropped. Ronin's `ProviderService` also
+  resolves the continuation ledger, so the directory layer now uses the file's own
+  `makeSessionRepositoriesLayer(SqlitePersistenceMemory)` helper instead of upstream's
+  runtime-repository-only layer. Upstream's unused `EnvironmentId` import was dropped rather than
+  carried in, because this repo's lint flags it.
+
+`a4cc1367b` drops a `.slice(0, 8)` that truncated the usage breakdown table to 8 rows in a window
+that can hold 90. Ronin has the same truncation but renders through a `TimeBreakdown` subcomponent
+rather than an inline `<tbody>`, so only the memo and the one prop site changed; the rename to
+`breakdownPeriods` was kept so the name stops claiming a recency limit that no longer exists.
+
+`c7e6d711d` applied cleanly across five of six files. `pullRequestPresentation.tsx` conflicted only
+on an import line — Ronin has `DiffStatLabel` where upstream added `Badge` — and both are needed, so
+both were kept. The commit's approval-count header, verdict badges and timeline verdict rows sit
+alongside this fork's segmented-control tab styling in `PullRequestDetailPanel.tsx` without
+overlapping it.
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (3)
+
+| Upstream    | Title                                                          | Why                                                |
+| ----------- | -------------------------------------------------------------- | -------------------------------------------------- |
+| `13458e651` | fix(web): center the context usage meter (#7296)               | fixes an artifact of upstream's `Button` primitive |
+| `33a8b07dd` | fix(mobile): rotate snoozed and settled shelf chevrons (#7276) | no mobile app in this repo                         |
+| `cebac353d` | fix(mobile): show structured input option descriptions (#7321) | no mobile app in this repo                         |
+
+`13458e651` adds `mx-0!` to the meter's SVG. Upstream renders that meter inside its `Button`
+primitive, whose `[&_svg]:-mx-0.5` shifts the circle off-centre; the override cancels that margin.
+Ronin's `ContextWindowMeter` uses a raw `<button>` with its own classes and no svg margin rule —
+there is nothing for `mx-0!` to override, and no global svg margin exists in `styles/`. Taking it
+would add a no-op `!important`. (Separately noted, not acted on: the component is currently exported
+but not imported anywhere in this fork.)
+
+The two mobile commits touch only `apps/mobile/`, which this fork does not have.
+
+### Verification
+
+- Focused tests, all pass: `ProviderService.test.ts` 32 tests (incl. the 3 new agent-browser-access
+  cases), `CodexSessionRuntime.test.ts` 25 tests, `apps/web/src/components/pullRequest/` 15 files /
+  280 tests, `workspaceBasenameLookup.test.ts`, `apps/web/src/components/usage` — 19 files / 357
+  tests together.
+- Typecheck: `@t3tools/contracts` 0 errors, `@t3tools/web` 0 errors. `@t3tools/server` reports one
+  error in `src/background/HostPowerMonitor.ts:69` (`exactOptionalPropertyTypes` on an
+  `Option.match` returning `Effect<boolean> | Effect<void>`). **Pre-existing and unrelated** —
+  reproduced on a stashed clean tree at `e44e1718e`; no file in this batch touches it.
+- `vp lint` over all 17 changed files — 0 findings. `vp fmt --check` — all 17 correctly formatted.
+- `git diff --check` clean. Index left fully unstaged, as found; `git apply --3way` had staged the
+  files it touched and left two unmerged, so the index was reset after resolving.
+
+**Hit every surface (for this batch):** contracts (`ServerSettings` + `ServerSettingsPatch` gain
+`enableAgentBrowserAccess`), server (provider MCP credential issuance, Codex prompt construction),
+web renderer (Integrations settings row, settings search index, restore-defaults label list, usage
+breakdown table, pull request detail/summary/timeline). Reverse state is covered: the setting has a
+reset action, is listed by name in the restore-defaults confirmation, and the deny path revokes an
+already-issued credential rather than only withholding the next one. No desktop-IPC, provider-adapter
+or connection-mode surface is touched. No user-facing doc in `docs/user/` describes agent browser
+access yet — worth adding when the setting is next revisited, but out of scope for a port.

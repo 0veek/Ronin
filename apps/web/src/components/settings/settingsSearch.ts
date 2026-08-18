@@ -235,6 +235,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "agent-skills",
   },
   {
+    id: "agent-browser-access",
+    title: "Agent browser access",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
     id: "browser-default-viewport",
     title: "Default browser viewport",
     to: "/settings/integrations",

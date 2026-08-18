@@ -184,8 +184,10 @@ export function UsagePage() {
         : enumerateHourStarts(window.sinceTime, window.untilTime),
     [window.sinceTime, window.untilTime],
   );
-  const recentPeriods = useMemo<readonly (DailyTotals | HourlyTotals)[]>(
-    () => (isPast24Hours ? merged.hourly : merged.daily).toReversed().slice(0, 8),
+  // Newest first: the window can run 90 periods, so the interesting end
+  // belongs at the top of the table.
+  const breakdownPeriods = useMemo<readonly (DailyTotals | HourlyTotals)[]>(
+    () => (isPast24Hours ? merged.hourly : merged.daily).toReversed(),
     [isPast24Hours, merged.daily, merged.hourly],
   );
 
@@ -405,7 +407,7 @@ export function UsagePage() {
                         <ModelBreakdown models={merged.models} />
                       ) : (
                         <TimeBreakdown
-                          periods={recentPeriods}
+                          periods={breakdownPeriods}
                           isPast24Hours={isPast24Hours}
                           timeZone={window.timeZone}
                         />
