@@ -149,6 +149,7 @@ export function useThreadActionMenu(input: {
           isRegeneratingTitle,
           isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
           canExport: (threadDetail?.messages.length ?? 0) > 0,
+          hasQueuedTask: (thread.queuedPrompt ?? null) !== null,
           supports,
           snoozePresets,
         });
@@ -240,6 +241,18 @@ export function useThreadActionMenu(input: {
           case "mark-unread":
             markThreadUnread(scopedThreadKey(threadRef), thread.latestTurn?.completedAt);
             return;
+          case "discard-queued-task": {
+            const result = await settlePromise(() =>
+              updateThreadMetadata({
+                environmentId: threadRef.environmentId,
+                input: { threadId: threadRef.threadId, queuedPrompt: null },
+              }),
+            );
+            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+              failureToast("Failed to discard captured task", squashAtomCommandFailure(result));
+            }
+            return;
+          }
           case "copy-path": {
             const workspacePath = thread.worktreePath ?? projectCwd;
             if (!workspacePath) {

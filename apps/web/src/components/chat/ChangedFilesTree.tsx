@@ -12,6 +12,7 @@ import {
   ChevronRightIcon,
   FileDiffIcon,
   FolderIcon,
+  HistoryIcon,
   FolderClosedIcon,
 } from "lucide-react";
 import { cn } from "~/lib/utils";
@@ -40,6 +41,9 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
   onExpandedChange: (expanded: boolean) => void;
   onToggleAllDirectories: () => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  /** Absent on a turn with too little history to replay, which hides the
+      button rather than offering one that opens an empty dialog. */
+  onReplayTurn?: (turnId: TurnId) => void;
 }) {
   const {
     turnId,
@@ -52,6 +56,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     onExpandedChange,
     onToggleAllDirectories,
     onOpenTurnDiff,
+    onReplayTurn,
   } = props;
   const summaryStat = useMemo(() => summarizeTurnDiffStats(files), [files]);
   const scopeSummary = useMemo(() => summarizeChangedFileScopes(files), [files]);
@@ -143,6 +148,26 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
               </TooltipPopup>
             </Tooltip>
           ) : null}
+          {onReplayTurn === undefined ? null : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="outline"
+                    className="!size-[22px]"
+                    aria-label="Replay this turn"
+                    data-scroll-anchor-ignore
+                    onClick={() => onReplayTurn(turnId)}
+                  />
+                }
+              >
+                <HistoryIcon className="size-3" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">Replay what the agent did</TooltipPopup>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger
               render={

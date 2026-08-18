@@ -72,6 +72,32 @@ function renderSendRow() {
   );
 }
 
+/** The send row with the second-opinion verb wired in. */
+function renderSecondOpinionRow(overrides: {
+  readonly promptHasText: boolean;
+  readonly isRunning?: boolean;
+}) {
+  return renderToStaticMarkup(
+    createElement(ComposerPrimaryActions, {
+      compact: false,
+      pendingAction: null,
+      isRunning: overrides.isRunning ?? false,
+      showPlanFollowUpPrompt: false,
+      promptHasText: overrides.promptHasText,
+      isSendBusy: false,
+      sendDisabledReason: null,
+      isConnecting: false,
+      isEnvironmentUnavailable: false,
+      isPreparingWorktree: false,
+      hasSendableContent: overrides.promptHasText,
+      onPreviousPendingQuestion: () => {},
+      onInterrupt: () => {},
+      onImplementPlanInNewThread: () => {},
+      onSecondOpinion: () => {},
+    }),
+  );
+}
+
 function renderStandaloneStop() {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
@@ -282,7 +308,7 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain("size-9 sm:size-8");
   });
 
-  it("keeps stop as the only action while running with an empty composer", () => {
+  it("keeps stop as the only primary action while running with an empty composer", () => {
     const markup = renderRunningActions(true, false);
 
     expect(markup).toContain('aria-label="Stop generation"');
@@ -302,6 +328,30 @@ describe("ComposerPrimaryActions dictation placement", () => {
     expect(send).toBeGreaterThan(mic);
   });
 
+  it("keeps the mic through a running turn", () => {
+    // Regression: the mic used to live in the composer context strip, which
+    // renders whatever the thread is doing. Moving it into this row put it in
+    // the not-running branch only, so it vanished the moment work started —
+    // exactly when someone is dictating the next message.
+    for (const markup of [
+      renderRunningActions(false, true),
+      renderRunningActions(true, true),
+      renderRunningActions(true, false),
+      renderStandaloneStop(),
+    ]) {
+      expect(markup).toContain("dictation-control");
+    }
+  });
+
+  it("puts the mic before stop, the way it precedes send when idle", () => {
+    const markup = renderRunningActions(false, true);
+
+    const mic = markup.indexOf("dictation-control");
+    const stop = markup.indexOf('aria-label="Stop generation"');
+    expect(mic).toBeGreaterThanOrEqual(0);
+    expect(stop).toBeGreaterThan(mic);
+  });
+
   it("gives the mic the send button's footprint", () => {
     // Same height and width so neither reads as the smaller sibling; the
     // send button stays the filled one.
@@ -309,5 +359,42 @@ describe("ComposerPrimaryActions dictation placement", () => {
 
     expect(markup).toContain("h-9 w-9");
     expect(markup).toContain("sm:h-8 sm:w-8");
+  });
+});
+
+describe("second opinion", () => {
+  it("offers the verb once there is a prompt to race", () => {
+    expect(renderSecondOpinionRow({ promptHasText: true })).toContain(
+      'aria-label="Get a second opinion"',
+    );
+  });
+
+  it("stays out of an empty composer, which has nothing to compare", () => {
+    expect(renderSecondOpinionRow({ promptHasText: false })).not.toContain(
+      'aria-label="Get a second opinion"',
+    );
+  });
+
+  it("is absent while a turn runs, when the row is for stopping", () => {
+    expect(renderSecondOpinionRow({ promptHasText: true, isRunning: true })).not.toContain(
+      'aria-label="Get a second opinion"',
+    );
+  });
+
+  it("stays out of surfaces that never pass the verb", () => {
+    // The pending-answer rows render the same component with no prompt of
+    // their own; a compare button there would act on nothing.
+    expect(renderSendRow()).not.toContain('aria-label="Get a second opinion"');
+  });
+
+  it("sits ahead of the mic and send, reading left to right as widening reach", () => {
+    const markup = renderSecondOpinionRow({ promptHasText: true });
+
+    const compare = markup.indexOf('aria-label="Get a second opinion"');
+    const mic = markup.indexOf("dictation-control");
+    const send = markup.indexOf('type="submit"');
+    expect(compare).toBeGreaterThanOrEqual(0);
+    expect(mic).toBeGreaterThan(compare);
+    expect(send).toBeGreaterThan(mic);
   });
 });

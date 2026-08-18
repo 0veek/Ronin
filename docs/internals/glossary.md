@@ -47,6 +47,18 @@ A user-visible log item attached to a thread. In [the contracts][1], activities 
 
 A thread opened from one message of another thread, to ask about it without adding the question to the original conversation's context. It is an ordinary thread in every respect — same project, same checkout, its own history — plus a `sideChat` origin in [the contracts][1] naming its parent and the anchored message. Provenance only: deleting the parent does not delete the side chat. The sidebar files it under its parent (`groupSideChatsUnderParents` in [Sidebar.logic.ts][30]). See [side-chats.md][31].
 
+#### Captured task
+
+A thread created already carrying work, from a passage the user selected in another thread. The prompt rides on the thread as `queuedPrompt` in [the contracts][1] rather than in the client's composer drafts, so a capture made on one device is a task on all of them. A thread with a queued prompt and no turn is exactly what the board's Draft lane holds. The prompt is cleared by the projector when the thread's first user message lands — the transcript is the record from then on — or explicitly through `thread.meta.update` with `queuedPrompt: null`. Client side: `capturedTask.ts` derives the title, `useCaptureTask.ts` dispatches the create. See [captured-tasks.md][39].
+
+#### Turn replay
+
+A client-only view of one turn as an ordered, scrubbable list of steps, built by `buildTurnReplay` in `apps/web/src/turnReplay.ts` from the timeline entries whose `turnId` matches. Nothing is fetched: messages and activities already carry `turnId` and timestamps, so the replay is a projection of state the client holds. Playback runs on a compressed clock — gaps under `REPLAY_VERBATIM_GAP_MS` play at true length, longer ones ease logarithmically to `REPLAY_MAX_GAP_MS` — and advances step by step on a timer rather than sweeping a playhead per frame, so the surface never repaints continuously. See [turn-replay.md][40].
+
+#### Comparison group
+
+The id shared by threads racing one prompt across providers, carried as `comparisonGroupId` in [the contracts][1] and indexed in `projection_threads`. Grouping rather than nesting: no entrant is the original, so there is no parent to orphan when one is deleted. Each entrant is created through the ordinary turn-start bootstrap (`createThread` + `prepareWorktree` + `runSetupScript`), which is what gives every one its own checkout — without that the entrants would edit the same tree and the comparison would mean nothing. Client side: `secondOpinion.ts` validates the field, `useSecondOpinion.ts` dispatches entrants in series to avoid `.git` lock contention. See [second-opinion.md][41].
+
 #### Board
 
 The full-page lane view of every thread at `/board`, rendered by `apps/web/src/components/board/`. Lanes are derived, never stored: `deriveBoardLane` in `board.logic.ts` walks the same predicates the sidebar partition uses — `effectiveSnoozed`, `threadNeedsYou`, `resolveSidebarThreadStatus`, `effectiveSettled` — in the same precedence order, so a lane can never claim a thread the sidebar files elsewhere. Dragging a card resolves through `resolveBoardDrop`, whose result is either an existing thread command (settle, un-settle, snooze, unsnooze) or an explicit refusal. See [board.md][38].
@@ -242,3 +254,6 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [36]: ../../apps/server/src/quotaResume/QuotaResumeService.ts
 [37]: ../user/quota-resume.md
 [38]: ../user/board.md
+[39]: ../user/captured-tasks.md
+[40]: ../user/turn-replay.md
+[41]: ../user/second-opinion.md

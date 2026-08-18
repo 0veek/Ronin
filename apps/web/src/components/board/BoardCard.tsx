@@ -1,7 +1,7 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { AlarmClockIcon, MessageSquareIcon, PinIcon } from "lucide-react";
+import { AlarmClockIcon, ListPlusIcon, MessageSquareIcon, PinIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 
 import { cn } from "../../lib/utils";
@@ -139,6 +139,23 @@ export const BoardCard = memo(function BoardCard({
           ) : (
             <span className="flex-1" />
           )}
+          {/* A captured task and an empty draft both sit in Draft, and only
+              one of them is ready to fire. The marker is what tells them
+              apart at a glance. */}
+          {thread.queuedPrompt ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <ListPlusIcon
+                    aria-label="Captured task, ready to send"
+                    role="img"
+                    className="size-3 shrink-0 text-muted-foreground/65"
+                  />
+                }
+              />
+              <TooltipPopup side="top">Captured task, ready to send</TooltipPopup>
+            </Tooltip>
+          ) : null}
           {card.isPinned ? (
             <Tooltip>
               <TooltipTrigger

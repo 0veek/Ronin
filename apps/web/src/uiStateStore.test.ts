@@ -26,6 +26,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     defaultAdvertisedEndpointKey: null,
     agentNotificationsEnabled: true,
     agentSoundsEnabled: false,
+    digestSeenAt: null,
     ...overrides,
   };
 }
@@ -187,6 +188,7 @@ describe("parsePersistedState", () => {
       },
       agentNotificationsEnabled: true,
       agentSoundsEnabled: false,
+      digestSeenAt: null,
     });
   });
 
@@ -316,6 +318,7 @@ describe("uiStateStore persistence", () => {
       },
       agentNotificationsEnabled: true,
       agentSoundsEnabled: false,
+      digestSeenAt: null,
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

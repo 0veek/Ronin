@@ -954,6 +954,9 @@ const makeWsRpcLayer = (
                 ...(bootstrap.createThread.sideChat === undefined
                   ? {}
                   : { sideChat: bootstrap.createThread.sideChat }),
+                ...(bootstrap.createThread.comparisonGroupId === undefined
+                  ? {}
+                  : { comparisonGroupId: bootstrap.createThread.comparisonGroupId }),
                 createdAt: bootstrap.createThread.createdAt,
               });
               createdThread = true;

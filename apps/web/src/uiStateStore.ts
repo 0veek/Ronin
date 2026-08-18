@@ -29,6 +29,7 @@ export interface PersistedUiState {
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   agentNotificationsEnabled?: boolean;
   agentSoundsEnabled?: boolean;
+  digestSeenAt?: string | null;
 }
 
 export interface UiProjectState {
@@ -43,6 +44,18 @@ export interface UiThreadState {
 
 export interface UiEndpointState {
   defaultAdvertisedEndpointKey: string | null;
+}
+
+export interface UiDigestState {
+  /**
+   * When this device last read its digest. Per-device and not synced: the
+   * digest answers "what changed since *I* last looked", and the phone in
+   * your pocket last looked at a different time than the machine on your desk.
+   *
+   * Null on a device that has never opened one, which the digest reads as
+   * "since this session started" rather than reporting all of history.
+   */
+  digestSeenAt: string | null;
 }
 
 export interface UiNotificationState {
@@ -63,7 +76,7 @@ export interface UiNotificationState {
 }
 
 export interface UiState
-  extends UiProjectState, UiThreadState, UiEndpointState, UiNotificationState {}
+  extends UiProjectState, UiThreadState, UiEndpointState, UiNotificationState, UiDigestState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -73,6 +86,7 @@ const initialState: UiState = {
   defaultAdvertisedEndpointKey: null,
   agentNotificationsEnabled: true,
   agentSoundsEnabled: false,
+  digestSeenAt: null,
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -163,6 +177,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
         : true,
     agentSoundsEnabled:
       typeof parsed.agentSoundsEnabled === "boolean" ? parsed.agentSoundsEnabled : false,
+    digestSeenAt: typeof parsed.digestSeenAt === "string" ? parsed.digestSeenAt : null,
   };
 }
 
@@ -237,6 +252,7 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         agentNotificationsEnabled: state.agentNotificationsEnabled,
         agentSoundsEnabled: state.agentSoundsEnabled,
+        digestSeenAt: state.digestSeenAt,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -418,6 +434,7 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setAgentNotificationsEnabled: (enabled: boolean) => void;
   setAgentSoundsEnabled: (enabled: boolean) => void;
+  markDigestSeen: (seenAt: string) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
   reorderProjects: (
     currentProjectOrder: readonly string[],
@@ -442,6 +459,7 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
         ? state
         : { ...state, agentNotificationsEnabled: enabled },
     ),
+  markDigestSeen: (seenAt) => set((state) => ({ ...state, digestSeenAt: seenAt })),
   setAgentSoundsEnabled: (enabled) =>
     set((state) =>
       state.agentSoundsEnabled === enabled ? state : { ...state, agentSoundsEnabled: enabled },

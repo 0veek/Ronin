@@ -3134,6 +3134,7 @@ export default function Sidebar() {
               isRunning:
                 thread.session?.status === "running" && thread.session.activeTurnId != null,
               canExport: (threadDetail?.messages.length ?? 0) > 0,
+              hasQueuedTask: (thread.queuedPrompt ?? null) !== null,
               supports: {
                 settlement: supportsSettlement,
                 snooze: supportsSnooze,

@@ -10,7 +10,7 @@
  *
  * @module SideChatSelectionAction
  */
-import { MessagesSquareIcon } from "lucide-react";
+import { ListPlusIcon, MessagesSquareIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -24,7 +24,7 @@ import {
 import { cn } from "~/lib/utils";
 
 /** Matches the rendered chip; only used to keep it inside the viewport. */
-const CHIP_WIDTH_PX = 168;
+const CHIP_WIDTH_PX = 268;
 /** Gap between the selection's top edge and the chip's bottom edge. */
 const CHIP_OFFSET_PX = 10;
 
@@ -84,10 +84,14 @@ function readSelection(): ActiveSelection | null {
 export function SideChatSelectionAction({
   enabled,
   onAsk,
+  onCapture,
 }: {
   /** Off for draft threads, which have nowhere to open a side chat into. */
   readonly enabled: boolean;
   readonly onAsk: (messageId: string, passage: string) => void;
+  /** Absent hides the capture verb, for surfaces with no project to file a
+      task against. */
+  readonly onCapture?: (messageId: string, passage: string) => void;
 }) {
   const [active, setActive] = useState<ActiveSelection | null>(null);
   // Held across the click so pressing the chip — which clears the selection as
@@ -122,13 +126,21 @@ export function SideChatSelectionAction({
     };
   }, [enabled]);
 
-  const ask = useCallback(() => {
+  // Both verbs consume the selection the same way: clear the chip, drop the
+  // range, then hand the passage on. Sharing the shape keeps them from
+  // drifting into two different ideas of what "the selection" was.
+  const runWithSelection = useCallback((handler: (messageId: string, passage: string) => void) => {
     const current = activeRef.current;
     if (current === null) return;
     setActive(null);
     window.getSelection()?.removeAllRanges();
-    onAsk(current.candidate.messageId, current.candidate.text);
-  }, [onAsk]);
+    handler(current.candidate.messageId, current.candidate.text);
+  }, []);
+  const ask = useCallback(() => runWithSelection(onAsk), [onAsk, runWithSelection]);
+  const capture = useCallback(() => {
+    if (onCapture === undefined) return;
+    runWithSelection(onCapture);
+  }, [onCapture, runWithSelection]);
 
   if (!enabled || active === null) return null;
 
@@ -141,21 +153,39 @@ export function SideChatSelectionAction({
       )}
       style={{ left: active.anchor.x, top: active.anchor.y - CHIP_OFFSET_PX }}
     >
-      <button
-        type="button"
-        // `onPointerDown` rather than `onClick`: the browser clears the
-        // selection on mousedown elsewhere, and by click time the passage
-        // would be gone.
-        onPointerDown={(event) => {
-          event.preventDefault();
-          ask();
-        }}
-        className="pointer-events-auto inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border bg-popover px-3 py-1.5 text-popover-foreground text-xs shadow-lg outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <MessagesSquareIcon aria-hidden className="size-3.5" />
-        Ask on the side
-        <Kbd className="ml-0.5">⌘⇧A</Kbd>
-      </button>
+      <div className="pointer-events-auto inline-flex items-stretch overflow-hidden rounded-full border border-border bg-popover text-popover-foreground shadow-lg">
+        <button
+          type="button"
+          // `onPointerDown` rather than `onClick`: the browser clears the
+          // selection on mousedown elsewhere, and by click time the passage
+          // would be gone.
+          onPointerDown={(event) => {
+            event.preventDefault();
+            ask();
+          }}
+          className="inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent px-3 py-1.5 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        >
+          <MessagesSquareIcon aria-hidden className="size-3.5" />
+          Ask on the side
+          <Kbd className="ml-0.5">⌘⇧A</Kbd>
+        </button>
+        {onCapture === undefined ? null : (
+          <>
+            <span aria-hidden className="w-px shrink-0 self-stretch bg-border" />
+            <button
+              type="button"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                capture();
+              }}
+              className="inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent px-3 py-1.5 text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            >
+              <ListPlusIcon aria-hidden className="size-3.5" />
+              Capture
+            </button>
+          </>
+        )}
+      </div>
     </div>,
     document.body,
   );

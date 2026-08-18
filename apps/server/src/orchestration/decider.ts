@@ -384,6 +384,10 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           branch: command.branch,
           worktreePath: command.worktreePath,
           ...(command.sideChat === undefined ? {} : { sideChat: command.sideChat }),
+          ...(command.queuedPrompt === undefined ? {} : { queuedPrompt: command.queuedPrompt }),
+          ...(command.comparisonGroupId === undefined
+            ? {}
+            : { comparisonGroupId: command.comparisonGroupId }),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },
@@ -840,6 +844,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
             : {}),
           ...(branch !== undefined ? { branch } : {}),
           ...(command.worktreePath !== undefined ? { worktreePath: command.worktreePath } : {}),
+          ...(command.queuedPrompt !== undefined ? { queuedPrompt: command.queuedPrompt } : {}),
           updatedAt: occurredAt,
         },
       };

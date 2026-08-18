@@ -629,6 +629,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             pinOrderKey: null,
             sideChatParentThreadId: event.payload.sideChat?.parentThreadId ?? null,
             sideChatAnchorMessageId: event.payload.sideChat?.anchorMessageId ?? null,
+            queuedPrompt: event.payload.queuedPrompt ?? null,
+            comparisonGroupId: event.payload.comparisonGroupId ?? null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,
@@ -807,6 +809,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...(event.payload.worktreePath !== undefined
               ? { worktreePath: event.payload.worktreePath }
               : {}),
+            ...(event.payload.queuedPrompt !== undefined
+              ? { queuedPrompt: event.payload.queuedPrompt }
+              : {}),
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -889,6 +894,13 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           }
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
+            // A queued prompt is a promise about work not yet started. The
+            // user speaking breaks that promise's premise, so it clears here
+            // as well as in the projector — the two read models must agree or
+            // a reconnect resurrects a prompt the transcript already answered.
+            ...(event.type === "thread.message-sent" && event.payload.role === "user"
+              ? { queuedPrompt: null }
+              : {}),
             updatedAt: event.occurredAt,
           });
           yield* refreshThreadShellSummary(event.payload.threadId);

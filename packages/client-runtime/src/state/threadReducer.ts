@@ -86,6 +86,8 @@ export function applyThreadDetailEvent(
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
+          queuedPrompt: event.payload.queuedPrompt ?? null,
+          comparisonGroupId: event.payload.comparisonGroupId ?? null,
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -217,6 +219,9 @@ export function applyThreadDetailEvent(
           ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
           ...(event.payload.worktreePath !== undefined
             ? { worktreePath: event.payload.worktreePath }
+            : {}),
+          ...(event.payload.queuedPrompt !== undefined
+            ? { queuedPrompt: event.payload.queuedPrompt }
             : {}),
           updatedAt: event.payload.updatedAt,
         },
@@ -400,6 +405,11 @@ export function applyThreadDetailEvent(
           messages,
           checkpoints,
           latestTurn,
+          // Mirrors the server projector: once the user has spoken, the
+          // queued prompt is history the transcript already holds.
+          ...(event.payload.role === "user" && thread.queuedPrompt != null
+            ? { queuedPrompt: null }
+            : {}),
           updatedAt: event.occurredAt,
         },
       };

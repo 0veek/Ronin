@@ -214,9 +214,10 @@ import {
   selectProjectGroupingSettings,
 } from "../logicalProject";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
-import { buildDraftThreadRouteParams } from "../threadRoutes";
+import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
 import {
   type ComposerImageAttachment,
+  composerDraftHasUserContent,
   type DraftThreadEnvMode,
   useComposerDraftStore,
   type DraftId,
@@ -224,6 +225,10 @@ import {
 import { buildSideChatSeedPrompt } from "../sideChatSeed";
 
 /** Stable empty list so a thread with no side chats never re-renders the header. */
+/** Fallback digest mark for a device that has never opened one: reporting
+    from the beginning of history would bury today's news under a year of it. */
+const sessionStartedAt = new Date().toISOString();
+const EMPTY_COMPARISON_ENTRANTS: ReadonlyArray<EnvironmentThreadShell> = [];
 const EMPTY_SIDE_CHAT_CHILDREN: ReadonlyArray<{ threadId: ThreadId; title: string }> = [];
 import {
   appendTerminalContextsToPrompt,
@@ -303,6 +308,16 @@ import {
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { useQuotaResumeBanner } from "./chat/useQuotaResumeBanner";
 import { SideChatSelectionAction } from "./chat/SideChatSelectionAction";
+import { useCaptureTask } from "../hooks/useCaptureTask";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { buildDigest } from "../digest";
+import { DigestDialog } from "./DigestDialog";
+import { buildTurnReplay } from "../turnReplay";
+import { useSecondOpinion } from "../hooks/useSecondOpinion";
+import type { SecondOpinionEntrant } from "../secondOpinion";
+import { SecondOpinionBanner } from "./chat/SecondOpinionBanner";
+import { SecondOpinionDialog } from "./chat/SecondOpinionDialog";
+import { TurnReplayDialog } from "./chat/TurnReplayDialog";
 import { normalizeSelectedPassage } from "../sideChatSelection";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
@@ -1769,6 +1784,27 @@ function ChatViewContent(props: ChatViewProps) {
   const handleNewThreadInActiveProject = useCallback(() => {
     return startNewThreadForProject(activeProjectRef, handleNewThread);
   }, [activeProjectRef, handleNewThread]);
+  /**
+   * Put a captured task's prompt in the composer when its thread is opened.
+   *
+   * The prompt lives on the thread, not in this client's drafts, so it has to
+   * be brought across on arrival — and only when the composer is empty, so
+   * arriving at a thread you already started typing in never loses that text.
+   * It stays on the server until the turn is sent or the task is discarded,
+   * which is what lets the same capture open on a second device.
+   */
+  useEffect(() => {
+    const queuedPrompt = activeThread?.queuedPrompt;
+    if (queuedPrompt == null || queuedPrompt.length === 0) return;
+    if (!isServerThread) return;
+    const store = useComposerDraftStore.getState();
+    if (composerDraftHasUserContent(store.getComposerDraft(composerDraftTarget))) return;
+    store.setPrompt(composerDraftTarget, queuedPrompt);
+    composerRef.current?.resetCursorState({
+      prompt: queuedPrompt,
+      cursor: queuedPrompt.length,
+    });
+  }, [activeThread?.queuedPrompt, composerDraftTarget, isServerThread]);
   const applyReviewPrompt = useCallback(
     (target: ReviewSlashCommandTarget, extraArgs = "") => {
       const prompt =
@@ -1817,6 +1853,24 @@ function ChatViewContent(props: ChatViewProps) {
     return children.length === 0
       ? EMPTY_SIDE_CHAT_CHILDREN
       : children.map((shell) => ({ threadId: shell.id, title: shell.title }));
+  }, [activeThread, allThreadShells, isServerThread]);
+  /**
+   * The threads racing alongside this one.
+   *
+   * Read off the shell list rather than fetched: every entrant is an ordinary
+   * thread the client already tracks, and the group id is the only thing that
+   * relates them.
+   */
+  const comparisonEntrants = useMemo(() => {
+    const groupId = activeThread?.comparisonGroupId;
+    if (!activeThread || !isServerThread || groupId == null) return EMPTY_COMPARISON_ENTRANTS;
+    const members = allThreadShells.filter(
+      (shell) =>
+        shell.environmentId === activeThread.environmentId && shell.comparisonGroupId === groupId,
+    );
+    return members.length < 2
+      ? EMPTY_COMPARISON_ENTRANTS
+      : members.toSorted((left, right) => left.createdAt.localeCompare(right.createdAt));
   }, [activeThread, allThreadShells, isServerThread]);
   const sideChatParent = useMemo(
     () =>
@@ -1896,6 +1950,111 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThread, handleAskOnTheSide, isServerThread]);
   const askOnTheSideFromCurrentSelectionRef = useRef<(() => void) | null>(null);
   askOnTheSideFromCurrentSelectionRef.current = askOnTheSideFromCurrentSelection;
+  /**
+   * Capture a passage as a task in this project.
+   *
+   * Same three ways in as asking on the side — chip, shortcut, palette — and
+   * the same rule about what counts: a live selection wins, otherwise the
+   * newest finished answer, which is where the "you may also want to…" the
+   * user just read actually lives.
+   */
+  const captureTask = useCaptureTask();
+  const handleCaptureTaskFromSelection = useCallback(
+    (messageId: string, passage: string) => {
+      if (!activeProjectRef || !activeThread) return;
+      // The chip reads its id from a DOM attribute, so only a real message in
+      // this thread vouches for the passage being ours to capture.
+      if (!activeThread.messages.some((candidate) => candidate.id === messageId)) return;
+      void captureTask({
+        projectRef: activeProjectRef,
+        passage,
+        sourceThreadRef: activeThreadRef,
+      });
+    },
+    [activeProjectRef, activeThread, activeThreadRef, captureTask],
+  );
+  const captureTaskFromCurrentSelection = useCallback(() => {
+    if (!isServerThread || !activeProjectRef || !activeThread) return;
+    const selection = typeof window === "undefined" ? null : window.getSelection();
+    const selected = selection === null || selection.isCollapsed ? null : selection.toString();
+    const passage = selected === null ? null : normalizeSelectedPassage(selected);
+    if (passage !== null && passage.length > 0) {
+      void captureTask({
+        projectRef: activeProjectRef,
+        passage,
+        sourceThreadRef: activeThreadRef,
+      });
+      return;
+    }
+    const messages = activeThread.messages;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message?.role !== "assistant" || message.streaming) continue;
+      if (message.text.trim().length === 0) continue;
+      void captureTask({
+        projectRef: activeProjectRef,
+        passage: message.text,
+        sourceThreadRef: activeThreadRef,
+      });
+      return;
+    }
+  }, [activeProjectRef, activeThread, activeThreadRef, captureTask, isServerThread]);
+  const captureTaskFromCurrentSelectionRef = useRef<(() => void) | null>(null);
+  captureTaskFromCurrentSelectionRef.current = captureTaskFromCurrentSelection;
+  /**
+   * Race the composer's prompt across several models.
+   *
+   * The prompt is read at the moment the dialog opens rather than when it is
+   * confirmed, so what the dialog quotes back is exactly what gets sent even
+   * if the composer is edited underneath it.
+   */
+  const runSecondOpinion = useSecondOpinion();
+  const [secondOpinionPrompt, setSecondOpinionPrompt] = useState<string | null>(null);
+  const openSecondOpinion = useCallback(() => {
+    if (!activeProjectRef || !activeProject) return;
+    const prompt = promptRef.current.trim();
+    if (prompt.length === 0) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Nothing to compare yet",
+          description: "Write the prompt first, then ask for a second opinion.",
+        }),
+      );
+      return;
+    }
+    setSecondOpinionPrompt(prompt);
+  }, [activeProject, activeProjectRef]);
+  const openSecondOpinionRef = useRef<(() => void) | null>(null);
+  openSecondOpinionRef.current = openSecondOpinion;
+  /**
+   * The catch-up digest.
+   *
+   * Built when it is asked for rather than kept live: it is a snapshot of a
+   * moment, and one that re-sorted itself while being read would be a worse
+   * answer to "what changed" than a stale one.
+   */
+  const digestSeenAt = useUiStateStore((state) => state.digestSeenAt);
+  const markDigestSeen = useUiStateStore((state) => state.markDigestSeen);
+  const [digestOpen, setDigestOpen] = useState(false);
+  const [digestSince, setDigestSince] = useState<string | null>(null);
+  const digest = useMemo(
+    () =>
+      buildDigest({
+        threads: allThreadShells,
+        // A device that has never opened one reports from when this session
+        // started, not from the beginning of time.
+        since: digestSince ?? digestSeenAt ?? sessionStartedAt,
+        now: new Date().toISOString(),
+      }),
+    [allThreadShells, digestSeenAt, digestSince],
+  );
+  const openDigest = useCallback(() => {
+    setDigestSince(digestSeenAt ?? sessionStartedAt);
+    setDigestOpen(true);
+  }, [digestSeenAt]);
+  const openDigestRef = useRef<(() => void) | null>(null);
+  openDigestRef.current = openDigest;
   const createForkThread = useCallback(
     (target: ForkSlashCommandTarget) => {
       if (!activeProjectRef) {
@@ -2834,6 +2993,19 @@ function ChatViewContent(props: ChatViewProps) {
       ),
     [activeThread?.proposedPlans, timelineMessages, turnPlans, workLogEntries],
   );
+  /**
+   * The turn being replayed, built on demand.
+   *
+   * Held as a turn id rather than a built replay so the dialog follows late
+   * activity for a turn that is still finishing its bookkeeping, and so
+   * closing it costs nothing to reopen.
+   */
+  const [replayTurnId, setReplayTurnId] = useState<TurnId | null>(null);
+  const turnReplay = useMemo(
+    () => (replayTurnId === null ? null : buildTurnReplay(timelineEntries, replayTurnId)),
+    [replayTurnId, timelineEntries],
+  );
+  const handleReplayTurn = useCallback((turnId: TurnId) => setReplayTurnId(turnId), []);
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
@@ -4373,6 +4545,56 @@ function ChatViewContent(props: ChatViewProps) {
     canOverrideServerThreadEnvMode && pendingServerThreadBranch !== undefined
       ? pendingServerThreadBranch
       : (activeThread?.branch ?? null);
+  const startSecondOpinion = useCallback(
+    (entrants: ReadonlyArray<SecondOpinionEntrant>) => {
+      const prompt = secondOpinionPrompt;
+      if (!activeProjectRef || prompt === null) return;
+      // A race needs a branch to cut every worktree from. The composer's own
+      // branch is the one the user is looking at, so it is the honest base.
+      const baseBranch = activeThreadBranch;
+      if (!baseBranch) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Pick a base branch first",
+            description: "Each entrant needs its own worktree, cut from a branch you choose.",
+          }),
+        );
+        return;
+      }
+      void (async () => {
+        const result = await runSecondOpinion({
+          projectRef: activeProjectRef,
+          prompt,
+          entrants,
+          baseBranch,
+          startFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,
+        });
+        if (result === null) return;
+        // The composer's text now lives in the race, so leaving a copy behind
+        // would invite sending it a second time by accident.
+        promptRef.current = "";
+        clearComposerDraftContent(composerDraftTarget);
+        composerRef.current?.resetCursorState();
+        const first = result.threadRefs[0];
+        if (first) {
+          void navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(first),
+          });
+        }
+      })();
+    },
+    [
+      activeProjectRef,
+      activeThreadBranch,
+      clearComposerDraftContent,
+      composerDraftTarget,
+      primaryServerSettings.newWorktreesStartFromOrigin,
+      runSecondOpinion,
+      secondOpinionPrompt,
+    ],
+  );
   const startFromOrigin = isLocalDraftThread
     ? (draftThread?.startFromOrigin ?? false)
     : canOverrideServerThreadEnvMode
@@ -5013,6 +5235,21 @@ function ChatViewContent(props: ChatViewProps) {
 
       if (command === "chat.askOnTheSide") {
         askOnTheSideFromCurrentSelectionRef.current?.();
+        return true;
+      }
+
+      if (command === "chat.captureTask") {
+        captureTaskFromCurrentSelectionRef.current?.();
+        return true;
+      }
+
+      if (command === "chat.secondOpinion") {
+        openSecondOpinionRef.current?.();
+        return true;
+      }
+
+      if (command === "digest.show") {
+        openDigestRef.current?.();
         return true;
       }
 
@@ -6751,12 +6988,28 @@ function ChatViewContent(props: ChatViewProps) {
                 onDismiss={() => setDismissedProviderStatusBannerKey(providerStatusBannerKey)}
               />
             </div>
+            {comparisonEntrants.length > 1 ? (
+              <SecondOpinionBanner
+                activeThreadId={activeThread.id}
+                entrants={comparisonEntrants}
+                onOpenThread={(entrant) =>
+                  void navigate({
+                    to: "/$environmentId/$threadId",
+                    params: buildThreadRouteParams({
+                      environmentId: entrant.environmentId,
+                      threadId: entrant.id,
+                    }),
+                  })
+                }
+              />
+            ) : null}
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <SideChatSelectionAction
                 enabled={isServerThread}
                 onAsk={handleAskOnTheSideFromSelection}
+                onCapture={handleCaptureTaskFromSelection}
               />
               <MessagesTimeline
                 agentPanelModel={agentPanelModel}
@@ -6778,6 +7031,7 @@ function ChatViewContent(props: ChatViewProps) {
                 activeThreadEnvironmentId={activeThread.environmentId}
                 routeThreadKey={routeThreadKey}
                 onOpenTurnDiff={onOpenTurnDiff}
+                onReplayTurn={handleReplayTurn}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
                 onAskOnTheSide={isServerThread ? handleAskOnTheSide : null}
@@ -6925,6 +7179,7 @@ function ChatViewContent(props: ChatViewProps) {
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
+                            onSecondOpinion={openSecondOpinion}
                             onRespondToApproval={onRespondToApproval}
                             onSelectActivePendingUserInputOption={
                               onSelectActivePendingUserInputOption
@@ -7185,6 +7440,46 @@ function ChatViewContent(props: ChatViewProps) {
         open={isSlashStatusDialogOpen}
         onOpenChange={setIsSlashStatusDialogOpen}
         thread={activeThread}
+      />
+      <TurnReplayDialog
+        open={turnReplay !== null}
+        onOpenChange={(open) => {
+          if (!open) setReplayTurnId(null);
+        }}
+        replay={turnReplay}
+      />
+      <DigestDialog
+        digest={digest}
+        open={digestOpen}
+        onOpenChange={(open) => {
+          setDigestOpen(open);
+          // Reading is what advances the mark, so it moves on close rather
+          // than on open — a digest dismissed unread still reports next time.
+          if (!open) {
+            markDigestSeen(new Date().toISOString());
+            setDigestSince(null);
+          }
+        }}
+        onOpenThread={(thread) => {
+          setDigestOpen(false);
+          markDigestSeen(new Date().toISOString());
+          setDigestSince(null);
+          void navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams({
+              environmentId: thread.environmentId,
+              threadId: thread.id,
+            }),
+          });
+        }}
+      />
+      <SecondOpinionDialog
+        open={secondOpinionPrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) setSecondOpinionPrompt(null);
+        }}
+        onStart={startSecondOpinion}
+        prompt={secondOpinionPrompt ?? ""}
       />
       <ComposerSlashTargetPicker
         open={isSlashReviewPickerOpen}

@@ -270,6 +270,38 @@ export const ThreadSideChatOrigin = Schema.Struct({
 });
 export type ThreadSideChatOrigin = typeof ThreadSideChatOrigin.Type;
 
+/**
+ * A prompt recorded on a thread that nobody has sent yet.
+ *
+ * Captured work — "you may also want to drop the legacy shim" — is a task, not
+ * a conversation, and a task the user cannot see from their phone is a task
+ * they will forget. So it lives on the thread rather than in the client's
+ * composer drafts: every connected client reads the same queued prompt, and
+ * the thread sits in the board's Draft lane until someone sends it.
+ *
+ * Cleared (set to null) the moment a turn starts, because from then on the
+ * transcript is the record and a stale copy of the opening prompt is a lie.
+ */
+export const ThreadQueuedPrompt = TrimmedNonEmptyString;
+export type ThreadQueuedPrompt = typeof ThreadQueuedPrompt.Type;
+
+/**
+ * Ties together the threads racing the same prompt.
+ *
+ * Ronin is the one place a user holds several provider subscriptions at once,
+ * so "ask two of them and compare" is a question only this app can answer. A
+ * race is N ordinary threads — each with its own worktree, its own session,
+ * its own history — sharing nothing but this id. Grouping rather than nesting
+ * because no entrant is the original: there is no parent thread to fall back
+ * to, and picking a winner must not orphan the others.
+ *
+ * Opaque and client-minted. The server never interprets it; it only has to
+ * hand the same id back to every client so the comparison view can find its
+ * members.
+ */
+export const ThreadComparisonGroupId = TrimmedNonEmptyString;
+export type ThreadComparisonGroupId = typeof ThreadComparisonGroupId.Type;
+
 export const OrchestrationMessageRole = Schema.Literals(["user", "assistant", "system"]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
@@ -441,6 +473,10 @@ export const OrchestrationThread = Schema.Struct({
   // Optional on the wire so snapshots from servers that predate side chats
   // still decode; absent and null both mean "an ordinary thread".
   sideChat: Schema.optional(Schema.NullOr(ThreadSideChatOrigin)),
+  // Optional on the wire so snapshots from servers that predate captured
+  // tasks still decode; absent and null both mean "nothing queued".
+  queuedPrompt: Schema.optional(Schema.NullOr(ThreadQueuedPrompt)),
+  comparisonGroupId: Schema.optional(Schema.NullOr(ThreadComparisonGroupId)),
   deletedAt: Schema.NullOr(IsoDateTime),
   messages: Schema.Array(OrchestrationMessage),
   proposedPlans: Schema.Array(OrchestrationProposedPlan).pipe(
@@ -500,6 +536,8 @@ export const OrchestrationThreadShell = Schema.Struct({
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   titleRegeneration: Schema.optional(Schema.NullOr(ThreadTitleRegeneration)),
   sideChat: Schema.optional(Schema.NullOr(ThreadSideChatOrigin)),
+  queuedPrompt: Schema.optional(Schema.NullOr(ThreadQueuedPrompt)),
+  comparisonGroupId: Schema.optional(Schema.NullOr(ThreadComparisonGroupId)),
   session: Schema.NullOr(OrchestrationSession),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
   hasPendingApprovals: Schema.Boolean,
@@ -709,6 +747,9 @@ const ThreadCreateCommand = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   sideChat: Schema.optional(ThreadSideChatOrigin),
+  /** Seeds a thread that is created already carrying work to do. */
+  queuedPrompt: Schema.optional(ThreadQueuedPrompt),
+  comparisonGroupId: Schema.optional(ThreadComparisonGroupId),
   createdAt: IsoDateTime,
 });
 
@@ -804,6 +845,8 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   expectedBranch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  /** Null clears the queued prompt; the field is absent when untouched. */
+  queuedPrompt: Schema.optional(Schema.NullOr(ThreadQueuedPrompt)),
 }).check(
   Schema.makeFilter(
     (input) =>
@@ -901,6 +944,7 @@ const ThreadTurnStartBootstrapCreateThread = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   sideChat: Schema.optional(ThreadSideChatOrigin),
+  comparisonGroupId: Schema.optional(ThreadComparisonGroupId),
   createdAt: IsoDateTime,
 });
 
@@ -1262,6 +1306,8 @@ export const ThreadCreatedPayload = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   sideChat: Schema.optional(ThreadSideChatOrigin),
+  queuedPrompt: Schema.optional(ThreadQueuedPrompt),
+  comparisonGroupId: Schema.optional(ThreadComparisonGroupId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1344,6 +1390,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   modelSelection: Schema.optional(ModelSelection),
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
+  queuedPrompt: Schema.optional(Schema.NullOr(ThreadQueuedPrompt)),
   updatedAt: IsoDateTime,
 });
 

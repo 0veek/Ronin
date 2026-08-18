@@ -402,7 +402,10 @@ describe("WORKSPACE_COMMANDS", () => {
       "rightPanel.toggle",
       "modelPicker.toggle",
       "chat.askOnTheSide",
+      "chat.captureTask",
+      "chat.secondOpinion",
       "chat.cycleWidth",
+      "digest.show",
     ]);
 
     for (const entry of WORKSPACE_COMMANDS) {

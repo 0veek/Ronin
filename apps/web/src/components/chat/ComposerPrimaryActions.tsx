@@ -1,10 +1,11 @@
 import { memo, type PointerEventHandler } from "react";
-import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, SplitIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Spinner } from "../ui/spinner";
 import { ComposerDictationControl } from "./ComposerDictationControl";
 
@@ -35,6 +36,12 @@ interface ComposerPrimaryActionsProps {
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  /**
+   * Send this prompt to several models instead of one. Absent on surfaces
+   * where there is no prompt to race — the pending-answer rows — which is
+   * also what keeps the button out of them.
+   */
+  onSecondOpinion?: (() => void) | null;
 }
 
 export const formatPendingPrimaryActionLabel = (input: {
@@ -76,6 +83,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
+  onSecondOpinion = null,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
@@ -271,12 +279,40 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     </button>
   );
 
+  // Sits beside send because it is the same decision — "this prompt goes out
+  // now" — with a different number of recipients. Only once there is a prompt:
+  // an empty composer has nothing to compare, and a permanently dead button
+  // teaches people to stop looking at that corner.
+  const secondOpinionButton =
+    onSecondOpinion !== null && promptHasText ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              className="rounded-full text-muted-foreground/70 hover:text-foreground/80"
+              aria-label="Get a second opinion"
+              {...pointerFocusProps}
+              disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
+              onClick={onSecondOpinion}
+            />
+          }
+        >
+          <SplitIcon className="size-4" />
+        </TooltipTrigger>
+        <TooltipPopup side="top">Send this to several models</TooltipPopup>
+      </Tooltip>
+    ) : null;
+
   if (!isRunning) {
     return (
       // The mic sits in the send button's own row rather than down in the
       // context strip: dictation and sending are the same gesture pair, and a
       // hold-to-speak control belongs under the thumb that is about to send.
       <div className="flex items-center gap-1">
+        {secondOpinionButton}
         <ComposerDictationControl />
         {sendButton}
       </div>
@@ -284,9 +320,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   }
 
   return (
-    <>
+    // The mic stays through a running turn. Dictation composes the *next*
+    // message, which is exactly what people do while an agent works, and a
+    // control that disappears the moment work starts reads as broken rather
+    // than as unavailable.
+    <div className="flex items-center gap-1">
+      <ComposerDictationControl />
       {renderStopGenerationButton(false)}
       {showSendWhileRunning && hasSendableContent ? sendButton : null}
-    </>
+    </div>
   );
 });

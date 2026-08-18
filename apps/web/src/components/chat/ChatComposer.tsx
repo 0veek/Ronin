@@ -460,6 +460,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onSecondOpinion?: (() => void) | null;
 }) {
   return (
     <>
@@ -489,6 +490,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
+        onSecondOpinion={props.onSecondOpinion ?? null}
       />
     </>
   );
@@ -623,6 +625,8 @@ export interface ChatComposerProps {
   onSend: (e?: { preventDefault: () => void }) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  /** Race this prompt across several models. Absent hides the control. */
+  onSecondOpinion?: (() => void) | null;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -708,6 +712,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
+    onSecondOpinion,
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
@@ -3395,6 +3400,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                    onSecondOpinion={onSecondOpinion ?? null}
                   />
                 </div>
               </div>

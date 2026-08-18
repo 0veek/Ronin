@@ -299,6 +299,8 @@ export function projectEvent(
             branch: payload.branch,
             worktreePath: payload.worktreePath,
             sideChat: payload.sideChat ?? null,
+            queuedPrompt: payload.queuedPrompt ?? null,
+            comparisonGroupId: payload.comparisonGroupId ?? null,
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -458,6 +460,7 @@ export function projectEvent(
               : {}),
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
+            ...(payload.queuedPrompt !== undefined ? { queuedPrompt: payload.queuedPrompt } : {}),
             updatedAt: payload.updatedAt,
           }),
         })),
@@ -579,6 +582,13 @@ export function projectEvent(
           ...nextBase,
           threads: updateThread(nextBase.threads, payload.threadId, {
             messages: cappedMessages,
+            // The user speaking is what retires a queued prompt, whichever
+            // surface sent it. Clearing here rather than at the capture's own
+            // send path means a prompt sent from another device, an
+            // automation, or a resumed turn all leave the same clean thread.
+            ...(payload.role === "user" && thread.queuedPrompt != null
+              ? { queuedPrompt: null }
+              : {}),
             updatedAt: event.occurredAt,
           }),
         };

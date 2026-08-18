@@ -18,6 +18,7 @@ export type ThreadActionMenuId =
   | "rename"
   | "regenerate-title"
   | "mark-unread"
+  | "discard-queued-task"
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
@@ -38,6 +39,9 @@ export interface ThreadActionMenuState {
   readonly isRunning: boolean;
   /** Export builds the transcript from the loaded thread, so it needs one in hand. */
   readonly canExport: boolean;
+  /** A captured task still waiting to be sent, which the user can throw away
+      without opening the thread. */
+  readonly hasQueuedTask: boolean;
   readonly supports: {
     readonly settlement: boolean;
     readonly snooze: boolean;
@@ -107,6 +111,12 @@ export function buildThreadActionMenuItems(
         ]
       : []),
     { id: "mark-unread", label: "Mark unread" },
+    // The way out of a capture. Discarding leaves the thread — it may have
+    // picked up a name and a place on the board worth keeping — and only
+    // clears the prompt nobody ended up wanting.
+    ...(state.hasQueuedTask
+      ? [{ id: "discard-queued-task" as const, label: "Discard captured task" }]
+      : []),
     { id: "copy-path", label: "Copy path", icon: "copy" },
     ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
     { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },

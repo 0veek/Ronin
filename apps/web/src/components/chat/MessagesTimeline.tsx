@@ -151,6 +151,8 @@ interface TimelineRowSharedState {
   onAskOnTheSide: ((messageId: MessageId) => void) | null;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  /** Absent when the thread has too little history for any turn to replay. */
+  onReplayTurn: ((turnId: TurnId) => void) | null;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
   agentPanelModel: AgentPanelModel;
@@ -228,6 +230,7 @@ interface MessagesTimelineProps {
   turnDiffSummaryByAssistantMessageId: Map<MessageId, TurnDiffSummary>;
   routeThreadKey: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
+  onReplayTurn?: ((turnId: TurnId) => void) | null;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
   onAskOnTheSide?: ((messageId: MessageId) => void) | null;
@@ -275,6 +278,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   turnDiffSummaryByAssistantMessageId,
   routeThreadKey,
   onOpenTurnDiff,
+  onReplayTurn = null,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
   onAskOnTheSide = null,
@@ -529,6 +533,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onAskOnTheSide,
       onImageExpand,
       onOpenTurnDiff,
+      onReplayTurn: onReplayTurn ?? null,
       onToggleTurnFold,
       onToggleWorkGroup,
       agentPanelModel,
@@ -546,6 +551,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onAskOnTheSide,
       onImageExpand,
       onOpenTurnDiff,
+      onReplayTurn,
       onToggleTurnFold,
       onToggleWorkGroup,
       agentPanelModel,
@@ -1533,6 +1539,7 @@ function AssistantChangedFilesSectionInner({
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
 }) {
   const activity = use(TimelineRowActivityCtx);
+  const { onReplayTurn } = use(TimelineRowCtx);
   const isLatestTurn = activity.latestTurnId === turnSummary.turnId;
   const persistedExpanded = useUiStateStore(
     (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.turnId],
@@ -1563,6 +1570,7 @@ function AssistantChangedFilesSectionInner({
       }
       onToggleAllDirectories={() => setAllDirectoriesExpanded((current) => !current)}
       onOpenTurnDiff={onOpenTurnDiff}
+      {...(onReplayTurn === null ? {} : { onReplayTurn })}
     />
   );
 }

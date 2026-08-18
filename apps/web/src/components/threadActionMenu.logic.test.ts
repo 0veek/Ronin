@@ -11,6 +11,7 @@ const baseState: ThreadActionMenuState = {
   isRegeneratingTitle: false,
   isRunning: false,
   canExport: true,
+  hasQueuedTask: false,
   supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
@@ -101,6 +102,11 @@ describe("buildThreadActionMenuItems", () => {
 
   it("hides export when the thread has no loaded transcript", () => {
     expect(ids({ ...baseState, canExport: false })).not.toContain("export");
+  });
+
+  it("offers the way out of a capture only while one is queued", () => {
+    expect(ids(baseState)).not.toContain("discard-queued-task");
+    expect(ids({ ...baseState, hasQueuedTask: true })).toContain("discard-queued-task");
   });
 
   it("disables archive while the thread is running", () => {

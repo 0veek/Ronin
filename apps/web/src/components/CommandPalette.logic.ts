@@ -87,6 +87,33 @@ export const WORKSPACE_COMMANDS: readonly WorkspaceCommandDescriptor[] = [
     searchTerms: ["side", "chat", "ask", "question", "aside", "branch", "context"],
   },
   {
+    command: "chat.captureTask",
+    value: "action:chat-capture-task",
+    title: "Capture as task",
+    searchTerms: ["capture", "task", "todo", "later", "follow", "up", "draft", "board", "backlog"],
+  },
+  {
+    command: "digest.show",
+    value: "action:digest-show",
+    title: "Since you last looked",
+    searchTerms: ["digest", "summary", "overnight", "since", "catch", "up", "waiting", "news"],
+  },
+  {
+    command: "chat.secondOpinion",
+    value: "action:chat-second-opinion",
+    title: "Get a second opinion",
+    searchTerms: [
+      "second",
+      "opinion",
+      "compare",
+      "race",
+      "models",
+      "providers",
+      "versus",
+      "parallel",
+    ],
+  },
+  {
     command: "diff.toggle",
     value: "action:diff-toggle",
     title: "Toggle diff",

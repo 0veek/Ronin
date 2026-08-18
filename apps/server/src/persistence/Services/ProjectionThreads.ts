@@ -48,6 +48,8 @@ export const ProjectionThread = Schema.Struct({
   // an index instead of parsing every row it reads.
   sideChatParentThreadId: Schema.optional(Schema.NullOr(ThreadId)),
   sideChatAnchorMessageId: Schema.optional(Schema.NullOr(MessageId)),
+  queuedPrompt: Schema.optional(Schema.NullOr(Schema.String)),
+  comparisonGroupId: Schema.optional(Schema.NullOr(Schema.String)),
   titleRegenerationRequestId: Schema.optional(Schema.NullOr(CommandId)),
   titleRegenerationStartedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   latestUserMessageAt: Schema.NullOr(IsoDateTime),
