@@ -43,6 +43,7 @@ const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
   getAppMetrics: Effect.succeed([]),
   isDefaultProtocolClient: () => Effect.succeed(false),
   setAsDefaultProtocolClient: () => Effect.succeed(true),
+  requestSingleInstanceLock: Effect.succeed(true),
   setDesktopName: () => Effect.void,
   setDockIcon: () => Effect.void,
   setBadgeCount: () => Effect.void,
@@ -75,6 +76,7 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     handleBackendNotReady: Effect.void,
     flushMainWindowBounds: Effect.void,
     dispatchMenuAction: (action) => Deferred.succeed(selectedAction, action).pipe(Effect.asVoid),
+    openDesktopUrl: () => Effect.void,
     zoomMain: (direction) =>
       Deferred.succeed(selectedAction, `zoom-${direction}`).pipe(Effect.asVoid),
     syncAppearance: Effect.void,

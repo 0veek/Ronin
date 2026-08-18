@@ -30,8 +30,15 @@ type TestEnvironmentInput = Partial<DesktopEnvironment.MakeDesktopEnvironmentInp
   readonly env?: Record<string, string | undefined>;
 };
 
+interface ProtocolClientCall {
+  readonly protocol: string;
+  readonly path: string | undefined;
+  readonly args: readonly string[] | undefined;
+}
+
 interface ElectronAppCalls {
   readonly setAboutPanelOptions: Array<Electron.AboutPanelOptionsOptions>;
+  readonly setAsDefaultProtocolClient: Array<ProtocolClientCall>;
   readonly setDockIcon: string[];
   readonly setName: string[];
 }
@@ -57,7 +64,12 @@ const makeElectronAppLayer = (calls: ElectronAppCalls) =>
     setAppUserModelId: () => Effect.void,
     getAppMetrics: Effect.succeed([]),
     isDefaultProtocolClient: () => Effect.succeed(false),
-    setAsDefaultProtocolClient: () => Effect.succeed(true),
+    setAsDefaultProtocolClient: (protocol, path, args) =>
+      Effect.sync(() => {
+        calls.setAsDefaultProtocolClient.push({ protocol, path, args });
+        return true;
+      }),
+    requestSingleInstanceLock: Effect.succeed(true),
     setDesktopName: () => Effect.void,
     setDockIcon: (iconPath) =>
       Effect.sync(() => {
@@ -116,6 +128,7 @@ const withIdentity = <A, E, R>(
 ) => {
   const calls: ElectronAppCalls = input.calls ?? {
     setAboutPanelOptions: [],
+    setAsDefaultProtocolClient: [],
     setDockIcon: [],
     setName: [],
   };
@@ -183,9 +196,83 @@ describe("DesktopAppIdentity", () => {
     );
   });
 
+  // electron-builder writes `protocols` into the macOS Info.plist and the Linux
+  // .desktop entry, but the NSIS target ignores it — so on Windows the running
+  // app has to claim the scheme itself or OAuth callbacks never arrive.
+  it.effect("claims the renderer scheme on packaged Windows", () => {
+    const calls: ElectronAppCalls = {
+      setAboutPanelOptions: [],
+      setAsDefaultProtocolClient: [],
+      setDockIcon: [],
+      setName: [],
+    };
+
+    return withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        yield* identity.configure;
+
+        assert.deepEqual(calls.setAsDefaultProtocolClient, [
+          { protocol: "t3code", path: undefined, args: undefined },
+        ]);
+      }),
+      { calls, environment: { platform: "win32" } },
+    );
+  });
+
+  it.effect("points an unpackaged Windows registration at the launching binary", () => {
+    const calls: ElectronAppCalls = {
+      setAboutPanelOptions: [],
+      setAsDefaultProtocolClient: [],
+      setDockIcon: [],
+      setName: [],
+    };
+
+    return withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        yield* identity.configure;
+
+        const registration = calls.setAsDefaultProtocolClient[0];
+        assert.equal(registration?.protocol, "t3code-dev");
+        assert.equal(registration?.path, process.execPath);
+        assert.deepEqual(registration?.args, ["/repo/apps/desktop"]);
+      }),
+      {
+        calls,
+        environment: {
+          platform: "win32",
+          isPackaged: false,
+          appPath: "/repo/apps/desktop",
+          env: { VITE_DEV_SERVER_URL: "http://localhost:5173" },
+        },
+      },
+    );
+  });
+
+  it.effect("leaves scheme registration to the installer off Windows", () => {
+    const calls: ElectronAppCalls = {
+      setAboutPanelOptions: [],
+      setAsDefaultProtocolClient: [],
+      setDockIcon: [],
+      setName: [],
+    };
+
+    return withIdentity(
+      Effect.gen(function* () {
+        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+        yield* identity.configure;
+
+        assert.deepEqual(calls.setAsDefaultProtocolClient, []);
+      }),
+      { calls },
+    );
+  });
+
   it.effect("configures app identity from the environment commit override", () => {
     const calls: ElectronAppCalls = {
       setAboutPanelOptions: [],
+      setAsDefaultProtocolClient: [],
       setDockIcon: [],
       setName: [],
     };

@@ -258,6 +258,7 @@ interface ClaudeSessionContext {
   readonly turns: Array<{
     id: TurnId;
     items: Array<unknown>;
+    lastAssistantUuid?: string;
   }>;
   readonly inFlightTools: Map<number, ToolInFlight>;
   readonly claudeTasks: Map<string, ClaudeTaskState>;
@@ -2883,6 +2884,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         owningAgent.model = snapshotModel;
       }
       context.lastAssistantUuid = message.uuid;
+      const currentTurn = context.turns.at(-1);
+      if (currentTurn) currentTurn.lastAssistantUuid = message.uuid;
       yield* updateResumeCursor(context);
       return;
     }
@@ -2964,6 +2967,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     context.lastAssistantUuid = message.uuid;
+    const currentTurn = context.turns.at(-1);
+    if (currentTurn) currentTurn.lastAssistantUuid = message.uuid;
     yield* updateResumeCursor(context);
   });
 
@@ -4652,6 +4657,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const context = yield* requireSession(threadId);
       const nextLength = Math.max(0, context.turns.length - numTurns);
       context.turns.splice(nextLength);
+      context.lastAssistantUuid = context.turns.at(-1)?.lastAssistantUuid;
       yield* updateResumeCursor(context);
       return yield* snapshotThread(context);
     },

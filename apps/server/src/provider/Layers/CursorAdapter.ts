@@ -1132,6 +1132,13 @@ export function makeCursorAdapter(
         }
         const nextLength = Math.max(0, ctx.turns.length - numTurns);
         ctx.turns.splice(nextLength);
+        ctx.session = {
+          ...ctx.session,
+          resumeCursor: undefined,
+        };
+        // Cursor ACP cannot rewind an existing session. Stop it so the next
+        // turn starts a fresh conversation on the restored tree.
+        yield* stopSessionInternal(ctx);
         return { threadId, turns: ctx.turns };
       });
 

@@ -1185,7 +1185,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       protocols: [
         {
           name: "Ronin",
-          schemes: ["t3code", "t3code-dev"],
+          schemes: ["t3code"],
         },
       ],
     };
@@ -1199,11 +1199,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       category: "Development",
       // electron-builder turns these into MimeType=x-scheme-handler/<scheme>;
       // in the .desktop entry (Exec already gets %U), so browsers can hand
-      // t3code:// OAuth callbacks to the app.
+      // t3code:// OAuth callbacks to the app. Packaged builds own t3code only;
+      // t3code-dev stays with unpackaged `vp run dev`.
       protocols: [
         {
           name: "Ronin",
-          schemes: ["t3code", "t3code-dev"],
+          schemes: ["t3code"],
         },
       ],
       desktop: {
@@ -1223,6 +1224,16 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // of code signing. Disabling it for local unsigned builds leaves the
       // packaged executable with Electron's stock icon.
       signAndEditExecutable: true,
+      // electron-builder only reads `protocols` for the macOS Info.plist, the
+      // Linux .desktop entry, and AppX manifests — the NSIS target ignores it.
+      // Declared for an eventual AppX build; the scheme Windows actually ends
+      // up associating is claimed at runtime by DesktopAppIdentity.
+      protocols: [
+        {
+          name: "Ronin",
+          schemes: ["t3code"],
+        },
+      ],
     };
     if (signed) {
       winConfig.azureSignOptions = yield* AzureTrustedSigningOptionsConfig;

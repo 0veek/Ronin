@@ -15,6 +15,29 @@ import { WorkspaceTopbar } from "../components/shell/WorkspaceTopbar";
 import { Button } from "../components/ui/button";
 import { SidebarInset } from "../components/ui/sidebar";
 
+function isSettingsTextEditingTarget(target: Element): boolean {
+  if (target instanceof HTMLTextAreaElement) return !target.readOnly && !target.disabled;
+  if (target instanceof HTMLSelectElement) return !target.disabled;
+  if (target instanceof HTMLInputElement) {
+    if (target.readOnly || target.disabled) return false;
+    return !["button", "submit", "checkbox", "radio", "file", "reset", "hidden"].includes(
+      target.type,
+    );
+  }
+  return target instanceof HTMLElement && target.isContentEditable;
+}
+
+function shouldIgnoreSettingsEscape(event: KeyboardEvent): boolean {
+  const target = event.target;
+  if (!(target instanceof Element)) return false;
+  if (target.closest("[data-keybinding-capture]")) return true;
+  return Boolean(
+    target.closest(
+      "[role='dialog'], [role='menu'], [role='listbox'], [data-slot='dialog-popup'], [data-slot='menu-popup'], [data-slot='select-popup']",
+    ),
+  );
+}
+
 function RestoreDefaultsButton({ onRestored }: { onRestored: () => void }) {
   const { changedSettingLabels, restoreDefaults } = useSettingsRestore(onRestored);
 
@@ -49,17 +72,21 @@ function SettingsContentLayout() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (event.key === "Escape") {
+      if (event.defaultPrevented || event.key !== "Escape") return;
+      if (shouldIgnoreSettingsEscape(event)) return;
+
+      const activeElement = document.activeElement;
+      if (activeElement instanceof HTMLElement && isSettingsTextEditingTarget(activeElement)) {
         event.preventDefault();
-
-        const activeElement = document.activeElement;
-        if (activeElement instanceof HTMLElement) {
-          activeElement.blur();
-        }
-
-        navigateBackWithinApp();
+        activeElement.blur();
+        return;
       }
+
+      event.preventDefault();
+      if (activeElement instanceof HTMLElement) {
+        activeElement.blur();
+      }
+      navigateBackWithinApp();
     };
 
     window.addEventListener("keydown", onKeyDown);

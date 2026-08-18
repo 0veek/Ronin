@@ -450,7 +450,12 @@ export function makeAntigravityAdapter(
         // assistant's reply into nonsense.
         let pending: Promise<unknown> = Promise.resolve();
         const enqueue = (effect: Effect.Effect<void, ProviderAdapterRequestError>) => {
-          pending = pending.then(() => runDetached(effect)).catch(() => undefined);
+          pending = pending
+            .then(() => runDetached(effect))
+            .catch((error: unknown) => {
+              turnFailure =
+                error instanceof Error ? error.message : "Antigravity stream processing failed.";
+            });
         };
 
         let stdoutBuffer = "";
@@ -618,14 +623,23 @@ export function makeAntigravityAdapter(
           const ctx = yield* requireSession(threadId);
           return { threadId, turns: ctx.turns };
         }),
-      rollbackThread: () =>
-        Effect.fail(
-          new ProviderAdapterRequestError({
-            provider: PROVIDER,
-            method: "rollbackThread",
-            detail: "Antigravity print sessions do not support provider-side rollback yet.",
-          }),
-        ),
+      rollbackThread: (threadId, numTurns) =>
+        Effect.gen(function* () {
+          const ctx = yield* requireSession(threadId);
+          if (!Number.isInteger(numTurns) || numTurns < 1) {
+            return { threadId, turns: ctx.turns };
+          }
+          const nextLength = Math.max(0, ctx.turns.length - numTurns);
+          ctx.turns.splice(nextLength);
+          ctx.conversationId = undefined;
+          ctx.session = {
+            ...ctx.session,
+            resumeCursor: undefined,
+          };
+          yield* stopSessionInternal(ctx);
+          sessions.delete(threadId);
+          return { threadId, turns: ctx.turns };
+        }),
       stopAll: () =>
         Effect.forEach(Array.from(sessions.values()), stopSessionInternal, { discard: true }),
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),

@@ -681,5 +681,9 @@
     --duration-fast: 0ms;
     --duration-base: 0ms;
     --duration-slow: 0ms;
+    --animate-skeleton: none;
+    --animate-status-pulse: none;
+    --animate-ghost-pulse: none;
+    --animate-status-ping: none;
   }
 }

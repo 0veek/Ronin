@@ -18,18 +18,61 @@ const KEYBINDING_COMMAND_EVENT = "t3code:run-keybinding-command";
 
 export interface KeybindingCommandDetail {
   readonly command: KeybindingCommand;
+  /** Called by the listener that acted on the command. */
+  readonly markHandled: () => void;
 }
 
-export function runKeybindingCommand(command: KeybindingCommand): void {
+/**
+ * How long `awaitHandler` keeps re-offering a command to a handler that has not
+ * mounted yet. Bounded on purpose: a command that fires minutes later, against
+ * whatever thread the user has moved on to, is worse than one that never fires.
+ */
+const HANDOFF_DEADLINE_MS = 1_000;
+
+function dispatchKeybindingCommand(command: KeybindingCommand): boolean {
+  let handled = false;
+  const detail: KeybindingCommandDetail = {
+    command,
+    markHandled: () => {
+      handled = true;
+    },
+  };
   window.dispatchEvent(
-    new CustomEvent<KeybindingCommandDetail>(KEYBINDING_COMMAND_EVENT, { detail: { command } }),
+    new CustomEvent<KeybindingCommandDetail>(KEYBINDING_COMMAND_EVENT, { detail }),
   );
+  return handled;
 }
 
-export function onRunKeybindingCommand(listener: (command: KeybindingCommand) => void): () => void {
+/**
+ * `awaitHandler` is for callers that just navigated to the route whose handler
+ * owns this command: the route change resolves before React has mounted the
+ * new view, so the first dispatch lands with nobody listening. Retrying across
+ * frames hands the command over as soon as the view subscribes.
+ */
+export function runKeybindingCommand(
+  command: KeybindingCommand,
+  options?: { readonly awaitHandler?: boolean },
+): void {
+  if (dispatchKeybindingCommand(command) || options?.awaitHandler !== true) {
+    return;
+  }
+
+  const deadline = performance.now() + HANDOFF_DEADLINE_MS;
+  const retry = () => {
+    if (dispatchKeybindingCommand(command) || performance.now() >= deadline) {
+      return;
+    }
+    window.requestAnimationFrame(retry);
+  };
+  window.requestAnimationFrame(retry);
+}
+
+export function onRunKeybindingCommand(
+  listener: (command: KeybindingCommand, markHandled: () => void) => void,
+): () => void {
   const handler = (event: Event) => {
     const detail = (event as CustomEvent<KeybindingCommandDetail>).detail;
-    if (detail) listener(detail.command);
+    if (detail) listener(detail.command, detail.markHandled);
   };
   window.addEventListener(KEYBINDING_COMMAND_EVENT, handler);
   return () => window.removeEventListener(KEYBINDING_COMMAND_EVENT, handler);

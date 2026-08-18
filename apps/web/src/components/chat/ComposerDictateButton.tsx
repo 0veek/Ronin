@@ -150,7 +150,7 @@ export const ComposerDictateButton = memo(function ComposerDictateButton({
       <TooltipTrigger
         render={
           <button
-            aria-label="Hold to dictate"
+            aria-label={hint}
             aria-pressed={isRecording}
             className={cn(
               // Same footprint as the send button beside it, so the pair reads as one

@@ -7,6 +7,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
 
+import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopBackendPool from "./DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./DesktopLocalEnvironmentAuth.ts";
 
@@ -65,7 +66,7 @@ describe("DesktopLocalEnvironmentAuth", () => {
         ]),
       } as unknown as DesktopBackendPool.DesktopBackendPool["Service"]);
       const testLayer = DesktopLocalEnvironmentAuth.layer.pipe(
-        Layer.provide(Layer.mergeAll(poolLayer, httpClientLayer)),
+        Layer.provide(Layer.mergeAll(poolLayer, httpClientLayer, DesktopState.layer)),
       );
 
       const [first, second] = yield* Effect.gen(function* () {

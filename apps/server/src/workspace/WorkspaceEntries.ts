@@ -127,7 +127,17 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   }
 
   if (!isExplicitRelativePath(input.partialPath)) {
-    return path.resolve(expandHomePath(input.partialPath, path));
+    const resolved = path.resolve(expandHomePath(input.partialPath, path));
+    if (input.cwd) {
+      const root = path.resolve(expandHomePath(input.cwd, path));
+      const relative = path.relative(root, resolved);
+      if (relative.startsWith("..") || path.isAbsolute(relative)) {
+        return yield* new WorkspaceEntriesCurrentProjectRequiredError({
+          partialPath: input.partialPath,
+        });
+      }
+    }
+    return resolved;
   }
 
   if (!input.cwd) {

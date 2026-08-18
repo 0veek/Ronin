@@ -1177,18 +1177,39 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const applyThreadSessionsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadSessionsProjection",
     )(function* (event, _attachmentSideEffects) {
-      if (event.type !== "thread.session-set") {
+      if (event.type === "thread.session-set") {
+        yield* projectionThreadSessionRepository.upsert({
+          threadId: event.payload.threadId,
+          status: event.payload.session.status,
+          providerName: event.payload.session.providerName,
+          providerInstanceId: event.payload.session.providerInstanceId ?? null,
+          runtimeMode: event.payload.session.runtimeMode,
+          activeTurnId: event.payload.session.activeTurnId,
+          lastError: event.payload.session.lastError,
+          updatedAt: event.payload.session.updatedAt,
+        });
         return;
       }
-      yield* projectionThreadSessionRepository.upsert({
+
+      if (event.type !== "thread.reverted") {
+        return;
+      }
+
+      const session = yield* projectionThreadSessionRepository.getByThreadId({
         threadId: event.payload.threadId,
-        status: event.payload.session.status,
-        providerName: event.payload.session.providerName,
-        providerInstanceId: event.payload.session.providerInstanceId ?? null,
-        runtimeMode: event.payload.session.runtimeMode,
-        activeTurnId: event.payload.session.activeTurnId,
-        lastError: event.payload.session.lastError,
-        updatedAt: event.payload.session.updatedAt,
+      });
+      if (Option.isNone(session) || session.value.activeTurnId === null) {
+        return;
+      }
+
+      yield* projectionThreadSessionRepository.upsert({
+        ...session.value,
+        activeTurnId: null,
+        status:
+          session.value.status === "running" || session.value.status === "starting"
+            ? "ready"
+            : session.value.status,
+        updatedAt: event.occurredAt,
       });
     });
 

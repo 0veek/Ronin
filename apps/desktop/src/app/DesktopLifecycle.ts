@@ -14,6 +14,8 @@ import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
+import { findDesktopProtocolUrl } from "./DesktopDeepLinks.ts";
+import { getDesktopScheme } from "../electron/ElectronProtocol.ts";
 
 export class DesktopLifecycleRelaunchError extends Schema.TaggedErrorClass<DesktopLifecycleRelaunchError>()(
   "DesktopLifecycleRelaunchError",
@@ -193,6 +195,24 @@ export const make = DesktopLifecycle.of({
     });
     yield* electronApp.on("activate", () => {
       void runEffect(desktopWindow.activate.pipe(Effect.withSpan("desktop.lifecycle.activate")));
+    });
+    yield* electronApp.on("second-instance", (_event: Electron.Event, argv: Array<string>) => {
+      void runEffect(
+        Effect.gen(function* () {
+          const window = yield* DesktopWindow.DesktopWindow;
+          yield* window.activate;
+          const url = findDesktopProtocolUrl(argv, getDesktopScheme(environment.isDevelopment));
+          if (url) {
+            yield* window.openDesktopUrl(url);
+          }
+        }).pipe(Effect.withSpan("desktop.lifecycle.secondInstance")),
+      );
+    });
+    yield* electronApp.on("open-url", (event: Electron.Event, url: string) => {
+      event.preventDefault();
+      void runEffect(
+        desktopWindow.openDesktopUrl(url).pipe(Effect.withSpan("desktop.lifecycle.openUrl")),
+      );
     });
     yield* electronApp.on("window-all-closed", () => {
       void runEffect(

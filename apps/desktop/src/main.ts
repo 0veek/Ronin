@@ -110,10 +110,14 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
 const desktopAutoUpdateLayer = Layer.unwrap(
   Effect.gen(function* () {
     const platform = yield* HostProcessPlatform;
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const support = DesktopAutoUpdate.resolveUpdateSupport({
       isPackaged: Electron.app.isPackaged,
       platform,
       appImagePath: process.env.APPIMAGE,
+      // Read through DesktopEnvironment so this honors the same truthy values
+      // Config.boolean accepts (`yes`/`on`), not just `1`/`true`.
+      disableAutoUpdate: environment.disableAutoUpdate,
     });
     const updater = support.supported
       ? ((yield* Effect.promise(() => import("electron-updater"))).default

@@ -38,7 +38,7 @@ import {
   type OrchestrationDispatchError,
   type OrchestrationProjectorDecodeError,
 } from "../Errors.ts";
-import { decideOrchestrationCommand } from "../decider.ts";
+import { decideOrchestrationCommand, SESSION_STOP_SKIPPED_DETAIL } from "../decider.ts";
 import { createEmptyReadModel, projectEvent } from "../projector.ts";
 import { OrchestrationProjectionPipeline } from "../Services/ProjectionPipeline.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
@@ -51,6 +51,8 @@ const isOrchestrationCommandPreviouslyRejectedError = Schema.is(
 );
 const isOrchestrationCommandIdConflictError = Schema.is(OrchestrationCommandIdConflictError);
 const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvariantError);
+const isOrchestrationCommandSkippedError = (error: unknown): boolean =>
+  isOrchestrationCommandInvariantError(error) && error.detail.includes(SESSION_STOP_SKIPPED_DETAIL);
 
 interface CommandEnvelope {
   command: OrchestrationCommand;
@@ -120,9 +122,21 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         return;
       }
 
-      commandReadModel = yield* projectEventsOntoReadModel(commandReadModel, persistedEvents);
+      // The read model advances before the publish loop runs, so anything at or
+      // below the current snapshot was already applied and already published.
+      // Re-applying it here is what duplicated streaming message deltas.
+      const unprojectedEvents = persistedEvents.filter(
+        (event) => event.sequence > commandReadModel.snapshotSequence,
+      );
+      if (unprojectedEvents.length === 0) {
+        return;
+      }
 
-      for (const persistedEvent of persistedEvents) {
+      commandReadModel = yield* projectEventsOntoReadModel(commandReadModel, unprojectedEvents);
+
+      // These committed without ever reaching the publish loop, so subscribers
+      // have not seen them and nothing else will resend them.
+      for (const persistedEvent of unprojectedEvents) {
         yield* PubSub.publish(eventPubSub, persistedEvent);
       }
     });
@@ -284,19 +298,26 @@ const makeOrchestrationEngine = Effect.gen(function* () {
             !isOrchestrationCommandIdConflictError(error)
           ) {
             yield* reconcileReadModelAfterDispatchFailure.pipe(
-              Effect.catch(() =>
-                Effect.logWarning(
+              Effect.catch((reconcileError) =>
+                Effect.logError(
                   "failed to reconcile orchestration read model after dispatch failure",
                 ).pipe(
                   Effect.annotateLogs({
                     commandId: envelope.command.commandId,
                     snapshotSequence: commandReadModel.snapshotSequence,
+                    error:
+                      reconcileError instanceof Error
+                        ? reconcileError.message
+                        : String(reconcileError),
                   }),
                 ),
               ),
             );
 
-            if (isOrchestrationCommandInvariantError(error)) {
+            if (
+              isOrchestrationCommandInvariantError(error) &&
+              !isOrchestrationCommandSkippedError(error)
+            ) {
               yield* commandReceiptRepository
                 .upsert({
                   commandId: envelope.command.commandId,

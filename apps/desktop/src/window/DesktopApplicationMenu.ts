@@ -161,10 +161,14 @@ export const make = Effect.gen(function* () {
       {
         label: "View",
         submenu: [
-          { role: "reload" },
-          { role: "forceReload" },
-          { role: "toggleDevTools" },
-          { type: "separator" },
+          ...(environment.isDevelopment
+            ? ([
+                { role: "reload" },
+                { role: "forceReload" },
+                { role: "toggleDevTools" },
+                { type: "separator" },
+              ] as const)
+            : []),
           /*
             Not the zoom roles: those act on the focused webContents, so with
             an embedded preview WebContentsView focused they zoom the guest

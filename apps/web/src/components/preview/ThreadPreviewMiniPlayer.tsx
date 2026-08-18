@@ -1,19 +1,17 @@
 "use client";
 
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { PanelRightIcon, PictureInPicture2, XIcon } from "lucide-react";
+import { PanelRightIcon, XIcon } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
 import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { Button } from "~/components/ui/button";
-import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useThreadPreviewState } from "~/previewStateStore";
 import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
-import { previewBridge } from "./previewBridge";
 import {
   clampPreviewMiniPlayerPosition,
   clampPreviewMiniPlayerSize,
@@ -69,20 +67,6 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
   const openInPanel = () => {
     usePreviewMiniPlayerStore.getState().close(threadRef);
     useRightPanelStore.getState().openBrowser(threadRef, tabId);
-  };
-
-  const toggleNativePictureInPicture = () => {
-    if (!previewBridge) return;
-    const operation = desktopOverlay?.pictureInPicture
-      ? previewBridge.pictureInPicture.close
-      : previewBridge.pictureInPicture.open;
-    void operation(runtimeTabId).catch((error) => {
-      toastManager.add({
-        type: "error",
-        title: "Unable to update popped-out preview",
-        description: error instanceof Error ? error.message : "An error occurred.",
-      });
-    });
   };
 
   useLayoutEffect(() => {
@@ -270,31 +254,6 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
               <PanelRightIcon />
             </TooltipTrigger>
             <TooltipPopup side="top">Open in right panel</TooltipPopup>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  variant={desktopOverlay?.pictureInPicture ? "secondary" : "ghost"}
-                  size="icon-xs"
-                  aria-label={
-                    desktopOverlay?.pictureInPicture
-                      ? "Close popped-out preview"
-                      : "Pop preview into separate window"
-                  }
-                  disabled={!desktopOverlay?.hasWebContents}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={toggleNativePictureInPicture}
-                />
-              }
-            >
-              <PictureInPicture2 />
-            </TooltipTrigger>
-            <TooltipPopup side="top">
-              {desktopOverlay?.pictureInPicture
-                ? "Close separate window"
-                : "Pop into separate window"}
-            </TooltipPopup>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger

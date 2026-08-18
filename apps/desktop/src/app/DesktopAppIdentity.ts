@@ -7,8 +7,12 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import { getDesktopScheme } from "../electron/ElectronProtocol.ts";
 import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { makeComponentLogger } from "./DesktopObservability.ts";
+
+const { logInfo, logWarning } = makeComponentLogger("desktop-app-identity");
 
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,40}$/i;
 const COMMIT_HASH_DISPLAY_LENGTH = 12;
@@ -117,6 +121,21 @@ export const make = Effect.gen(function* () {
     ),
   );
 
+  // An unpackaged run launches through electron.exe, so the association has to
+  // name that binary plus the app path it was given — otherwise Windows would
+  // hand the callback to a bare Electron with no app to open.
+  const registerWindowsProtocolClient = Effect.gen(function* () {
+    const scheme = getDesktopScheme(environment.isDevelopment);
+    const registered = environment.isPackaged
+      ? yield* electronApp.setAsDefaultProtocolClient(scheme)
+      : yield* electronApp.setAsDefaultProtocolClient(scheme, process.execPath, [
+          environment.appPath,
+        ]);
+    yield* registered
+      ? logInfo("registered URL scheme handler", { scheme })
+      : logWarning("failed to register URL scheme handler", { scheme });
+  });
+
   const configure = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;
     yield* electronApp.setName(environment.displayName);
@@ -128,6 +147,12 @@ export const make = Effect.gen(function* () {
 
     if (environment.platform === "win32") {
       yield* electronApp.setAppUserModelId(environment.appUserModelId);
+      // electron-builder only writes `protocols` into the macOS Info.plist,
+      // the Linux .desktop entry, and AppX manifests — the NSIS target we ship
+      // ignores it, so Windows has no scheme association unless the running
+      // app claims one. Registering here also covers portable installs, which
+      // no installer ever touched.
+      yield* registerWindowsProtocolClient;
     }
 
     if (environment.platform === "linux") {

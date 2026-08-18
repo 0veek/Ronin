@@ -315,7 +315,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
-        { name: "Ronin", schemes: ["t3code", "t3code-dev"] },
+        { name: "Ronin", schemes: ["t3code"] },
       ]);
       for (const config of [mac, linux, win]) {
         assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
@@ -364,7 +364,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
   });
 
-  it.effect("includes both renderer protocols on signed macOS builds", () =>
+  it.effect("registers the packaged renderer protocol on signed macOS builds", () =>
     Effect.gen(function* () {
       const config = yield* createBuildConfig("mac", "dmg", "1.2.3", true, false, undefined);
 
@@ -372,7 +372,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(config.appId, "com.t3tools.t3code");
       assert.notProperty(mac, "entitlements");
       assert.notProperty(mac, "provisioningProfile");
-      assert.deepStrictEqual(mac.protocols, [{ name: "Ronin", schemes: ["t3code", "t3code-dev"] }]);
+      assert.deepStrictEqual(mac.protocols, [{ name: "Ronin", schemes: ["t3code"] }]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
@@ -384,6 +384,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.equal(win.icon, "icon.ico");
       assert.equal(win.signAndEditExecutable, true);
       assert.notProperty(win, "azureSignOptions");
+      assert.deepStrictEqual(win.protocols, [{ name: "Ronin", schemes: ["t3code"] }]);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 

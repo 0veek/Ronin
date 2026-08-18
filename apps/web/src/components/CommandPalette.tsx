@@ -221,7 +221,9 @@ function getEnvironmentBrowsePlatform(os: string | null | undefined): string {
   if (os === "linux") {
     return "Linux";
   }
-  return typeof navigator === "undefined" ? "" : navigator.platform;
+  // Unknown environment OS must not inherit the client's platform. An empty
+  // string lets browse accept both POSIX and Windows path syntax.
+  return "";
 }
 
 interface AddProjectEnvironmentOption {
@@ -511,8 +513,10 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   // workspace verbs do, so there is one route from a palette row to a command.
   useEffect(
     () =>
-      onRunKeybindingCommand((command) => {
-        if (command === "shortcuts.toggle") setShortcutsOpen((open) => !open);
+      onRunKeybindingCommand((command, markHandled) => {
+        if (command !== "shortcuts.toggle") return;
+        markHandled();
+        setShortcutsOpen((open) => !open);
       }),
     [],
   );
@@ -623,6 +627,10 @@ function OpenCommandPaletteDialog(props: {
   readonly clearOpenIntent: () => void;
 }) {
   const navigate = useNavigate();
+  const routeTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
@@ -1581,6 +1589,18 @@ function OpenCommandPaletteDialog(props: {
 
   // Workspace verbs act on the thread that is open, so they are offered only
   // when there is one. The chat view owns the behavior; the bus is the way in.
+  // From anywhere but the thread route that view is unmounted, so go there
+  // first and let the bus hold the command until it subscribes.
+  const runWorkspaceCommandOnThread = async (command: KeybindingCommand) => {
+    if (activeThread && routeTarget?.kind !== "server") {
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(activeThread.environmentId, activeThread.id)),
+      });
+    }
+    runKeybindingCommand(command, { awaitHandler: true });
+  };
+
   if (activeThreadId) {
     for (const descriptor of WORKSPACE_COMMANDS) {
       actionItems.push({
@@ -1591,7 +1611,7 @@ function OpenCommandPaletteDialog(props: {
         icon: workspaceCommandIcon(descriptor.command),
         shortcutCommand: descriptor.command,
         run: async () => {
-          runKeybindingCommand(descriptor.command);
+          await runWorkspaceCommandOnThread(descriptor.command);
         },
       });
     }
@@ -1606,7 +1626,7 @@ function OpenCommandPaletteDialog(props: {
         icon: <PlayIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: commandForProjectScript(script.id),
         run: async () => {
-          runKeybindingCommand(commandForProjectScript(script.id));
+          await runWorkspaceCommandOnThread(commandForProjectScript(script.id));
         },
       });
     }

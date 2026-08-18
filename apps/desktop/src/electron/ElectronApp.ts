@@ -1,3 +1,4 @@
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -70,12 +71,14 @@ export class ElectronApp extends Context.Service<
       path?: string,
       args?: readonly string[],
     ) => Effect.Effect<boolean>;
+    readonly requestSingleInstanceLock: Effect.Effect<boolean>;
     readonly setDesktopName: (desktopName: string) => Effect.Effect<void>;
     readonly setDockIcon: (iconPath: string) => Effect.Effect<void>;
     /**
-     * The count shown on the dock icon (macOS) or the taskbar badge (some Linux
-     * desktops). Zero clears it — a badge that outlives the thing it counted is
-     * worse than none, so callers pass the current total rather than a delta.
+     * The count shown on the dock icon (macOS), a Linux taskbar badge, or a
+     * Windows overlay icon. Zero clears it — a badge that outlives the thing
+     * it counted is worse than none, so callers pass the current total rather
+     * than a delta.
      */
     readonly setBadgeCount: (count: number) => Effect.Effect<void>;
     readonly appendCommandLineSwitch: (switchName: string, value?: string) => Effect.Effect<void>;
@@ -86,6 +89,35 @@ export class ElectronApp extends Context.Service<
     ) => Effect.Effect<void, never, Scope.Scope>;
   }
 >()("@t3tools/desktop/electron/ElectronApp") {}
+
+function createWindowsOverlayIcon(): Electron.NativeImage {
+  const size = 16;
+  const buffer = Buffer.alloc(size * size * 4);
+  const center = 7.5;
+  const radius = 7;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - center;
+      const dy = y - center;
+      if (dx * dx + dy * dy > radius * radius) continue;
+      const index = (y * size + x) * 4;
+      buffer[index] = 72;
+      buffer[index + 1] = 29;
+      buffer[index + 2] = 225;
+      buffer[index + 3] = 255;
+    }
+  }
+  return Electron.nativeImage.createFromBitmap(buffer, { width: size, height: size });
+}
+
+function applyWindowsOverlayBadge(count: number): void {
+  const description = count === 1 ? "1 thread needs you" : `${count} threads need you`;
+  const icon = count > 0 ? createWindowsOverlayIcon() : null;
+  for (const window of Electron.BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    window.setOverlayIcon(icon, count > 0 ? description : "");
+  }
+}
 
 const addScopedAppListener = <Args extends ReadonlyArray<unknown>>(
   eventName: string,
@@ -101,112 +133,117 @@ const addScopedAppListener = <Args extends ReadonlyArray<unknown>>(
       }),
   ).pipe(Effect.asVoid);
 
-export const make = ElectronApp.of({
-  metadata: Effect.gen(function* () {
-    const appVersion = yield* Effect.try({
-      try: () => Electron.app.getVersion(),
-      catch: (cause) =>
-        new ElectronAppMetadataReadError({
-          property: "app-version",
-          cause,
-        }),
-    });
-    const appPath = yield* Effect.try({
-      try: () => Electron.app.getAppPath(),
-      catch: (cause) =>
-        new ElectronAppMetadataReadError({
-          property: "app-path",
-          cause,
-        }),
-    });
+export const make = (platform: NodeJS.Platform) =>
+  ElectronApp.of({
+    metadata: Effect.gen(function* () {
+      const appVersion = yield* Effect.try({
+        try: () => Electron.app.getVersion(),
+        catch: (cause) =>
+          new ElectronAppMetadataReadError({
+            property: "app-version",
+            cause,
+          }),
+      });
+      const appPath = yield* Effect.try({
+        try: () => Electron.app.getAppPath(),
+        catch: (cause) =>
+          new ElectronAppMetadataReadError({
+            property: "app-path",
+            cause,
+          }),
+      });
 
-    return {
-      appVersion,
-      appPath,
-      isPackaged: Electron.app.isPackaged,
-      resourcesPath: process.resourcesPath,
-      runningUnderArm64Translation: Electron.app.runningUnderARM64Translation === true,
-    };
-  }),
-  name: Effect.sync(() => Electron.app.name),
-  // macOS derives this from NSLocale, which uses POSIX-style identifiers
-  // (`en_GB`). `Intl` rejects those outright rather than normalizing them, so
-  // the tag is normalized here rather than in the renderer that consumes it.
-  systemLocale: Effect.sync(() => Electron.app.getSystemLocale().replace(/_/g, "-")),
-  whenReady: Effect.gen(function* () {
-    const isPackaged = Electron.app.isPackaged;
-    yield* Effect.tryPromise({
-      try: () => Electron.app.whenReady(),
-      catch: (cause) => new ElectronAppWhenReadyError({ isPackaged, cause }),
-    });
-  }),
-  quit: Effect.sync(() => {
-    Electron.app.quit();
-  }),
-  exit: (code) =>
-    Effect.sync(() => {
-      Electron.app.exit(code);
-    }),
-  relaunch: (options) =>
-    Effect.sync(() => {
-      Electron.app.relaunch(options);
-    }),
-  setPath: (name, path) =>
-    Effect.sync(() => {
-      Electron.app.setPath(name, path);
-    }),
-  setName: (name) =>
-    Effect.sync(() => {
-      Electron.app.setName(name);
-    }),
-  setAboutPanelOptions: (options) =>
-    Effect.sync(() => {
-      Electron.app.setAboutPanelOptions(options);
-    }),
-  setAppUserModelId: (id) =>
-    Effect.sync(() => {
-      Electron.app.setAppUserModelId(id);
-    }),
-  getAppMetrics: Effect.sync(() => Electron.app.getAppMetrics()),
-  isDefaultProtocolClient: (protocol) =>
-    Effect.sync(() => Electron.app.isDefaultProtocolClient(protocol)),
-  setAsDefaultProtocolClient: (protocol, path, args) =>
-    Effect.sync(() => {
-      if (path === undefined) {
-        return Electron.app.setAsDefaultProtocolClient(protocol);
-      }
-      return Electron.app.setAsDefaultProtocolClient(protocol, path, [...(args ?? [])]);
-    }),
-  setDesktopName: (desktopName) =>
-    Effect.sync(() => {
-      const linuxApp = Electron.app as Electron.App & {
-        setDesktopName?: (desktopName: string) => void;
+      return {
+        appVersion,
+        appPath,
+        isPackaged: Electron.app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        runningUnderArm64Translation: Electron.app.runningUnderARM64Translation === true,
       };
-      linuxApp.setDesktopName?.(desktopName);
     }),
-  setDockIcon: (iconPath) =>
-    Effect.sync(() => {
-      Electron.app.dock?.setIcon(iconPath);
+    name: Effect.sync(() => Electron.app.name),
+    // macOS derives this from NSLocale, which uses POSIX-style identifiers
+    // (`en_GB`). `Intl` rejects those outright rather than normalizing them, so
+    // the tag is normalized here rather than in the renderer that consumes it.
+    systemLocale: Effect.sync(() => Electron.app.getSystemLocale().replace(/_/g, "-")),
+    whenReady: Effect.gen(function* () {
+      const isPackaged = Electron.app.isPackaged;
+      yield* Effect.tryPromise({
+        try: () => Electron.app.whenReady(),
+        catch: (cause) => new ElectronAppWhenReadyError({ isPackaged, cause }),
+      });
     }),
-  setBadgeCount: (count) =>
-    Effect.sync(() => {
-      // Windows has no count badge on this API; Electron reports false there
-      // rather than throwing, and the taskbar overlay is a separate feature.
-      Electron.app.setBadgeCount?.(Math.max(0, Math.trunc(count)));
+    quit: Effect.sync(() => {
+      Electron.app.quit();
     }),
-  appendCommandLineSwitch: (switchName, value) =>
-    Effect.sync(() => {
-      if (value === undefined) {
-        Electron.app.commandLine.appendSwitch(switchName);
-        return;
-      }
-      Electron.app.commandLine.appendSwitch(switchName, value);
-    }),
-  removeCommandLineSwitch: (switchName) =>
-    Effect.sync(() => {
-      Electron.app.commandLine.removeSwitch(switchName);
-    }),
-  on: addScopedAppListener,
-});
+    exit: (code) =>
+      Effect.sync(() => {
+        Electron.app.exit(code);
+      }),
+    relaunch: (options) =>
+      Effect.sync(() => {
+        Electron.app.relaunch(options);
+      }),
+    setPath: (name, path) =>
+      Effect.sync(() => {
+        Electron.app.setPath(name, path);
+      }),
+    setName: (name) =>
+      Effect.sync(() => {
+        Electron.app.setName(name);
+      }),
+    setAboutPanelOptions: (options) =>
+      Effect.sync(() => {
+        Electron.app.setAboutPanelOptions(options);
+      }),
+    setAppUserModelId: (id) =>
+      Effect.sync(() => {
+        Electron.app.setAppUserModelId(id);
+      }),
+    getAppMetrics: Effect.sync(() => Electron.app.getAppMetrics()),
+    isDefaultProtocolClient: (protocol) =>
+      Effect.sync(() => Electron.app.isDefaultProtocolClient(protocol)),
+    setAsDefaultProtocolClient: (protocol, path, args) =>
+      Effect.sync(() => {
+        if (path === undefined) {
+          return Electron.app.setAsDefaultProtocolClient(protocol);
+        }
+        return Electron.app.setAsDefaultProtocolClient(protocol, path, [...(args ?? [])]);
+      }),
+    requestSingleInstanceLock: Effect.sync(() => Electron.app.requestSingleInstanceLock()),
+    setDesktopName: (desktopName) =>
+      Effect.sync(() => {
+        const linuxApp = Electron.app as Electron.App & {
+          setDesktopName?: (desktopName: string) => void;
+        };
+        linuxApp.setDesktopName?.(desktopName);
+      }),
+    setDockIcon: (iconPath) =>
+      Effect.sync(() => {
+        Electron.app.dock?.setIcon(iconPath);
+      }),
+    setBadgeCount: (count) =>
+      Effect.sync(() => {
+        const normalized = Math.max(0, Math.trunc(count));
+        if (platform === "win32") {
+          applyWindowsOverlayBadge(normalized);
+          return;
+        }
+        Electron.app.setBadgeCount?.(normalized);
+      }),
+    appendCommandLineSwitch: (switchName, value) =>
+      Effect.sync(() => {
+        if (value === undefined) {
+          Electron.app.commandLine.appendSwitch(switchName);
+          return;
+        }
+        Electron.app.commandLine.appendSwitch(switchName, value);
+      }),
+    removeCommandLineSwitch: (switchName) =>
+      Effect.sync(() => {
+        Electron.app.commandLine.removeSwitch(switchName);
+      }),
+    on: addScopedAppListener,
+  });
 
-export const layer = Layer.succeed(ElectronApp, make);
+export const layer = Layer.effect(ElectronApp, Effect.map(HostProcessPlatform, make));

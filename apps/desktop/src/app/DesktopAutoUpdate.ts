@@ -65,7 +65,11 @@ export function resolveUpdateSupport(input: {
   readonly isPackaged: boolean;
   readonly platform: NodeJS.Platform;
   readonly appImagePath: string | undefined;
+  readonly disableAutoUpdate?: boolean;
 }): UpdateSupport {
+  if (input.disableAutoUpdate) {
+    return { supported: false, reason: "Auto-update is disabled by T3CODE_DISABLE_AUTO_UPDATE." };
+  }
   if (!input.isPackaged) {
     return { supported: false, reason: "Development builds do not update themselves." };
   }

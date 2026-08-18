@@ -233,8 +233,8 @@ vi.mock("./PreviewEmptyState", () => ({
   },
 }));
 vi.mock("./PreviewMoreMenu", () => ({
-  PreviewMoreMenu: (props: { onNativePictureInPicture: () => void }) => {
-    mocks.toggleNativePictureInPicture = props.onNativePictureInPicture;
+  PreviewMoreMenu: (props: { onNativePictureInPicture?: () => void }) => {
+    mocks.toggleNativePictureInPicture = props.onNativePictureInPicture ?? null;
     return null;
   },
 }));
@@ -394,93 +394,19 @@ describe("PreviewView navigation", () => {
     expect(mocks.closeMiniPlayer).toHaveBeenCalledWith(props.threadRef);
   });
 
-  it("keeps the native preview window as a secondary action", async () => {
-    const props = {
-      threadRef: {
-        environmentId: EnvironmentId.make("environment-1"),
-        threadId: ThreadId.make("thread-1"),
-      },
-      tabId: "tab-1",
-      visible: true,
-    } as const;
-
-    renderToStaticMarkup(<PreviewView {...props} />);
-    mocks.toggleNativePictureInPicture?.();
-    await vi.waitFor(() =>
-      expect(mocks.openPictureInPicture).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID),
-    );
-
-    mocks.pictureInPicture = true;
-    renderToStaticMarkup(<PreviewView {...props} />);
-    mocks.toggleNativePictureInPicture?.();
-    await vi.waitFor(() =>
-      expect(mocks.closePictureInPicture).toHaveBeenCalledWith(TEST_RUNTIME_TAB_ID),
-    );
-  });
-
-  it("forwards Cmd/Ctrl+Enter annotations to the composer send path", async () => {
-    const annotation = {
-      id: "annotation-1",
-      pageUrl: "https://example.com/dashboard",
-      pageTitle: "Dashboard",
-      comment: "Tighten this spacing",
-      elements: [],
-      regions: [],
-      strokes: [],
-      styleChanges: [],
-      screenshot: null,
-      createdAt: "2026-07-27T00:00:00.000Z",
-    };
-    const onSendAnnotation = vi.fn();
-    mocks.pickElement.mockResolvedValue({ annotation, submission: "send" });
-
+  it("does not offer native picture-in-picture or pick-element while those desktop actions are no-ops", () => {
     renderToStaticMarkup(
       <PreviewView
-        threadRef={TEST_THREAD_REF}
+        threadRef={{
+          environmentId: EnvironmentId.make("environment-1"),
+          threadId: ThreadId.make("thread-1"),
+        }}
         tabId="tab-1"
         visible
-        onSendAnnotation={onSendAnnotation}
       />,
     );
-    mocks.toggleAnnotation?.();
 
-    await vi.waitFor(() => expect(onSendAnnotation).toHaveBeenCalledWith(annotation, null));
-    expect(mocks.addPreviewAnnotation).toHaveBeenCalledWith(TEST_THREAD_REF, annotation);
-  });
-
-  it("still sends when screenshot attachment conversion fails", async () => {
-    const annotation = {
-      id: "annotation-2",
-      pageUrl: "https://example.com/dashboard",
-      pageTitle: "Dashboard",
-      comment: "Tighten this spacing",
-      elements: [],
-      regions: [],
-      strokes: [],
-      styleChanges: [],
-      screenshot: {
-        dataUrl: "data:image/png;base64,c2NyZWVuc2hvdA==",
-        width: 10,
-        height: 10,
-        cropRect: { x: 0, y: 0, width: 10, height: 10 },
-      },
-      createdAt: "2026-07-27T00:00:00.000Z",
-    };
-    const onSendAnnotation = vi.fn();
-    mocks.pickElement.mockResolvedValue({ annotation, submission: "send" });
-    mocks.previewAnnotationScreenshotFile.mockRejectedValue(new Error("conversion failed"));
-
-    renderToStaticMarkup(
-      <PreviewView
-        threadRef={TEST_THREAD_REF}
-        tabId="tab-1"
-        visible
-        onSendAnnotation={onSendAnnotation}
-      />,
-    );
-    mocks.toggleAnnotation?.();
-
-    await vi.waitFor(() => expect(onSendAnnotation).toHaveBeenCalledWith(annotation, null));
-    expect(mocks.addImage).not.toHaveBeenCalled();
+    expect(mocks.toggleAnnotation).toBeNull();
+    expect(mocks.toggleNativePictureInPicture).toBeNull();
   });
 });

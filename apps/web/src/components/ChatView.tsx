@@ -1401,7 +1401,7 @@ function ChatViewContent(props: ChatViewProps) {
   const [localServerErrorsByThreadKey, setLocalServerErrorsByThreadKey] = useState<
     Record<string, LocalThreadErrorEntry>
   >({});
-  const [isConnecting, _setIsConnecting] = useState(false);
+  const isConnecting = false;
   const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
@@ -5353,7 +5353,10 @@ function ChatViewContent(props: ChatViewProps) {
   // keyboard path's own guard.
   useEffect(() => {
     if (!activeThreadId) return;
-    return onRunKeybindingCommand((command) => {
+    return onRunKeybindingCommand((command, markHandled) => {
+      // Claiming the command tells the palette its post-navigation handoff
+      // landed, so it stops re-offering it.
+      markHandled();
       runWorkspaceCommand(command, null);
     });
   }, [activeThreadId, runWorkspaceCommand]);
@@ -5967,6 +5970,14 @@ function ChatViewContent(props: ChatViewProps) {
     }
 
     if (failure !== null) {
+      setOptimisticUserMessages((existing) => {
+        const removed = existing.filter((message) => message.id === messageIdForSend);
+        for (const message of removed) {
+          revokeUserMessagePreviewUrls(message);
+        }
+        const next = existing.filter((message) => message.id !== messageIdForSend);
+        return next.length === existing.length ? existing : next;
+      });
       if (
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
@@ -5977,14 +5988,6 @@ function ChatViewContent(props: ChatViewProps) {
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
           .length ?? 0) === 0
       ) {
-        setOptimisticUserMessages((existing) => {
-          const removed = existing.filter((message) => message.id === messageIdForSend);
-          for (const message of removed) {
-            revokeUserMessagePreviewUrls(message);
-          }
-          const next = existing.filter((message) => message.id !== messageIdForSend);
-          return next.length === existing.length ? existing : next;
-        });
         promptRef.current = promptForSend;
         const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
         composerImagesRef.current = retryComposerImages;

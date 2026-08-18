@@ -9,9 +9,15 @@ export function readDesktopPrimaryBearerToken(): Promise<string | null> {
     return Promise.resolve(null);
   }
 
-  desktopBearerTokenPromise ??= bridge.getLocalEnvironmentBearerToken().catch((error) => {
+  // Dedup in-flight reads only. Main caches the live token and drops it when
+  // the backend restarts; keeping a resolved Promise here would pin a dead
+  // bearer for the rest of the renderer lifetime.
+  if (desktopBearerTokenPromise) {
+    return desktopBearerTokenPromise;
+  }
+
+  desktopBearerTokenPromise = bridge.getLocalEnvironmentBearerToken().finally(() => {
     desktopBearerTokenPromise = null;
-    throw error;
   });
   return desktopBearerTokenPromise;
 }

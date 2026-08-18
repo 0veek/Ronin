@@ -126,17 +126,40 @@ const registerDesktopSchemePrivileges = Effect.sync(registerDesktopSchemePrivile
 
 export const layerSchemePrivileges = Layer.effectDiscard(registerDesktopSchemePrivileges);
 
+/**
+ * Join a privileged `t3code://app` request onto the local renderer origin.
+ *
+ * `new URL("//evil/", origin)` is a protocol-relative join and leaves the
+ * backend. Pathname must stay path-absolute on the same origin.
+ */
+export function resolveDesktopProxyTargetUrl(requestUrl: URL, targetOrigin: URL): URL | null {
+  if (requestUrl.host !== DESKTOP_HOST) {
+    return null;
+  }
+
+  const pathname = requestUrl.pathname;
+  if (!pathname.startsWith("/") || pathname.startsWith("//")) {
+    return null;
+  }
+
+  const targetUrl = new URL(`${pathname}${requestUrl.search}`, targetOrigin);
+  if (targetUrl.origin !== targetOrigin.origin) {
+    return null;
+  }
+
+  return targetUrl;
+}
+
 async function proxyRequest(
   request: Request,
   targetOrigin: URL,
   contentSecurityPolicy: string,
 ): Promise<Response> {
   const requestUrl = new URL(request.url);
-  if (requestUrl.host !== DESKTOP_HOST) {
+  const targetUrl = resolveDesktopProxyTargetUrl(requestUrl, targetOrigin);
+  if (targetUrl === null) {
     return new Response(null, { status: 404 });
   }
-
-  const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, targetOrigin);
   const headers = new Headers(request.headers);
   const headersToRemove: string[] = [];
   for (const name of headers.keys()) {

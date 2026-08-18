@@ -153,7 +153,9 @@ export function PreviewChromeRow({
                   size="icon-xs"
                   onClick={refreshDisabled ? NOOP : onRefresh}
                   disabled={refreshDisabled}
-                  aria-label={loading ? "Stop" : "Refresh"}
+                  // Named for what the click does, not for page state — there
+                  // is no cancel path, and the spinner already shows loading.
+                  aria-label="Refresh"
                   type="button"
                 />
               }
@@ -165,47 +167,41 @@ export function PreviewChromeRow({
         </div>
 
         <InputGroup variant="ghost" className="group/address h-7 flex-1 rounded-md">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <InputGroupInput
-                  ref={inputRef}
-                  value={inputFocused ? draft : url}
-                  className={cn(
-                    onOpenInBrowser &&
-                      !inputFocused &&
-                      "group-hover/address:pe-7 transition-[padding]",
-                  )}
-                  onChange={(event) => setDraft(event.target.value)}
-                  onFocus={() => {
-                    setDraft(url);
-                    setInputFocused(true);
-                    queueMicrotask(() => inputRef.current?.select());
-                  }}
-                  onBlur={() => {
-                    setInputFocused(false);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") submit(event);
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      setDraft(url);
-                      inputRef.current?.blur();
-                    }
-                  }}
-                  placeholder="Search or enter URL"
-                  spellCheck={false}
-                  disabled={inputDisabled}
-                  data-preview-url-input
-                  size="sm"
-                />
+          <InputGroupInput
+            ref={inputRef}
+            value={inputFocused ? draft : url}
+            className={cn(
+              onOpenInBrowser &&
+                !inputFocused &&
+                "group-hover/address:pe-7 group-focus-within/address:pe-7 transition-[padding]",
+            )}
+            onChange={(event) => setDraft(event.target.value)}
+            onFocus={() => {
+              setDraft(url);
+              setInputFocused(true);
+              queueMicrotask(() => inputRef.current?.select());
+            }}
+            onBlur={() => {
+              setInputFocused(false);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit(event);
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setDraft(url);
+                inputRef.current?.blur();
               }
-            />
-          </Tooltip>
+            }}
+            placeholder="Search or enter URL"
+            spellCheck={false}
+            disabled={inputDisabled}
+            data-preview-url-input
+            size="sm"
+          />
           {onOpenInBrowser && !inputFocused ? (
             <InputGroupAddon
               align="inline-end"
-              className="pointer-events-none absolute inset-y-0 right-0 opacity-0 transition-opacity group-hover/address:pointer-events-auto group-hover/address:opacity-100"
+              className="pointer-events-none absolute inset-y-0 right-0 opacity-0 transition-opacity group-hover/address:pointer-events-auto group-hover/address:opacity-100 group-focus-within/address:pointer-events-auto group-focus-within/address:opacity-100 has-focus-visible:pointer-events-auto has-focus-visible:opacity-100"
             >
               <Tooltip>
                 <TooltipTrigger

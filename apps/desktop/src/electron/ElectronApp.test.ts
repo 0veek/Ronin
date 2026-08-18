@@ -64,6 +64,7 @@ vi.mock("electron", () => ({
     runningUnderARM64Translation: false,
     setAboutPanelOptions: setAboutPanelOptionsMock,
     setAsDefaultProtocolClient: setAsDefaultProtocolClientMock,
+    requestSingleInstanceLock: vi.fn(() => true),
     setAppUserModelId: setAppUserModelIdMock,
     setDesktopName: setDesktopNameMock,
     setName: setNameMock,

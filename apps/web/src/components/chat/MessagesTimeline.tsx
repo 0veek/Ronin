@@ -1375,7 +1375,7 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
           )}
         </span>
         {workingStepLabel ? (
-          <span className="min-w-0 truncate text-muted-foreground/55">· {workingStepLabel}</span>
+          <span className="min-w-0 truncate text-muted-foreground">· {workingStepLabel}</span>
         ) : null}
       </div>
     </div>

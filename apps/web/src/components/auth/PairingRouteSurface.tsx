@@ -70,6 +70,7 @@ export function PairingRouteSurface({
         return;
       }
 
+      stripPairingTokenFromUrl();
       startTransition(() => {
         onAuthenticated();
       });
@@ -92,7 +93,6 @@ export function PairingRouteSurface({
     }
 
     autoSubmitAttemptedRef.current = true;
-    stripPairingTokenFromUrl();
     void submitCredential(token);
   }, [submitCredential]);
 
@@ -207,6 +207,7 @@ export function HostedPairingRouteSurface() {
       pairingCode: request.token,
     });
     if (result._tag === "Success") {
+      stripPairingTokenFromUrl();
       setStatus("paired");
       setMessage(`${request.label || "The environment"} is saved in this browser.`);
       return;
@@ -226,7 +227,6 @@ export function HostedPairingRouteSurface() {
     }
     submitAttemptedRef.current = true;
 
-    stripPairingTokenFromUrl();
     void submitHostedPairingRequest();
   }, [submitHostedPairingRequest]);
 

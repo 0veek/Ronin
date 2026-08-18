@@ -42,7 +42,8 @@ const MAX_THREAD_CHECKPOINTS = 500;
 
 function checkpointStatusToLatestTurnState(status: "ready" | "missing" | "error") {
   if (status === "error") return "error" as const;
-  if (status === "missing") return "interrupted" as const;
+  // `missing` is a mid-turn placeholder. SQL and the client treat it as
+  // completed so the command model must not settle the turn as interrupted.
   return "completed" as const;
 }
 
@@ -801,6 +802,21 @@ export function projectEvent(
                   assistantMessageId: latestCheckpoint.assistantMessageId,
                 };
 
+          const session =
+            thread.session === null
+              ? null
+              : thread.session.activeTurnId !== null &&
+                  retainedTurnIds.has(thread.session.activeTurnId)
+                ? thread.session
+                : {
+                    ...thread.session,
+                    activeTurnId: null,
+                    status:
+                      thread.session.status === "running" || thread.session.status === "starting"
+                        ? ("ready" as const)
+                        : thread.session.status,
+                  };
+
           return {
             ...nextBase,
             threads: updateThread(nextBase.threads, payload.threadId, {
@@ -809,6 +825,7 @@ export function projectEvent(
               proposedPlans,
               activities,
               latestTurn,
+              session,
               updatedAt: event.occurredAt,
             }),
           };

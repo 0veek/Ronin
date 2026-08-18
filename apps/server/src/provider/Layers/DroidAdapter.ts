@@ -1406,7 +1406,7 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
 
     const rollbackThread: DroidAdapterShape["rollbackThread"] = (threadId, numTurns) =>
       Effect.gen(function* () {
-        yield* requireSession(threadId);
+        const ctx = yield* requireSession(threadId);
         if (!Number.isInteger(numTurns) || numTurns < 1) {
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
@@ -1414,11 +1414,14 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
             issue: "numTurns must be an integer >= 1.",
           });
         }
-        return yield* new ProviderAdapterRequestError({
-          provider: PROVIDER,
-          method: "thread/rollback",
-          detail: "Droid ACP sessions do not support provider-side rollback yet.",
-        });
+        const nextLength = Math.max(0, ctx.turns.length - numTurns);
+        ctx.turns.splice(nextLength);
+        ctx.session = {
+          ...ctx.session,
+          resumeCursor: undefined,
+        };
+        yield* stopSessionInternal(ctx);
+        return { threadId, turns: ctx.turns };
       });
 
     const stopSession: DroidAdapterShape["stopSession"] = (threadId) =>

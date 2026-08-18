@@ -18,8 +18,7 @@ import {
   setTitleForThreadUrl,
   useThreadRecentHistory,
 } from "~/browserHistoryStore";
-import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
-import { previewAnnotationScreenshotFile } from "~/lib/previewAnnotation";
+import { type ComposerImageAttachment } from "~/composerDraftStore";
 import { ensureLocalApi } from "~/localApi";
 import {
   rememberPreviewUrl,
@@ -80,17 +79,9 @@ const localApi = typeof window === "undefined" ? null : ensureLocalApi();
  * Single-tab preview surface: chrome row on top, one webview below, empty
  * state when no session exists for the thread.
  */
-export function PreviewView({
-  threadRef,
-  tabId: requestedTabId,
-  configuredUrls,
-  visible,
-  onSendAnnotation,
-}: Props) {
+export function PreviewView({ threadRef, tabId: requestedTabId, configuredUrls, visible }: Props) {
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
-  const [pickActive, setPickActive] = useState(false);
   const activeRecordingTabIds = useActiveBrowserRecordingTabIds();
-  const pickActiveRef = useRef(false);
   const isMountedRef = useRef(true);
   // Kept in sync so the title effect can depend on the stable thread key
   // instead of the thread object, which is recreated on every update.
@@ -104,8 +95,6 @@ export function PreviewView({
   const miniPlayer = usePreviewMiniPlayerStore((state) =>
     selectThreadPreviewMiniPlayer(state.byThreadKey, threadRef),
   );
-  const addPreviewAnnotation = useComposerDraftStore((store) => store.addPreviewAnnotation);
-  const addImage = useComposerDraftStore((store) => store.addImage);
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const environmentHostname = environmentHttpBaseUrl
     ? new URL(environmentHttpBaseUrl).hostname
@@ -320,20 +309,6 @@ export function PreviewView({
     usePreviewMiniPlayerStore.getState().open(threadRef, tabId);
     useRightPanelStore.getState().close(threadRef);
   }, [miniPlayer?.tabId, tabId, threadRef]);
-
-  const handleNativePictureInPicture = useCallback(() => {
-    if (!previewBridge || !runtimeTabId) return;
-    const operation = desktopOverlay?.pictureInPicture
-      ? previewBridge.pictureInPicture.close
-      : previewBridge.pictureInPicture.open;
-    void operation(runtimeTabId).catch((error) => {
-      toastManager.add({
-        type: "error",
-        title: "Unable to update popped-out preview",
-        description: error instanceof Error ? error.message : "An error occurred.",
-      });
-    });
-  }, [desktopOverlay?.pictureInPicture, runtimeTabId]);
 
   const handleCapture = useCallback(
     (record: boolean) => {
@@ -574,91 +549,6 @@ export function PreviewView({
     [recordingRuntimeTabId, runtimeTabId, tabId, threadRef],
   );
 
-  const handlePickElement = useCallback(() => {
-    if (!previewBridge || !runtimeTabId) return;
-    if (pickActiveRef.current) {
-      void previewBridge.cancelPickElement(runtimeTabId).catch(() => undefined);
-      return;
-    }
-    // Snapshot whatever the user was focused on (typically the chat
-    // composer textarea or the chrome-row pick button) BEFORE main steals
-    // focus into the guest webContents. We restore it when the pick
-    // resolves so the user's typing context isn't lost — otherwise after
-    // every pick they'd have to click back into the textarea.
-    const previouslyFocused =
-      typeof document !== "undefined" ? (document.activeElement as HTMLElement | null) : null;
-    pickActiveRef.current = true;
-    setPickActive(true);
-    void (async () => {
-      try {
-        const result = await previewBridge.pickElement(runtimeTabId);
-        if (!result) return;
-        const { annotation, submission } = result;
-        addPreviewAnnotation(threadRef, annotation);
-        let screenshotFile: File | null = null;
-        try {
-          screenshotFile = await previewAnnotationScreenshotFile(annotation);
-        } catch {
-          // The structured annotation is still sendable when converting its
-          // optional screenshot into a composer attachment fails.
-        }
-        const image =
-          screenshotFile && annotation.screenshot
-            ? ({
-                type: "image",
-                id: annotation.id,
-                name: screenshotFile.name,
-                mimeType: screenshotFile.type,
-                sizeBytes: screenshotFile.size,
-                previewUrl: annotation.screenshot.dataUrl,
-                file: screenshotFile,
-              } satisfies ComposerImageAttachment)
-            : null;
-        if (image) {
-          addImage(threadRef, image);
-        }
-        if (submission === "send") {
-          onSendAnnotation?.(annotation, image);
-        }
-      } catch {
-        // Picker failed (e.g. webview navigated). Treat as silent cancel.
-      } finally {
-        pickActiveRef.current = false;
-        // Avoid `setState on unmounted component` if the panel/thread closed
-        // while the pick was in flight.
-        if (isMountedRef.current) setPickActive(false);
-        // Best-effort: restore focus to whatever the user had before the
-        // pick stole it into the guest webContents. Skip if the previously-
-        // focused element was unmounted or is no longer focusable.
-        if (
-          previouslyFocused &&
-          previouslyFocused.isConnected &&
-          typeof previouslyFocused.focus === "function"
-        ) {
-          try {
-            previouslyFocused.focus({ preventScroll: true });
-          } catch {
-            // Some elements throw on .focus() (detached iframes, etc.).
-          }
-        }
-      }
-    })();
-  }, [addImage, addPreviewAnnotation, onSendAnnotation, runtimeTabId, threadRef]);
-
-  // If the active tab changes mid-pick (close, thread switch, hot restart),
-  // tell main to tear down the in-flight session AND reset our local toggle
-  // state so the button doesn't get stuck pressed against a stale tab id.
-  useEffect(() => {
-    return () => {
-      if (!pickActiveRef.current) return;
-      pickActiveRef.current = false;
-      if (previewBridge && runtimeTabId) {
-        void previewBridge.cancelPickElement(runtimeTabId).catch(() => undefined);
-      }
-      if (isMountedRef.current) setPickActive(false);
-    };
-  }, [runtimeTabId]);
-
   // Subscribe only while visible; `toggle-panel` is owned by ChatView's
   // URL-aware handler regardless of whether the panel is currently mounted.
   useEffect(() => {
@@ -709,16 +599,7 @@ export function PreviewView({
         recording={recordingRuntimeTabId !== null}
         onPictureInPicture={previewBridge && tabId ? handlePictureInPicture : undefined}
         pictureInPicture={miniPlayer?.tabId === tabId}
-        pictureInPictureDisabled={!desktopOverlay?.hasWebContents || isUnreachable}
-        onPickElement={previewBridge && tabId ? handlePickElement : undefined}
-        pickActive={pickActive}
-        // Disable when there's no tab (nothing to pick on) OR the page
-        // failed to load (a React overlay covers the webview, so the
-        // user wouldn't be able to actually click anything underneath).
-        pickDisabled={!tabId || isUnreachable}
-        pickDisabledReason={
-          isUnreachable ? "Page didn't load — pick unavailable until the page renders" : undefined
-        }
+        pictureInPictureDisabled={isUnreachable}
         trailingActions={
           previewBridge ? (
             <PreviewMoreMenu
@@ -728,8 +609,6 @@ export function PreviewView({
               colorScheme={desktopOverlay?.colorScheme ?? "system"}
               deviceToolbarVisible={viewport._tag !== "fill"}
               onToggleDeviceToolbar={handleToggleDeviceToolbar}
-              nativePictureInPicture={desktopOverlay?.pictureInPicture ?? false}
-              onNativePictureInPicture={handleNativePictureInPicture}
             />
           ) : null
         }

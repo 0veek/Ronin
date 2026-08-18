@@ -87,6 +87,50 @@ describe("ElectronProtocol", () => {
     }).pipe(Effect.provide(ElectronProtocol.layer)),
   );
 
+  it.effect("rejects protocol-relative paths that would leave the renderer origin", () =>
+    Effect.gen(function* () {
+      let handler: ((request: Request) => Promise<Response>) | undefined;
+      handleMock.mockImplementation((_scheme, nextHandler) => {
+        handler = nextHandler;
+      });
+
+      const response = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const protocol = yield* ElectronProtocol.ElectronProtocol;
+          yield* protocol.registerDesktopProtocol({
+            scheme: "t3code",
+            targetOrigin: new URL("http://127.0.0.1:3773/"),
+            backendOrigin: new URL("http://127.0.0.1:3773/"),
+          });
+          return yield* Effect.promise(() =>
+            handler!(new Request("t3code://app//evil.example/secret")),
+          );
+        }),
+      );
+
+      assert.equal(response.status, 404);
+      assert.equal(netFetchMock.mock.calls.length, 0);
+    }).pipe(Effect.provide(ElectronProtocol.layer)),
+  );
+
+  it("keeps resolved proxy targets on the renderer origin", () => {
+    const targetOrigin = new URL("http://127.0.0.1:3773/");
+    const safe = ElectronProtocol.resolveDesktopProxyTargetUrl(
+      new URL("t3code://app/settings?tab=general"),
+      targetOrigin,
+    );
+    assert.equal(safe?.href, "http://127.0.0.1:3773/settings?tab=general");
+    assert.isNull(
+      ElectronProtocol.resolveDesktopProxyTargetUrl(
+        new URL("t3code://app//evil.example/"),
+        targetOrigin,
+      ),
+    );
+    assert.isNull(
+      ElectronProtocol.resolveDesktopProxyTargetUrl(new URL("t3code://other/"), targetOrigin),
+    );
+  });
+
   it.effect("rejects custom protocol requests for another host", () =>
     Effect.gen(function* () {
       let handler: ((request: Request) => Promise<Response>) | undefined;

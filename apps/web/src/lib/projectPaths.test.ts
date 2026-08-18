@@ -63,6 +63,12 @@ describe("projectPaths", () => {
     expect(isUnsupportedWindowsProjectPath("C:\\Work\\Repo\\", "Win32")).toBe(false);
   });
 
+  it("accepts both path styles when the environment OS is unknown", () => {
+    expect(isFilesystemBrowseQuery("C:\\Work\\Repo\\")).toBe(true);
+    expect(isFilesystemBrowseQuery("/Users/work/repo")).toBe(true);
+    expect(isUnsupportedWindowsProjectPath("C:\\Work\\Repo\\", "")).toBe(false);
+  });
+
   it("detects explicit relative project paths", () => {
     expect(isExplicitRelativeProjectPath(".")).toBe(true);
     expect(isExplicitRelativeProjectPath("..")).toBe(true);

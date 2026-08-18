@@ -14,7 +14,7 @@ import * as DesktopAssets from "../app/DesktopAssets.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
-import { getDesktopUrl } from "../electron/ElectronProtocol.ts";
+import { getDesktopScheme, getDesktopUrl } from "../electron/ElectronProtocol.ts";
 import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronTheme from "../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
@@ -26,7 +26,9 @@ import {
 import * as PreviewManager from "../preview/Manager.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
+import * as DesktopState from "../app/DesktopState.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
+import { parseDesktopAppUrl } from "../app/DesktopDeepLinks.ts";
 import { makeQuitHoldHandler } from "./QuitHold.ts";
 import { getWindowVibrancyOptions, resolveWindowBackgroundColor } from "./WindowVibrancy.ts";
 
@@ -72,6 +74,7 @@ type DesktopWindowRuntimeServices =
   | DesktopAssets.DesktopAssets
   | DesktopAppSettings.DesktopAppSettings
   | DesktopClientSettings.DesktopClientSettings
+  | DesktopState.DesktopState
   | ElectronApp.ElectronApp
   | ElectronMenu.ElectronMenu
   | ElectronShell.ElectronShell
@@ -107,6 +110,7 @@ export class DesktopWindow extends Context.Service<
     readonly handleBackendNotReady: Effect.Effect<void>;
     readonly flushMainWindowBounds: Effect.Effect<void>;
     readonly dispatchMenuAction: (action: string) => Effect.Effect<void, DesktopWindowError>;
+    readonly openDesktopUrl: (rawUrl: string) => Effect.Effect<void, DesktopWindowError>;
     // Zooms the main window's own webContents. The Electron `zoomIn`/`zoomOut`
     // menu roles act on whichever webContents has keyboard focus, so with an
     // embedded preview WebContentsView (or DevTools) focused they zoom the
@@ -305,6 +309,7 @@ export const make = Effect.gen(function* () {
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const clientSettings = yield* DesktopClientSettings.DesktopClientSettings;
   const electronApp = yield* ElectronApp.ElectronApp;
+  const desktopState = yield* DesktopState.DesktopState;
   // Window-side latch for the primary backend's readiness. Set by
   // handleBackendReady (driven by the pool's onReady callback), cleared
   // by handleBackendNotReady (driven by onShutdown). Only consumed by
@@ -316,6 +321,12 @@ export const make = Effect.gen(function* () {
   // affordance of its own, so the recovery has to come from out here.
   let rendererLoadFailed = false;
   let reloadMainWindow: (() => void) | undefined;
+  // A `t3code://app/...` link can arrive before any window exists: argv on a
+  // cold start, or macOS `open-url` ahead of backend readiness. Hold it here so
+  // the window the backend eventually triggers loads it instead of the plain
+  // application URL.
+  let pendingDesktopUrl: string | null = null;
+  const pendingMenuSendByContents = new WeakMap<Electron.WebContents, () => void>();
   const context = yield* Effect.context<DesktopWindowRuntimeServices>();
   const runFork = Effect.runForkWith(context);
   const runPromise = Effect.runPromiseWith(context);
@@ -407,10 +418,15 @@ export const make = Effect.gen(function* () {
         callback(mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio"));
       },
     );
-    windowSession?.setPermissionCheckHandler(
-      (requestingContents, permission) =>
-        requestingContents?.id === window.webContents.id && permission === "media",
-    );
+    windowSession?.setPermissionCheckHandler((requestingContents, permission, _origin, details) => {
+      if (requestingContents?.id !== window.webContents.id || permission !== "media") {
+        return false;
+      }
+      // The check handler reports one `mediaType`, not the request handler's
+      // `mediaTypes` list. Dictation is the only capture this window does, so
+      // `video` and `unknown` are denied along with an absent type.
+      return details.mediaType === "audio";
+    });
     let boundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let pendingBoundsPersistFiber: Fiber.Fiber<void, never> | undefined;
     let boundsPersistenceEnabled = persistedBounds === null || restoredPersistedBounds;
@@ -652,11 +668,17 @@ export const make = Effect.gen(function* () {
       loadRetryFiber = undefined;
       runFork(Fiber.interrupt(retryFiber));
     };
+    // Consumed once: a retry after a failed deep-link load falls back to the
+    // plain application URL rather than replaying a one-time OAuth callback.
+    let deepLinkUrl = pendingDesktopUrl;
+    pendingDesktopUrl = null;
     const loadApplication = () => {
       if (window.isDestroyed()) {
         return;
       }
-      void window.loadURL(applicationUrl).catch(() => undefined);
+      const targetUrl = deepLinkUrl ?? applicationUrl;
+      deepLinkUrl = null;
+      void window.loadURL(targetUrl).catch(() => undefined);
     };
     reloadMainWindow = loadApplication;
     const scheduleLoadRetry = () => {
@@ -708,6 +730,14 @@ export const make = Effect.gen(function* () {
           return;
         }
         rendererLoadFailed = true;
+        // Drop a menu action queued behind this load. Left in place it would
+        // sit on the listener until some later successful load replayed it,
+        // firing long after the click that asked for it.
+        const queuedMenuSend = pendingMenuSendByContents.get(window.webContents);
+        if (queuedMenuSend) {
+          pendingMenuSendByContents.delete(window.webContents);
+          window.webContents.removeListener("did-finish-load", queuedMenuSend);
+        }
         const retryInMs = isRetryableRendererLoadFailure({
           applicationUrl,
           errorCode,
@@ -861,9 +891,10 @@ export const make = Effect.gen(function* () {
       yield* createMainIfBackendReady;
       yield* reloadMainWindowAfterFailedLoad;
     }),
-    handleBackendNotReady: Ref.set(backendReadyRef, false).pipe(
-      Effect.withSpan("desktop.window.handleBackendNotReady"),
-    ),
+    handleBackendNotReady: Effect.gen(function* () {
+      yield* Ref.set(backendReadyRef, false);
+      yield* Ref.update(desktopState.localAuthEpoch, (epoch) => epoch + 1);
+    }).pipe(Effect.withSpan("desktop.window.handleBackendNotReady")),
     flushMainWindowBounds: Effect.suspend(() => flushMainWindowBounds).pipe(
       Effect.withSpan("desktop.window.flushMainWindowBounds"),
     ),
@@ -882,11 +913,39 @@ export const make = Effect.gen(function* () {
       };
 
       if (targetWindow.webContents.isLoadingMainFrame()) {
-        targetWindow.webContents.once("did-finish-load", send);
+        const webContents = targetWindow.webContents;
+        const previous = pendingMenuSendByContents.get(webContents);
+        if (previous) {
+          webContents.removeListener("did-finish-load", previous);
+        }
+        const sendOnce = () => {
+          pendingMenuSendByContents.delete(webContents);
+          send();
+        };
+        pendingMenuSendByContents.set(webContents, sendOnce);
+        webContents.once("did-finish-load", sendOnce);
         return;
       }
 
       send();
+    }),
+    openDesktopUrl: Effect.fn("desktop.window.openDesktopUrl")(function* (rawUrl) {
+      const parsed = parseDesktopAppUrl(rawUrl, getDesktopScheme(environment.isDevelopment));
+      if (parsed === null) {
+        return;
+      }
+      const existingWindow = yield* currentMainWindow;
+      if (Option.isNone(existingWindow) || existingWindow.value.isDestroyed()) {
+        pendingDesktopUrl = parsed.href;
+        yield* createMainIfBackendReady;
+        return;
+      }
+      const window = existingWindow.value;
+      yield* electronWindow.reveal(window);
+      if (window.webContents.getURL() === parsed.href) {
+        return;
+      }
+      window.loadURL(parsed.href).catch(() => undefined);
     }),
     zoomMain: Effect.fn("desktop.window.zoomMain")(function* (direction) {
       yield* Effect.annotateCurrentSpan({ direction });

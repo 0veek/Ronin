@@ -40,6 +40,17 @@ describe("resolveUpdateSupport", () => {
     ).toBe(true);
   });
 
+  it("honors T3CODE_DISABLE_AUTO_UPDATE", () => {
+    const support = resolveUpdateSupport({
+      isPackaged: true,
+      platform: "darwin",
+      appImagePath: undefined,
+      disableAutoUpdate: true,
+    });
+    expect(support.supported).toBe(false);
+    expect(support.reason).toContain("T3CODE_DISABLE_AUTO_UPDATE");
+  });
+
   it("leaves a package-manager-installed Linux build alone", () => {
     // Replacing binaries a distro package owns would break that package.
     const support = resolveUpdateSupport({

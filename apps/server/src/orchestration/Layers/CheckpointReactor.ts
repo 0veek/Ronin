@@ -704,17 +704,26 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    const projects = yield* resolveThreadProjects(thread.projectId);
     const sessionRuntime = yield* resolveSessionRuntimeForThread(event.payload.threadId);
-    if (Option.isNone(sessionRuntime)) {
+    // Same preference order as capture (`preferSessionRuntime`), resolved here
+    // rather than through resolveCheckpointCwd so a workspace that exists but
+    // is not a git repository reports that instead of "no workspace".
+    const checkpointCwd =
+      Option.match(sessionRuntime, {
+        onNone: () => undefined,
+        onSome: (runtime) => runtime.cwd,
+      }) ?? resolveThreadWorkspaceCwd({ thread, projects });
+    if (!checkpointCwd) {
       yield* appendRevertFailureActivity({
         threadId: event.payload.threadId,
         turnCount: event.payload.turnCount,
-        detail: "No active provider session with workspace cwd is bound to this thread.",
+        detail: "No git workspace is bound to this thread.",
         createdAt: now,
       }).pipe(Effect.catch(() => Effect.void));
       return;
     }
-    if (!isGitWorkspace(sessionRuntime.value.cwd)) {
+    if (!isGitWorkspace(checkpointCwd)) {
       yield* appendRevertFailureActivity({
         threadId: event.payload.threadId,
         turnCount: event.payload.turnCount,
@@ -758,24 +767,36 @@ const make = Effect.gen(function* () {
 
     // Restoring runs `git clean`, which discards untracked work created since
     // the target checkpoint. Capture the current tree first so that work is
-    // recoverable from the undo ref instead of being lost outright.
-    yield* checkpointStore
+    // recoverable from the undo ref instead of being lost outright. Abort if
+    // that capture fails — otherwise clean can delete files with no undo.
+    const undoRef = revertUndoCheckpointRefForThread(event.payload.threadId);
+    const undoCaptured = yield* checkpointStore
       .captureCheckpoint({
-        cwd: sessionRuntime.value.cwd,
-        checkpointRef: revertUndoCheckpointRefForThread(event.payload.threadId),
+        cwd: checkpointCwd,
+        checkpointRef: undoRef,
       })
       .pipe(
+        Effect.as(true),
         Effect.tapError((error) =>
           Effect.logWarning("Failed to capture revert undo checkpoint", {
             threadId: event.payload.threadId,
             detail: error.message,
           }),
         ),
-        Effect.catch(() => Effect.void),
+        Effect.orElseSucceed(() => false),
       );
+    if (!undoCaptured) {
+      yield* appendRevertFailureActivity({
+        threadId: event.payload.threadId,
+        turnCount: event.payload.turnCount,
+        detail: "Could not capture an undo checkpoint; revert aborted to protect untracked files.",
+        createdAt: now,
+      }).pipe(Effect.catch(() => Effect.void));
+      return;
+    }
 
     const restored = yield* checkpointStore.restoreCheckpoint({
-      cwd: sessionRuntime.value.cwd,
+      cwd: checkpointCwd,
       checkpointRef: targetCheckpointRef,
       fallbackToHead: event.payload.turnCount === 0,
     });
@@ -791,14 +812,26 @@ const make = Effect.gen(function* () {
 
     // Refresh the workspace entry index so the @-mention file picker
     // reflects the reverted filesystem state.
-    yield* workspaceEntries.refresh(sessionRuntime.value.cwd);
+    yield* workspaceEntries.refresh(checkpointCwd);
 
     const rolledBackTurns = Math.max(0, currentTurnCount - event.payload.turnCount);
-    if (rolledBackTurns > 0) {
-      yield* providerService.rollbackConversation({
-        threadId: sessionRuntime.value.threadId,
-        numTurns: rolledBackTurns,
-      });
+    if (rolledBackTurns > 0 && Option.isSome(sessionRuntime)) {
+      yield* providerService
+        .rollbackConversation({
+          threadId: sessionRuntime.value.threadId,
+          numTurns: rolledBackTurns,
+        })
+        .pipe(
+          Effect.catch((error) =>
+            checkpointStore
+              .restoreCheckpoint({
+                cwd: checkpointCwd,
+                checkpointRef: undoRef,
+                fallbackToHead: false,
+              })
+              .pipe(Effect.flatMap(() => Effect.fail(error))),
+          ),
+        );
     }
 
     const staleCheckpointRefs: Array<CheckpointRef> = [];
@@ -810,7 +843,7 @@ const make = Effect.gen(function* () {
 
     if (staleCheckpointRefs.length > 0) {
       yield* checkpointStore.deleteCheckpointRefs({
-        cwd: sessionRuntime.value.cwd,
+        cwd: checkpointCwd,
         checkpointRefs: staleCheckpointRefs,
       });
     }

@@ -78,7 +78,9 @@ function splitAbsolutePath(value: string): {
 }
 
 export function isFilesystemBrowseQuery(value: string, platform = ""): boolean {
-  const allowWindowsPaths = isWindowsPlatform(platform);
+  // An empty platform means the environment OS is unknown. Accept Windows
+  // absolute paths rather than guessing from the client's OS.
+  const allowWindowsPaths = platform.length === 0 || isWindowsPlatform(platform);
   return (
     value.startsWith("./") ||
     value.startsWith("../") ||
@@ -91,6 +93,7 @@ export function isFilesystemBrowseQuery(value: string, platform = ""): boolean {
 }
 
 export function isUnsupportedWindowsProjectPath(value: string, platform: string): boolean {
+  if (platform.length === 0) return false;
   return isWindowsAbsolutePath(value) && !isWindowsPlatform(platform);
 }
 

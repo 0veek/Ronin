@@ -22,6 +22,14 @@ import {
 } from "./commandInvariants.ts";
 import { projectEvent } from "./projector.ts";
 
+/**
+ * Marks the one invariant failure that means "nothing to do", not "this command
+ * is bad". The engine matches on it to avoid writing a permanent rejected
+ * receipt for an envelope the user may legitimately retry once the thread
+ * settles again.
+ */
+export const SESSION_STOP_SKIPPED_DETAIL = "was re-engaged after settle; skipping session stop";
+
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
 // Session adoption takes seconds; a user message still unadopted after this
@@ -1252,7 +1260,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         ) {
           return yield* new OrchestrationCommandInvariantError({
             commandType: command.type,
-            detail: `thread ${command.threadId} was re-engaged after settle; skipping session stop`,
+            detail: `thread ${command.threadId} ${SESSION_STOP_SKIPPED_DETAIL}`,
           });
         }
       }
