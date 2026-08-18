@@ -13,15 +13,14 @@
   <a href="#the-good-stuff">Features</a> ·
   <a href="#gallery">Gallery</a> ·
   <a href="#run-it">Run it</a> ·
-  <a href="#documentation">Docs</a> ·
-  <a href="#lineage">Lineage</a>
+  <a href="#documentation">Docs</a>
 </p>
 
 ---
 
 **One desktop app for every coding agent you pay for.**
 
-Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi — nine CLIs, one dark-first Electron workspace on **Linux, Windows, and macOS**. Chat, terminal, preview, git, pull requests, stats, themes. Bring your own subscriptions; Ronin sells you nothing and phones home to no one. Everything runs on your machine, and the whole thing is open source.
+Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Droid, Kilo, Pi — nine CLIs, one dark-first Electron workspace on **Linux, Windows, and macOS**. Chat, terminal, preview, git, pull requests, stats, themes. Bring your own subscriptions. Ronin sells you nothing and phones home to no one.
 
 If the CLI works in a terminal, Ronin can drive it.
 
@@ -31,87 +30,78 @@ If the CLI works in a terminal, Ronin can drive it.
 
 ### 🔄 Switch providers mid-thread
 
-The feature no other harness has: **hand a live conversation to a different agent and it keeps going.** Start with Codex, hit a wall, hand the thread to Claude — same history, same checkpoints, same working directory.
+Start with Codex, hit a wall, hand the thread to Claude. Same history, same checkpoints, same working directory.
 
-- An agent that's been in the thread before **resumes its own session** and catches up on what it missed.
-- A newcomer gets **a brief built from the thread itself** — the conversation so far, the branch, the files already changed.
-- The transcript marks every handover, and each provider keeps its own place in the thread, so switching back later resumes rather than re-briefs.
+An agent that's been here before **resumes its own session**. A newcomer gets a brief built from the thread. Switch back later and it picks up where it left off — no copy-paste, ever. ([docs](./docs/user/switching-providers.md))
 
-No copy-pasting context between terminals. Ever again. ([docs](./docs/user/switching-providers.md))
+### 🥊 Get a second opinion
+
+Same prompt, two (or more) models, each in its own worktree. Press **Compare**, pick who should answer, and read them as ordinary threads with chips to jump between. Keep the one you like; delete the rest. ([docs](./docs/user/second-opinion.md))
 
 ### 💬 Ask on the side
 
-Some questions are worth asking and not worth keeping. **Select the part you're stuck on** — a small **Ask on the side** chip appears over the selection. Ronin opens a fresh thread on exactly that passage: same project, same checkout, the text quoted into the composer where you can see and edit it. `⌘⇧A` and the command palette do the same thing.
+Select the passage you're stuck on. A chip appears — **Ask on the side** opens a fresh thread on exactly that text, same project, same checkout. The main thread never learns you asked. ([docs](./docs/user/side-chats.md))
 
-The main thread never learns you asked. The side chat breadcrumbs back to where it came from, and files under its parent in the sidebar instead of drifting off into the list. ([docs](./docs/user/side-chats.md))
+### 📌 Capture as you read
+
+Agents leave work behind in the transcript — "this helper could go," "these two want merging." Select it and press **Capture**. Ronin files a draft thread, ready on every device, and you stay where you were reading. ([docs](./docs/user/captured-tasks.md))
+
+### 📋 A board, not just a list
+
+Six lanes — Draft, Up Next, Working, Needs You, Snoozed, Done. Drag to settle, snooze, or pick the next thing. The sidebar and the board never disagree. ([docs](./docs/user/board.md))
+
+### ▶️ Replay a turn
+
+Come back to a twenty-minute turn and press **replay**. The prompt, each tool call, and the reply play back in order, pauses compressed so you see the rhythm without sitting through the dead air. ([docs](./docs/user/turn-replay.md))
 
 ### 📊 Stats that count everything
 
-The Stats page reads each provider CLI's **own session transcripts** — so every token is counted, including the turns you ran in a bare terminal, on every connected machine, deduplicated across environments. API-equivalent cost, cache savings, per-model breakdowns, and an hourly-resolution chart for the last 24 hours.
+Reads each provider's **own session transcripts** — every token, including turns you ran in a bare terminal, on every connected machine. Real costs (Grok's exact figure, not an estimate), cache savings, per-model breakdowns, an hourly chart, and a sidebar meter that shows **when your window resets, to the minute**. ([docs](./docs/user/usage.md))
 
-Every provider owns one color across the whole page — chart, share bars, tables — in a palette validated for color-blind safety in light and dark alike. Grok even records its **exact** per-turn cost in an undocumented tick format; we reverse-engineered it, so that dollar figure is real, not an estimate.
+### ⏳ Hit a limit? Ronin waits
 
-And in your peripheral vision: the sidebar meter shows how much of each subscription window is left and **when it resets, to the minute** — so you know if you can keep working for the next hour without opening anything.
-
-### ⏳ Hit a limit? Ronin waits for you
-
-A turn that dies because your five-hour window ran dry isn't a failure you can act on — the only remedy is to wait. So Ronin waits.
-
-It parks your message, shows a countdown above the composer, and **sends it again the moment the window resets**. Walk away, come back to the answer. Cancel it or fire it early from the banner; set how long Ronin is willing to hold on for in Settings.
-
-It only does this for a genuinely spent subscription window — not a passing throttle, and never for a billing or auth failure that waiting can't fix. ([docs](./docs/user/quota-resume.md))
+A spent five-hour window isn't a failure you can act on. Ronin parks the message, counts down above the composer, and **sends it the moment the window resets**. Cancel it, fire it early, or walk away. ([docs](./docs/user/quota-resume.md))
 
 ### 🖼 Previews, inline
 
-When an agent builds something you're meant to _look_ at — a coverage report, a chart, a mockup — it writes an HTML file and links to it. Ronin renders the page **right there in the transcript** instead of handing you a link to click.
-
-Relative assets load, scripts run, and the frame is sandboxed to an opaque origin, so the page can't reach Ronin's session, storage, or cookies. ([docs](./docs/user/inline-previews.md))
+When an agent writes HTML — a coverage report, a chart, a mockup — Ronin renders it **in the transcript**. Sandboxed. Relative assets load. No "open this link." ([docs](./docs/user/inline-previews.md))
 
 ### 🔀 Git as a first-class citizen
 
-Not a plugin. Not a tab you forget exists.
-
-- **Checkpoints** — every turn ends with a hidden git ref, so you can diff or restore anything an agent did.
-- **Commit, branch, discard, worktrees** — right in the workspace topbar.
-- **Pull requests** — list them across every connected server, filter, react, edit in place, review diffs without leaving the app.
+- **Checkpoints** after every turn — diff or restore anything an agent did
+- **Commit, branch, discard, worktrees** in the topbar
+- **Pull requests** across every connected server — review, react, edit in place
 
 ### 🎨 Themes that go deep
 
-First-party themes (Tsukimi, Aizome, Urushi, the pure-black **OLED Void** family) — plus **Open VSX theme search**: pull almost any VS Code theme straight into Ronin. Import your own, tune the typography, keep light and dark mode intact per theme.
+Tsukimi, Aizome, Urushi, the pure-black **OLED Void** family — plus **Open VSX theme search**. Pull almost any VS Code theme straight in. Import your own. Light and dark stay intact.
 
-### 🧰 Skills and slash commands, portable across agents
+### 🧰 Skills once, every agent
 
-Drop a `SKILL.md` in `~/.ronin/skills` once and **every provider can use it** — Codex, Claude, Grok, all of them. Same for slash commands: `/clear`, `/compact`, `/model`, `/review`, `/fork`, `/status` and friends work everywhere, alongside each provider's native commands. ([skills](./docs/user/agent-skills.md) · [commands](./docs/user/slash-commands.md))
+Drop a `SKILL.md` in `~/.ronin/skills` and **every provider can use it**. Slash commands — `/clear`, `/compact`, `/model`, `/review`, `/fork` — work the same way, next to each CLI's native ones. ([skills](./docs/user/agent-skills.md) · [commands](./docs/user/slash-commands.md))
 
 ### ⏰ Work that runs without you
 
-Save a prompt, give it a schedule, and Ronin runs it in your project — every weekday at nine, every six hours, or once at a time you pick. Each run opens **a real thread you can read afterwards**, so there's no separate log format to learn and nothing special about a scheduled turn once it starts.
-
-Runs default to their own worktree, so unattended work never lands in the checkout you're using. A job the machine slept through still fires when it wakes; one that's hours stale is skipped and says so. The run history tells you what actually happened. ([docs](./docs/user/automations.md))
+Save a prompt, pick a schedule, walk away. Each run is a **real thread** you can read afterwards, defaulting to its own worktree so unattended edits never land in your checkout. ([docs](./docs/user/automations.md))
 
 ### 📱 Remote from anywhere
-
-The server speaks typed WebSockets, and pairing is one command:
 
 ```bash
 npx t3 pair --tailscale
 ```
 
-Scan the QR code and your phone is driving the same threads, over your tailnet, end-to-end on hardware you own. LAN and SSH work too. ([docs](./docs/user/remote-access.md))
-
-### ⚡ Performance without compromise
-
-No GPU-pegging animations, no token-by-token repaint storms, no lying spinners. Buffered assistant output, careful WebSocket payloads, lists that stay fast at thousands of threads. Ronin's users drive agents all day and notice a dropped frame — so we don't drop them.
+Scan the QR. Your phone is driving the same threads, over your tailnet, on hardware you own. LAN and SSH work too. ([docs](./docs/user/remote-access.md))
 
 ### And the rest
 
-- **Agent notifications** — a system ping when an agent finishes, fails, or waits for an approval while you're elsewhere; click it to land on the thread ([docs](./docs/user/notifications.md))
-- **Native on Windows** — no WSL layer: Ronin drives the same Windows CLIs you run in PowerShell, and finds them wherever npm, Scoop, WinGet, Chocolatey, Volta, or Bun put them ([docs](./docs/user/install.md))
-- **Live browser preview** — tabs, navigation, screenshots, recordings of the app your agent is building
-- **Composer-first workspace** — "What should we build?" with provider, model, effort and plan controls in one card
-- **Markdown that renders** — images, diffs, code, all inline in the transcript
-- **Editor hand-off** — Ronin finds your installed editors and opens any file where you actually work
-- **Permission modes** — decide how much rope each agent gets ([docs](./docs/user/permission-modes.md))
+- **Since you last looked** — what finished, what's still running, what's waiting on you ([docs](./docs/user/digest.md))
+- **Needs you** — a sidebar queue, and a dock badge, for anything that stopped until you answer
+- **Agent notifications** — a system ping when a turn finishes, fails, or waits for approval
+- **Native on Windows** — no WSL; the same CLIs you run in PowerShell
+- **Live browser preview** — tabs, navigation, screenshots, recordings
+- **Permission modes** — decide how much rope each agent gets
+- **Transcript export** — Markdown or JSON
+- **Editor hand-off** — opens any file in the editor you actually use
 
 ---
 
@@ -138,29 +128,6 @@ No GPU-pegging animations, no token-by-token repaint storms, no lying spinners. 
 
 ---
 
-## How it's built
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Ronin (Electron)                                       │
-│  ┌──────────┐  ┌────────────────────────────────────┐   │
-│  │ Sidebar  │  │ Workspace topbar · git · panels    │   │
-│  │ Threads  │  │ Chat · composer · terminal         │   │
-│  │ PRs ·    │  │ Stats · Settings · OLED themes     │   │
-│  │ Usage    │  └──────────────────▲─────────────────┘   │
-│  └────┬─────┘                     │                     │
-│       │ typed WS / IPC            │                     │
-│  ┌────▼───────────────────────────┴─────────────────┐   │
-│  │  Server · event-sourced · provider adapters      │   │
-│  │  checkpoints · reactors · receipts               │   │
-│  └──────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
-```
-
-An event-sourced Node server wraps the provider CLIs as subprocesses; per-provider adapters translate their native protocols into one orchestration model. Commands become events, events become the UI you see, and every turn checkpoints. The desktop shell embeds the web renderer — which is also how your phone connects remotely. Deep dive: [docs/internals/overview.md](./docs/internals/overview.md).
-
----
-
 ## Run it
 
 > [!IMPORTANT]
@@ -178,7 +145,11 @@ An event-sourced Node server wraps the provider CLIs as subprocesses; per-provid
 > | Kilo        | [Kilo CLI](https://kilo.ai/cli)                             | `kilo` auth                 |
 > | Pi          | [Pi](https://pi.dev/)                                       | `pi`                        |
 
-### From source
+### Desktop
+
+Download the latest build from [Releases](https://github.com/0veek/Ronin/releases). The app updates itself.
+
+Or build from source:
 
 ```bash
 # Node 22.16+ / 23.11+ / 24.10+
@@ -190,10 +161,6 @@ vp run dev            # server + web
 vp run dev:desktop    # Electron shell
 ```
 
-Ports are worktree-stable; read the `[dev-runner]` line for the real URL. Pairing needs the **full URL including the token**.
-
-### Desktop artifact
-
 ```bash
 vp run build:desktop
 vp run dist:desktop:linux          # Linux AppImage
@@ -201,7 +168,7 @@ vp run dist:desktop:win            # Windows installer (NSIS)
 vp run dist:desktop:dmg:arm64      # macOS
 ```
 
-Artifacts ship as `Ronin-${version}-${arch}.${ext}` for Linux, Windows, and macOS. On Windows, Ronin runs the native CLIs directly — no WSL required. ([install docs](./docs/user/install.md))
+Artifacts ship as `Ronin-${version}-${arch}.${ext}`. On Windows, Ronin runs native CLIs — no WSL. ([install docs](./docs/user/install.md))
 
 ---
 
@@ -212,43 +179,20 @@ Artifacts ship as `Ronin-${version}-${arch}.${ext}` for Linux, Windows, and macO
 | Using Ronin        | [docs/user/install.md](./docs/user/install.md)                         |
 | Keybindings        | [docs/user/keybindings.md](./docs/user/keybindings.md)                 |
 | Switching provider | [docs/user/switching-providers.md](./docs/user/switching-providers.md) |
+| Second opinion     | [docs/user/second-opinion.md](./docs/user/second-opinion.md)           |
 | Side chats         | [docs/user/side-chats.md](./docs/user/side-chats.md)                   |
+| Board              | [docs/user/board.md](./docs/user/board.md)                             |
 | Automations        | [docs/user/automations.md](./docs/user/automations.md)                 |
-| Inline previews    | [docs/user/inline-previews.md](./docs/user/inline-previews.md)         |
-| Agent skills       | [docs/user/agent-skills.md](./docs/user/agent-skills.md)               |
-| Slash commands     | [docs/user/slash-commands.md](./docs/user/slash-commands.md)           |
-| Source control     | [docs/user/source-control.md](./docs/user/source-control.md)           |
 | Stats & usage      | [docs/user/usage.md](./docs/user/usage.md)                             |
-| Waiting out limits | [docs/user/quota-resume.md](./docs/user/quota-resume.md)               |
 | Remote / Tailscale | [docs/user/remote-access.md](./docs/user/remote-access.md)             |
-| Architecture       | [docs/internals/overview.md](./docs/internals/overview.md)             |
-| Glossary           | [docs/internals/glossary.md](./docs/internals/glossary.md)             |
 
 Full tree: [docs/](./docs).
 
 ---
 
-## Lineage
+Built on [T3 Code](https://github.com/pingdotgg/t3code).
 
-Ronin is a **fork of [T3 Code](https://github.com/pingdotgg/t3code)** by Theo and the T3 tools team — the event-sourced server, multi-provider adapters, and remote-ready architecture come from that excellent foundation. Ronin is the **masterless cut**: desktop-only, no hosted relay, no mobile surface, and Windows runs native instead of through a WSL orchestration layer — a thinner blade with a full UI pass on top.
-
-Some later surfaces — portable agent skills, composer slash commands, and the Antigravity / Droid / Kilo / Pi providers — were adapted from **[Synara](https://github.com/Emanuele-web04/synara)** by Emanuele.
-
-```
-upstream  →  pingdotgg/t3code
-reference →  Emanuele-web04/synara
-this fork →  0veek/Ronin
-```
-
-Curious exactly what was cut and why? The commit history tells the whole story.
-
----
-
-## Status
-
-Early. Expect bugs. Prefer small fixes over grand PRs unless we ask.
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before opening an issue or PR.
+Early. Expect bugs. Prefer small fixes over grand PRs unless we ask. Read [CONTRIBUTING.md](./CONTRIBUTING.md) first.
 
 ---
 
