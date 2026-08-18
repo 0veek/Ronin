@@ -17,6 +17,7 @@ import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { AgentAttentionNotifier } from "../components/AgentAttentionNotifier";
+import { DockAttentionBadge } from "../components/DockAttentionBadge";
 import { AppUpdateNotification } from "../components/AppUpdateNotification";
 import { AppUpdateProvider } from "../components/AppUpdateProvider";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
@@ -143,6 +144,7 @@ function RootRouteView() {
           {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
           <AppUpdateNotification />
           <AgentAttentionNotifier />
+          <DockAttentionBadge />
           {appShell}
           {/* Above the router: a theme draft is judged by walking the app, so the
               editor has to survive navigation away from settings. */}

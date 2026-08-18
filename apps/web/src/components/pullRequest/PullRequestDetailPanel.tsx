@@ -1172,13 +1172,13 @@ export function PullRequestDetailPanel({
                 {conflicting ? (
                   <Badge
                     variant="error"
-                    className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px] text-destructive"
+                    className="h-5 shrink-0 gap-1 rounded px-1.5 text-3xs text-destructive"
                   >
                     <TriangleAlertIcon className="size-3" />
                     Conflicts
                   </Badge>
                 ) : checksSummary ? (
-                  <span className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
+                  <span className="flex shrink-0 items-center gap-1 text-3xs text-muted-foreground">
                     {detail && checksState !== null ? (
                       <PullRequestChecksPopover checks={detail.checks} checksState={checksState} />
                     ) : null}
@@ -1417,10 +1417,7 @@ export function PullRequestDetailPanel({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <Badge
-                        variant="info"
-                        className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px]"
-                      >
+                      <Badge variant="info" className="h-5 shrink-0 gap-1 rounded px-1.5 text-3xs">
                         <GitMergeIcon aria-hidden className="size-3" />
                         Auto-merge
                       </Badge>
@@ -1483,7 +1480,10 @@ export function PullRequestDetailPanel({
           >
             {detail ? (
               <div className="flex min-w-0 items-center gap-1 px-4 pb-2">
-                <nav aria-label="Pull request tabs" className="flex shrink-0 items-center gap-0.5">
+                <nav
+                  aria-label="Pull request tabs"
+                  className="flex shrink-0 items-center gap-0.5 rounded-[var(--control-radius)] bg-secondary p-0.5"
+                >
                   {visibleTabs.map((item) => (
                     <button
                       key={item.value}
@@ -1492,9 +1492,9 @@ export function PullRequestDetailPanel({
                       aria-pressed={tab === item.value}
                       onClick={() => setTab(item.value)}
                       className={cn(
-                        "rounded-md px-2 py-1 text-2xs transition-colors",
+                        "cursor-pointer rounded-[calc(var(--control-radius)-1px)] px-2 py-1 text-2xs transition-colors duration-(--duration-fast) ease-out",
                         tab === item.value
-                          ? "bg-accent text-foreground"
+                          ? "bg-card text-foreground shadow-[var(--shadow-raised)]"
                           : "text-muted-foreground hover:text-foreground",
                       )}
                     >
@@ -1735,22 +1735,24 @@ export function PullRequestDetailPanel({
                 className="col-span-2 flex min-w-0 items-center gap-1 overflow-x-auto border-t border-border/60 px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 aria-label="Pull request tabs"
               >
-                {visibleTabs.map((item) => (
-                  <button
-                    key={item.value}
-                    type="button"
-                    aria-pressed={tab === item.value}
-                    onClick={() => setTab(item.value)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs transition-colors",
-                      tab === item.value
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+                <span className="inline-flex shrink-0 items-center gap-0.5 rounded-[var(--control-radius)] bg-secondary p-0.5">
+                  {visibleTabs.map((item) => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      aria-pressed={tab === item.value}
+                      onClick={() => setTab(item.value)}
+                      className={cn(
+                        "inline-flex cursor-pointer items-center gap-1.5 rounded-[calc(var(--control-radius)-1px)] px-3 py-1.5 text-xs transition-colors duration-(--duration-fast) ease-out",
+                        tab === item.value
+                          ? "bg-card text-foreground shadow-[var(--shadow-raised)]"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </span>
                 {tab === "summary" ? (
                   <span
                     className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground"
@@ -1811,7 +1813,7 @@ export function PullRequestDetailPanel({
                     <Button
                       size="xs"
                       variant="ghost"
-                      className="h-7 px-2 text-[10px] text-muted-foreground"
+                      className="h-7 px-2 text-3xs text-muted-foreground"
                       aria-label={
                         timelineOrder === "newest"
                           ? "Show oldest activity first"

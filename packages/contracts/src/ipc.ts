@@ -951,6 +951,12 @@ export interface DesktopBridge {
    * frame -- that frame reads as a flash of solid color over the desktop.
    */
   getWindowVibrancy?: () => DesktopWindowVibrancy | null;
+  /**
+   * Leading inset, in CSS pixels, that titlebar content must keep clear of the
+   * macOS traffic lights. Null on platforms whose window controls are described
+   * by the Window Controls Overlay env() values instead.
+   */
+  getTitlebarContentInset?: () => number | null;
   // One bootstrap per pool instance currently registered with bootstrap
   // info (omits instances whose backend hasn't produced a config yet).
   // The primary backend is identified by id === PRIMARY_LOCAL_ENVIRONMENT_ID.
@@ -1024,6 +1030,11 @@ export interface DesktopBridge {
    * older desktop builds lack it, and web callers rely on the browser.
    */
   focusWindow?: () => Promise<void>;
+  /**
+   * Sets the dock/taskbar badge to the number of threads waiting on the user.
+   * Pass 0 to clear it.
+   */
+  setBadgeCount?: (count: number) => Promise<void>;
   onMenuAction: (listener: (action: string) => void) => () => void;
   /**
    * Hold-to-quit hint pushes: "down" when the quit shortcut is first pressed,

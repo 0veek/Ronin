@@ -9,6 +9,7 @@ import type * as Electron from "electron";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
 import * as DesktopApplicationMenu from "./DesktopApplicationMenu.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -44,10 +45,17 @@ const electronAppLayer = Layer.succeed(ElectronApp.ElectronApp, {
   setAsDefaultProtocolClient: () => Effect.succeed(true),
   setDesktopName: () => Effect.void,
   setDockIcon: () => Effect.void,
+  setBadgeCount: () => Effect.void,
   appendCommandLineSwitch: () => Effect.void,
   removeCommandLineSwitch: () => Effect.void,
   on: () => Effect.void,
 } satisfies ElectronApp.ElectronApp["Service"]);
+
+const makeElectronShellLayer = (openedUrl: Deferred.Deferred<string>) =>
+  Layer.succeed(ElectronShell.ElectronShell, {
+    openExternal: (rawUrl) => Deferred.succeed(openedUrl, String(rawUrl)).pipe(Effect.as(true)),
+    copyText: () => Effect.void,
+  } satisfies ElectronShell.ElectronShell["Service"]);
 
 const electronDialogLayer = Layer.succeed(ElectronDialog.ElectronDialog, {
   pickFolder: () => Effect.succeed(Option.none()),
@@ -85,6 +93,7 @@ const makeElectronMenuLayer = (
 const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
+  openedUrl?: Deferred.Deferred<string>,
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -94,6 +103,7 @@ const configureMenu = (
       DesktopApplicationMenu.layer.pipe(
         Layer.provideMerge(makeElectronMenuLayer(applicationMenuTemplate)),
         Layer.provideMerge(makeDesktopWindowLayer(selectedAction)),
+        Layer.provideMerge(makeElectronShellLayer(openedUrl ?? Deferred.makeUnsafe<string>())),
         Layer.provideMerge(electronDialogLayer),
         Layer.provideMerge(electronAppLayer),
         Layer.provideMerge(
@@ -129,6 +139,64 @@ describe("DesktopApplicationMenu", () => {
 
       settingsClick({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "open-settings");
+    }),
+  );
+
+  // Menu destinations have to reach the renderer as actions rather than as
+  // navigation performed in the main process, so the menu, the palette, and the
+  // keybindings all end up at one implementation.
+  it.effect("routes Go menu destinations through DesktopWindow actions", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const goMenu = template.find((item) => item.label === "Go");
+      assert.isDefined(goMenu);
+      if (!Array.isArray(goMenu.submenu)) {
+        throw new Error("Expected Go menu submenu to be an array.");
+      }
+      const boardItem = goMenu.submenu.find((item) => item.label === "Board");
+      assert.isDefined(boardItem);
+      const boardClick = boardItem.click;
+      if (typeof boardClick !== "function") {
+        throw new Error("Expected Board menu item to have a click handler.");
+      }
+
+      boardClick({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.equal(yield* Deferred.await(selectedAction), "go-board");
+    }),
+  );
+
+  // Help links leave the app, so they go through ElectronShell's URL allowlist
+  // rather than being opened as a window.
+  it.effect("opens Help documentation through the shell", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const openedUrl = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, openedUrl);
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const helpMenu = template.find((item) => item.role === "help");
+      assert.isDefined(helpMenu);
+      if (!Array.isArray(helpMenu.submenu)) {
+        throw new Error("Expected Help menu submenu to be an array.");
+      }
+      const docsItem = helpMenu.submenu.find((item) => item.label === "Documentation");
+      assert.isDefined(docsItem);
+      const docsClick = docsItem.click;
+      if (typeof docsClick !== "function") {
+        throw new Error("Expected Documentation menu item to have a click handler.");
+      }
+
+      docsClick({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.match(yield* Deferred.await(openedUrl), /^https:\/\//);
     }),
   );
 

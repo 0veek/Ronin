@@ -279,7 +279,7 @@ function Sidebar({
         {/* This is what handles the sidebar gap on desktop */}
         <div
           className={cn(
-            "relative w-(--sidebar-width) bg-transparent transition-[width] duration-(--duration-base) ease-linear",
+            "relative w-(--sidebar-width) bg-transparent transition-[width] duration-(--duration-base) ease-(--ease-spring)",
             "group-data-[collapsible=offcanvas]:w-0",
             "group-data-[side=right]:rotate-180",
             variant === "floating" || variant === "inset"
@@ -294,7 +294,7 @@ function Sidebar({
             // subtree is one of the largest in the app, and animating its
             // position would relayout and repaint all of it every frame. The
             // empty gap element next to it is what animates the actual layout.
-            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[translate,width] duration-(--duration-base) ease-linear md:flex",
+            "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[translate,width] duration-(--duration-base) ease-(--ease-spring) md:flex",
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:-translate-x-full"
               : "right-0 group-data-[collapsible=offcanvas]:translate-x-full",

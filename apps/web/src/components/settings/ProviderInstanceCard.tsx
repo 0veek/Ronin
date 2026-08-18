@@ -535,7 +535,7 @@ export function ProviderInstanceCard({
         {displayName}
       </h3>
       {String(instanceId) !== String(instance.driver) ? (
-        <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-[10px] text-muted-foreground">
+        <code className="truncate rounded bg-muted/60 px-1 py-0.5 text-3xs text-muted-foreground">
           {instanceId}
         </code>
       ) : null}
@@ -578,7 +578,7 @@ export function ProviderInstanceCard({
   );
 
   const authRowNode = (
-    <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-[13px] leading-[1.45] text-muted-foreground/80">
+    <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-sm leading-[1.45] text-muted-foreground/80">
       {hasAuthenticatedEmail ? (
         <>
           <span>Authenticated as</span>
@@ -634,7 +634,7 @@ export function ProviderInstanceCard({
                   >
                     <div className="grid min-w-0 gap-3">
                       <div className="grid gap-0.5">
-                        <p className="text-[13px] font-semibold leading-tight text-foreground">
+                        <p className="text-sm font-semibold leading-tight text-foreground">
                           Update available
                         </p>
                         <p
@@ -662,7 +662,7 @@ export function ProviderInstanceCard({
                         </Button>
                       ) : null}
                       {onRunUpdate && updateCommand ? (
-                        <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                        <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
                           <span aria-hidden className="h-px flex-1 bg-border" />
                           or, update manually using
                           <span aria-hidden className="h-px flex-1 bg-border" />

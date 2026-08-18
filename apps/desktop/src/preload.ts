@@ -40,6 +40,10 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     const result = ipcRenderer.sendSync(IpcChannels.GET_WINDOW_VIBRANCY_CHANNEL);
     return result === "vibrancy" || result === "acrylic" ? result : null;
   },
+  getTitlebarContentInset: () => {
+    const result = ipcRenderer.sendSync(IpcChannels.GET_TITLEBAR_CONTENT_INSET_CHANNEL);
+    return typeof result === "number" ? result : null;
+  },
   getLocalEnvironmentBootstraps: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL);
     if (!Array.isArray(result)) {
@@ -107,6 +111,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   openExternal: (url: string) => ipcRenderer.invoke(IpcChannels.OPEN_EXTERNAL_CHANNEL, url),
   probeRemoteEditors: () => ipcRenderer.invoke(IpcChannels.PROBE_REMOTE_EDITORS_CHANNEL, undefined),
   focusWindow: () => ipcRenderer.invoke(IpcChannels.FOCUS_WINDOW_CHANNEL, undefined),
+  setBadgeCount: (count) => ipcRenderer.invoke(IpcChannels.SET_BADGE_COUNT_CHANNEL, count),
   onMenuAction: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, action: unknown) => {
       if (typeof action !== "string") return;

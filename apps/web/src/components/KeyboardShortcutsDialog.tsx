@@ -13,7 +13,7 @@ function ShortcutKeys({ shortcut }: { shortcut: string }) {
     <span className="inline-flex shrink-0 items-center gap-0.5">
       {parts.map((part, index) => (
         <kbd
-          className="min-w-5 rounded-[var(--control-radius)] border border-border/70 px-1.5 py-0.5 text-center font-mono text-[11px] text-muted-foreground"
+          className="min-w-5 rounded-[var(--control-radius)] border border-border/70 px-1.5 py-0.5 text-center font-mono text-2xs text-muted-foreground"
           // The keys up to and including this one: unique within a shortcut
           // without leaning on the index, since no prefix repeats.
           key={parts.slice(0, index + 1).join("+")}

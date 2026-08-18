@@ -23,7 +23,7 @@ import { SidebarInset } from "./ui/sidebar";
 function ShortcutHint({ label }: { label: string | null }) {
   if (label === null) return null;
   return (
-    <kbd className="rounded-[var(--control-radius)] border border-border/70 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+    <kbd className="rounded-[var(--control-radius)] border border-border/70 px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
       {label}
     </kbd>
   );

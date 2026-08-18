@@ -9,6 +9,7 @@ import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
+import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopWindow from "./DesktopWindow.ts";
 
@@ -33,7 +34,15 @@ export class DesktopApplicationMenu extends Context.Service<
 
 type DesktopApplicationMenuRuntimeServices =
   | DesktopWindow.DesktopWindow
-  | ElectronDialog.ElectronDialog;
+  | ElectronDialog.ElectronDialog
+  | ElectronShell.ElectronShell;
+
+/**
+ * Documentation the Help menu points at. Kept next to the menu that opens it so
+ * a moved page is a one-line change here rather than a hunt through templates.
+ */
+const DOCUMENTATION_URL = "https://github.com/t3dotgg/ronin";
+const ISSUES_URL = "https://github.com/t3dotgg/ronin/issues";
 
 const { logError: logMenuError } = makeComponentLogger("desktop-menu");
 
@@ -42,6 +51,13 @@ const dispatchMenuAction = Effect.fn("desktop.menu.dispatchMenuAction")(function
 ): Effect.fn.Return<void, DesktopWindow.DesktopWindowError, DesktopWindow.DesktopWindow> {
   const desktopWindow = yield* DesktopWindow.DesktopWindow;
   yield* desktopWindow.dispatchMenuAction(action);
+});
+
+const openExternalUrl = Effect.fn("desktop.menu.openExternalUrl")(function* (
+  url: string,
+): Effect.fn.Return<void, never, ElectronShell.ElectronShell> {
+  const shell = yield* ElectronShell.ElectronShell;
+  yield* shell.openExternal(url);
 });
 
 const zoomMainWindow = Effect.fn("desktop.menu.zoomMainWindow")(function* (
@@ -82,6 +98,17 @@ export const make = Effect.gen(function* () {
     const zoomClick = (direction: DesktopWindow.MainWindowZoomDirection) => () => {
       runMenuEffect(`zoom-${direction}`, zoomMainWindow(direction));
     };
+    /*
+      Menu items route through the same action names the command palette and the
+      keybindings use, so a destination has one implementation in the renderer no
+      matter which of the three surfaces reached it.
+    */
+    const actionClick = (action: string) => () => {
+      runMenuEffect(action, dispatchMenuAction(action));
+    };
+    const externalClick = (action: string, url: string) => () => {
+      runMenuEffect(action, openExternalUrl(url));
+    };
     const template: Electron.MenuItemConstructorOptions[] = [];
 
     if (environment.platform === "darwin") {
@@ -111,6 +138,12 @@ export const make = Effect.gen(function* () {
       {
         label: "File",
         submenu: [
+          {
+            label: "New Thread",
+            accelerator: "CmdOrCtrl+N",
+            click: actionClick("new-thread"),
+          },
+          { type: "separator" as const },
           ...(environment.platform === "darwin"
             ? []
             : [
@@ -151,7 +184,40 @@ export const make = Effect.gen(function* () {
           { role: "togglefullscreen" },
         ],
       },
+      {
+        label: "Go",
+        submenu: [
+          {
+            label: "Command Palette...",
+            accelerator: "CmdOrCtrl+K",
+            click: actionClick("open-command-palette"),
+          },
+          { type: "separator" },
+          { label: "Threads", click: actionClick("go-threads") },
+          { label: "Board", click: actionClick("go-board") },
+          { label: "Pull Requests", click: actionClick("go-pull-requests") },
+          { label: "Usage", click: actionClick("go-usage") },
+        ],
+      },
       { role: "windowMenu" },
+      {
+        role: "help",
+        submenu: [
+          {
+            label: "Keyboard Shortcuts",
+            click: actionClick("open-keyboard-shortcuts"),
+          },
+          { type: "separator" },
+          {
+            label: "Documentation",
+            click: externalClick("open-documentation", DOCUMENTATION_URL),
+          },
+          {
+            label: "Report an Issue",
+            click: externalClick("report-issue", ISSUES_URL),
+          },
+        ],
+      },
     );
 
     yield* electronMenu.setApplicationMenu(template);

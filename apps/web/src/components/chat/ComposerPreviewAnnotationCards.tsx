@@ -22,7 +22,7 @@ function TargetStat(props: { icon: ReactNode; count: number; label: string }) {
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+          <span className="inline-flex items-center gap-1 text-3xs font-medium text-muted-foreground">
             {props.icon}
             {props.count}
           </span>
@@ -92,13 +92,13 @@ export function ComposerPreviewAnnotationCards({
                     {elementLabels.slice(0, 2).map(({ id, label }) => (
                       <span
                         key={id}
-                        className="max-w-40 truncate font-mono text-secondary-label text-[10px]"
+                        className="max-w-40 truncate font-mono text-secondary-label text-3xs"
                       >
                         {label}
                       </span>
                     ))}
                     {elementLabels.length > 2 ? (
-                      <span className="text-secondary-label text-[10px]">
+                      <span className="text-secondary-label text-3xs">
                         +{elementLabels.length - 2}
                       </span>
                     ) : null}

@@ -31,9 +31,11 @@ import {
 } from "./methods/sshEnvironment.ts";
 import {
   focusWindow,
+  setBadgeCount,
   getAppBranding,
   getSystemLocale,
   getWindowVibrancy,
+  getTitlebarContentInset,
   getLocalEnvironmentBootstraps,
   getLocalEnvironmentBearerToken,
   getWindowFullscreenState,
@@ -53,6 +55,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getAppBranding);
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getWindowVibrancy);
+  yield* ipc.handleSync(getTitlebarContentInset);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
@@ -89,6 +92,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(openExternal);
   yield* ipc.handle(probeRemoteEditors);
   yield* ipc.handle(focusWindow);
+  yield* ipc.handle(setBadgeCount);
   for (const previewMethod of PreviewIpc.methods) {
     yield* ipc.handle(previewMethod);
   }

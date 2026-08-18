@@ -827,7 +827,7 @@ function KeybindingTableRow({
               render={
                 <div
                   aria-label={row.command}
-                  className="truncate text-[13px] font-medium text-foreground"
+                  className="truncate text-sm font-medium text-foreground"
                 />
               }
             >
@@ -846,7 +846,7 @@ function KeybindingTableRow({
             className="group inline-flex h-7 items-center gap-1.5 rounded-md border border-transparent px-1.5 outline-none transition-colors hover:border-border/70 hover:bg-background focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/24"
           >
             <KeybindingPill value={row.key} />
-            <span className="text-[10px] uppercase tracking-[0.08em] text-muted-foreground/0 transition-opacity group-hover:text-muted-foreground/70 group-focus-visible:text-muted-foreground/70">
+            <span className="text-3xs uppercase tracking-[0.08em] text-muted-foreground/0 transition-opacity group-hover:text-muted-foreground/70 group-focus-visible:text-muted-foreground/70">
               Edit
             </span>
           </button>

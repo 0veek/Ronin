@@ -52,7 +52,7 @@ function DefaultBadge() {
   return (
     <Badge
       variant="outline"
-      className="inline-flex h-4 w-fit min-w-0 items-center justify-center gap-0 border-border/70 bg-muted/60 px-1.5 py-0 font-semibold text-[10px] text-muted-foreground leading-none sm:h-4"
+      className="inline-flex h-4 w-fit min-w-0 items-center justify-center gap-0 border-border/70 bg-muted/60 px-1.5 py-0 font-semibold text-3xs text-muted-foreground leading-none sm:h-4"
     >
       Default
     </Badge>

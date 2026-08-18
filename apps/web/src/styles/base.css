@@ -208,22 +208,66 @@ code {
   -webkit-app-region: no-drag;
 }
 
-/* Scrollbar styling */
+/*
+ * Overlay scrollbars, macOS-style.
+ *
+ * The system hides the scrollbar until the pointer is over the scrollable
+ * region, then shows a thin translucent pill inset from the edge. Two details
+ * do most of the work here: the thumb is painted through a transparent border
+ * with `background-clip: padding-box`, so a 10px track yields a 4px pill with
+ * real breathing room; and the thumb is fully transparent at rest, taking its
+ * color only while the scroll container is hovered.
+ *
+ * Chromium applies `:hover` on the scroll container to its own scrollbar
+ * pseudo-elements, which is what makes the reveal work without any JS. It is a
+ * discrete state change rather than a transition — scrollbar pseudo-elements
+ * do not animate, and macOS reveals its bars instantly too.
+ */
 ::-webkit-scrollbar {
   width: var(--app-scrollbar-width);
+  height: var(--app-scrollbar-width);
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--app-scrollbar-thumb);
-  border-radius: 3px;
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--app-scrollbar-thumb-hover);
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+:hover::-webkit-scrollbar-thumb {
+  background-color: var(--app-scrollbar-thumb);
+}
+
+:hover::-webkit-scrollbar-thumb:hover {
+  background-color: var(--app-scrollbar-thumb-hover);
+}
+
+/* Firefox and any engine implementing the standard properties: it has no
+   hover-reveal hook, so it takes the resting thin bar rather than nothing. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--app-scrollbar-thumb) transparent;
+  }
+}
+
+/*
+ * Selection. macOS tints selection with the system accent at partial alpha,
+ * which lets the selected text keep its own color instead of being knocked out
+ * to white. Deriving it from --primary means every theme — built-in, custom,
+ * or imported from VS Code — gets a selection color that belongs to it.
+ */
+::selection {
+  background-color: color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
 /* Settings -> Appearance can point the composer at its own face (for example a

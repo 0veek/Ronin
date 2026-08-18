@@ -109,9 +109,12 @@ export const BoardCard = memo(function BoardCard({
         tabIndex={0}
         data-testid={`board-card-${thread.id}`}
         className={cn(
-          "group/board-card w-full cursor-pointer rounded-[var(--control-radius)] border border-border/70 bg-card px-2.5 py-2 text-left",
-          "transition-colors hover:border-border hover:bg-sidebar-row-hover",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          // A board card is a real object in a grid, so it takes the raised
+          // tier rather than a hairline alone, and lifts a step further under
+          // the pointer the way a Finder item does.
+          "group/board-card w-full cursor-pointer rounded-lg border border-border/70 bg-card px-2.5 py-2 text-left shadow-[var(--shadow-raised)]",
+          "transition-[background-color,border-color,box-shadow] duration-(--duration-fast) ease-out hover:border-border hover:bg-sidebar-row-hover hover:shadow-[var(--shadow-popover)]",
+          "focus-ring",
         )}
         onClick={() => onOpen(card)}
         onContextMenu={(event) => onContextMenu(card, event)}

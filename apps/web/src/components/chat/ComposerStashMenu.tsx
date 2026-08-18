@@ -94,7 +94,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
       <div className="surface-menu relative w-full overflow-hidden rounded-[var(--radius-lg)]">
         <CommandList className="max-h-72">
           <CommandGroup>
-            <CommandGroupLabel className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-secondary-label">
+            <CommandGroupLabel className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-3xs font-semibold uppercase tracking-[0.08em] text-secondary-label">
               <BookmarkIcon className="size-3" aria-hidden="true" />
               Stashed prompts
             </CommandGroupLabel>
@@ -140,12 +140,12 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                     {stashEntrySnippet(entry)}
                   </span>
                   {entry.pendingImageCount ? (
-                    <span className="shrink-0 text-[10px] text-secondary-label">
+                    <span className="shrink-0 text-3xs text-secondary-label">
                       saving {entry.pendingImageCount} image
                       {entry.pendingImageCount === 1 ? "" : "s"}…
                     </span>
                   ) : missingImageCount(entry) > 0 ? (
-                    <span className="shrink-0 text-[10px] text-warning-foreground">
+                    <span className="shrink-0 text-3xs text-warning-foreground">
                       {missingImageCount(entry)} image
                       {missingImageCount(entry) === 1 ? "" : "s"} dropped
                     </span>

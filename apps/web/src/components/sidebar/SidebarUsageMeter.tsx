@@ -123,7 +123,7 @@ function UsageRow({ row, nowMs }: { row: UsageMeterRow; nowMs: number }) {
                   {window === null ? "—" : RATE_LIMIT_WINDOW_SHORT_LABEL[window.kind]}
                 </span>
                 {countdown === null ? null : (
-                  <span className="text-[10px] text-muted-foreground/45 tabular-nums">
+                  <span className="text-3xs text-muted-foreground/45 tabular-nums">
                     {" · "}
                     {countdown === "now" ? "resetting" : `resets in ${countdown}`}
                   </span>

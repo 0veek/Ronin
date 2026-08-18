@@ -308,7 +308,7 @@ export function UsageProviderChart({
           {ticks.map((tick) => (
             <span
               key={tick}
-              className="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground/70 tabular-nums"
+              className="absolute right-0 -translate-y-1/2 text-3xs text-muted-foreground/70 tabular-nums"
               style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
             >
               {format(tick)}
@@ -426,7 +426,7 @@ export function UsageProviderChart({
 
               <div
                 className={cn(
-                  "pointer-events-none absolute top-1 z-10 min-w-44 rounded-md border border-border bg-popover/95 px-2.5 py-2 text-xs shadow-popover backdrop-blur-sm",
+                  "pointer-events-none absolute top-1 z-10 min-w-44 material-popover rounded-lg border border-border px-2.5 py-2 text-xs shadow-[var(--shadow-popover)]",
                   hoverLeft > 55 ? "-translate-x-[calc(100%+0.5rem)]" : "translate-x-2",
                 )}
                 style={{ left: `${hoverLeft}%` }}

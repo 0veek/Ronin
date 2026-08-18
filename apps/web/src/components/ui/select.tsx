@@ -138,7 +138,7 @@ function SelectPopup({
         sideOffset={sideOffset}
       >
         <SelectPrimitive.Popup
-          className="origin-(--transform-origin) rounded-(--radius) text-foreground outline-none"
+          className="origin-(--transform-origin) rounded-lg text-foreground outline-none"
           data-slot="select-popup"
           {...props}
         >
@@ -150,7 +150,7 @@ function SelectPopup({
           </SelectPrimitive.ScrollUpArrow>
           <div
             className={cn(
-              "surface-menu relative h-full rounded-(--radius)",
+              "surface-menu relative h-full rounded-lg",
               matchTriggerWidth && "min-w-(--anchor-width)",
               popupClassName,
             )}

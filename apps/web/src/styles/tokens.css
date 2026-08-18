@@ -25,24 +25,40 @@
     "Liberation Mono", monospace;
 
   /*
-   * Type scale. The size ramp is deliberately unchanged from the Tailwind
-   * default so no existing surface reflows; what is new is the paired leading
-   * and tracking. The editorial rule: tracking goes negative as size grows
-   * (large text sets too loose at default metrics) and slightly positive at
-   * label sizes, where letterforms need air to stay legible.
+   * Type scale, tuned to macOS metrics. AppKit sets its control and body text
+   * at 13px and its captions at 11px; matching those sizes is most of what
+   * makes a cross-platform app read as native rather than as a web page in a
+   * window. --text-sm is the dominant body utility here, so moving it from
+   * 14px to 13px retunes the whole app from one line.
    *
-   * --text-2xs is new. It is the mono metadata size: sidebar section labels,
-   * breadcrumb path segments, tab filenames, timestamps.
+   * The paired leading and tracking are the editorial layer on top: tracking
+   * goes negative as size grows (large text sets too loose at default metrics)
+   * and slightly positive at label sizes, where letterforms need air. At 13px
+   * SF-like faces want near-zero tracking, not the +0.005em a 14px body wanted.
+   *
+   * --text-2xs is the mono metadata size: sidebar section labels, breadcrumb
+   * path segments, tab filenames, timestamps. It is also the macOS caption
+   * step. Below it sits --text-3xs for metadata that has to fit inside a
+   * control; together they absorbed the ad-hoc px sizes these surfaces used to
+   * spell inline.
+   * --text-3xs is the mini step: counters, inline badges, dense diagnostics
+   * readouts — metadata that has to sit inside a control rather than beside
+   * it. Below it, a size is glyph sizing on a badge rather than text, and
+   * belongs to the component that draws the badge.
    */
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
+  --text-3xs--letter-spacing: 0.025em;
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
   --text-2xs--letter-spacing: 0.02em;
-  --text-xs--line-height: 1.125rem;
-  --text-xs--letter-spacing: 0.01em;
+  --text-xs--line-height: 1.0625rem;
+  --text-xs--letter-spacing: 0.005em;
+  --text-sm: 0.8125rem;
   --text-sm--line-height: 1.25rem;
-  --text-sm--letter-spacing: 0.005em;
+  --text-sm--letter-spacing: 0em;
   --text-base--line-height: 1.5rem;
-  --text-base--letter-spacing: 0em;
+  --text-base--letter-spacing: -0.003em;
   --text-lg--line-height: 1.625rem;
   --text-lg--letter-spacing: -0.01em;
   --text-xl--line-height: 1.75rem;
@@ -55,11 +71,25 @@
   --text-4xl--letter-spacing: -0.03em;
 
   /*
-   * Elevation. Chrome is flat: it separates with a hairline rule, not a shadow.
-   * The only surfaces that cast are the ones that genuinely float free of the
-   * layout — menus, popovers, dialogs, toasts — and they all share one value.
+   * Elevation. Three tiers, each built the way macOS builds a shadow: a 0.5px
+   * contact hairline that keeps the surface's edge crisp against whatever is
+   * behind it, a tight ambient shadow for the sense of contact, and a wide soft
+   * key shadow for the throw. A single flat shadow reads as a web card; the
+   * layered pair is what makes a floating panel look like it has a physical
+   * edge. Which tier a surface takes is a function of how far it floats free of
+   * the layout, not of how important it is.
+   *
+   * Docked chrome still separates with a hairline rule and space — it does not
+   * cast. --shadow-raised is for content-area surfaces that sit *on* the canvas
+   * (composer, cards), --shadow-popover for menus and toasts, --shadow-dialog
+   * for the modal layer. Dark mode deepens all three below.
    */
-  --shadow-popover: 0 8px 24px -12px rgb(0 0 0 / 28%);
+  --shadow-raised:
+    0 0 0 0.5px rgb(0 0 0 / 4%), 0 1px 2px rgb(0 0 0 / 5%), 0 2px 8px -2px rgb(0 0 0 / 6%);
+  --shadow-popover:
+    0 0 0 0.5px rgb(0 0 0 / 6%), 0 2px 6px rgb(0 0 0 / 7%), 0 10px 28px -8px rgb(0 0 0 / 18%);
+  --shadow-dialog:
+    0 0 0 0.5px rgb(0 0 0 / 6%), 0 4px 10px rgb(0 0 0 / 8%), 0 28px 64px -16px rgb(0 0 0 / 26%);
   --shadow-none: 0 0 #0000;
 
   /*
@@ -119,25 +149,49 @@
   --duration-slow: 360ms;
 
   /*
-   * Radius. 4px, not 10px. Rounded-card nesting is the loudest tell of a
-   * generic component-library look; a tight radius reads as drawn rather than
-   * defaulted. --control-radius is one step tighter again for dense controls.
+   * Radius. 8px base, matching the corner radii macOS uses for its own
+   * controls and popovers. The ramp above it climbs to 10px for menus and 12px
+   * for dialogs — the band where a surface reads as a macOS panel rather than
+   * as a generic web card. --control-radius is one step tighter for dense
+   * controls, where a full 8px would eat the control's own height.
+   *
+   * The old 4px base was chosen to avoid looking component-library-generic.
+   * That risk is real but it is answered by concentric nesting and restraint,
+   * not by refusing to round: what reads as templated is uniform radius at
+   * every level, not the radius itself.
    */
-  --radius: 0.25rem;
-  --control-radius: 0.1875rem;
+  --radius: 0.5rem;
+  --control-radius: 0.375rem;
 
   /*
-   * The gap the focus ring holds against the control it surrounds. It is a
-   * color, not a width: the ring sits one pixel off the control and that pixel
-   * has to be painted in whatever surface the control is sitting on, or the
-   * gap reads as a stray line. Inherited, so a panel that is not on the body
-   * background overrides it once for everything inside it rather than every
-   * control respelling its own ring.
+   * Materials. macOS separates layers with translucency and blur rather than
+   * with a tinted fill, so a menu carries a hint of what it covers. Each
+   * surface mixes its own opaque role at partial alpha, which means every
+   * built-in, custom, and imported VS Code theme gets a correct material for
+   * free — the hue always comes from the theme, only the alpha is ours.
+   *
+   * The fill percentage is the legibility dial and the only knob worth turning:
+   * higher for surfaces that float over unpredictable content (a menu over a
+   * code panel), lower for chrome that covers the app's own quiet background.
+   * Blur radius stays constant so the layers read as one material family.
+   *
+   * Spent through the material-* utilities in chrome.css, never inline; those
+   * utilities carry the fallback ladder (no backdrop-filter support, reduced
+   * transparency, forced colors) that collapses every material to an opaque
+   * fill. Blur is applied to element-bounded surfaces only — never to a
+   * full-viewport layer, and never animated.
    */
-  --focus-ring-offset: var(--background);
+  --material-blur: 20px;
+  --material-saturate: 1.8;
+  --material-popover-fill: color-mix(in srgb, var(--popover) 78%, transparent);
+  --material-dialog-fill: color-mix(in srgb, var(--popover) 88%, transparent);
+  --material-toolbar-fill: color-mix(in srgb, var(--app-chrome-background) 65%, transparent);
+  --material-sheet-fill: color-mix(in srgb, var(--sidebar) 62%, transparent);
+  --material-scrim-fill: color-mix(in srgb, var(--background) 55%, transparent);
+  --material-scrim-blur: 8px;
 
-  --app-scrollbar-width: 6px;
-  --app-scrollbar-thumb: rgb(217 217 217);
+  --app-scrollbar-width: 10px;
+  --app-scrollbar-thumb: rgb(0 0 0 / 28%);
 
   /* Stage artwork keeps its original channel palettes by default. Built-in
      themes selectively bridge these pigments to their own palette. */
@@ -165,7 +219,7 @@
   --stage-night-glow-highlight: oklch(0.553749 0.176543 271.958);
   --stage-night-glow-secondary: oklch(0.345571 0.117466 273.568);
   --stage-night-sparkle: oklch(0.880867 0.057747 269.011);
-  --app-scrollbar-thumb-hover: rgb(191 191 191);
+  --app-scrollbar-thumb-hover: rgb(0 0 0 / 42%);
   --sidebar-content-inset: var(--space-2);
   --sidebar-control-gap: var(--space-2);
   --sidebar-icon-color: color-mix(in srgb, var(--sidebar-muted-foreground) 60%, var(--sidebar));
@@ -184,8 +238,18 @@
 }
 
 .dark {
-  --app-scrollbar-thumb: rgb(255 255 255 / 8%);
-  --app-scrollbar-thumb-hover: rgb(255 255 255 / 12%);
+  --app-scrollbar-thumb: rgb(255 255 255 / 24%);
+  --app-scrollbar-thumb-hover: rgb(255 255 255 / 38%);
+
+  /* Shadows over a dark canvas need more opacity to register at all, and the
+     contact hairline does more of the work than the throw does. */
+  --shadow-raised:
+    0 0 0 0.5px rgb(0 0 0 / 40%), 0 1px 2px rgb(0 0 0 / 30%), 0 2px 8px -2px rgb(0 0 0 / 32%);
+  --shadow-popover:
+    0 0 0 0.5px rgb(0 0 0 / 52%), 0 2px 6px rgb(0 0 0 / 36%), 0 10px 28px -8px rgb(0 0 0 / 54%);
+  --shadow-dialog:
+    0 0 0 0.5px rgb(0 0 0 / 56%), 0 4px 10px rgb(0 0 0 / 40%), 0 28px 64px -16px rgb(0 0 0 / 62%);
+
   --stage-art-top: oklch(0.581473 0.149124 256.9);
   --stage-art-mid: oklch(0.456509 0.159377 261.945);
   --stage-art-bottom: oklch(0.291327 0.136578 267.649);
@@ -196,19 +260,6 @@
     var(--workspace-controls-left) + var(--workspace-titlebar-control-size) +
       var(--workspace-titlebar-control-gap)
   );
-}
-
-/* Surfaces that are not the body background re-point the focus ring's gap once,
-   here, instead of every control inside them carrying its own ring-offset-*. */
-[data-slot="sidebar"],
-[data-slot="sidebar-container"],
-[data-slot="sidebar-inner"] {
-  --focus-ring-offset: var(--sidebar);
-}
-
-.surface-menu,
-.surface-dialog {
-  --focus-ring-offset: var(--popover);
 }
 
 .wco {
@@ -284,16 +335,17 @@
   --color-sidebar-row-selected: var(--sidebar-row-selected);
   --color-sidebar-border: var(--sidebar-border);
   /*
-   * The radius ramp is now additive from a 4px base rather than a ±px spread
-   * around a 10px one, so nothing in the ramp rounds harder than 12px.
+   * The radius ramp is additive from the 8px base. The steps that matter:
+   * --radius-lg (10px) is the menu/popover corner, --radius-xl (12px) is the
+   * dialog corner. Anything larger is for hero surfaces, not chrome.
    */
-  --radius-sm: calc(var(--radius) - 1px);
+  --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) + 2px);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 6px);
   --radius-3xl: calc(var(--radius) + 8px);
-  --radius-4xl: calc(var(--radius) + 10px);
+  --radius-4xl: calc(var(--radius) + 12px);
 }
 
 :root {

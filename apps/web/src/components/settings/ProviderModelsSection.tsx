@@ -264,7 +264,7 @@ export function ProviderModelsSection({
                         {capLabels.length > 0 ? (
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                             {capLabels.map((label) => (
-                              <span key={label} className="text-[10px] text-muted-foreground">
+                              <span key={label} className="text-3xs text-muted-foreground">
                                 {label}
                               </span>
                             ))}
@@ -274,11 +274,9 @@ export function ProviderModelsSection({
                     </TooltipPopup>
                   </Tooltip>
                 ) : null}
-                {isHidden ? (
-                  <span className="text-[10px] text-muted-foreground">hidden</span>
-                ) : null}
+                {isHidden ? <span className="text-3xs text-muted-foreground">hidden</span> : null}
                 {model.isCustom ? (
-                  <span className="text-[10px] text-muted-foreground">custom</span>
+                  <span className="text-3xs text-muted-foreground">custom</span>
                 ) : null}
               </div>
               <div className="flex shrink-0 items-center gap-0.5">

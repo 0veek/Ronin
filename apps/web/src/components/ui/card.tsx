@@ -5,13 +5,28 @@ import { useRender } from "@base-ui/react/use-render";
 
 import { cn } from "~/lib/utils";
 
-function Card({ className, render, ...props }: useRender.ComponentProps<"div">) {
+/**
+ * A card sits *on* the canvas rather than floating above it, so by default it
+ * separates with a hairline alone. `elevated` adds the raised tier for the
+ * cases where the card is genuinely picked up off the surface — a board card
+ * under the pointer, a settings group that has to read as a distinct object
+ * against a busy page. It is the lightest of the three elevation tiers on
+ * purpose: content-area surfaces that cast as hard as a menu read as clutter.
+ */
+function Card({
+  className,
+  elevated,
+  render,
+  ...props
+}: useRender.ComponentProps<"div"> & { elevated?: boolean }) {
   const defaultProps = {
     className: cn(
       "relative flex flex-col rounded-lg border border-border bg-card text-card-foreground",
+      elevated && "shadow-[var(--shadow-raised)]",
       className,
     ),
     "data-slot": "card",
+    ...(elevated ? { "data-elevated": "" } : {}),
   };
 
   return useRender({

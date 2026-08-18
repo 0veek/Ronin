@@ -44,7 +44,7 @@ export const ComposerStashBadge = memo(function ComposerStashBadge(props: {
       <span
         key={props.pulseKey}
         className={cn(
-          "rounded-full px-1.5 text-[10px] font-medium tabular-nums",
+          "rounded-full px-1.5 text-3xs font-medium tabular-nums",
           props.pulsing
             ? "prompt-stash-count-enter bg-primary text-primary-foreground"
             : "bg-muted text-muted-foreground",

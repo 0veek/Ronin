@@ -1,36 +1,138 @@
 /*
  * Workspace chrome: titlebar, sidebar art, panel frames, floating surfaces.
  *
- * The governing rule here is that chrome separates with a hairline rule and
- * space, never with a tinted surface tier or a shadow. The only exception is
- * --shadow-popover, which the three genuinely-floating layer types (menu,
- * dialog, toast) share so they read as one family.
+ * The governing rule: docked chrome separates with a hairline rule and space,
+ * and surfaces that float free of the layout separate with material and
+ * elevation. A panel that is part of the window's structure (sidebar body,
+ * panel frames, toolbars in flow) does not cast; a panel that sits above the
+ * content (menu, dialog, toast, sheet) takes a material fill and the elevation
+ * tier that matches how far it floats. The tiers live in tokens.css so the
+ * three floating layer types keep reading as one family.
  */
 
 /*
- * The one focus treatment.
+ * The one focus treatment: the macOS focus halo.
  *
- * Three had grown in parallel: `ring-2` with a background offset (button,
- * badge, toggle, checkbox, switch), `ring-2` with a translucent `ring-ring/24`
- * and no offset (select, combobox), and `ring-[3px]` (textarea, input-group,
- * number-field). Tabbing a form changed the ring's width and its gap per
- * field, which reads as three different apps.
+ * AppKit draws focus as a soft accent bloom that sits *outside* the control's
+ * own edge and reads as light rather than as a second border. Two properties
+ * carry it: a translucent 3px ring for the bloom, and the control's own border
+ * taking the accent so the edge stays crisp inside it. Because the bloom is
+ * translucent it composes over whatever surface the control sits on, which is
+ * what lets one recipe work on the body, in the sidebar, and inside a menu.
  *
- * This is the button's recipe, because it was the one already reasoned about:
- * a 2px ring held one pixel off the control so the ring and the control's own
- * hairline stay legible as separate strokes. Controls that sit on a surface
- * other than the body override `--focus-ring-offset-color` rather than
- * respelling the ring.
+ * This replaces an opaque 2px ring held one pixel off the control by a painted
+ * `--focus-ring-offset` gap. That gap had to know its own background color, so
+ * every surface re-declared it; a translucent halo needs no such bookkeeping.
  */
 @utility focus-ring {
-  @apply outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-(--focus-ring-offset);
+  @apply outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:border-ring;
 }
 
 /* For controls whose focus state is owned by a wrapper (an input inside an
    input-group, a number field, the combobox chips row) rather than by the
-   element the user actually tabs to. Same ring, different trigger. */
+   element the user actually tabs to. Same halo, different trigger. */
 @utility focus-ring-within {
-  @apply has-focus-visible:ring-2 has-focus-visible:ring-ring has-focus-visible:ring-offset-1 has-focus-visible:ring-offset-(--focus-ring-offset);
+  @apply has-focus-visible:ring-[3px] has-focus-visible:ring-ring/40 has-focus-visible:border-ring;
+}
+
+/*
+ * Materials.
+ *
+ * Each utility pairs a translucent fill from tokens.css with one blur recipe,
+ * so every floating layer samples what it covers the way a macOS panel does.
+ * Blur is confined to the element's own box — a menu, a dialog, a 44px toolbar
+ * strip — never a full-viewport layer, and the blur value itself is never
+ * animated; entrances animate transform and opacity on an already-blurred
+ * surface.
+ *
+ * The fallback ladder below is the contract that makes this safe to use
+ * everywhere: without backdrop-filter support, with reduced transparency, or
+ * in forced-colors mode, every material collapses to the opaque fill it was
+ * mixed from and the layout is unchanged.
+ */
+@utility material-popover {
+  background-color: var(--material-popover-fill);
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+}
+
+@utility material-dialog {
+  background-color: var(--material-dialog-fill);
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+}
+
+@utility material-toolbar {
+  background-color: var(--material-toolbar-fill);
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+}
+
+@utility material-sheet {
+  background-color: var(--material-sheet-fill);
+  backdrop-filter: blur(var(--material-blur)) saturate(var(--material-saturate));
+}
+
+@utility material-scrim {
+  background-color: var(--material-scrim-fill);
+  backdrop-filter: blur(var(--material-scrim-blur));
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .material-popover,
+  .surface-menu {
+    background-color: var(--popover);
+  }
+
+  .material-dialog,
+  .material-sheet,
+  .surface-dialog {
+    background-color: var(--popover);
+  }
+
+  .material-toolbar {
+    background-color: var(--app-chrome-background);
+  }
+
+  .material-scrim,
+  .dialog-backdrop {
+    background-color: color-mix(in srgb, var(--background) 82%, transparent);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .material-popover,
+  .material-dialog,
+  .surface-menu,
+  .surface-dialog {
+    background-color: var(--popover);
+    backdrop-filter: none;
+  }
+
+  .material-sheet {
+    background-color: var(--sidebar);
+    backdrop-filter: none;
+  }
+
+  .material-toolbar {
+    background-color: var(--app-chrome-background);
+    backdrop-filter: none;
+  }
+
+  .material-scrim,
+  .dialog-backdrop {
+    background-color: color-mix(in srgb, var(--background) 82%, transparent);
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .material-popover,
+  .material-dialog,
+  .material-toolbar,
+  .material-sheet,
+  .material-scrim,
+  .surface-menu,
+  .surface-dialog {
+    backdrop-filter: none;
+  }
 }
 
 @layer components {
@@ -97,12 +199,32 @@
     --stage-bp-bottom: #101f6e;
   }
 
+  /*
+   * The toolbar is a material strip, the way a macOS window's titlebar is:
+   * content scrolls beneath it and stays faintly visible through it, which is
+   * what tells you the view is scrolled rather than merely short.
+   *
+   * This is the one blur region that is always on screen, so it is deliberately
+   * the app's thinnest: 44px tall and bounded by the strip itself. The scroll
+   * fade below still runs, because the blur alone does not resolve text into
+   * the chrome — the fade handles legibility, the material handles depth.
+   */
   .workspace-topbar {
+    @apply material-toolbar;
+    position: relative;
+    z-index: 20;
     display: flex;
     height: var(--workspace-topbar-height);
     min-height: var(--workspace-topbar-height);
     flex-shrink: 0;
     align-items: center;
+  }
+
+  /* Over a vibrant window the OS material is already doing this job; stacking
+     a second blur on top only mutes the desktop showing through. */
+  html[data-window-vibrancy] .workspace-topbar {
+    background-color: transparent;
+    backdrop-filter: none;
   }
 
   .workspace-titlebar-controls {
@@ -292,6 +414,48 @@
   }
 
   /*
+   * The macOS source-list fill.
+   *
+   * Finder, Mail and Notes all mark the selected row in a sidebar with a soft
+   * tinted capsule inset from the sidebar's own edges, not with a full-bleed
+   * band. The inset is what makes it read as a selected *item* in a list
+   * rather than as a highlighted strip of the window, and it is why the fill
+   * can be subtle and still be unmistakable.
+   *
+   * It rides on top of the leading accent rule rather than replacing it: the
+   * rule carries the state at a glance down the edge of a long list, the fill
+   * carries it at rest. Painted on a ::after beneath the content so the row's
+   * own text and icons stay above it.
+   */
+  .sidebar-row::after {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset-block: 1px;
+    inset-inline: var(--sidebar-content-inset) var(--sidebar-content-inset);
+    border-radius: var(--control-radius);
+    background-color: var(--ring);
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease-out);
+  }
+
+  .sidebar-row[data-selected="true"]::after,
+  .sidebar-row[data-active="true"]::after {
+    opacity: 0.12;
+  }
+
+  .dark .sidebar-row[data-selected="true"]::after,
+  .dark .sidebar-row[data-active="true"]::after {
+    opacity: 0.18;
+  }
+
+  @media (forced-colors: active) {
+    .sidebar-row::after {
+      display: none;
+    }
+  }
+
+  /*
    * The other selection shape.
    *
    * A row is marked on its leading edge; a card in a grid cannot be, so its own
@@ -338,12 +502,17 @@
    * material. Flat, they already are one box: the shell owns the only border,
    * and the strip is a region inside it divided off by a single hairline.
    */
+  /* The composer is the one content-area surface that lifts off the canvas:
+     it floats over the timeline rather than sitting in its flow, and the
+     lightest elevation tier is what separates it from the messages scrolling
+     underneath without turning it into a menu. */
   .composer-surface {
     position: relative;
     isolation: isolate;
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     background-color: var(--card);
+    box-shadow: var(--shadow-raised);
   }
 
   .composer-context-strip {
@@ -360,21 +529,26 @@
   }
 
   /*
-   * Floating layers. One shadow token, one hairline, opaque fills. Opaque is
-   * the point: a blurred translucent menu over a code panel is unreadable, and
-   * backdrop-filter forced a full-viewport recomposite on every frame beneath
-   * it, which is exactly the GPU cost this project audits for.
+   * Floating layers. A material fill, a hairline, and the elevation tier that
+   * matches how far the surface floats: menus and popovers take the popover
+   * shadow, the modal layer takes the deeper dialog shadow.
+   *
+   * Legibility over unpredictable content is a real constraint — a menu opened
+   * over a code panel still has to be readable. The answer is the fill alpha,
+   * which is high enough (78% for menus, 88% for dialogs) that text contrast is
+   * carried by the fill and the blur only supplies depth. Turn that dial in
+   * tokens.css, per surface, rather than opting a surface out of the material.
    */
   .surface-menu {
-    background-color: var(--popover);
+    @apply material-popover;
     border: 1px solid var(--border);
     box-shadow: var(--shadow-popover);
   }
 
   .surface-dialog {
-    background-color: var(--popover);
+    @apply material-dialog;
     border: 1px solid var(--border);
-    box-shadow: var(--shadow-popover);
+    box-shadow: var(--shadow-dialog);
   }
 
   .surface-alert {
@@ -403,12 +577,15 @@
     --alert-surface-tint: var(--warning);
   }
 
+  /* The scrim blurs what it dims. macOS uses the same cue for sheets: the
+     content behind a modal goes soft as well as dark, which reads as depth
+     rather than as a translucent gray sheet laid on top. */
   .dialog-backdrop {
-    background: color-mix(in srgb, var(--background) 72%, transparent);
+    @apply material-scrim;
   }
 
   .dark .dialog-backdrop {
-    background: color-mix(in srgb, var(--background) 78%, transparent);
+    background-color: color-mix(in srgb, var(--background) 64%, transparent);
   }
 
   .dark .model-picker-surface.model-picker-surface {
@@ -578,13 +755,17 @@
  * also why the usage panel reads as deeper in the material than the thread
  * list: it is further from the lamp, not merely lower in a gradient.
  *
- * There is deliberately no backdrop-filter here, and adding one would be worse
- * than useless. The sidebar is a layout sibling with nothing but a flat fill
- * behind it, so a real blur would sample a solid color, hand it back unchanged,
- * and charge a full-viewport recomposite every frame for the privilege -- the
- * exact cost the .surface-menu note above records this project removing. What
- * the eye reads as "frosted" is the rim, the tint, and the tooth, none of which
- * need to sample anything.
+ * There is deliberately no backdrop-filter here, and unlike the floating
+ * surfaces above, adding one would be worse than useless. backdrop-filter
+ * samples what is behind the element in z-order, and the sidebar is a layout
+ * sibling with nothing but a flat fill behind it: a real blur would sample a
+ * solid color, hand it back unchanged, and charge a recomposite for the
+ * privilege. Menus and dialogs earn their material because app content genuinely
+ * passes beneath them; a docked panel does not. What the eye reads as "frosted"
+ * here is the rim, the tint, and the tooth, none of which sample anything.
+ *
+ * On macOS the OS supplies the real thing instead: the window is vibrant, and
+ * the fill thins to let that material through (see themes.css).
  *
  * So it is one background-image stack on an element that already paints: no new
  * compositor layer, no will-change, nothing animated. One paint at mount, and

@@ -1328,7 +1328,7 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
             <div key={step.step} className="flex items-baseline gap-2 text-xs leading-5">
               <span
                 className={cn(
-                  "w-3 shrink-0 text-center font-mono text-[10px]",
+                  "w-3 shrink-0 text-center font-mono text-3xs",
                   step.status === "completed"
                     ? "text-success"
                     : step.status === "inProgress"
@@ -1647,7 +1647,7 @@ function UserMessagePreviewAnnotationCard(props: {
         ) : null}
         <div
           className={cn(
-            "flex items-center gap-2 text-secondary-label text-[10px]",
+            "flex items-center gap-2 text-secondary-label text-3xs",
             props.annotation.comment && "mt-1",
           )}
         >
@@ -2280,7 +2280,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
     <button
       type="button"
       onClick={onOpenAgents}
-      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-[13px] transition hover:bg-accent/50"
+      className="-mx-1 flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-sm transition hover:bg-accent/50"
     >
       <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
       <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
@@ -2288,7 +2288,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
         <span className="font-medium">{lead}</span>
         {workflowName ? <span className="text-muted-foreground"> · {workflowName}</span> : null}
       </span>
-      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-[.7rem] text-muted-foreground">
+      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-2xs text-muted-foreground">
         <span>{status}</span>
         {totalTokens > 0 ? (
           <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
@@ -2337,7 +2337,7 @@ const ProviderBoundaryRow = memo(function ProviderBoundaryRow(props: {
         <ZapIcon className="size-3.5 shrink-0 stroke-[1.8] opacity-80" />
         <span>{providerBoundaryText(boundary)}</span>
         {isSwitch && boundary.model ? (
-          <span className="font-mono text-[.7rem] opacity-70">{boundary.model}</span>
+          <span className="font-mono text-2xs opacity-70">{boundary.model}</span>
         ) : null}
       </span>
       <span className="h-px flex-1 bg-border/60" />

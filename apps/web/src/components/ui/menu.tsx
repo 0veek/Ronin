@@ -60,7 +60,12 @@ function MenuPopup({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "surface-menu relative flex origin-(--transform-origin) rounded-(--radius) outline-none focus:outline-none",
+            // Menus grow out of the point they were opened from on a spring,
+            // and leave straight away without one: a springy exit reads as
+            // hesitation when the user has already made their choice.
+            "surface-menu relative flex origin-(--transform-origin) rounded-lg outline-none focus:outline-none",
+            "transition-[scale,opacity] duration-(--duration-fast) ease-(--ease-spring) data-starting-style:scale-96 data-starting-style:opacity-0",
+            "data-ending-style:scale-98 data-ending-style:opacity-0 data-ending-style:ease-in data-instant:duration-0",
             !hasExplicitWidthClass && "min-w-32",
             className,
           )}

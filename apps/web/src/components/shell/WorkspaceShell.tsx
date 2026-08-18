@@ -9,7 +9,9 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
+import { openCommandPalette } from "~/commandPaletteBus";
 import { isElectron } from "~/env";
+import { runKeybindingCommand } from "~/keybindingCommandBus";
 import { getLocalStorageItem } from "~/hooks/useLocalStorage";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
 import { cn, isMacPlatform } from "~/lib/utils";
@@ -54,7 +56,17 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 // Clears the macOS traffic lights. Only applies when the window is not
 // fullscreen -- fullscreen hides them and the gutter would read as a dent.
-const MACOS_TRAFFIC_LIGHTS_LEFT_INSET = "90px";
+//
+// The main process derives this from the same constants that position the
+// buttons, so the gutter cannot drift from the cluster it is clearing. The
+// fallback only matters if the bridge predates that getter.
+const MACOS_TRAFFIC_LIGHTS_LEFT_INSET_FALLBACK = 90;
+
+function resolveMacosTrafficLightInset(): string {
+  const getTitlebarContentInset = window.desktopBridge?.getTitlebarContentInset;
+  const inset = typeof getTitlebarContentInset === "function" ? getTitlebarContentInset() : null;
+  return `${inset ?? MACOS_TRAFFIC_LIGHTS_LEFT_INSET_FALLBACK}px`;
+}
 
 function subscribeToViewportWidth(onChange: () => void): () => void {
   window.addEventListener("resize", onChange);
@@ -171,7 +183,7 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
   const sidebarProviderStyle = {
     "--sidebar-width": `${sidebarWidth}px`,
     ...(isMacosDesktop && !isWindowFullscreen
-      ? { "--workspace-controls-left": MACOS_TRAFFIC_LIGHTS_LEFT_INSET }
+      ? { "--workspace-controls-left": resolveMacosTrafficLightInset() }
       : {}),
   } as CSSProperties;
 
@@ -198,12 +210,46 @@ export function WorkspaceShell({ children }: { children: ReactNode }) {
       return;
     }
 
+    /*
+      Menu items are a third way into destinations the palette and the
+      keybindings already reach, so they route through the same buses rather
+      than re-implementing navigation. A menu item that drifts from its palette
+      entry is the bug this avoids.
+    */
     const unsubscribe = onMenuAction((action) => {
-      if (action === "open-settings") {
-        const isSettingsRoute = /^\/settings(\/|$)/.test(pathname);
-        if (!isSettingsRoute) {
-          void navigate({ to: "/settings" });
+      switch (action) {
+        case "open-settings": {
+          const isSettingsRoute = /^\/settings(\/|$)/.test(pathname);
+          if (!isSettingsRoute) {
+            void navigate({ to: "/settings" });
+          }
+          return;
         }
+        case "new-thread":
+          openCommandPalette({ open: "new-thread-in" });
+          return;
+        case "open-command-palette":
+          openCommandPalette();
+          return;
+        case "open-keyboard-shortcuts":
+          runKeybindingCommand("shortcuts.toggle");
+          return;
+        case "go-threads":
+          void navigate({ to: "/" });
+          return;
+        case "go-board":
+          void navigate({ to: "/board" });
+          return;
+        case "go-pull-requests":
+          // Same landing filters the sidebar's own entry point uses, so the two
+          // routes into this page open the same list.
+          void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
+          return;
+        case "go-usage":
+          void navigate({ to: "/usage" });
+          return;
+        default:
+          return;
       }
     });
 

@@ -32,6 +32,7 @@ import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import { resolveWindowVibrancy } from "../../window/WindowVibrancy.ts";
+import { MACOS_TITLEBAR_CONTENT_INSET } from "../../window/DesktopWindow.ts";
 
 const ContextMenuPosition = Schema.Struct({
   x: Schema.Number,
@@ -64,6 +65,23 @@ export const getWindowVibrancy = DesktopIpc.makeSyncIpcMethod({
   handler: Effect.fn("desktop.ipc.window.getWindowVibrancy")(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     return resolveWindowVibrancy(environment.platform);
+  }),
+});
+
+/**
+ * How far titlebar content must sit from the window's leading edge to clear the
+ * macOS traffic lights. Null off darwin, where the platform's own controls are
+ * described by the Window Controls Overlay env() values instead.
+ *
+ * Derived from the same constants that position the buttons, so the gutter and
+ * the buttons cannot drift apart.
+ */
+export const getTitlebarContentInset = DesktopIpc.makeSyncIpcMethod({
+  channel: IpcChannels.GET_TITLEBAR_CONTENT_INSET_CHANNEL,
+  result: Schema.NullOr(Schema.Number),
+  handler: Effect.fn("desktop.ipc.window.getTitlebarContentInset")(function* () {
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    return environment.platform === "darwin" ? MACOS_TITLEBAR_CONTENT_INSET : null;
   }),
 });
 
@@ -253,6 +271,24 @@ export const focusWindow = DesktopIpc.makeIpcMethod({
       return;
     }
     yield* electronWindow.reveal(window.value);
+  }),
+});
+
+/**
+ * Mirrors the sidebar's "needs you" count onto the dock icon, so the number of
+ * threads blocked on the user is visible without the window being visible.
+ *
+ * The renderer owns the count because it owns the definition (threadNeedsYou);
+ * the main process only paints what it is told. Clearing is the same call with
+ * zero, which is what keeps the badge from outliving the queue.
+ */
+export const setBadgeCount = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_BADGE_COUNT_CHANNEL,
+  payload: Schema.Number,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setBadgeCount")(function* (count: number) {
+    const electronApp = yield* ElectronApp.ElectronApp;
+    yield* electronApp.setBadgeCount(count);
   }),
 });
 

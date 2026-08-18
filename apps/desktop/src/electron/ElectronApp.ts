@@ -72,6 +72,12 @@ export class ElectronApp extends Context.Service<
     ) => Effect.Effect<boolean>;
     readonly setDesktopName: (desktopName: string) => Effect.Effect<void>;
     readonly setDockIcon: (iconPath: string) => Effect.Effect<void>;
+    /**
+     * The count shown on the dock icon (macOS) or the taskbar badge (some Linux
+     * desktops). Zero clears it — a badge that outlives the thing it counted is
+     * worse than none, so callers pass the current total rather than a delta.
+     */
+    readonly setBadgeCount: (count: number) => Effect.Effect<void>;
     readonly appendCommandLineSwitch: (switchName: string, value?: string) => Effect.Effect<void>;
     readonly removeCommandLineSwitch: (switchName: string) => Effect.Effect<void>;
     readonly on: <Args extends ReadonlyArray<unknown>>(
@@ -181,6 +187,12 @@ export const make = ElectronApp.of({
   setDockIcon: (iconPath) =>
     Effect.sync(() => {
       Electron.app.dock?.setIcon(iconPath);
+    }),
+  setBadgeCount: (count) =>
+    Effect.sync(() => {
+      // Windows has no count badge on this API; Electron reports false there
+      // rather than throwing, and the taskbar overlay is a separate feature.
+      Electron.app.setBadgeCount?.(Math.max(0, Math.trunc(count)));
     }),
   appendCommandLineSwitch: (switchName, value) =>
     Effect.sync(() => {

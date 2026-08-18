@@ -81,7 +81,7 @@ function SheetPopup({
             // The edge border below is the whole separation: the sheet is
             // flush against a viewport edge, so a drop shadow would only be
             // visible on the one side a hairline already handles.
-            "relative flex max-h-full min-h-0 w-full min-w-0 flex-col bg-popover text-popover-foreground transition-[opacity,translate] duration-(--duration-base) ease-in-out will-change-transform data-ending-style:opacity-0 data-starting-style:opacity-0",
+            "material-sheet relative flex max-h-full min-h-0 w-full min-w-0 flex-col text-popover-foreground transition-[opacity,translate] duration-(--duration-base) ease-in-out will-change-transform data-ending-style:opacity-0 data-starting-style:opacity-0",
             side === "bottom" &&
               "row-start-2 border-t data-ending-style:translate-y-8 data-starting-style:translate-y-8",
             side === "top" &&

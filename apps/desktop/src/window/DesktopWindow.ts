@@ -202,6 +202,29 @@ export function isRetryableRendererLoadFailure(input: {
   );
 }
 
+/*
+  Traffic-light geometry.
+
+  macOS gives the renderer no env() for the button cluster the way Windows does
+  for its overlay, so the numbers live here, next to the trafficLightPosition
+  that uses them, and the renderer is told the result rather than guessing it.
+
+  The cluster is three 12px buttons on 20px centres, so it spans from its left
+  inset to inset + 2*20 + 12. TRAFFIC_LIGHT_CONTENT_GAP is the breathing room
+  between the last button and whatever the titlebar puts next to it.
+*/
+const TRAFFIC_LIGHT_INSET_X = 16;
+const TRAFFIC_LIGHT_BUTTON_SIZE = 12;
+const TRAFFIC_LIGHT_BUTTON_PITCH = 20;
+const TRAFFIC_LIGHT_CONTENT_GAP = 22;
+
+/** Where titlebar content may start without colliding with the traffic lights. */
+export const MACOS_TITLEBAR_CONTENT_INSET =
+  TRAFFIC_LIGHT_INSET_X +
+  TRAFFIC_LIGHT_BUTTON_PITCH * 2 +
+  TRAFFIC_LIGHT_BUTTON_SIZE +
+  TRAFFIC_LIGHT_CONTENT_GAP;
+
 function getWindowTitleBarOptions(
   shouldUseDarkColors: boolean,
   platform: NodeJS.Platform,
@@ -209,9 +232,12 @@ function getWindowTitleBarOptions(
   if (platform === "darwin") {
     return {
       titleBarStyle: "hiddenInset",
-      // y centres the ~16px button cluster in the TITLEBAR_HEIGHT bar; macOS
-      // has no env() equivalent to read it from, so it is computed here.
-      trafficLightPosition: { x: 16, y: Math.round((TITLEBAR_HEIGHT - 16) / 2) },
+      // y centres the button cluster in the TITLEBAR_HEIGHT bar; macOS has no
+      // env() equivalent to read it from, so it is computed here.
+      trafficLightPosition: {
+        x: TRAFFIC_LIGHT_INSET_X,
+        y: Math.round((TITLEBAR_HEIGHT - TRAFFIC_LIGHT_BUTTON_SIZE - 4) / 2),
+      },
     };
   }
 

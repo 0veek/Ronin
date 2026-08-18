@@ -114,7 +114,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
           <div
             className={cn(
               "pointer-events-none absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-[22px]",
-              "border border-b-0 bg-background/96 shadow-[0_6px_18px_rgba(0,0,0,0.06)]",
+              "border border-b-0 bg-background/96 shadow-[var(--shadow-raised)]",
               stackCapBorderClass[firstStackedItem.variant],
               "transition-opacity duration-(--duration-fast) ease-out",
               "group-hover/banner-stack:opacity-0 group-focus-within/banner-stack:opacity-0",

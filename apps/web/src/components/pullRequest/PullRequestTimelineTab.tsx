@@ -129,9 +129,7 @@ function friendlyReviewState(value: string): string {
 
 function ReviewStateBadge({ state }: { state: string }) {
   return (
-    <span className="text-[10px] font-medium text-muted-foreground">
-      {friendlyReviewState(state)}
-    </span>
+    <span className="text-3xs font-medium text-muted-foreground">{friendlyReviewState(state)}</span>
   );
 }
 
@@ -300,7 +298,7 @@ function ConversationGroup({
               <span className="block text-xs font-semibold">
                 {events.length.toLocaleString()} {events.length === 1 ? "comment" : "comments"}
               </span>
-              <span className="block truncate text-[10px] text-muted-foreground">
+              <span className="block truncate text-3xs text-muted-foreground">
                 {actors.length.toLocaleString()} {actors.length === 1 ? "author" : "authors"} ·{" "}
                 {formatRelativeTimeLabel(first.at)}
               </span>
@@ -361,7 +359,7 @@ function CommitEvent({
           <div className="truncate text-xs font-semibold text-foreground transition-colors group-hover:text-primary">
             {event.body ?? "Untitled commit"}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-3xs text-muted-foreground">
             <code className="font-mono">{event.id.slice(0, 7)}</code>
             <span>{formatRelativeTimeLabel(event.at)}</span>
           </div>
@@ -370,7 +368,7 @@ function CommitEvent({
           <PullRequestDiffStat
             additions={event.additions}
             deletions={event.deletions}
-            className="ml-auto shrink-0 font-mono text-[10px]"
+            className="ml-auto shrink-0 font-mono text-3xs"
           />
         ) : null}
       </div>

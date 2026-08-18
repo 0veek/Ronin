@@ -191,7 +191,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
             {activeQuestion.header}
           </span>
           {prompt.questions.length > 1 ? (
-            <span className="flex h-5 items-center rounded-md bg-muted/60 px-1.5 text-secondary-label text-[10px] font-medium tabular-nums">
+            <span className="flex h-5 items-center rounded-md bg-muted/60 px-1.5 text-secondary-label text-3xs font-medium tabular-nums">
               {questionIndex + 1}/{prompt.questions.length}
             </span>
           ) : null}

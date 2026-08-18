@@ -118,7 +118,7 @@ function PullRequestRowImpl({
             />
           )}
           {matchedElsewhere ? (
-            <span className="shrink-0 rounded-full border border-border/60 px-1.5 text-[10px]">
+            <span className="shrink-0 rounded-full border border-border/60 px-1.5 text-3xs">
               matched in the description
             </span>
           ) : null}
