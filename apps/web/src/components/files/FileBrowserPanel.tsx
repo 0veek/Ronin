@@ -31,6 +31,7 @@ interface FileBrowserPanelProps {
   /** Bumped when the same path should be revealed again (e.g. re-opened from search). */
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
+  onRefreshSelectedFile?: () => void;
 }
 
 const TREE_UNSAFE_CSS = `
@@ -105,6 +106,7 @@ export default function FileBrowserPanel({
   selectedPath,
   selectedPathRevealId,
   onOpenFile,
+  onRefreshSelectedFile,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
@@ -254,6 +256,10 @@ export default function FileBrowserPanel({
     }
     search.setValue(value);
   };
+  const handleRefresh = () => {
+    entriesQuery.refresh();
+    onRefreshSelectedFile?.();
+  };
 
   useEffect(() => {
     if (previousTreePathsRef.current === treePaths) return;
@@ -351,7 +357,7 @@ export default function FileBrowserPanel({
       data-file-browser-panel={`${environmentId}:${cwd}`}
     >
       <div className="surface-subheader gap-1 px-2" data-surface-subheader>
-        <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={entriesQuery.refresh} />
+        <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}

@@ -1466,7 +1466,10 @@ function extractToolTitle(payload: Record<string, unknown> | null): string | nul
 
 function extractToolCallId(payload: Record<string, unknown> | null): string | null {
   const data = asRecord(payload?.data);
-  return asTrimmedString(data?.toolCallId);
+  // Runtime item id first, then the legacy nested id: the same order the
+  // server's snapshot retention uses, so a lifecycle row is not kept there and
+  // collapsed under a different identity here.
+  return asTrimmedString(payload?.toolCallId) ?? asTrimmedString(data?.toolCallId);
 }
 
 function normalizeInlinePreview(value: string): string {

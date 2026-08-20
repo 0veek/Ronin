@@ -56,7 +56,11 @@ import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
-import { nextTerminalId, resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
+import {
+  getTerminalLabel,
+  nextTerminalId,
+  resolveTerminalSessionLabel,
+} from "@t3tools/shared/terminalLabels";
 import { Debouncer } from "@tanstack/react-pacer";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -144,6 +148,7 @@ import {
   setActivePreviewTab,
   useThreadPreviewState,
 } from "../previewStateStore";
+import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
 import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
@@ -204,8 +209,12 @@ import { cycleChatWidthMode, normalizeChatWidthMode } from "../lib/chatWidth";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
+import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../lib/terminalFocus";
-import { preventRepeatedTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
+import {
+  preventRepeatedTerminalCloseShortcut,
+  preventTerminalCloseShortcut,
+} from "../lib/terminalCloseShortcut";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
 import {
   derivePhysicalProjectKey,
@@ -1693,6 +1702,14 @@ function ChatViewContent(props: ChatViewProps) {
   const activeFileSurface =
     activeRightPanelSurface?.kind === "file" ? activeRightPanelSurface : null;
   const activePreviewState = useThreadPreviewState(activeThreadRef);
+  const activePreviewServerEpoch = activePreviewState.serverEpoch;
+  const resolvePreviewRuntimeTabId = useMemo(
+    () =>
+      activeThreadRef
+        ? (tabId: string) => previewRuntimeTabId(activeThreadRef, activePreviewServerEpoch, tabId)
+        : undefined,
+    [activeThreadRef, activePreviewServerEpoch],
+  );
   const activePreviewMiniPlayer = usePreviewMiniPlayerStore((state) =>
     selectThreadPreviewMiniPlayer(state.byThreadKey, activeThreadRef),
   );
@@ -3905,6 +3922,24 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeRightPanelSurface, activeThreadRef, closeTerminalMutation, storeCloseTerminal],
   );
+  const requestCloseTerminal = useCallback(
+    (terminalId: string) => {
+      const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
+      void confirmTerminalClose([label]).then((confirmed) => {
+        if (confirmed) closeTerminal(terminalId);
+      });
+    },
+    [activeTerminalLabelsById, closeTerminal],
+  );
+  const requestClosePanelTerminal = useCallback(
+    (terminalId: string) => {
+      const label = activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
+      void confirmTerminalClose([label]).then((confirmed) => {
+        if (confirmed) closePanelTerminal(terminalId);
+      });
+    },
+    [activeTerminalLabelsById, closePanelTerminal],
+  );
   const activateRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
@@ -3979,11 +4014,33 @@ function ChatViewContent(props: ChatViewProps) {
   const closeRightPanelSurface = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
-      cleanupRightPanelSurfaces([surface]);
-      useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
-      syncActivePreviewSurface();
+      const finishClose = () => {
+        cleanupRightPanelSurfaces([surface]);
+        useRightPanelStore.getState().closeSurface(activeThreadRef, surface.id);
+        syncActivePreviewSurface();
+      };
+      if (surface.kind !== "terminal") {
+        finishClose();
+        return;
+      }
+      const activeLabel =
+        activeTerminalLabelsById.get(surface.activeTerminalId) ??
+        getTerminalLabel(surface.activeTerminalId);
+      const otherLabels = surface.terminalIds
+        .filter((terminalId) => terminalId !== surface.activeTerminalId)
+        .map(
+          (terminalId) => activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
+        );
+      void confirmTerminalClose([activeLabel, ...otherLabels]).then((confirmed) => {
+        if (confirmed) finishClose();
+      });
     },
-    [activeThreadRef, cleanupRightPanelSurfaces, syncActivePreviewSurface],
+    [
+      activeThreadRef,
+      activeTerminalLabelsById,
+      cleanupRightPanelSurfaces,
+      syncActivePreviewSurface,
+    ],
   );
   const closeOtherRightPanelSurfaces = useCallback(
     (surface: RightPanelSurface) => {
@@ -4653,6 +4710,18 @@ function ChatViewContent(props: ChatViewProps) {
   }, [activeThreadPr, openThreadPullRequest]);
   const pullRequestSurfaceAvailable =
     supportsPullRequests && activeThreadPr !== null && threadRepository !== null;
+  // Primitive slice of the displayed PR for the settle-rule memos below:
+  // resolveDisplayedThreadPr returns a fresh object every render, so memoize
+  // on the fields the rules read instead of the object identity.
+  const activeThreadPrState = activeThreadPr?.state ?? null;
+  const activeThreadPrUpdatedAt = activeThreadPr?.updatedAt ?? null;
+  const activeThreadChangeRequest = useMemo(
+    () =>
+      activeThreadPrState === null
+        ? null
+        : { state: activeThreadPrState, updatedAt: activeThreadPrUpdatedAt },
+    [activeThreadPrState, activeThreadPrUpdatedAt],
+  );
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const nowMinute = useNowMinute();
@@ -4688,7 +4757,14 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const activeThreadWokeVisible = useMemo(() => {
     if (activeThreadWokeAt === null) return false;
-    if (changeRequestAutoSettles(activeThreadPr?.state, autoSettleOnMerge)) return false;
+    if (
+      changeRequestAutoSettles(activeThreadChangeRequest, {
+        autoSettleOnMerge,
+        thread: activeThreadShell,
+      })
+    ) {
+      return false;
+    }
     const wokeAtMs = Date.parse(activeThreadWokeAt);
     if (Number.isNaN(wokeAtMs)) return false;
     // Having the thread open counts as a visit at completedAt (the effect
@@ -4708,7 +4784,8 @@ function ChatViewContent(props: ChatViewProps) {
   }, [
     activeLatestTurn?.completedAt,
     activeThreadLastVisitedAt,
-    activeThreadPr?.state,
+    activeThreadChangeRequest,
+    activeThreadShell,
     activeThreadWokeAt,
     autoSettleOnMerge,
   ]);
@@ -4718,10 +4795,10 @@ function ChatViewContent(props: ChatViewProps) {
       now: `${nowMinute}:00.000Z`,
       autoSettleAfterDays,
       autoSettleOnMerge,
-      changeRequestState: activeThreadPr?.state ?? null,
+      changeRequest: activeThreadChangeRequest,
     });
   }, [
-    activeThreadPr?.state,
+    activeThreadChangeRequest,
     activeThreadShell,
     autoSettleAfterDays,
     autoSettleOnMerge,
@@ -5305,11 +5382,11 @@ function ChatViewContent(props: ChatViewProps) {
 
       if (command === "terminal.close") {
         if (terminalFocusOwner === "right-panel" && activeRightPanelSurface?.kind === "terminal") {
-          closePanelTerminal(activeRightPanelSurface.activeTerminalId);
+          requestClosePanelTerminal(activeRightPanelSurface.activeTerminalId);
           return true;
         }
         if (!terminalUiState.terminalOpen) return true;
-        closeTerminal(terminalUiState.activeTerminalId);
+        requestCloseTerminal(terminalUiState.activeTerminalId);
         return true;
       }
 
@@ -5352,8 +5429,8 @@ function ChatViewContent(props: ChatViewProps) {
       activeRightPanelSurface,
       addTerminalSurface,
       chatWidth,
-      closePanelTerminal,
-      closeTerminal,
+      requestClosePanelTerminal,
+      requestCloseTerminal,
       composerRef,
       createNewTerminal,
       onToggleDiff,
@@ -5385,6 +5462,13 @@ function ChatViewContent(props: ChatViewProps) {
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
+        event.stopPropagation();
+        return;
+      }
+      // While a close confirmation is open, terminal focus has moved to the
+      // dialog, so a deliberate second close shortcut would otherwise fall
+      // through to the native window/tab close accelerator.
+      if (isTerminalCloseConfirmPending() && preventTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
       }
@@ -6950,7 +7034,7 @@ function ChatViewContent(props: ChatViewProps) {
             sideChatParent={sideChatParent}
             sideChatChildren={sideChatChildren}
             isServerThread={isServerThread}
-            changeRequestState={activeThreadPr?.state ?? null}
+            changeRequest={activeThreadChangeRequest}
             activeProjectId={activeProject?.id}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
@@ -7418,6 +7502,7 @@ function ChatViewContent(props: ChatViewProps) {
           pendingSurfaceIds={pendingFileSurfaceIds}
           previewSessions={activePreviewState.sessions}
           desktopByTabId={activePreviewState.desktopByTabId}
+          previewRuntimeTabId={resolvePreviewRuntimeTabId}
           terminalLabelsById={activeTerminalLabelsById}
           onActivate={activateRightPanelSurface}
           onCloseSurface={closeRightPanelSurface}
@@ -7457,6 +7542,7 @@ function ChatViewContent(props: ChatViewProps) {
             pendingSurfaceIds={pendingFileSurfaceIds}
             previewSessions={activePreviewState.sessions}
             desktopByTabId={activePreviewState.desktopByTabId}
+            previewRuntimeTabId={resolvePreviewRuntimeTabId}
             terminalLabelsById={activeTerminalLabelsById}
             onActivate={activateRightPanelSurface}
             onCloseSurface={closeRightPanelSurface}

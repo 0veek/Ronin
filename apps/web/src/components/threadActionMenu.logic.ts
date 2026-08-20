@@ -19,6 +19,7 @@ export type ThreadActionMenuId =
   | "regenerate-title"
   | "mark-unread"
   | "discard-queued-task"
+  | "copy"
   | "copy-path"
   | "copy-branch"
   | "copy-thread-id"
@@ -65,14 +66,15 @@ export function buildThreadActionMenuItems(
           {
             id: "new-thread-on-branch" as const,
             label: `New thread on ${state.branch}`,
+            icon: "message-square-plus",
           },
         ]
       : []),
     ...(state.supports.pinning
       ? [
           state.isPinned
-            ? { id: "unpin" as const, label: "Unpin thread" }
-            : { id: "pin" as const, label: "Pin thread" },
+            ? { id: "unpin" as const, label: "Unpin thread", icon: "pin-off" }
+            : { id: "pin" as const, label: "Pin thread", icon: "pin" },
         ]
       : []),
     // Both lifecycle actions stay available on pinned threads: settling
@@ -81,17 +83,18 @@ export function buildThreadActionMenuItems(
     ...(state.supports.settlement
       ? [
           state.isSettled
-            ? { id: "unsettle" as const, label: "Un-settle thread" }
-            : { id: "settle" as const, label: "Settle thread" },
+            ? { id: "unsettle" as const, label: "Un-settle thread", icon: "circle-check" }
+            : { id: "settle" as const, label: "Settle thread", icon: "circle-check" },
         ]
       : []),
     ...(state.supports.snooze
       ? [
           state.isSnoozed
-            ? { id: "unsnooze" as const, label: "Wake thread" }
+            ? { id: "unsnooze" as const, label: "Wake thread", icon: "clock" }
             : {
                 id: "snooze" as const,
                 label: "Snooze",
+                icon: "clock",
                 disabled: !state.canSnoozeNow,
                 children: state.snoozePresets.map((preset) => ({
                   id: `snooze:${preset.id}` as const,
@@ -100,26 +103,37 @@ export function buildThreadActionMenuItems(
               },
         ]
       : []),
-    { id: "rename", label: "Rename thread" },
+    { id: "rename", label: "Rename thread", icon: "pencil", separatorBefore: true },
     ...(state.supports.titleRegeneration
       ? [
           {
             id: "regenerate-title" as const,
             label: state.isRegeneratingTitle ? "Regenerating…" : "Regenerate title",
+            icon: "refresh-cw",
             disabled: state.isRegeneratingTitle,
           },
         ]
       : []),
-    { id: "mark-unread", label: "Mark unread" },
+    { id: "mark-unread", label: "Mark unread", icon: "mail-open" },
     // The way out of a capture. Discarding leaves the thread — it may have
     // picked up a name and a place on the board worth keeping — and only
     // clears the prompt nobody ended up wanting.
     ...(state.hasQueuedTask
-      ? [{ id: "discard-queued-task" as const, label: "Discard captured task" }]
+      ? [{ id: "discard-queued-task" as const, label: "Discard captured task", icon: "trash" }]
       : []),
-    { id: "copy-path", label: "Copy path", icon: "copy" },
-    ...(state.branch ? [{ id: "copy-branch" as const, label: "Copy branch", icon: "copy" }] : []),
-    { id: "copy-thread-id", label: "Copy thread ID", icon: "copy" },
+    {
+      id: "copy",
+      label: "Copy",
+      icon: "copy",
+      separatorBefore: true,
+      children: [
+        { id: "copy-path" as const, label: "Path", icon: "folder" },
+        ...(state.branch
+          ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
+          : []),
+        { id: "copy-thread-id" as const, label: "Thread ID", icon: "hash" },
+      ],
+    },
     // Export reads the loaded transcript in the client, so it is only offered
     // where the thread's messages are actually in hand.
     ...(state.canExport
@@ -127,6 +141,7 @@ export function buildThreadActionMenuItems(
           {
             id: "export" as const,
             label: "Export conversation",
+            icon: "download",
             children: [
               { id: "export-markdown" as const, label: "Markdown (.md)" },
               { id: "export-json" as const, label: "JSON (.json)" },
@@ -139,7 +154,18 @@ export function buildThreadActionMenuItems(
     // (stays visible in the Settled shelf) and Delete (clears history for
     // good), so it sits beside Delete without borrowing its destructive
     // styling.
-    { id: "archive", label: "Archive thread", disabled: state.isRunning },
-    { id: "delete", label: "Delete", destructive: true, icon: "trash" },
+    {
+      id: "archive",
+      label: "Archive thread",
+      icon: "archive",
+      disabled: state.isRunning,
+      separatorBefore: true,
+    },
+    {
+      id: "delete",
+      label: "Delete",
+      destructive: true,
+      icon: "trash",
+    },
   ];
 }

@@ -31,7 +31,7 @@ function context(overrides: Partial<BoardClassifyContext> = {}): BoardClassifyCo
     autoSettleAfterDays: null,
     autoSettleOnMerge: true,
     capabilitiesByEnvironmentId: new Map([[ENV, FULL]]),
-    changeRequestStateByThreadKey: new Map(),
+    changeRequestByThreadKey: new Map(),
     ...overrides,
   };
 }
@@ -243,7 +243,7 @@ describe("deriveBoardLane parity with the sidebar's own predicates", () => {
             now: ctx.now,
             autoSettleAfterDays: ctx.autoSettleAfterDays,
             autoSettleOnMerge: ctx.autoSettleOnMerge,
-            changeRequestState: null,
+            changeRequest: null,
           }),
         ).toBe(true);
       }

@@ -5,7 +5,7 @@
 import {
   effectiveSettled,
   effectiveSnoozed,
-  type ChangeRequestStateLike,
+  type ChangeRequestSettleSource,
 } from "@t3tools/client-runtime/state/thread-settled";
 import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -106,7 +106,7 @@ export interface BoardClassifyContext {
   readonly autoSettleAfterDays: number | null;
   readonly autoSettleOnMerge: boolean;
   readonly capabilitiesByEnvironmentId: ReadonlyMap<string, BoardEnvironmentCapabilities>;
-  readonly changeRequestStateByThreadKey: ReadonlyMap<string, ChangeRequestStateLike | null>;
+  readonly changeRequestByThreadKey: ReadonlyMap<string, ChangeRequestSettleSource | null>;
 }
 
 export function boardCapabilitiesFor(
@@ -155,7 +155,7 @@ export function deriveBoardLane(
       now: context.now,
       autoSettleAfterDays: context.autoSettleAfterDays,
       autoSettleOnMerge: context.autoSettleOnMerge,
-      changeRequestState: context.changeRequestStateByThreadKey.get(threadKey) ?? null,
+      changeRequest: context.changeRequestByThreadKey.get(threadKey) ?? null,
     })
   ) {
     return "done";

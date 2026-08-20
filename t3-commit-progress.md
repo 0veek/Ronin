@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                             |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `cebac353d` — `fix(mobile): show structured input option descriptions (#7321)` (2026-08-18) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                             |
-| **Ported on**                 | 2026-08-18                                                                                  |
+|                               |                                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `beab6886f` — `fix(web): import dependency-heavy Open VSX themes (#7642)` (2026-08-20) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                        |
+| **Ported on**                 | 2026-08-20                                                                             |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -719,3 +719,239 @@ reset action, is listed by name in the restore-defaults confirmation, and the de
 already-issued credential rather than only withholding the next one. No desktop-IPC, provider-adapter
 or connection-mode surface is touched. No user-facing doc in `docs/user/` describes agent browser
 access yet — worth adding when the setting is next revisited, but out of scope for a port.
+
+---
+
+## Batch 8 — reviewed through `beab6886f` (45 commits)
+
+Reviewed `cebac353d..beab6886f`, snapshotted at `beab6886f` for the whole run.
+
+Two decisions were taken to the developer before any code was written, because both were product
+calls rather than port mechanics:
+
+- **The five-commit redesign wave** (`#7147` usage insights, `#7148` pull request details, `#7150`
+  composer state drawers, `#7152` collapse tool activity, `#7153` unify workspace navigation).
+  Ronin has deliberately diverged on every one of those surfaces. Decision: **take the non-visual
+  parts only**, skip the visual rewrites. What that meant in practice is spelled out under
+  _Partially ported_ below.
+- **`npx t3 triage`** (`324ddda31`). Decision: **skip** — see _Skipped_.
+
+### Ported (30)
+
+| Upstream    | Title                                                                                     | Notes                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `82b8a9380` | fix(orchestration): do not revive idle tasks from status-free progress (#7172)            | clean                                                                    |
+| `a87f691bd` | fix(preview): open local environment ports on localhost (#7300)                           | clean                                                                    |
+| `f3cb7f509` | fix(desktop): prevent quit shortcut spillover (#7397)                                     | clean                                                                    |
+| `3b5d476eb` | fix(desktop): stop overwriting a custom dock icon on launch (#7125)                       | **adapted** — fork added a Windows protocol block; context only          |
+| `fda740ad7` | feat(web): show project location in new thread picker (#7392)                             | **adapted** — one import-block conflict                                  |
+| `26af903b9` | fix(web): label pull request merge actions (#7381)                                        | clean                                                                    |
+| `636caf4c7` | fix(server): avoid PRs inherited from default upstreams (#7317)                           | clean                                                                    |
+| `3a02c9cf1` | feat(desktop): mute a browser tab (#7252)                                                 | **adapted** — see below                                                  |
+| `bcfd48586` | fix(web): improve disconnected composer placeholder (#7122)                               | **adapted** — fork's guard is `phase === "disconnected" && activeThread` |
+| `fe281c540` | fix(desktop): throttle hidden preview rendering (#7445)                                   | **adapted** — see below                                                  |
+| `e7f6a30ca` | fix(server): stop probing Grok, Cursor, and OpenCode unless turned on (#7459)             | **adapted** — see below                                                  |
+| `efcf7d1ac` | fix(desktop): boot the main window unthrottled so cold start paints at full speed (#7460) | **adapted** — see below                                                  |
+| `f21b47e52` | fix(threads): a merged PR settles its thread only once (#7454)                            | **adapted** — mobile hunks dropped; fork's board updated too             |
+| `3b8e7bbbe` | feat(web): add shortcuts to the surface dropdown (#7318)                                  | **adapted** — two context conflicts                                      |
+| `36f4314ab` | fix(web): animate command palette when closing (#5169)                                    | clean                                                                    |
+| `2aa5f095f` | feat(server): run the background service on macOS via launchd (#6286)                     | **adapted** — see below                                                  |
+| `8bbbab505` | fix(web): align sidebar statuses with project names (#7491)                               | clean                                                                    |
+| `24c4ba68f` | fix(desktop): close the window before quit cleanup (#6562)                                | **adapted** — no `DesktopLifecycle.test.ts` in this fork                 |
+| `68d569138` | fix(web): align version text with its label (#7521)                                       | **adapted** — see below                                                  |
+| `4347f14b8` | fix(web): refresh open file with the file tree (#7490)                                    | **adapted** — context only                                               |
+| `cf251c3bd` | Add OpenCode skill discovery (#3154)                                                      | clean                                                                    |
+| `80c37f1a7` | fix(web): hide opencode's plan agent when legacy plan mode is off (#6420)                 | **adapted** — see below                                                  |
+| `3c0665543` | feat: refine thread action menus (#7476)                                                  | **adapted** — see below                                                  |
+| `51341f2ac` | fix(server): outdated gh no longer reads as "not authenticated" (#7588)                   | **adapted** — docs rebranded to Ronin                                    |
+| `0508792c5` | feat(web): confirm before closing a terminal (#7592)                                      | **adapted** — fork routes shortcuts through `runWorkspaceCommand`        |
+| `62654d279` | fix(web): usage hourly breakdown lists every hour chronologically (#7595)                 | **adapted** — fork's `UsagePage` had drifted                             |
+| `105cd5e0c` | fix(web): remove the terminal pane's app-canvas gutter (#6222)                            | clean                                                                    |
+| `b2e2ccfdb` | fix(server): preserve tool lifecycle identity (#7151)                                     | clean — paired with a one-line web fix, see below                        |
+| `f708f63fa` | test(web): remove redundant timestamp assertions (#7633)                                  | clean                                                                    |
+| `beab6886f` | fix(web): import dependency-heavy Open VSX themes (#7642)                                 | clean                                                                    |
+
+Fork-specific decisions worth recording:
+
+- **`3a02c9cf1` (mute a browser tab).** The whole feature lands — IPC channel, preload bridge,
+  `PreviewManager.setAudioMuted`, per-tab `audioMuted`/`audible` in the contracts, and the tab-strip
+  indicator. Six test hunks rejected against `Manager.test.ts`: three were webContents mocks that
+  needed the two new methods (added mechanically), three targeted picture-in-picture tests this fork
+  does not have.
+
+- **`fe281c540` + `efcf7d1ac` (background throttling).** These two are a pair and only make sense
+  together: the first drops the blanket `backgroundThrottling: false` and hands throttling to the
+  preview manager, the second re-introduces it as a boot-only measure released on first reveal. Both
+  were applied and the net state matches upstream. The manager adaptation is real: Ronin has no
+  picture-in-picture, so `setMainWindow`'s new `closed` handler stops recordings only, where upstream
+  also closes PiP windows. `Fiber` is now imported for the cleanup fiber.
+
+- **`e7f6a30ca` (opt-in provider probing).** Grok and OpenCode become default-off, joining Cursor.
+  Ronin's four extra providers (Antigravity, Droid, Kilo, Pi) were **already** default-off, so no
+  change was needed there and none was made. `docs/user/install.md` gained the opt-in note, worded
+  for Ronin's nine-provider table rather than upstream's five.
+
+- **`f21b47e52` (settle-on-merge happens once).** The mobile half was dropped. The fork-only piece:
+  `apps/web/src/components/board/` classified lanes through a `changeRequestStateByThreadKey` map of
+  bare PR states, which cannot express "this merge predates the thread's latest event". It now
+  carries the full change request as `changeRequestByThreadKey`, so the board, the sidebar and the
+  chat header all settle on the same rule. `ChatHeader`'s `changeRequestState` prop became
+  `changeRequest` to match.
+
+- **`2aa5f095f` (launchd).** `apps/server/src/cli/connect.ts` and `apps/server/src/cloud/http.ts`
+  do not exist here (T3 Connect is cut), so those two hunks were dropped; everything else — the
+  `BootServiceManager` abstraction, the plist renderer, `HostProcessUserId`, the launcher comment —
+  applied. `cli/service.ts` needed hand-adaptation because Ronin had already stripped the "stays
+  reachable through T3 Connect" copy from the onboarding prompt; the platform-aware wording was
+  rebuilt on top of Ronin's shorter message. `docs/user/background-service.md` gained upstream's
+  whole Platform Support section, rebranded.
+
+- **`68d569138` (version alignment).** Upstream's `AboutVersionTitle` is a label plus a `<code>`;
+  Ronin's also renders an "Update available" `Badge`. Flipping the outer flex to `items-baseline`
+  would have dragged the badge onto the text baseline too, so the label and code were wrapped in
+  their own `items-baseline` span and the badge left centred. Same fix, no collateral.
+
+- **`80c37f1a7` (hide OpenCode's plan agent).** Applied whole, including the new
+  `planAgentSelectionHeal.tsx`. `TraitsMenuContentProps` gained a required `planModeEnabled`, which
+  Ronin's own `AutomationModelField.tsx` also had to pass — it reads it from `usePrimarySettings()`,
+  the same merged-settings source `ProjectSettingsPanel` uses.
+
+- **`3c0665543` (thread action menus).** Upstream folds the three copy actions into a "Copy"
+  submenu and puts icons and `separatorBefore` dividers on the rest. Ronin has two extra items
+  upstream lacks — "Discard captured task" and the "Export conversation" submenu — which upstream's
+  patch knows nothing about. Both were kept and given icons so the menu does not end up half
+  iconned: `trash` for discard (it exists in the fallback icon map; Delete stays visually distinct
+  because it is destructive-styled) and a new `download` path added to `ICON_PATHS` for export,
+  marked in the source as Ronin-only. Upstream's new `contextMenuFallback.test.ts` harness tripped
+  this repo's `no-this-alias` lint rule in a `FakeElement.isConnected` getter; the walk was lifted
+  into a free `rootOf()` helper, which is behaviour-identical and keeps lint at zero findings.
+
+### Partially ported (1)
+
+Only one of the five redesign commits had a design-neutral half worth taking.
+
+- **`4a9edff4c` (#7152).** Taken: the one-line `extractToolCallId` change in
+  `apps/web/src/session-logic.ts`, which prefers the runtime `payload.toolCallId` over the legacy
+  nested `payload.data.toolCallId`. This is not cosmetic — it is the client half of `b2e2ccfdb`,
+  which changed the **server's** snapshot retention to key on the same field. Porting the server
+  side alone would have left the two ends collapsing lifecycle rows under different identities.
+  Not taken: the timeline row model (`work-live` rows, tool-group summaries, expand/collapse), the
+  `MessagesTimeline` rewrite, and the ~74 lines of `index.css` it needs.
+
+The other four are recorded under _Skipped_.
+
+### Already in the tree (1) — do not re-port
+
+| Upstream    | Title                                                                                                | Where it lives                 |
+| ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------------ |
+| `1896f39a3` | refactor(server): simplify error transformation with Effect.mapError in GitHubPullRequestCli (#7385) | `GitHubPullRequestCli.ts:1454` |
+
+The patch does not reverse-apply because our surrounding comment has drifted, but the
+`Effect.mapError(() => error)` form is already the code on disk.
+
+### Skipped (13)
+
+| Upstream    | Title                                                                               | Why                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `db0659fea` | fix(packaging): install AUR launcher icons where icon themes look (#7421)           | no `packaging/` in this repo                                                                          |
+| `6a687ee43` | fix(desktop): stop the passkey dialog from popping as soon as sign-in opens (#7437) | Clerk cut — zero `clerk` references remain in the tree                                                |
+| `7441b3692` | fix(desktop): upgrade Clerk OAuth transport (#7479)                                 | Clerk cut; lockfile/workspace only                                                                    |
+| `324ddda31` | feat(cli): npx t3 triage hands broken installs to your own coding agent (#6563)     | see below                                                                                             |
+| `5ea5a80a8` | fix(marketing): Safari gets the arm64 Mac download (#7473)                          | no `apps/marketing` in this repo                                                                      |
+| `67e2fe71d` | fix(marketing): never serve the Intel build to Apple Silicon Macs (#7477)           | same                                                                                                  |
+| `f2d5fc91e` | fix(desktop): stop automatic passkey prompts (#7522)                                | Clerk cut                                                                                             |
+| `a354dd9dd` | fix(desktop): refresh queued updates before install (#6269)                         | see below                                                                                             |
+| `9027d6267` | chore(desktop): use stable Clerk Electron release (#7602)                           | Clerk cut; lockfile/workspace only                                                                    |
+| `07f8027d9` | feat(web): unify workspace navigation (#7153)                                       | redesign wave — navigation chrome end to end, superseded by Ronin's shell                             |
+| `792a1404f` | feat(web): attach composer state drawers (#7150)                                    | redesign wave — its `session-logic.ts` work computes plan-step durations only the new drawer displays |
+| `a850895f6` | feat(web): refresh pull request details (#7148)                                     | redesign wave — see below                                                                             |
+| `8c85b4933` | feat(web): redesign usage insights (#7147)                                          | redesign wave — see below                                                                             |
+
+- **`324ddda31`.** `npx t3 triage` is real product surface, but everything that makes it work points
+  at upstream: it clones `pingdotgg/t3code` at the user's release tag, fetches its playbook from
+  that repo's `main`, files into that repo's issue tracker via a new `.github/ISSUE_TEMPLATE`, and
+  its playbook text asks about `app.t3.codes` and the mobile app. Making it useful in Ronin means
+  rewriting the playbook for this fork's repository and tracker — a product decision, not a port.
+  Confirmed skipped with the developer. Worth revisiting deliberately if Ronin wants its own triage
+  flow.
+
+- **`8c85b4933`.** Its only fork-neutral-looking change, `ProviderTotals.sessions` in
+  `packages/shared/src/usageMerge.ts`, exists purely to feed the redesigned per-provider rows;
+  landing it here would add an unread field to a shared contract. (The genuinely useful usage fix in
+  this range, `62654d279`, is a separate commit and **was** ported.)
+
+- **`a850895f6`.** Nothing survives the visual cut: `changeRequestRepositoryUrl` and
+  `isStackedPullRequestBase` are helpers only the redesigned detail panel calls, and its
+  `pullRequestHandoffLabels` change _removes_ the `resolve`/`resolveConflicts` labels because the new
+  panel dropped those buttons — Ronin still renders them.
+
+- **`a354dd9dd`.** All six files are missing: this fork has no `apps/desktop/src/updates/` and no
+  `apps/web/src/components/desktopUpdate.logic.ts`. Ronin's updater is a different implementation
+  (`apps/desktop/src/app/DesktopAutoUpdate.ts`), so upstream's `updateMachine` refresh has nothing
+  to attach to.
+
+### Verification
+
+- **Typecheck, all clean:** `@t3tools/contracts`, `@t3tools/shared`, `@t3tools/client-runtime`,
+  `@t3tools/web`, `@t3tools/desktop`, `t3` (server). Four **pre-existing** suggestions survive and
+  were reproduced on a stashed clean tree: `DesktopAutoUpdate.ts:175` (`runEffectInsideEffect`) and
+  three `unnecessaryFailYieldableError` hits in `ClaudeAdapter.ts` / `ProviderService.ts`. No file in
+  this batch touches any of them.
+
+  Two type errors _were_ introduced by the port and fixed: `board.logic.ts` /
+  `board.logic.test.ts` / `useBoard.ts` still passing `changeRequestState` (see `f21b47e52` above),
+  and `AutomationModelField.tsx` missing the new required `planModeEnabled` prop.
+
+- **Focused tests, all pass.**
+  - server: `ThreadBackgroundLiveness` · `ActivityPayloadProjection` · `GitHubSourceControlProvider`
+    · `serverSettings` (44 tests); `GrokProvider` · `OpenCodeProvider` ·
+    `ProviderInstanceRegistryLive` · `opencodeRuntime.cliParsers` · `opencodeRuntime.inventory` ·
+    `cli/service` · `cloud/bootService` (59 tests); `GitManager` (84) and
+    `ProviderRuntimeIngestion` (47).
+  - desktop: `DesktopAppIdentity` · `QuitHold` · `DesktopWindow` · `ElectronWindow` · `ElectronMenu`
+    (55 tests); `preview/Manager` (56 tests).
+  - web: 16 files / 281 tests across `browserTargetResolver`, `CommandPalette.logic`,
+    `RightPanelTabs`, `ThreadStatusIndicators`, `board.logic`, `composerProviderState`,
+    `threadActionMenu.logic`, `contextMenuFallback`, `modelSelection`, `openVsxThemes`,
+    `previewStateStore`, `timestampFormat`, `terminalCloseConfirm`, `PreviewView`,
+    `usePreviewBridge`; plus 18 files / 393 tests across `components/usage`, `session-logic`,
+    `MessagesTimeline.logic` and `components/pullRequest`.
+  - `packages/client-runtime` `threadSettled` (191 tests); `packages/contracts` `settings` (37).
+
+  **One flake, not a failure:** `GitManager.test.ts > does not reuse a cross-repo PR when GitHub
+omits head identity metadata` timed out at 20s when `GitManager.test.ts` and
+  `ProviderRuntimeIngestion.test.ts` ran together. It passes alone, and the full 84-test
+  `GitManager` file passes alone in 20s. These tests shell out to real `git`; the budget is tight
+  under parallel load.
+
+- **Lint:** `vp lint --report-unused-disable-directives` over all 107 changed/added `.ts`/`.tsx`
+  files — 0 findings, after the `no-this-alias` fix noted under `3c0665543`.
+- **Format:** `vp fmt --check` over those 107 files plus the four changed docs — all correct.
+- `git diff --check` clean. Nothing staged; the index was left as found.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — `ContextMenuItem.separatorBefore`; `DesktopPreviewTabState.audioMuted`/`audible`
+  plus `DesktopPreviewSetAudioMutedInputSchema` and the bridge method;
+  `VcsStatusChangeRequest.updatedAt`; `resolveProviderInstanceEnabled` /
+  `providerInstanceConfigEnabledFlag` / `defaultEnabledForDriver`; Grok and OpenCode default-off.
+- **Server** — liveness, PR lookup keyed on the default branch, settings folding of the legacy
+  in-config `enabled` flag, `gh` version detection, tool lifecycle identity, OpenCode skill
+  discovery, launchd boot service.
+- **Desktop (Electron/IPC)** — quit hold, quit-time window teardown, dock icon, preview mute
+  channel, background throttling, native menu separators.
+- **Web renderer** — command palette (project location, close animation), right panel surface
+  shortcuts and mute indicator, sidebar/board/chat-header settle rules, composer placeholder and
+  plan-agent healing, file browser refresh, terminal close confirmation, usage hourly breakdown,
+  settings (provider cards, source control, version row).
+- **Providers** — the enabled-default change is per driver and was checked against all nine
+  adapters; OpenCode gains skill discovery; no other adapter needed a decision.
+- **Reverse states** — mute has unmute (and survives webview swaps); the terminal close
+  confirmation has a cancel path; a merged PR that settles a thread no longer re-settles it after
+  the user re-engages; provider opt-in has an opt-out on the same card.
+- **Connection modes** — `a87f691bd` matters for local loopback environments specifically;
+  `fda740ad7` labels local vs remote environments in the picker, which only exists because Ronin is
+  multi-environment.
+- **Docs** — `docs/user/install.md` (provider opt-in), `docs/user/source-control.md` (gh 2.81.0),
+  `docs/user/background-service.md` (macOS platform support), `docs/internals/server-updates.md`
+  (service manager wording). No new vocabulary, so `docs/internals/glossary.md` is untouched.

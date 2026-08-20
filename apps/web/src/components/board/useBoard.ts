@@ -1,5 +1,5 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { ChangeRequestStateLike } from "@t3tools/client-runtime/state/thread-settled";
+import type { ChangeRequestSettleSource } from "@t3tools/client-runtime/state/thread-settled";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -153,8 +153,8 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
     return capabilities;
   }, [serverConfigs]);
 
-  const changeRequestStateByThreadKey = useMemo(() => {
-    const states = new Map<string, ChangeRequestStateLike | null>();
+  const changeRequestByThreadKey = useMemo(() => {
+    const states = new Map<string, ChangeRequestSettleSource | null>();
     const threadByKey = new Map(
       threads.map((thread) => [
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
@@ -168,7 +168,7 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
       // snapshot recorded for the branch it is actually on. Without this a
       // stale merged-PR snapshot auto-settles work that is still live.
       const applies = thread.worktreePath === null || snapshot.branch === thread.branch;
-      states.set(threadKey, applies ? snapshot.pr.state : null);
+      states.set(threadKey, applies ? snapshot.pr : null);
     }
     return states;
   }, [changeRequestSnapshotByKey, threads]);
@@ -183,13 +183,13 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
       autoSettleAfterDays,
       autoSettleOnMerge,
       capabilitiesByEnvironmentId,
-      changeRequestStateByThreadKey,
+      changeRequestByThreadKey,
     }),
     [
       autoSettleAfterDays,
       autoSettleOnMerge,
       capabilitiesByEnvironmentId,
-      changeRequestStateByThreadKey,
+      changeRequestByThreadKey,
       nowMinute,
       snoozeWakeTick,
     ],
