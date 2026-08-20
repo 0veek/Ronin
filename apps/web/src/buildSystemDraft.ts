@@ -15,6 +15,7 @@ import type {
   ProjectId,
 } from "@t3tools/contracts";
 import {
+  BUILD_SYSTEM_MAX_DELEGATIONS_LIMIT,
   BUILD_SYSTEM_MAX_TEAMMATES,
   DEFAULT_BUILD_SYSTEM_MAX_DELEGATIONS,
   duplicateBuildSystemRoleNames,
@@ -89,6 +90,23 @@ export function emptyRoleDraft(
   };
 }
 
+/**
+ * A draft key no row in this roster is using.
+ *
+ * Derived from the highest `new-` suffix rather than the row count: removing a
+ * role and adding another would otherwise mint a key React is already using
+ * for a different row, and the two rows reconcile against each other.
+ */
+export function nextRoleDraftKey(teammates: ReadonlyArray<BuildSystemRoleDraft>): string {
+  let highest = -1;
+  for (const role of teammates) {
+    if (!role.key.startsWith("new-")) continue;
+    const suffix = Number(role.key.slice("new-".length));
+    if (Number.isInteger(suffix) && suffix > highest) highest = suffix;
+  }
+  return `new-${String(highest + 1)}`;
+}
+
 export function draftFromBuildSystem(buildSystem: BuildSystem): BuildSystemDraftState {
   return {
     editing: buildSystem.id,
@@ -133,7 +151,13 @@ export function isBuildSystemDraftComplete(draft: BuildSystemDraftState): boolea
     if (role.name.trim().length === 0) return false;
     if (role.modelSelection === null) return false;
   }
-  return Number.isInteger(draft.maxDelegations) && draft.maxDelegations >= 1;
+  // The same bounds the contract enforces: a Save the server will reject is a
+  // Save that should never have been offered.
+  return (
+    Number.isInteger(draft.maxDelegations) &&
+    draft.maxDelegations >= 1 &&
+    draft.maxDelegations <= BUILD_SYSTEM_MAX_DELEGATIONS_LIMIT
+  );
 }
 
 export function draftToCreateInput(draft: BuildSystemDraftState): BuildSystemCreateInput | null {

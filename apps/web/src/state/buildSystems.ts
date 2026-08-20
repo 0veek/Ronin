@@ -36,10 +36,27 @@ const buildSystemsAtom = Atom.family((environmentId: EnvironmentId) =>
   }).pipe(Atom.withLabel(`web-build-systems:${environmentId}`)),
 );
 
-const runsAtom = Atom.family((environmentId: EnvironmentId) =>
+const runHistoryAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): ReadonlyArray<BuildSystemRun> => {
     const result = get(serverEnvironment.buildSystemRuns({ environmentId, input: {} }));
     return Option.getOrNull(AsyncResult.value(result))?.runs ?? EMPTY_RUNS;
+  }).pipe(Atom.withLabel(`web-build-system-run-history:${environmentId}`)),
+);
+
+/**
+ * Runs, read only once the environment has a team that could produce one.
+ *
+ * Every chat view and the sidebar read this, and the query behind it polls on
+ * a short interval so a live run's banner stays honest. Reading it
+ * unconditionally meant every client pulled a run list — each entry carrying a
+ * whole team snapshot — every couple of seconds forever, including the clients
+ * that have never opened this feature. The list is refreshed locally whenever
+ * a team is created, so the gate opens as soon as there is something to watch.
+ */
+const runsAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get): ReadonlyArray<BuildSystemRun> => {
+    if (get(buildSystemsAtom(environmentId)).length === 0) return EMPTY_RUNS;
+    return get(runHistoryAtom(environmentId));
   }).pipe(Atom.withLabel(`web-build-system-runs:${environmentId}`)),
 );
 
@@ -107,6 +124,18 @@ export interface BuildSystemsController {
     readonly runId: BuildSystemRunId;
     readonly reply: string;
   }) => Promise<void>;
+}
+
+/**
+ * Every run the environment remembers, whether or not its team still exists.
+ *
+ * For the settings page, which is open because someone is looking at exactly
+ * this list — including the runs of teams they have since deleted. The gated
+ * `runs` view is the one for surfaces that are always mounted.
+ */
+export function useBuildSystemRunHistory(): ReadonlyArray<BuildSystemRun> {
+  const environmentId = usePrimaryEnvironmentId();
+  return useAtomValue(environmentId === null ? emptyRunsAtom : runHistoryAtom(environmentId));
 }
 
 export function useBuildSystems(): BuildSystemsController {

@@ -36,6 +36,7 @@ const make = Effect.gen(function* () {
     if (event.type === "thread.turn-diff-completed") {
       yield* buildSystems.handleTurnSettled({
         threadId: event.payload.threadId,
+        turnId: event.payload.turnId,
         files: event.payload.files,
         assistantMessageId: event.payload.assistantMessageId,
       });

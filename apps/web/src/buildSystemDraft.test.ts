@@ -12,6 +12,7 @@ import {
   draftToCreateInput,
   emptyRoleDraft,
   isBuildSystemDraftComplete,
+  nextRoleDraftKey,
   startBuildSystemDraft,
   startBuildSystemDraftFromSearch,
 } from "./buildSystemDraft";
@@ -75,6 +76,29 @@ describe("buildSystemDraft", () => {
         ],
       }),
     ).toBe(false);
+  });
+
+  it("refuses a delegation cap the server would reject", () => {
+    const base = {
+      ...startBuildSystemDraft("p-1"),
+      name: "Team",
+      orchestratorModelSelection: MODEL,
+    };
+    expect(isBuildSystemDraftComplete({ ...base, maxDelegations: 200 })).toBe(true);
+    expect(isBuildSystemDraftComplete({ ...base, maxDelegations: 201 })).toBe(false);
+    expect(isBuildSystemDraftComplete({ ...base, maxDelegations: 0 })).toBe(false);
+  });
+
+  it("mints a role key that no surviving row is using", () => {
+    const first = nextRoleDraftKey([]);
+    const second = nextRoleDraftKey([emptyRoleDraft(first)]);
+    // Removing the first row and adding another must not reuse the second key.
+    const third = nextRoleDraftKey([emptyRoleDraft(second)]);
+    expect(new Set([first, second, third]).size).toBe(3);
+  });
+
+  it("keeps saved role ids out of the way when minting a key", () => {
+    expect(nextRoleDraftKey([emptyRoleDraft("role-abc"), emptyRoleDraft("new-4")])).toBe("new-5");
   });
 
   it("round-trips an existing build system into a create-shaped payload", () => {

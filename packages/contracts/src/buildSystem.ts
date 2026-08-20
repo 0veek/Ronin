@@ -396,18 +396,25 @@ export const BuildSystemRunGetResult = Schema.Struct({
 export type BuildSystemRunGetResult = typeof BuildSystemRunGetResult.Type;
 
 /**
- * Find the role a directive is asking for.
+ * The key a role name is matched by.
  *
- * Case- and space-insensitive because the orchestrator is writing the name from
+ * Case and spacing are flattened because the orchestrator writes the name from
  * memory of a roster it was shown once, and failing a whole delegation over
- * "Reviewer" versus "reviewer" would be pedantry with a token cost.
+ * "Reviewer" versus "reviewer" — or one space versus two — would be pedantry
+ * with a token cost. Lookup and the uniqueness check share this so a pair of
+ * names that collide at delegation time cannot be saved in the first place.
  */
+function roleNameKey(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Find the role a directive is asking for. */
 export function findBuildSystemRole(
   teammates: ReadonlyArray<BuildSystemRole>,
   name: string,
 ): BuildSystemRole | null {
-  const wanted = name.trim().toLowerCase();
-  return teammates.find((role) => role.name.trim().toLowerCase() === wanted) ?? null;
+  const wanted = roleNameKey(name);
+  return teammates.find((role) => roleNameKey(role.name) === wanted) ?? null;
 }
 
 /** Roles whose names collide once case and spacing are ignored. */
@@ -417,7 +424,7 @@ export function duplicateBuildSystemRoleNames(
   const seen = new Set<string>();
   const duplicates = new Set<string>();
   for (const role of teammates) {
-    const key = role.name.trim().toLowerCase();
+    const key = roleNameKey(role.name);
     if (key.length === 0) continue;
     if (seen.has(key)) duplicates.add(role.name.trim());
     seen.add(key);

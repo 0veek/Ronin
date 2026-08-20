@@ -27,6 +27,15 @@ export function BuildSystemRunPrompt({
 }) {
   const [note, setNote] = useState("");
   const [reply, setReply] = useState("");
+  // A run pauses many times in one thread and this card never unmounts, so a
+  // note written about one role would otherwise be sent as the reason for
+  // declining the next.
+  const [notedGate, setNotedGate] = useState<string | null>(null);
+  const gateKey = run.pending?._tag === "gate" ? `${run.id}:${run.pending.roleId}` : null;
+  if (gateKey !== notedGate) {
+    setNotedGate(gateKey);
+    if (note.length > 0) setNote("");
+  }
 
   if (run.status === "waiting-gate" && run.pending?._tag === "gate") {
     return (
@@ -44,7 +53,10 @@ export function BuildSystemRunPrompt({
           <Button
             size="xs"
             variant="ghost"
-            onClick={() => onResolveGate({ approved: false, note: note.trim() || null })}
+            onClick={() => {
+              onResolveGate({ approved: false, note: note.trim() || null });
+              setNote("");
+            }}
           >
             Decline
           </Button>

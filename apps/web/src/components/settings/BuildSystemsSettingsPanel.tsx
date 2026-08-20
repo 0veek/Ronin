@@ -27,12 +27,13 @@ import {
   draftToUpdateInput,
   emptyRoleDraft,
   isBuildSystemDraftComplete,
+  nextRoleDraftKey,
   startBuildSystemDraft,
   startBuildSystemDraftFromSearch,
 } from "~/buildSystemDraft";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useProjects } from "~/state/entities";
-import { useBuildSystems } from "~/state/buildSystems";
+import { useBuildSystemRunHistory, useBuildSystems } from "~/state/buildSystems";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { formatDayAwareTimestamp } from "~/timestampFormat";
 import { cn } from "~/lib/utils";
@@ -70,7 +71,8 @@ export function BuildSystemsSettingsPanel({
 }: {
   readonly createIntent?: BuildSystemsSearch;
 } = {}) {
-  const { environmentId, buildSystems, runs, create, update, remove, startRun } = useBuildSystems();
+  const { environmentId, buildSystems, create, update, remove, startRun } = useBuildSystems();
+  const runs = useBuildSystemRunHistory();
   const [runSystemId, setRunSystemId] = useState<string | null>(null);
   const projects = useProjects();
   const navigate = useNavigate();
@@ -78,6 +80,11 @@ export function BuildSystemsSettingsPanel({
   const [draft, setDraft] = useState<BuildSystemDraftState | null>(null);
   const createKey = createIntent?.create === true ? `create:${createIntent.projectId ?? ""}` : null;
   const [appliedCreateKey, setAppliedCreateKey] = useState<string | null>(null);
+  if (createKey === null && appliedCreateKey !== null) {
+    // The intent was consumed and the search stripped; the next one is new even
+    // when it asks for the same project.
+    setAppliedCreateKey(null);
+  }
   if (createKey !== null && createKey !== appliedCreateKey) {
     const next = startBuildSystemDraftFromSearch(
       createIntent ?? {},
@@ -414,7 +421,7 @@ function BuildSystemDraftForm({
                 teammates: [
                   ...draft.teammates,
                   emptyRoleDraft(
-                    `new-${String(draft.teammates.length)}`,
+                    nextRoleDraftKey(draft.teammates),
                     selectedProject?.defaultModelSelection ?? null,
                   ),
                 ],

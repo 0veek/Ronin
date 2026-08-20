@@ -35,12 +35,26 @@ Each run has one orchestrator thread (own worktree when the project is a git rep
 persistent teammate thread per role, created on first delegation with the orchestrator's
 `worktreePath` / `branch` copied through. Turns are serial: one active turn per run.
 
+The thread a run is waiting on comes from the last `delegation` step, not from the end of
+`roleThreads` — a role keeps its thread for the whole run, so delegating to an earlier
+teammate again does not move it down that list.
+
+Run threads are ordinary threads, so a person can type into one mid-run. The coordinator
+remembers the user message it minted for the turn it started and compares its turn against
+the settled one, so the reply to somebody else's message is not read as the next directive.
+That memory is per process: after a restart a settled turn is accepted as before.
+
 ## Recovery
 
 On startup the reactor scans unsettled runs. A turn that finished while the process was
 down is advanced. A turn that is still `starting` / `running` is failed with "Interrupted
 by restart" — the new process does not own that provider session. Runs waiting on a person
 are left alone.
+
+A `stopped` session is handled here and only here. Live, it is ambiguous — a provider that
+closes its session after a healthy turn reports it too, and the checkpoint carrying the
+reply can still be on its way — so the reactor ignores it. At recovery the turn is over and
+unwatched either way, so it is treated as an interrupt rather than left to strand the run.
 
 ## Thread linkage
 

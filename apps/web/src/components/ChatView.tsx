@@ -7622,17 +7622,20 @@ function ChatViewContent(props: ChatViewProps) {
         onStart={(input) => {
           void buildSystems.startRun(input).then((started) => {
             setBuildSystemRunOpen(false);
+            // The run opens its threads on the environment that owns the team,
+            // which is not necessarily the one this thread is being read from.
+            const runEnvironmentId = buildSystems.environmentId;
             if (
               started === null ||
               started.orchestratorThreadId === null ||
-              environmentId === null
+              runEnvironmentId === null
             ) {
               return;
             }
             void navigate({
               to: "/$environmentId/$threadId",
               params: buildThreadRouteParams({
-                environmentId,
+                environmentId: runEnvironmentId,
                 threadId: started.orchestratorThreadId,
               }),
             });

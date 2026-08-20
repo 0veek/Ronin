@@ -43,6 +43,17 @@ export function BuildSystemRunDialog({
     initialBuildSystemId ?? buildSystems[0]?.id ?? "",
   );
   const [task, setTask] = useState("");
+  // Both call sites keep this mounted while it is closed, so opening is the
+  // only moment the fields mean anything: the team that was clicked, and an
+  // empty task rather than the last one that was already sent.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setSelectedId(initialBuildSystemId ?? buildSystems[0]?.id ?? "");
+      setTask("");
+    }
+  }
   const selected = useMemo(
     () => buildSystems.find((system) => system.id === selectedId) ?? buildSystems[0] ?? null,
     [buildSystems, selectedId],

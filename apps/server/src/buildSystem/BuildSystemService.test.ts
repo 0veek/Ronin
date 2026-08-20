@@ -19,6 +19,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -98,7 +99,14 @@ interface Harness {
   readonly runs: Map<string, BuildSystemRun>;
   readonly steps: BuildSystemRunStep[];
   assistantText: string;
-  sessionStatus: "idle" | "running" | "error" | "interrupted";
+  /** Overrides the single-assistant-message default when a test needs a turn. */
+  messages: ReadonlyArray<{
+    readonly id: string;
+    readonly role: string;
+    readonly text: string;
+    readonly turnId?: string | null;
+  }> | null;
+  sessionStatus: "idle" | "running" | "error" | "interrupted" | "stopped";
 }
 
 function makeHarness(options?: {
@@ -112,6 +120,7 @@ function makeHarness(options?: {
     runs: new Map(),
     steps: [],
     assistantText: "",
+    messages: null,
     sessionStatus: "idle",
   };
 
@@ -206,7 +215,7 @@ function makeHarness(options?: {
       Effect.succeed(
         Option.some({
           id: ThreadId.make("thread-orch"),
-          messages: [
+          messages: state.messages ?? [
             {
               id: "msg-1",
               role: "assistant",
@@ -265,6 +274,26 @@ const withService = <A, E>(
 ) => Effect.flatMap(Effect.service(BuildSystemService), run).pipe(Effect.provide(harness.layer));
 
 const dispatchedTypes = (state: Harness) => state.dispatched.map((command) => command.type);
+
+function step(
+  runId: string,
+  sequence: number,
+  kind: BuildSystemRunStep["kind"],
+  threadId: ThreadId | null,
+  roleId: BuildSystemRole["id"] | null,
+): BuildSystemRunStep {
+  return {
+    id: `step-${runId}-${String(sequence)}` as BuildSystemRunStep["id"],
+    runId: BuildSystemRunId.make(runId),
+    sequence,
+    kind,
+    roleId,
+    roleName: null,
+    threadId,
+    detail: null,
+    at: "2026-08-18T00:00:00.000Z",
+  };
+}
 
 function fence(body: string): string {
   return ["```t3-directive", body, "```"].join("\n");
@@ -356,6 +385,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: ThreadId.make("thread-orch"),
+          turnId: null,
           files: [],
           assistantMessageId: "msg-1",
         }),
@@ -388,6 +418,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: ThreadId.make("thread-orch"),
+          turnId: null,
           files: [],
           assistantMessageId: null,
         }),
@@ -442,6 +473,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: ThreadId.make("thread-orch"),
+          turnId: null,
           files: [],
           assistantMessageId: null,
         }),
@@ -469,6 +501,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: ThreadId.make("thread-orch"),
+          turnId: null,
           files: [],
           assistantMessageId: null,
         }),
@@ -491,6 +524,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: ThreadId.make("thread-orch"),
+          turnId: null,
           files: [],
           assistantMessageId: null,
         }),
@@ -501,6 +535,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: ThreadId.make("thread-orch"),
+          turnId: null,
           files: [],
           assistantMessageId: null,
         }),
@@ -510,6 +545,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: ThreadId.make("thread-orch"),
+          turnId: null,
           files: [],
           assistantMessageId: null,
         }),
@@ -533,6 +569,7 @@ describe("BuildSystemService", () => {
       yield* withService(harness, (service) =>
         service.handleTurnSettled({
           threadId: teammateThread,
+          turnId: null,
           files: [{ path: "src/parse.ts", kind: "modified", additions: 10, deletions: 0 }],
           assistantMessageId: null,
         }),
@@ -542,6 +579,192 @@ describe("BuildSystemService", () => {
       const turn = harness.state.dispatched.find((command) => command.type === "thread.turn.start");
       expect((turn as { message: { text: string } }).message.text).toContain("Added parse.ts.");
       expect((turn as { message: { text: string } }).message.text).toContain("src/parse.ts");
+    }),
+  );
+
+  it.effect("advances a re-delegated teammate rather than the newest role thread", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const implThread = ThreadId.make("thread-impl");
+      const reviewThread = ThreadId.make("thread-review");
+      // The implementer was delegated to first, the reviewer second, and now the
+      // implementer again — so the awaited thread is *not* the last role thread.
+      const active = run({
+        status: "delegating",
+        delegationCount: 3,
+        roleThreads: [
+          { roleId: implementer.id, threadId: implThread },
+          { roleId: reviewer.id, threadId: reviewThread },
+        ],
+      });
+      harness.state.runs.set(active.id, active);
+      harness.state.steps.push(step(active.id, 0, "delegation", implThread, implementer.id));
+      harness.state.steps.push(step(active.id, 1, "delegation", reviewThread, reviewer.id));
+      harness.state.steps.push(step(active.id, 2, "delegation", implThread, implementer.id));
+      harness.state.assistantText = "Fixed the parser.";
+
+      yield* withService(harness, (service) =>
+        service.handleTurnSettled({
+          threadId: implThread,
+          turnId: null,
+          files: [],
+          assistantMessageId: null,
+        }),
+      );
+
+      expect(harness.state.runs.get(active.id)?.status).toBe("orchestrating");
+      const turn = harness.state.dispatched.find((command) => command.type === "thread.turn.start");
+      expect((turn as { message: { text: string } }).message.text).toContain("Fixed the parser.");
+    }),
+  );
+
+  it.effect("interrupts the re-delegated teammate's thread on cancel", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const implThread = ThreadId.make("thread-impl");
+      const reviewThread = ThreadId.make("thread-review");
+      const active = run({
+        status: "delegating",
+        delegationCount: 3,
+        roleThreads: [
+          { roleId: implementer.id, threadId: implThread },
+          { roleId: reviewer.id, threadId: reviewThread },
+        ],
+      });
+      harness.state.runs.set(active.id, active);
+      harness.state.steps.push(step(active.id, 0, "delegation", reviewThread, reviewer.id));
+      harness.state.steps.push(step(active.id, 1, "delegation", implThread, implementer.id));
+
+      yield* withService(harness, (service) => service.cancelRun(active.id));
+
+      const interrupt = harness.state.dispatched.find(
+        (command) => command.type === "thread.turn.interrupt",
+      );
+      expect((interrupt as { threadId: string }).threadId).toBe(implThread);
+    }),
+  );
+
+  it.effect("leaves a stopped session alone while the run is live", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const active = run();
+      harness.state.runs.set(active.id, active);
+
+      // A provider closing its session after a healthy turn reports the same
+      // status, and the checkpoint carrying the reply can still be on its way.
+      yield* withService(harness, (service) =>
+        service.handleSessionSet({
+          threadId: ThreadId.make("thread-orch"),
+          status: "stopped",
+          lastError: null,
+        }),
+      );
+
+      expect(harness.state.steps).toEqual([]);
+      expect(harness.state.dispatched).toEqual([]);
+    }),
+  );
+
+  it.effect("picks up a run whose session exited while the process was down", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const active = run();
+      harness.state.runs.set(active.id, active);
+      harness.state.sessionStatus = "stopped";
+
+      yield* withService(harness, (service) => service.recover);
+
+      expect(harness.state.runs.get(active.id)?.status).toBe("orchestrating");
+      expect(harness.state.steps.filter((entry) => entry.kind === "nudge")).toHaveLength(1);
+      const turn = harness.state.dispatched.find((command) => command.type === "thread.turn.start");
+      expect((turn as { message: { text: string } }).message.text).toContain(
+        "Interrupted by restart",
+      );
+    }),
+  );
+
+  it.effect("fails the run when a teammate fails twice with no report between", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const teammateThread = ThreadId.make("thread-impl");
+      const active = run({
+        status: "delegating",
+        delegationCount: 2,
+        roleThreads: [{ roleId: implementer.id, threadId: teammateThread }],
+      });
+      harness.state.runs.set(active.id, active);
+      // The first failure was reported, and the orchestrator answered it by
+      // delegating again — so the failure report is not the newest step.
+      harness.state.steps.push({
+        ...step(active.id, 0, "report", teammateThread, implementer.id),
+        detail: "Turn failed: provider died",
+      });
+      harness.state.steps.push(step(active.id, 1, "delegation", teammateThread, implementer.id));
+
+      yield* withService(harness, (service) =>
+        service.handleSessionSet({
+          threadId: teammateThread,
+          status: "error",
+          lastError: "provider died again",
+        }),
+      );
+
+      const next = harness.state.runs.get(active.id);
+      expect(next?.status).toBe("failed");
+      expect(next?.failureDetail).toBe("provider died again");
+      expect(dispatchedTypes(harness.state)).toEqual([]);
+    }),
+  );
+
+  it.effect("ignores a turn a person started in a run thread", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      const active = run({
+        status: "waiting-user",
+        pending: { _tag: "question", question: "Which db?" },
+      });
+      harness.state.runs.set(active.id, active);
+
+      yield* withService(harness, (service) =>
+        Effect.gen(function* () {
+          // Our reply opens the turn the run is waiting on.
+          yield* service.replyUser({ runId: active.id, reply: "sqlite" });
+          const ours = harness.state.dispatched.find(
+            (command) => command.type === "thread.turn.start",
+          ) as { message: { messageId: string } };
+          harness.state.messages = [
+            { id: ours.message.messageId, role: "user", text: "sqlite", turnId: "turn-ours" },
+            {
+              id: "msg-theirs",
+              role: "assistant",
+              text: fence('{"action":"done","summary":"Shipped."}'),
+              turnId: "turn-theirs",
+            },
+          ];
+
+          // A person typed into the same thread; the reply to *that* is not the
+          // team's directive.
+          yield* service.handleTurnSettled({
+            threadId: ThreadId.make("thread-orch"),
+            turnId: TurnId.make("turn-theirs"),
+            files: [],
+            assistantMessageId: "msg-theirs",
+          });
+          expect(harness.state.runs.get(active.id)?.status).toBe("orchestrating");
+
+          // The same directive on our own turn is acted on.
+          yield* service.handleTurnSettled({
+            threadId: ThreadId.make("thread-orch"),
+            turnId: TurnId.make("turn-ours"),
+            files: [],
+            assistantMessageId: "msg-theirs",
+          });
+        }),
+      );
+
+      const next = harness.state.runs.get(active.id);
+      expect(next?.status).toBe("completed");
+      expect(next?.summary).toBe("Shipped.");
     }),
   );
 

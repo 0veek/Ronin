@@ -12,7 +12,6 @@
 import {
   BUILD_SYSTEM_MAX_CONSECUTIVE_NUDGES,
   BUILD_SYSTEM_MAX_TEAMMATES,
-  BUILD_SYSTEM_RUN_HISTORY_LIMIT,
   BuildSystem,
   BuildSystemError,
   BuildSystemId,
@@ -40,6 +39,7 @@ import {
   type OrchestrationSessionStatus,
   type ProjectId,
   ThreadId,
+  type TurnId,
 } from "@t3tools/contracts";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import * as Cause from "effect/Cause";
@@ -111,6 +111,8 @@ export interface BuildSystemServiceShape {
    */
   readonly handleTurnSettled: (input: {
     readonly threadId: ThreadId;
+    /** The turn the checkpoint belongs to; null when recovery replays one. */
+    readonly turnId: TurnId | null;
     readonly files: ReadonlyArray<OrchestrationCheckpointFile>;
     readonly assistantMessageId: string | null;
   }) => Effect.Effect<void>;
@@ -150,7 +152,9 @@ function lastAssistantText(
 ): string {
   if (assistantMessageId !== null) {
     const named = messages.find((message) => message.id === assistantMessageId);
-    if (named !== undefined && named.role === "assistant") return named.text;
+    if (named !== undefined && named.role === "assistant" && named.text.trim().length > 0) {
+      return named.text;
+    }
   }
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
@@ -171,12 +175,14 @@ function toChangedFiles(
   }));
 }
 
-function awaitedThreadId(run: BuildSystemRun): ThreadId | null {
-  if (run.status === "delegating") {
-    return run.roleThreads.at(-1)?.threadId ?? null;
-  }
-  if (run.status === "orchestrating" || run.status === "starting") {
-    return run.orchestratorThreadId;
+/** The most recent step of a kind, whatever was recorded after it. */
+function lastStepOfKind(
+  steps: ReadonlyArray<BuildSystemRunStep>,
+  kind: BuildSystemRunStepKind,
+): BuildSystemRunStep | null {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index];
+    if (step?.kind === kind) return step;
   }
   return null;
 }
@@ -228,10 +234,64 @@ export const make = Effect.gen(function* () {
    * turn from the previous life.
    */
   const touchedThisProcess = new Set<string>();
+  /**
+   * The user message this process minted for the turn it is waiting on, by
+   * thread. A run thread is an ordinary thread, so a person can type into one
+   * while the team is working; without this, the reply to *their* message would
+   * be read as the team's next directive. Empty after a restart, where a
+   * settled turn is accepted as it always was.
+   */
+  const awaitedUserMessage = new Map<ThreadId, MessageId>();
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
   const withLock = <A, E, R>(effect: Effect.Effect<A, E, R>) => lock.withPermits(1)(effect);
+
+  /**
+   * The thread whose turn the run is waiting on.
+   *
+   * While delegating this is the thread of the last delegation, not the last
+   * entry in `roleThreads`: a role keeps its thread for the whole run, so
+   * delegating to an earlier teammate again does not move it to the end of
+   * that list.
+   */
+  const awaitedThreadId = (run: BuildSystemRun) =>
+    Effect.gen(function* () {
+      if (run.status === "delegating") {
+        const delegation = lastStepOfKind(yield* store.listSteps(run.id), "delegation");
+        return delegation?.threadId ?? run.roleThreads.at(-1)?.threadId ?? null;
+      }
+      if (run.status === "orchestrating" || run.status === "starting") {
+        return run.orchestratorThreadId;
+      }
+      return null;
+    });
+
+  /**
+   * Whether the turn that just settled is the one this coordinator started.
+   *
+   * The user message we minted carries the turn it opened, so a reply to
+   * something a person typed into the thread mid-run is recognisable and left
+   * alone. Anything we cannot tell apart — no expectation after a restart, no
+   * turn on either side — counts as ours: stalling a run is worse than acting
+   * on one turn too many.
+   */
+  const startedByUs = (input: {
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId | null;
+    readonly messages: ReadonlyArray<{ readonly id: string; readonly turnId: string | null }>;
+  }) => {
+    const expected = awaitedUserMessage.get(input.threadId);
+    if (expected === undefined || input.turnId === null) return true;
+    const ours = input.messages.find((message) => message.id === expected);
+    if (ours === undefined || ours.turnId === null) return true;
+    return ours.turnId === input.turnId;
+  };
+
+  const forgetAwaitedTurns = (run: BuildSystemRun) => {
+    if (run.orchestratorThreadId !== null) awaitedUserMessage.delete(run.orchestratorThreadId);
+    for (const entry of run.roleThreads) awaitedUserMessage.delete(entry.threadId);
+  };
 
   const requireProject = (projectId: ProjectId) =>
     Effect.gen(function* () {
@@ -382,6 +442,11 @@ export const make = Effect.gen(function* () {
           ...extra,
         }),
       ),
+      Effect.tap(() =>
+        Effect.sync(() => {
+          forgetAwaitedTurns(run);
+        }),
+      ),
     );
 
   const asWriteFailed =
@@ -420,26 +485,28 @@ export const make = Effect.gen(function* () {
     readonly text: string;
     readonly titleSeed?: string;
   }) =>
-    Effect.all([randomUUID, randomUUID, nowIso], { concurrency: 1 }).pipe(
-      Effect.flatMap(([commandToken, messageToken, createdAt]) =>
-        orchestrationEngine.dispatch({
-          type: "thread.turn.start",
-          commandId: CommandId.make(`server:build-system:${commandToken}`),
-          threadId: input.threadId,
-          message: {
-            messageId: MessageId.make(messageToken),
-            role: "user",
-            text: input.text,
-            attachments: [],
-          },
-          modelSelection: input.modelSelection,
-          ...(input.titleSeed === undefined ? {} : { titleSeed: input.titleSeed }),
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          createdAt,
-        }),
-      ),
-    );
+    Effect.gen(function* () {
+      const commandToken = yield* randomUUID;
+      const messageId = MessageId.make(yield* randomUUID);
+      const createdAt = yield* nowIso;
+      yield* orchestrationEngine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(`server:build-system:${commandToken}`),
+        threadId: input.threadId,
+        message: {
+          messageId,
+          role: "user",
+          text: input.text,
+          attachments: [],
+        },
+        modelSelection: input.modelSelection,
+        ...(input.titleSeed === undefined ? {} : { titleSeed: input.titleSeed }),
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt,
+      });
+      awaitedUserMessage.set(input.threadId, messageId);
+    });
 
   const interruptThread = (threadId: ThreadId) =>
     Effect.all([randomUUID, nowIso], { concurrency: 1 }).pipe(
@@ -702,16 +769,20 @@ export const make = Effect.gen(function* () {
       return detail.value.messages;
     });
 
-  const handleOrchestratorSettled = (run: BuildSystemRun, assistantMessageId: string | null) =>
+  const handleOrchestratorSettled = (
+    run: BuildSystemRun,
+    messages: ReadonlyArray<{ readonly id: string; readonly role: string; readonly text: string }>,
+    assistantMessageId: string | null,
+  ) =>
     Effect.gen(function* () {
       if (run.orchestratorThreadId === null) return run;
-      const messages = yield* readThreadMessages(run.orchestratorThreadId);
       return yield* actOnDirective(run, lastAssistantText(messages, assistantMessageId));
     });
 
   const handleTeammateSettled = (
     run: BuildSystemRun,
     threadId: ThreadId,
+    messages: ReadonlyArray<{ readonly id: string; readonly role: string; readonly text: string }>,
     files: ReadonlyArray<OrchestrationCheckpointFile>,
     assistantMessageId: string | null,
   ) =>
@@ -722,7 +793,6 @@ export const make = Effect.gen(function* () {
           ? null
           : (run.config.teammates.find((teammate) => teammate.id === roleEntry.roleId) ?? null);
       const roleName = role?.name ?? "teammate";
-      const messages = yield* readThreadMessages(threadId);
       const report = lastAssistantText(messages, assistantMessageId).trim();
       yield* recordStep({
         run,
@@ -745,6 +815,7 @@ export const make = Effect.gen(function* () {
 
   const handleTurnSettledUnlocked = (input: {
     readonly threadId: ThreadId;
+    readonly turnId: TurnId | null;
     readonly files: ReadonlyArray<OrchestrationCheckpointFile>;
     readonly assistantMessageId: string | null;
   }) =>
@@ -752,14 +823,22 @@ export const make = Effect.gen(function* () {
       const found = yield* store.findActiveRunForThread(input.threadId);
       if (Option.isNone(found)) return;
       const run = found.value;
-      const expected = awaitedThreadId(run);
+      const expected = yield* awaitedThreadId(run);
       if (expected !== input.threadId) return;
+      const messages = yield* readThreadMessages(input.threadId);
+      if (!startedByUs({ threadId: input.threadId, turnId: input.turnId, messages })) return;
       if (run.status === "orchestrating" || run.status === "starting") {
-        yield* handleOrchestratorSettled(run, input.assistantMessageId);
+        yield* handleOrchestratorSettled(run, messages, input.assistantMessageId);
         return;
       }
       if (run.status === "delegating") {
-        yield* handleTeammateSettled(run, input.threadId, input.files, input.assistantMessageId);
+        yield* handleTeammateSettled(
+          run,
+          input.threadId,
+          messages,
+          input.files,
+          input.assistantMessageId,
+        );
       }
     }).pipe(
       Effect.catchCause((cause) =>
@@ -780,7 +859,7 @@ export const make = Effect.gen(function* () {
       const found = yield* store.findActiveRunForThread(input.threadId);
       if (Option.isNone(found)) return;
       const run = found.value;
-      const expected = awaitedThreadId(run);
+      const expected = yield* awaitedThreadId(run);
       if (expected !== input.threadId) return;
 
       const detail =
@@ -797,8 +876,8 @@ export const make = Effect.gen(function* () {
         const steps = yield* store.listSteps(run.id);
         // A teammate failure is reported once. A second one in a row, with no
         // successful report between, means the team cannot make progress.
-        const last = steps.at(-1);
-        if (last?.kind === "report" && last.detail?.startsWith("Turn failed:")) {
+        const lastReport = lastStepOfKind(steps, "report");
+        if (lastReport?.detail?.startsWith("Turn failed:") === true) {
           yield* recordStep({ run, kind: "failed", detail });
           yield* settleRun(run, "failed", { failureDetail: detail });
           return;
@@ -922,7 +1001,7 @@ export const make = Effect.gen(function* () {
   const cancelRunUnlocked = (runId: BuildSystemRunId) =>
     Effect.gen(function* () {
       const run = yield* requireActiveRun(runId);
-      const activeThread = awaitedThreadId(run);
+      const activeThread = yield* awaitedThreadId(run);
       if (
         activeThread !== null &&
         (run.status === "orchestrating" || run.status === "delegating")
@@ -992,7 +1071,7 @@ export const make = Effect.gen(function* () {
       if (!isBuildSystemRunActive(run.status)) return;
       if (run.status === "waiting-gate" || run.status === "waiting-user") return;
 
-      const threadId = awaitedThreadId(run);
+      const threadId = yield* awaitedThreadId(run);
       if (threadId === null) {
         yield* recordStep({
           run,
@@ -1033,7 +1112,11 @@ export const make = Effect.gen(function* () {
       if (status === "error" || status === "interrupted" || status === "stopped") {
         yield* handleSessionSetUnlocked({
           threadId,
-          status,
+          // A session that exited is only ever reported live, where it may just
+          // be a provider closing after a healthy turn. Here the turn is over
+          // and unwatched either way, so it is handled as an interrupt rather
+          // than left to strand the run.
+          status: status === "stopped" ? "interrupted" : status,
           lastError: shell.value.session?.lastError ?? "Interrupted by restart.",
         });
         return;
@@ -1045,6 +1128,7 @@ export const make = Effect.gen(function* () {
       const files = Option.isSome(detail) ? (detail.value.checkpoints.at(-1)?.files ?? []) : [];
       yield* handleTurnSettledUnlocked({
         threadId,
+        turnId: null,
         files,
         assistantMessageId: null,
       });
