@@ -790,3 +790,43 @@ html[data-panel-surface-transition="true"]::view-transition-new(t3-panel-surface
     animation: none;
   }
 }
+
+/* The preview's indeterminate load bar. Driven entirely by CSS off a
+   `data-loading` attribute: the old JS simulator ticked a `useState` every
+   120ms, which rerendered the whole preview view for the length of every page
+   load. The keyframes stall at 90% the same way, and releasing `data-loading`
+   transitions to full width before fading out. */
+@keyframes preview-loading-progress {
+  from {
+    transform: scaleX(0.04);
+  }
+
+  to {
+    transform: scaleX(0.9);
+  }
+}
+
+.preview-loading-progress {
+  opacity: 0;
+  transform: scaleX(1);
+  transition:
+    transform var(--duration-fast) ease-out,
+    opacity var(--duration-fast) ease-out var(--duration-base);
+}
+
+.preview-loading-progress[data-loading="true"] {
+  opacity: 1;
+  animation: preview-loading-progress 5.3s cubic-bezier(0.1, 0.5, 0.2, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-loading-progress,
+  .preview-loading-progress[data-loading="true"] {
+    transition: none;
+    animation: none;
+  }
+
+  .preview-loading-progress[data-loading="true"] {
+    transform: scaleX(0.9);
+  }
+}

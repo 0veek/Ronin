@@ -34,16 +34,22 @@ it.effect("registers the Ronin and built-in skill directories as Codex extra roo
   }),
 );
 
-it("keeps only the GPT-5.6 Codex family out of legacy models", () => {
+it("keeps current Codex models out of legacy models", () => {
   assert.deepStrictEqual(
-    ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.4"].map((model) => [
-      model,
-      isLegacyCodexModel(model),
-    ]),
+    [
+      "gpt-5.6-luna",
+      "gpt-5.6-terra",
+      "gpt-5.6-sol",
+      "gpt-daybreak-blue-latest",
+      "gpt-daybreak-red-latest",
+      "gpt-5.4",
+    ].map((model) => [model, isLegacyCodexModel(model)]),
     [
       ["gpt-5.6-luna", false],
       ["gpt-5.6-terra", false],
       ["gpt-5.6-sol", false],
+      ["gpt-daybreak-blue-latest", false],
+      ["gpt-daybreak-red-latest", false],
       ["gpt-5.4", true],
     ],
   );

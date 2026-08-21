@@ -50,8 +50,8 @@ to use, then authenticate it.
 | Kilo        | Kilo CLI (`@kilocode/cli`)                            | `kilo`         | the CLI's own sign-in |
 | Pi          | Pi (`@earendil-works/pi-coding-agent`)                | `pi`           | the CLI's own sign-in |
 
-Codex and Claude are on by default. Every other provider is off by default; turn one on in
-**Settings** → the provider's card when you want to use it.
+Codex, Claude, and Cursor are on by default. Every other provider is off by default; turn one on
+in **Settings** → the provider's card when you want to use it.
 
 Each provider has its own page under [Providers](./providers-codex.md) with the details that
 differ — what a provider cannot do, how its models are listed, and how it updates.

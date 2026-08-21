@@ -47,6 +47,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Resource telemetry](./internals/resource-telemetry.md)
 - [Environment auth](./internals/environment-auth.md)
 - [CI gates](./internals/ci.md)
+- [Engineering work artifacts](./internals/work-artifacts.md)
 
 ### Runbooks
 

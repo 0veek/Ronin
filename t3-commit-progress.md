@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                        |
-| ----------------------------- | -------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `beab6886f` — `fix(web): import dependency-heavy Open VSX themes (#7642)` (2026-08-20) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                        |
-| **Ported on**                 | 2026-08-20                                                                             |
+|                               |                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------ |
+| **Upstream reviewed through** | `be7d35aae` — `perf(web): stop preview loading rerenders (#7561)` (2026-08-21) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                |
+| **Ported on**                 | 2026-08-21                                                                     |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -955,3 +955,228 @@ omits head identity metadata` timed out at 20s when `GitManager.test.ts` and
 - **Docs** — `docs/user/install.md` (provider opt-in), `docs/user/source-control.md` (gh 2.81.0),
   `docs/user/background-service.md` (macOS platform support), `docs/internals/server-updates.md`
   (service manager wording). No new vocabulary, so `docs/internals/glossary.md` is untouched.
+
+## Batch 9 — reviewed through `be7d35aae` (31 commits)
+
+Reviewed `beab6886f..be7d35aae`, snapshotted at `be7d35aae` for the whole run. No commit needed a
+product decision from the developer; every verdict fell out of what this fork already has.
+
+Two upstream commits in this range are a **pair that cancels out**, and one is a **revert of a
+batch-8 port** — both are recorded under _Ported_ as their net effect, not as their individual
+patches.
+
+### Ported (25)
+
+| Upstream    | Title                                                                                | Notes                                                                   |
+| ----------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `8824f8f24` | fix(web): retry failed thread bootstraps with a fresh id (#7664)                     | clean                                                                   |
+| `21e80a063` | fix(web): copy terminal selection instead of a blank clipboard (#7678)               | clean                                                                   |
+| `aa17ec6e7` | revert(web): restore sparse hourly usage breakdown (#7718)                           | **adapted** — reverts batch 8's `62654d279`; see below                  |
+| `0929907ff` | fix(server): reconcile orphaned provider sessions (#7719)                            | **adapted** — both test harnesses needed Ronin's service shapes         |
+| `490f48ed9` | fix(web): fix subagent row left border being cut off (#7207)                         | **adapted** — kept Ronin's `text-sm`, dropped the `-mx-1`               |
+| `cd14b3ec2` | fix(web): unify composer control rounding (#5957)                                    | clean                                                                   |
+| `5ff5f735e` | fix(web): show pointer on add project button (#5545)                                 | **adapted** — kept Ronin's `text-2xs`, added `cursor-pointer`           |
+| `730ce9edd` | fix(server): enable the Cursor provider by default like every other provider (#7089) | net with `fe8750208`; see below                                         |
+| `fe8750208` | fix(contracts): reconcile provider default tests (#7725)                             | net with `730ce9edd`; see below                                         |
+| `1afe5545b` | fix(web): fix thread jumping after reorder (#7103)                                   | clean                                                                   |
+| `4bdbd8ce1` | fix(server): keep Daybreak models out of legacy models (#7659)                       | clean                                                                   |
+| `6d3bf01b4` | fix(web): show the full path in file link tooltips (#7741)                           | **adapted** — kept Ronin's `markdown-file-link-tooltip-scroll` class    |
+| `820e5639c` | fix(server): serve html assets with utf-8 charset (#6409)                            | clean                                                                   |
+| `12c497083` | fix(vcs): give `git worktree add` a longer timeout on large repos (#6326)            | clean                                                                   |
+| `9167622a4` | chore: move implementation plans out of repository (#7665)                           | **adapted** — no `.plans/` here to delete; see below                    |
+| `20e5a3396` | fix(desktop): restrict editor deep links (#7697)                                     | clean                                                                   |
+| `6d5c6c4a6` | fix(web): prevent pinned threads reshuffling after drop (#7676)                      | **adapted** — kept Ronin's flat-order comment inside the new `<ul>`     |
+| `18f6d0348` | fix(web): encode shifted characters correctly in the terminal (#7485)                | clean                                                                   |
+| `f3fcfe1f6` | fix(web): resolve sidebar provider icons from the thread's own environment (#7292)   | **adapted** — one hoist conflict; see below                             |
+| `ce8ca5bb3` | fix(web): hide thread jump hints while the terminal is focused (#7277)               | **adapted** — `LegacySidebar.tsx` hunk dropped (cut surface)            |
+| `e2697d63e` | fix(web): keep following the stream after scrolling back to the live edge (#6519)    | clean                                                                   |
+| `d7b9a689f` | perf(ci): parallelize the test suite and split out Rust checks (#7286)               | **adapted** — see below                                                 |
+| `9f12eab38` | chore: stop committing pull request assets (#7762)                                   | **adapted** — no `.github/pr-assets/` here to delete; guard still added |
+| `549201fcf` | fix(clients): default GitHub clones to HTTPS (#7760)                                 | **adapted** — mobile hunk dropped                                       |
+| `be7d35aae` | perf(web): stop preview loading rerenders (#7561)                                    | **adapted** — CSS lands in Ronin's `styles/motion.css`; see below       |
+
+Fork-specific decisions worth recording:
+
+- **`aa17ec6e7` (revert the dense hourly breakdown).** Batch 8 ported `62654d279`, which zero-filled
+  every hour in the 24h window so the table read chronologically. Upstream reverted it eight hours
+  later: sparse rows, newest first. The revert applied to the `useMemo`, but deleting `zeroHour`
+  conflicted because Ronin's `UsagePage` has a `ProviderShareBar` where upstream has `ProviderMark`.
+  Resolved by keeping Ronin's components and dropping only the helper. Upstream's new
+  `UsagePage.test.tsx` was **rewritten** for this fork: its mocks name upstream's module graph
+  (`PROVIDER_PRESENTATION`, `WorkspacePageHeader`, `../../env`), where Ronin's page imports
+  `WorkspaceTopbar`, `Kbd`, `ProviderMark`, and `PROVIDER_COLOR`/`PROVIDER_LABEL`. Ronin's page also
+  renders an empty state for `records === 0`, so the fixture sets `records`. The assertion is the
+  regression guard unchanged: exactly two rows, newest first.
+
+- **`730ce9edd` + `fe8750208` (Cursor on by default).** These two are one change split across two
+  commits — the first flips `CursorSettings.enabled` to `true` and adds a test, the second deletes
+  that test and fixes the two pre-existing default tests it contradicted. Only the net state was
+  landed: Cursor decodes enabled, `defaultEnabledForDriver("cursor")` is `true`, and the comment
+  reads "Enabled by default alongside Codex and Claude Agent." This reverses half of batch 8's
+  `e7f6a30ca` — Grok and OpenCode **stay** default-off, and Ronin's four extra providers
+  (Antigravity, Droid, Kilo, Pi) are untouched. `docs/user/install.md` now says "Codex, Claude, and
+  Cursor are on by default."
+
+- **`0929907ff` (orphaned provider sessions).** `serverRuntimeStartup.ts` applied clean and
+  typechecks. Both tests needed adaptation, because Ronin's service shapes have grown members
+  upstream's fakes predate: `ProviderServiceShape` carries `stopAgent`, `getContinuationState`, and
+  `clearContinuationLedger`; `ProviderSessionDirectoryShape` carries `getLedgerEntry`,
+  `listLedgerEntries`, and `clearLedger`. All six were added to the stubs. The integration harness
+  needed three more edits: `src/telemetry/AnalyticsService.ts` does not exist here (telemetry is
+  cut), so its import and layer were dropped; Ronin's startup also starts an `AutomationScheduler`,
+  which is now mocked; and Ronin's `ProviderSessionDirectoryLive` is backed by a
+  `ProviderSessionLedgerRepository`, whose layer is now provided from the same SQLite persistence.
+  The upstream `.github/check-run-agents/` hunk was dropped — no such directory here.
+
+- **`f3fcfe1f6` (per-environment provider icons).** Applies whole, including
+  `deriveProviderEntriesByEnvironment`. The one conflict is a hoist: upstream moves the
+  `environmentServerConfigsAtom` read up to feed the new map, and Ronin's original declaration site
+  also holds the fork-only `useBuildSystems` block. The read moved, the build-system lines stayed.
+  This matters more here than upstream — Ronin is multi-environment by design, and default instance
+  ids are literally driver slugs, so a flat map mis-resolved icons across environments.
+
+- **`9167622a4` (plans out of the repository).** `.plans/` never existed in this fork, so nothing
+  was deleted. Taken: the `.gitignore` entry, the `vite.config.ts` ignore-pattern removal, the
+  `markdown-links.test.ts` fixture change off a `.plans/` path, `docs/README.md`, and
+  `docs/internals/work-artifacts.md` (rebranded to Ronin). `AGENTS.md` gained upstream's "Plans and
+  work artifacts" section verbatim, placed before "How it works" as upstream places it.
+
+- **`d7b9a689f` (CI parallelization).** Applies clean against Ronin's `ci.yml`, which diverges from
+  upstream only in swapping `mobile_native_static_analysis` for a `windows` job and hardening the
+  Clerk preload grep — neither of which this patch touches. Net: `check` and `test` stop installing
+  a Rust toolchain, a `rust` job owns `cargo fmt --check` and `cargo test`, `test` runs everything
+  except `t3` with `--parallel`, and `test_server` shards `apps/server` across three runners. The
+  sharding comment was corrected from upstream's 239 server test files to this fork's 258.
+  `docs/internals/ci.md` was rewritten to describe all six jobs — it previously claimed three and
+  had already gone stale on the `windows` job. **This is the one change in the batch that cannot be
+  verified locally**; only its YAML structure and the package filters (`t3`, `@t3tools/monorepo`)
+  were checked against this workspace.
+
+- **`9f12eab38` (no committed PR assets).** No `.github/pr-assets/` in this fork, so nothing was
+  deleted, but the guard is still worth having: the `check` job now fails on any tracked file under
+  that path, `.gitignore` covers it, and `AGENTS.md` says to upload PR evidence to GitHub. Grouped
+  with `d7b9a689f` in `ci.yml`.
+
+- **`be7d35aae` (preview loading bar).** The JS progress simulator ticked `useState` every 120ms,
+  rerendering the whole preview view for the length of every page load; it is replaced by one CSS
+  animation keyed off `data-loading`. `useLoadingProgress.ts` is deleted. Upstream appends the CSS
+  to `index.css`; Ronin split that file into `styles/*.css`, so the rules land in
+  `styles/motion.css` next to the other keyframes, and the two hard-coded 150ms/220ms values are
+  written as `var(--duration-fast)` / `var(--duration-base)` to match the rest of that module —
+  which also means the reduced-motion token override in `tokens.css` applies on top of the explicit
+  `prefers-reduced-motion` block. Upstream's new rerender test mounts the real component through
+  `createRoot`, so it tripped over Ronin's `subscribeBrowserRecordingAutoStopped` effect; that
+  export was added to the existing `~/browser/browserRecording` mock.
+
+### Already in the tree (1) — do not re-port
+
+| Upstream    | Title                                                   | Where it lives                                         |
+| ----------- | ------------------------------------------------------- | ------------------------------------------------------ |
+| `e72350122` | feat(composer): list skills with slash commands (#7737) | `ChatComposer.tsx:1145`, `ComposerCommandMenu.tsx:104` |
+
+Ronin already lists provider skills in the `/` menu, and its version is the richer one:
+`composerMenuItems` filters skills the user disabled in settings, labels them with
+`formatProviderSkillDisplayName` instead of a raw `skill:` prefix, and `groupCommandItems` already
+files them under a dedicated **Skills** group between Built-in and Provider. `searchProviderSkills`
+returns every enabled skill for an empty query, which is the behavior upstream's new
+`providerSkillSearch` test asserts. The only thing upstream has that this fork does not is `/skill:`
+prefix matching, which exists to serve upstream's `skill:name` label — an affordance Ronin's labels
+never advertise. Porting the patch would have replaced a grouped menu with a flat one.
+
+### Skipped (5)
+
+| Upstream    | Title                                                                         | Why                                                                             |
+| ----------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `7107a98a2` | chore: vouch Seth Webster and pcstyle (#7728)                                 | upstream governance — `.github/VOUCHED.td` is that repo's contributor allowlist |
+| `f0fb83aff` | fix(web): polish theme library buttons, search, and import dialog (#7580)     | visual polish on a surface this fork already restyled; see below                |
+| `68966c1e6` | fix(web): add space above composer task tabs (#7740)                          | depends on the skipped composer state drawers (`792a1404f`, #7150); see below   |
+| `45a2c4b2a` | Update user count in AGENTS.md (#7658)                                        | upstream's user-base figure, not a fact about this fork                         |
+| `8f7da3b99` | ci: only boot the macOS native lint runner when native sources change (#7283) | gates a job this fork does not have; see below                                  |
+
+- **`f0fb83aff`.** Every hunk is chrome. Upstream replaces the search form and its submit button
+  with an `InputGroup`, swaps the license badge and text "Source" link for an icon-only button
+  behind a new `SourceLinkIcon` (which is what the new `GitLabIcon` `monochrome` prop exists to
+  feed), retunes the JSON textarea's selection colors, narrows the library grid from 17rem to
+  16rem, and renames "Import theme" to "Add theme" with different icons. Ronin has diverged on all
+  of it and has no `SourceLinkIcon`. The one behavior worth checking — searching on Enter with an
+  IME guard — Ronin already gets from its `<form onSubmit>`.
+
+- **`68966c1e6`.** The commit adds top padding when a composer shoulder tab is showing. This fork
+  has no shoulder tabs: no `ComposerTasksBadge`, no `ComposerTasksDrawer`, no
+  `externalDrawerAttached` prop, and `ComposerStashBadge` is defined but unrendered. All of that
+  arrives with `792a1404f` (#7150), which batch 8 skipped as part of the redesign wave. Attempting
+  a three-way apply reconstructed ~250 lines of that unported surface, which is the tell.
+
+- **`8f7da3b99`.** Adds a cheap Linux gate job so the macOS runner only boots when
+  `apps/mobile` native sources change. This fork removed `mobile_native_static_analysis` entirely
+  when mobile was cut, so there is nothing to gate, and its `docs/internals/ci.md` hunk edits a
+  bullet describing that job. `ci.md` was still updated in this batch, but for `d7b9a689f`.
+
+### Verification
+
+- **Typecheck, all clean:** `@t3tools/contracts`, `@t3tools/client-runtime`, `@t3tools/web`,
+  `@t3tools/desktop`, `t3` (server). Four **pre-existing** suggestions survive, all recorded in
+  batch 8 and untouched by this batch: `DesktopAutoUpdate.ts:175` (`runEffectInsideEffect`), and
+  three `unnecessaryFailYieldableError` hits in `ClaudeAdapter.ts:4612` and `ProviderService.ts:854`
+  / `:862`.
+
+  Two sets of type errors **were** introduced by the port and fixed, both in the two test harnesses
+  from `0929907ff` — see that entry above.
+
+- **Focused tests, all pass.**
+  - server: `serverRuntimeStartup.reconcile` · `http` · `CodexProvider` (18 tests);
+    `orphanedProviderSessionStartup.integration` (1); `GitVcsDriverCore` (52); `server.test.ts`
+    filtered to `bootstrap` (8 run, including both new cases:
+    _cleans up created bootstrap threads when worktree creation defects_ and _does not report a
+    deleted bootstrap thread when cleanup fails_).
+  - contracts / client-runtime: `settings` · `orchestration` · `errors/orchestration` ·
+    `operations/projects` (101 tests).
+  - desktop: `ElectronShell` (6 tests, including the three new deep-link cases).
+  - web: `Sidebar.logic` · `providerInstances` · `keybindings` · `useTerminalFocus` ·
+    `markdown-links` · `composerDraftStore` (307 tests); `PreviewView` · `PreviewChromeRow` ·
+    `MessagesTimeline` · `UsagePage` (30); `CommandPalette.logic` (20); `ChatMarkdown` (7);
+    `terminal/ghostty/surface` · `terminal/ghostty/keyCodes` (47).
+
+- **Two pre-existing failures, both reproduced on a clean checkout of the file before judging them:**
+  - `apps/web/src/terminal/ghostty/runtimeAbi.test.ts` does not load at all — Vite fails import
+    analysis on `vendor/ghostty-vt.wasm?inline` ("content contains invalid JS syntax"). It fails
+    identically at `HEAD` with this batch's hunk reverted, so `21e80a063`'s new ABI case is present
+    but unexercised locally. A toolchain/`assetsInclude` issue, not a port regression.
+  - `MessagesTimeline.test.tsx > keeps the copy button for collapsed long user messages` fails on
+    `aria-label="Copy link"`. Also reproduced at `HEAD` with both this batch's `MessagesTimeline`
+    changes reverted.
+
+- **Lint:** `vp lint --report-unused-disable-directives` over all 51 changed/added `.ts`/`.tsx`
+  files — 0 findings.
+- **Format:** `vp fmt --check` over all 58 changed/added files (including `motion.css`, `ci.yml`,
+  and the four docs) — all correct.
+- `git diff --check` clean. Nothing staged; the index was left as found.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — `OrchestrationDispatchCommandError.bootstrapThreadDisposition`;
+  `CursorSettings.enabled` default and `defaultEnabledForDriver("cursor")`.
+- **Server** — startup reconciliation of provider sessions orphaned by a restart, bootstrap-thread
+  cleanup reporting through `ws.ts`, UTF-8 on HTML assets, a 300s `git worktree add` timeout, Codex
+  Daybreak models out of the legacy list.
+- **Desktop (Electron/IPC)** — `openExternal` now admits only genuine `vscode://vscode-remote/ssh-remote+…`
+  deep links, rejecting userinfo and extension command URLs.
+- **Web renderer** — sidebar (pinned reorder animation, pinned list semantics, per-environment
+  provider icons, add-project cursor), chat (timeline live-edge follow, bootstrap-thread retry,
+  file-link tooltips, composer control rounding, subagent row alignment), terminal (copy selection,
+  shifted-character encoding, jump hints suppressed while focused), preview (CSS-driven load bar),
+  usage (sparse hourly breakdown), command palette (HTTPS clone default).
+- **Providers** — Cursor becomes default-enabled; the other eight adapters were checked and none
+  needed a decision. Codex's current-model set gains the two Daybreak ids.
+- **Reverse states** — a failed bootstrap thread gets a fresh id so the user can retry rather than
+  being stranded on a deleted one; the terminal copy primer is cleared on the next keydown and on
+  composition start, so it cannot swallow an IME candidate; scrolling back to the live edge releases
+  the send anchor, which is the way out of the anchored-turn framing.
+- **Connection modes** — `f3fcfe1f6` is a multi-environment fix specifically: instance ids are
+  per-environment routing keys and default ids are driver slugs, so a flat map resolved a remote
+  thread's icon from the local environment. `0929907ff` matters most where the server restarts
+  underneath a still-connected client.
+- **Docs** — `docs/user/install.md` (Cursor on by default), `docs/internals/ci.md` (rewritten for
+  the six-job pipeline), `docs/internals/work-artifacts.md` (new, rebranded), `docs/README.md`
+  (index entry), `AGENTS.md` (plans/work-artifacts section, PR-evidence bullet). No new vocabulary,
+  so `docs/internals/glossary.md` is untouched.
