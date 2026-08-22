@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------ |
-| **Upstream reviewed through** | `be7d35aae` — `perf(web): stop preview loading rerenders (#7561)` (2026-08-21) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                |
-| **Ported on**                 | 2026-08-21                                                                     |
+|                               |                                                                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `035058a23` — `fix(mobile): stop a directly-saved backend from hiding its T3 Connect environment (#7086)` (2026-08-21) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                                        |
+| **Ported on**                 | 2026-08-22                                                                                                             |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -1180,3 +1180,174 @@ never advertise. Porting the patch would have replaced a grouped menu with a fla
   the six-job pipeline), `docs/internals/work-artifacts.md` (new, rebranded), `docs/README.md`
   (index entry), `AGENTS.md` (plans/work-artifacts section, PR-evidence bullet). No new vocabulary,
   so `docs/internals/glossary.md` is untouched.
+
+## Batch 10 — reviewed through `035058a23` (11 commits)
+
+Reviewed `be7d35aae..035058a23`, snapshotted at `035058a23` for the whole run. No commit needed a
+product decision from the developer; every verdict fell out of what this fork already has.
+
+### Ported (9)
+
+| Upstream    | Title                                                                    | Notes                                                               |
+| ----------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `0a46daaf6` | fix(web): keep messages clear of composer banners (#7792)                | **adapted** — import-adjacency conflict only                        |
+| `837f6b871` | feat(web): double-click chat header title to rename thread (#7817)       | **adapted** — kept Ronin's `rounded-(--control-radius)`             |
+| `9b5d41687` | fix(web): give sidebar un-settle button a tooltip (#7796)                | clean                                                               |
+| `c3e37094e` | fix(web): render oversized terminal graphemes without crashing (#7809)   | **adapted** — `new Array(n)` trips Ronin's lint; see below          |
+| `e0b4f4639` | feat(web): cmd+enter to create thread in background (#7821)              | **adapted** — three additive conflicts; docs rebranded              |
+| `b381fdb12` | fix(web): launcher shortcuts no longer hijack the empty composer (#7794) | clean                                                               |
+| `44e4a7071` | feat(desktop): choose external project icons (#7823)                     | **adapted** — no `ghost-muted` button variant here; see below       |
+| `421088c27` | fix(search): oversized thread queries no longer crash clients (#6633)    | **adapted** — Ronin's search key carries a third element; see below |
+| `592c5983c` | perf(web): dedupe terminal mouse motion reports (#7845)                  | clean                                                               |
+
+Fork-specific decisions worth recording:
+
+- **`c3e37094e` (oversized graphemes).** `ghosttyCellText` converts a cell's codepoints in 4,096-wide
+  chunks so a base character followed by a six-figure run of combining marks cannot overflow the
+  spread-argument limit inside `String.fromCodePoint`. Upstream preallocates the chunk with
+  `new Array<number>(count)` and fills it by index; Ronin's oxlint config enables
+  `unicorn(no-new-array)`, so the fill is written as
+  `Array.from({ length: count }, (_unused, index) => …)`. Same preallocation, same three new tests,
+  no warning.
+
+- **`e0b4f4639` (Mod+Enter starts a thread in the background).** The feature ports whole —
+  `composerSubmissionIntentForEnter`, the `backgroundSubmissionThreadKeys` slice in
+  `composerDraftStore`, `resolveDraftHeroState` / `resolveDraftPromotionNavigationTarget` /
+  `resolveBackgroundDraftWorkspaceOptions`, and the `useHandleNewThread` reuse guard that stops a
+  promoted draft from being handed back out. Three conflicts, all additive adjacency:
+  `ChatView.tsx` does not import `parseStandaloneComposerSlashCommand` here (Ronin routes slash
+  commands through `@t3tools/shared/composerSlashCommands`), so only the new
+  `ComposerSubmissionIntent` type joined that import; `composer-logic.ts` keeps Ronin's
+  `ComposerSlashCommand = BuiltInComposerSlashCommand` alias rather than upstream's inline union;
+  and `docs/user/composer.md` already had a **Reading width** section, so the new paragraph was
+  placed above it and rebranded (`T3 Code` → `Ronin`). The "On desktop" qualifier was dropped —
+  upstream uses it to exclude their mobile app, which this fork does not have — but the behavior is
+  unchanged, since `composerSubmissionIntentForEnter` still returns `null` for a mobile viewport.
+  Ronin's `ChatComposer` already carries the `routeKind: "server" | "draft"` prop the gate needs.
+
+- **`44e4a7071` (external project icons).** Applies across all four layers this fork still has —
+  contracts (`DesktopBridge.pickProjectFavicon`, optional so an older shell can host a newer
+  renderer), desktop (`PICK_PROJECT_FAVICON_CHANNEL`, `pickFiles` gaining an explicit `multiple`
+  flag so the icon picker opens single-select), server (`project-favicon-external` asset claims
+  keyed on the canonical file path, and `ProjectFaviconResolver` accepting an absolute saved path
+  under a new `"filesystem"` candidate scope), and web. Two adaptations. First, upstream's new
+  `CommandFooterAction` uses a `ghost-muted` button variant that does not exist here; Ronin's
+  variant list is `default | destructive | destructive-outline | ghost | link | outline |
+secondary`, so the component was written with `variant="ghost"` plus the exact
+  `text-muted-foreground … hover:text-foreground` classes Ronin's `CommandPalette` footer button
+  already used — the extraction is behavior-preserving on both call sites. Second,
+  `canPickExternalProjectFavicon` exists upstream to hide the native picker for WSL project paths;
+  WSL is cut from this fork (only comments survive in `DesktopBackendManager.ts`), so the predicate
+  is kept for its still-true general meaning — the native dialog returns a host path, so it is only
+  offered when the project lives on this machine — with a doc comment saying that and the test
+  renamed off "WSL project paths". The `member.environmentId === primaryEnvironmentId` guard is what
+  actually carries the remote case, which matters more here than upstream.
+
+- **`421088c27` (oversized search queries).** Ronin has the same crash: `parseThreadSearchKey` ran
+  `JSON.parse` and `Schema.decodeUnknownSync`, either of which throws inside an atom body. The fix
+  ports as `Schema.fromJsonString` + `Schema.decodeUnknownOption` with a `None` short-circuit — but
+  Ronin's key is a **three**-element tuple, `[environmentIds, query, scope]`, where upstream's is
+  two: this fork keys searches by `OrchestrationThreadSearchScope` so active and archived results do
+  not collide. The schema, the destructure, and both new tests were widened accordingly, and a third
+  assertion was added for an unknown scope value (`'[["env-a"],"needle","nope"]'`), which is a
+  malformed-key shape upstream cannot produce.
+
+### Already in the tree (0)
+
+Nothing in this range was already present.
+
+### Skipped (2)
+
+| Upstream    | Title                                                                                     | Why                                                                  |
+| ----------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `292c6dd8c` | fix(web): model picker no longer shows a double border (#7772)                            | upstream-only defect; this fork's popover chrome differs — see below |
+| `035058a23` | fix(mobile): stop a directly-saved backend from hiding its T3 Connect environment (#7086) | mobile and T3 Connect are both cut surfaces                          |
+
+- **`292c6dd8c`.** The double border is a property of upstream's popover chrome, not of the model
+  picker. Upstream's `PopoverPopup` is `dropdown-glass` plus a `::before` inner hairline, and their
+  `ModelPickerContent` drew a _second_ frame with its own `dropdown-glass` and
+  `[clip-path:inset(0_round_var(--radius-lg))]`; the fix deletes the content's frame and lets the
+  popup keep its own, rounding the viewport to `calc(var(--radius-lg)-1px)` to nest inside the 1px
+  border. Ronin resolves the same overlap in the opposite direction and already has no double
+  border: `PopoverPopup` carries `surface-menu`, which sets a real `border: 1px solid var(--border)`
+  in `@layer components`, and the model picker's `className` zeroes it with `border-0` — a
+  utilities-layer declaration, so it wins the cascade — along with `bg-transparent p-0 shadow-none`.
+  The single visible frame is then drawn by the content's own `surface-menu model-picker-surface`,
+  where `model-picker-surface` is a Ronin-only rule that forces an opaque `var(--popover)` fill in
+  dark mode. Taking upstream's patch would delete that rule's element and reintroduce a translucent
+  model picker. The one cosmetic difference left is that the content rounds to `var(--radius)` (8px)
+  where every other Ronin menu rounds to `--radius-lg` (10px); the popup viewport's `rounded-lg`
+  clip is the larger of the two, so nothing is cut. Aligning those radii is a deliberate design
+  call, not this commit, and was left alone.
+
+- **`035058a23`.** Every hunk is under `apps/mobile/src/features/connection/`, and the behavior is
+  about a directly-saved backend shadowing its T3 Connect environment in the mobile connection list.
+  This fork has no `apps/mobile` and no T3 Connect.
+
+### Verification
+
+- **Typecheck, all clean:** `@t3tools/contracts`, `@t3tools/client-runtime`, `@t3tools/web`,
+  `@t3tools/desktop`, `t3` (server). The same four **pre-existing** suggestions from batches 8 and 9
+  survive untouched: `DesktopAutoUpdate.ts:175` (`runEffectInsideEffect`), and three
+  `unnecessaryFailYieldableError` hits in `ClaudeAdapter.ts:4612` and `ProviderService.ts:854` /
+  `:862`. This batch introduced no type errors at any point.
+
+- **Focused tests, 483 passing across 18 files.**
+  - web: `ghostty/core` (3, new file) · `ghostty/surface` (44) · `timelineScrollAnchoring` (8) ·
+    `RightPanelTabs` (17) · `lib/utils` (5) · `composer-logic` (41) · `ChatView.logic` (53) ·
+    `composerDraftStore` (80) · `ProjectFaviconPickerDialog` (3, new file) · `Sidebar.logic` (112) ·
+    `CommandPalette.logic` (20) · `ChatHeader` (11) · `markdown-links` (37).
+  - client-runtime: `threadSearch` (7, including both new cases).
+  - desktop: `ElectronDialog` (4) · `ipc/methods/window` (5) — including the two new picker cases.
+  - server: `AssetAccess` (13) · `ProjectFaviconResolver` (20) — including the two new
+    external-path cases.
+
+- **Two pre-existing failures, both confirmed independent of this batch:**
+  - `MessagesTimeline.test.tsx > keeps the copy button for collapsed long user messages` fails on
+    `aria-label="Copy link"`. Reproduced by checking out `MessagesTimeline.tsx` and
+    `timelineScrollAnchoring.ts` at `HEAD` and rerunning: identical failure. Same failure recorded
+    in batch 9.
+  - `.github/scripts/thread-transfer-report.test.cjs` fails to load at all — "No test suite found in
+    file". Nothing in `.github/` is touched by this batch, and the error is structural.
+
+- **Lint:** `vp lint --report-unused-disable-directives` over all 43 changed/added `.ts`/`.tsx`
+  files — 0 findings. One warning appeared mid-port (`unicorn(no-new-array)` in `core.ts`) and was
+  fixed rather than suppressed; see `c3e37094e` above.
+- **Format:** `vp fmt --check` over all 44 changed/added files (including the two docs) — all
+  correct. `ChatView.tsx` and `threadSearch.test.ts` needed one `vp fmt` pass after hand-editing.
+- `git diff --check` clean. Nothing staged; the index was left as found.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — `DesktopBridge.pickProjectFavicon`, declared optional so an older desktop shell
+  can host a newer renderer without the settings panel throwing.
+- **Server** — `AssetAccess` issues and resolves a `project-favicon-external` claim bound to a
+  canonical file path, so a saved icon outside the workspace is served without widening
+  workspace-relative resolution; `ProjectFaviconResolver` gained a `"workspace" | "filesystem"`
+  candidate scope, and only the saved-override lookup uses `"filesystem"` — `t3.json` `iconPath`,
+  the well-known candidates, and HTML `<link rel=icon>` hrefs all stay workspace-bound.
+- **Desktop (Electron/IPC)** — a new single-select image picker channel; `ElectronDialog.pickFiles`
+  now takes `multiple` explicitly instead of always passing `multiSelections`, and the theme-file
+  picker passes `multiple: true` to keep its behavior.
+- **Web renderer** — chat (timeline stays at the live edge when a composer banner grows,
+  double-click the header title to rename, Mod+Enter starts a draft in the background), sidebar
+  (un-settle button gained a tooltip), terminal (oversized grapheme clusters render instead of
+  crashing, duplicate motion reports are dropped), right panel (launcher letters no longer claim an
+  empty composer), settings (project icon picker can reach outside the workspace), command palette
+  (footer action extracted to `CommandFooterAction`).
+- **Providers** — none of the nine adapters needed a decision; nothing in this range is
+  provider-shaped.
+- **Reverse states** — a failed background submission clears its pending flag and resets the local
+  dispatch, so the composer is usable again rather than stranded in the hero layout; a background
+  submission that cannot open a fresh composer still toasts that the task started; the chevron
+  remains the explicit menu affordance so double-click-to-rename does not remove the way into the
+  thread menu, and the pending menu-open is cancelled on thread change, unmount, and blur.
+- **Connection modes** — the external icon picker is gated on the project living on the primary
+  environment, because the native dialog returns a path on the machine running Electron; a remote
+  or Tailscale-attached environment's projects keep the in-workspace picker only. `AssetAccess`
+  serves the chosen file through the same capability URL, so a remote browser renders it too.
+- **Entry points** — the project icon picker is reachable from Settings → Projects; the background
+  submission is a composer keybinding documented under `mod+enter`, not a palette command.
+- **Docs** — `docs/user/composer.md` and `docs/user/keybindings.md` both describe background
+  submission (rebranded, with upstream's mobile-only qualifier dropped). No new vocabulary, so
+  `docs/internals/glossary.md` is untouched.

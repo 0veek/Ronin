@@ -4,6 +4,11 @@ Messages can contain up to 120,000 characters. If a draft is longer, Ronin keeps
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
+Press `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux from a new thread to start it in
+the background. Ronin opens another new thread and shows an **Open** action for the thread that
+started. The new thread keeps the selected workspace mode and base branch. If **New worktree** is
+selected, each background thread creates its own worktree.
+
 ## Reading width
 
 **Settings → Appearance → Chat width** sets how wide the transcript and composer grow:
