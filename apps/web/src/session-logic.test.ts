@@ -1608,6 +1608,40 @@ describe("deriveWorkLogEntries provider boundaries", () => {
       handoff: "briefed",
       briefChars: 4211,
       briefCompressed: true,
+      // Absent from an activity written before the breakdown existed.
+      briefFullMessages: null,
+      briefSummarizedMessages: null,
+      briefOmittedMessages: null,
+    });
+  });
+
+  it("carries how much of the conversation the brief actually held", () => {
+    const entries = deriveWorkLogEntries(
+      [
+        makeActivity({
+          id: "handoff",
+          kind: "provider.handoff",
+          summary: "Provider took over with a conversation brief",
+          tone: "info",
+          payload: {
+            instanceId: "grok",
+            providerName: "grok",
+            handoff: "briefed",
+            briefChars: 4211,
+            briefCompressed: true,
+            briefFullMessages: 6,
+            briefSummarizedMessages: 12,
+            briefOmittedMessages: 40,
+          },
+        }),
+      ],
+      { providerLabelByInstanceId },
+    );
+
+    expect(entries[0]?.providerBoundary).toMatchObject({
+      briefFullMessages: 6,
+      briefSummarizedMessages: 12,
+      briefOmittedMessages: 40,
     });
   });
 

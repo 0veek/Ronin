@@ -83,6 +83,11 @@ the runtime row and inactive ones keep the cursor they had when they were handed
 [`041`][migration] backfills the currently bound provider, and `firstSeenAt` is pinned across
 updates — it is what the brief uses to say how far back a returning provider's own memory reaches.
 
+`last_delivered_message_id` (migration [`049`][migration049]) is the one column a binding write must
+not touch: it records what the group actually processed, which only turn completion knows.
+`ProviderSessionDirectory.upsert` always writes null there and the row keeps whatever mark it had;
+`recordLedgerDelivery` is the single path that moves it.
+
 ### Invariants
 
 The decider ([`decider.ts`][decider], `thread.provider.switch`) rejects a switch when the thread has
@@ -103,16 +108,36 @@ where `ensureSessionForThread` resolves one of three continuities:
 | `resumed`  | Started from this group's own ledger cursor  | only what it missed    |
 | `fresh`    | No provider-side memory of the thread        | the whole conversation |
 
-[`providerHandoffBrief.ts`][brief] renders it: pure, deterministic, no queries and no model call, so
-an interrupted or retried turn rebuilds the same brief. `selectHandoffMessages` cuts a resumed
-provider's brief at the last message authored by its own group, and replays everything when the
-thread has no message it can claim — seeing a turn twice is recoverable, never seeing it is not. The
-last six turns stay in full; everything older collapses to one-line bullets so a long thread keeps a
-sketch of how it got here instead of a hole. The brief is wrapped in `<handoff_context>` and the
-user's actual request in `<latest_user_message>` so the incoming model can tell background from the
-thing it has to answer. A `provider.handoff` activity records `resumed` vs `briefed` along with the
-brief size and whether it had to be trimmed. Both activities carry `turnId: null` so they render as
-transcript boundaries rather than folding into a turn's work log.
+[`providerHandoffContext.ts`][briefcontext] folds the read model into the shape the brief renders —
+per-turn work logs from `tool.completed` / `tool.denied` / `runtime.error` activities, thread-level
+notices (a compaction, a denied approval, a failed revert), attachment names, per-file churn from
+the thread's ready checkpoints, and the standing proposed plan. [`providerHandoffBrief.ts`][brief]
+renders it: pure, deterministic, no queries and no model call, so an interrupted or retried turn
+rebuilds the same brief.
+
+`selectHandoffMessages` cuts a resumed provider's brief at the later of two marks — the last message
+authored by its own continuation group, and the group's ledger delivery mark — and replays
+everything when the thread has no message it can claim. Seeing a turn twice is recoverable, never
+seeing it is not, so the delivery mark is written only once a turn reaches a non-failed terminal
+state, which is what proves the provider ingested its input. That is what stops an interrupted turn
+(received, never answered, so invisible to authorship) from being handed back a second time.
+
+The full-fidelity window sizes itself to the budget rather than sitting at a fixed count: between
+six and twenty-four recent turns go over verbatim, everything older collapses to one-line bullets so
+a long thread keeps a sketch of how it got here instead of a hole, and when reconstructing cold the
+original request and the plan of record are pinned out of that sequence entirely — compression works
+oldest-first, and without pinning the first thing a long thread loses is the thing it was asked to
+do. Bodies that have to be cut keep their opening _and_ their conclusion, land on line boundaries,
+and close any code fence the cut left open. The budget is the smallest of the wire cap, the
+adapter's `maxHandoffBriefChars` capability, and what the envelope leaves over.
+
+The brief is wrapped in `<handoff_context>` and the user's actual request in `<latest_user_message>`
+so the incoming model can tell background from the thing it has to answer. A `provider.handoff`
+activity records `resumed` vs `briefed`, the brief size, and how the conversation was carried —
+messages sent in full, summarized, and left out — which the transcript boundary shows so "trimmed"
+does not leave the user guessing whether the new provider lost formatting or half the thread. Both
+activities carry `turnId: null` so they render as transcript boundaries rather than folding into a
+turn's work log.
 
 ## Server-side workers
 
@@ -151,8 +176,10 @@ when a request opens (approval) or user input is requested, via
 [ledger]: ../../apps/server/src/persistence/ProviderSessionLedger.ts
 [directory]: ../../apps/server/src/provider/Layers/ProviderSessionDirectory.ts
 [migration]: ../../apps/server/src/persistence/Migrations/041_ProviderSessionLedger.ts
+[migration049]: ../../apps/server/src/persistence/Migrations/049_ProviderSessionLedgerDelivery.ts
 [decider]: ../../apps/server/src/orchestration/decider.ts
 [brief]: ../../apps/server/src/orchestration/providerHandoffBrief.ts
+[briefcontext]: ../../apps/server/src/orchestration/providerHandoffContext.ts
 [instances]: ../../apps/server/src/provider/Services/ProviderInstanceRegistry.ts
 [registry]: ../../apps/server/src/provider/Services/ProviderAdapterRegistry.ts
 [service]: ../../apps/server/src/provider/Layers/ProviderService.ts

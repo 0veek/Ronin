@@ -39,6 +39,17 @@ export interface ProviderAdapterCapabilities {
    * the picker and nowhere else. Omitted means the session can adopt them.
    */
   readonly sessionModelOptionsSwitch?: ProviderSessionModelSwitchMode;
+  /**
+   * Largest handoff brief this provider can usefully absorb in one turn, in
+   * characters.
+   *
+   * The wire contract caps a turn's input for every provider alike, which is
+   * the wrong ceiling for a brief: a model with a small context window chokes
+   * long before that cap, and one with a large window is short-changed by it.
+   * Omitted means the wire cap is the only limit, which is what a provider that
+   * has no opinion should say.
+   */
+  readonly maxHandoffBriefChars?: number;
 }
 
 export interface ProviderThreadTurnSnapshot {

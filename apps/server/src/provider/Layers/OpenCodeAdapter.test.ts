@@ -240,6 +240,7 @@ const providerSessionDirectoryTestLayer = Layer.succeed(ProviderSessionDirectory
   listBindings: () => Effect.succeed([]),
   getLedgerEntry: () => Effect.succeed(Option.none()),
   listLedgerEntries: () => Effect.succeed([]),
+  recordLedgerDelivery: () => Effect.void,
   clearLedger: () => Effect.void,
 });
 

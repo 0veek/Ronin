@@ -932,6 +932,15 @@ export const ProviderHandoffActivityPayload = Schema.Struct({
   // dropped. Surfaced so the user knows the conversation was carried in part
   // rather than whole.
   briefCompressed: Schema.Boolean,
+  // How the conversation was actually carried: turns handed over verbatim,
+  // turns reduced to a one-line summary, and turns that did not fit at all.
+  // "Trimmed" on its own does not say whether the provider lost a little
+  // formatting or half the thread, and that is the difference between a
+  // handoff worth trusting and one worth redoing. Optional so activities
+  // written by servers that predate the breakdown still decode.
+  briefFullMessages: Schema.optional(NonNegativeInt),
+  briefSummarizedMessages: Schema.optional(NonNegativeInt),
+  briefOmittedMessages: Schema.optional(NonNegativeInt),
 });
 export type ProviderHandoffActivityPayload = typeof ProviderHandoffActivityPayload.Type;
 

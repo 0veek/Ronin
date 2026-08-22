@@ -12,6 +12,7 @@
  * @module ProviderService
  */
 import type {
+  MessageId,
   ProviderInterruptTurnInput,
   ProviderInstanceId,
   ProviderRespondToRequestInput,
@@ -46,6 +47,11 @@ export interface ProviderContinuationState {
   readonly providerInstanceId: ProviderInstanceId;
   readonly resumeCursor: unknown | null;
   readonly runtimePayload: unknown | null;
+  /**
+   * Last message this group is known to have processed. The handoff brief uses
+   * it to avoid replaying a turn the provider received but never answered.
+   */
+  readonly lastDeliveredMessageId: MessageId | null;
   readonly firstSeenAt: string;
   readonly lastSeenAt: string;
 }
@@ -132,6 +138,21 @@ export interface ProviderServiceShape {
    * than resuming native state. Distinct from `getBinding`, which only ever
    * describes the provider currently bound to the thread.
    */
+  /**
+   * Record that a continuation group has processed everything up to a message.
+   *
+   * Called once a turn reaches a terminal state that implies the provider
+   * ingested its input — completion or interruption, never an error, because an
+   * errored start may mean the provider never saw the turn at all. Marking a
+   * message the provider did not see would silently drop it from the next
+   * handoff brief, which is the one direction that cannot be recovered from.
+   */
+  readonly recordDeliveredMessage: (input: {
+    readonly threadId: ThreadId;
+    readonly instanceId: ProviderInstanceId;
+    readonly messageId: MessageId;
+  }) => Effect.Effect<void, ProviderServiceError>;
+
   readonly getContinuationState: (input: {
     readonly threadId: ThreadId;
     readonly instanceId: ProviderInstanceId;

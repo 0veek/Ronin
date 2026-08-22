@@ -1380,6 +1380,52 @@ const make = Effect.gen(function* () {
       yield* clearBufferedProposedPlan(input.planId);
     });
 
+  /**
+   * Mark the turn's input as processed by the provider that ran it.
+   *
+   * A resumed session works out what it has already seen from what it wrote,
+   * which misses a turn it received but never answered — the provider holds
+   * that message in its native transcript, and the next handoff brief would
+   * hand it back a second time. Recorded here rather than at send time because
+   * only a turn that reached a terminal state proves the provider ingested its
+   * input; a turn that failed on the way in may never have seen it at all, and
+   * marking that would drop the message from the brief for good.
+   *
+   * Best effort throughout: the mark only ever sharpens the next brief, so
+   * failing to write it costs a duplicated message, never a lost one.
+   */
+  const recordTurnInputDelivered = Effect.fnUntraced(function* (input: {
+    readonly event: Extract<ProviderRuntimeEvent, { type: "turn.completed" }>;
+    readonly threadId: ThreadId;
+    readonly turnId: TurnId;
+  }) {
+    if (normalizeRuntimeTurnState(input.event.payload.state) === "failed") {
+      return;
+    }
+    const instanceId = input.event.providerInstanceId;
+    if (instanceId === undefined) {
+      return;
+    }
+    const turn = yield* projectionTurnRepository
+      .getByTurnId({ threadId: input.threadId, turnId: input.turnId })
+      .pipe(Effect.orElseSucceed(() => Option.none<{ pendingMessageId: MessageId | null }>()));
+    const messageId = Option.getOrUndefined(turn)?.pendingMessageId;
+    if (!messageId) {
+      return;
+    }
+    yield* providerService
+      .recordDeliveredMessage({ threadId: input.threadId, instanceId, messageId })
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider runtime ingestion failed to record delivered message", {
+            threadId: input.threadId,
+            turnId: input.turnId,
+            cause: Cause.pretty(cause),
+          }),
+        ),
+      );
+  });
+
   const clearTurnStateForSession = (threadId: ThreadId) =>
     Effect.gen(function* () {
       const prefix = `${threadId}:`;
@@ -1868,6 +1914,7 @@ const make = Effect.gen(function* () {
             turnId,
             updatedAt: now,
           });
+          yield* recordTurnInputDelivered({ event, threadId: thread.id, turnId });
         }
       }
 

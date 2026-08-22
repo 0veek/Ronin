@@ -119,6 +119,7 @@ const startupDependencies = Layer.mergeAll(
     respondToRequest: () => Effect.die("unused"),
     stopAgent: () => Effect.die("unused"),
     getContinuationState: () => Effect.die("unused"),
+    recordDeliveredMessage: () => Effect.die("unused"),
     clearContinuationLedger: () => Effect.die("unused"),
     respondToUserInput: () => Effect.die("unused"),
     stopSession: () => Effect.die("unused"),

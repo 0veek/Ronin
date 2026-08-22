@@ -9,7 +9,13 @@ import * as Struct from "effect/Struct";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 
-import { IsoDateTime, ProviderInstanceId, RuntimeMode, ThreadId } from "@t3tools/contracts";
+import {
+  IsoDateTime,
+  MessageId,
+  ProviderInstanceId,
+  RuntimeMode,
+  ThreadId,
+} from "@t3tools/contracts";
 
 import {
   PersistenceDecodeError,
@@ -46,6 +52,14 @@ export const ProviderSessionLedgerEntry = Schema.Struct({
   runtimeMode: RuntimeMode,
   resumeCursor: Schema.NullOr(Schema.Unknown),
   runtimePayload: Schema.NullOr(Schema.Unknown),
+  /**
+   * Last message this group is known to have processed, so a resumed session is
+   * not replayed a turn it received but never answered. Written only once a
+   * turn reached a terminal state that implies the provider ingested its input.
+   */
+  lastDeliveredMessageId: Schema.NullOr(MessageId).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   firstSeenAt: IsoDateTime,
   lastSeenAt: IsoDateTime,
 });
@@ -59,6 +73,14 @@ export type GetProviderSessionLedgerEntryInput = typeof GetProviderSessionLedger
 
 export const ListProviderSessionLedgerInput = Schema.Struct({ threadId: ThreadId });
 export type ListProviderSessionLedgerInput = typeof ListProviderSessionLedgerInput.Type;
+
+export const MarkProviderSessionLedgerDeliveredInput = Schema.Struct({
+  threadId: ThreadId,
+  continuationKey: Schema.String,
+  messageId: MessageId,
+});
+export type MarkProviderSessionLedgerDeliveredInput =
+  typeof MarkProviderSessionLedgerDeliveredInput.Type;
 
 export const DeleteProviderSessionLedgerInput = Schema.Struct({ threadId: ThreadId });
 export type DeleteProviderSessionLedgerInput = typeof DeleteProviderSessionLedgerInput.Type;
@@ -92,6 +114,17 @@ export class ProviderSessionLedgerRepository extends Context.Service<
       ProviderSessionLedgerRepositoryError
     >;
 
+    /**
+     * Move one group's delivery mark, touching nothing else on the row.
+     *
+     * A no-op when the group has no row: a group with no ledger row has no
+     * cursor to resume from either, so it will be briefed from scratch and the
+     * mark would have nothing to qualify.
+     */
+    readonly markDelivered: (
+      input: MarkProviderSessionLedgerDeliveredInput,
+    ) => Effect.Effect<void, ProviderSessionLedgerRepositoryError>;
+
     readonly deleteByThreadId: (
       input: DeleteProviderSessionLedgerInput,
     ) => Effect.Effect<void, ProviderSessionLedgerRepositoryError>;
@@ -114,6 +147,7 @@ const ProviderSessionLedgerRawDbRowSchema = Schema.Struct({
   runtimeMode: Schema.Unknown,
   resumeCursor: Schema.Unknown,
   runtimePayload: Schema.Unknown,
+  lastDeliveredMessageId: Schema.Unknown,
   firstSeenAt: Schema.Unknown,
   lastSeenAt: Schema.Unknown,
 });
@@ -151,6 +185,7 @@ export const make = Effect.gen(function* () {
           runtime_mode,
           resume_cursor_json,
           runtime_payload_json,
+          last_delivered_message_id,
           first_seen_at,
           last_seen_at
         )
@@ -163,6 +198,7 @@ export const make = Effect.gen(function* () {
           ${entry.runtimeMode},
           ${entry.resumeCursor},
           ${entry.runtimePayload},
+          ${entry.lastDeliveredMessageId},
           ${entry.firstSeenAt},
           ${entry.lastSeenAt}
         )
@@ -174,6 +210,10 @@ export const make = Effect.gen(function* () {
           runtime_mode = excluded.runtime_mode,
           resume_cursor_json = excluded.resume_cursor_json,
           runtime_payload_json = excluded.runtime_payload_json,
+          last_delivered_message_id = COALESCE(
+            excluded.last_delivered_message_id,
+            provider_session_ledger.last_delivered_message_id
+          ),
           last_seen_at = excluded.last_seen_at
       `,
   });
@@ -192,6 +232,7 @@ export const make = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           resume_cursor_json AS "resumeCursor",
           runtime_payload_json AS "runtimePayload",
+          last_delivered_message_id AS "lastDeliveredMessageId",
           first_seen_at AS "firstSeenAt",
           last_seen_at AS "lastSeenAt"
         FROM provider_session_ledger
@@ -213,11 +254,22 @@ export const make = Effect.gen(function* () {
           runtime_mode AS "runtimeMode",
           resume_cursor_json AS "resumeCursor",
           runtime_payload_json AS "runtimePayload",
+          last_delivered_message_id AS "lastDeliveredMessageId",
           first_seen_at AS "firstSeenAt",
           last_seen_at AS "lastSeenAt"
         FROM provider_session_ledger
         WHERE thread_id = ${threadId}
         ORDER BY last_seen_at DESC, continuation_key ASC
+      `,
+  });
+
+  const markLedgerRowDelivered = SqlSchema.void({
+    Request: MarkProviderSessionLedgerDeliveredInput,
+    execute: ({ threadId, continuationKey, messageId }) =>
+      sql`
+        UPDATE provider_session_ledger
+        SET last_delivered_message_id = ${messageId}
+        WHERE thread_id = ${threadId} AND continuation_key = ${continuationKey}
       `,
   });
 
@@ -304,6 +356,17 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const markDelivered: ProviderSessionLedgerRepository["Service"]["markDelivered"] = (input) =>
+    markLedgerRowDelivered(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProviderSessionLedgerRepository.markDelivered:query",
+          "ProviderSessionLedgerRepository.markDelivered:encodeRequest",
+          { threadId: input.threadId },
+        ),
+      ),
+    );
+
   const deleteByThreadId: ProviderSessionLedgerRepository["Service"]["deleteByThreadId"] = (
     input,
   ) =>
@@ -322,6 +385,7 @@ export const make = Effect.gen(function* () {
     upsert,
     get,
     listByThreadId,
+    markDelivered,
     deleteByThreadId,
   } satisfies ProviderSessionLedgerRepository["Service"];
 });

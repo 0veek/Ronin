@@ -186,6 +186,7 @@ describe("ProviderSessionReaper", () => {
         });
       },
       getContinuationState: () => unsupported(),
+      recordDeliveredMessage: () => Effect.void,
       clearContinuationLedger: () => unsupported(),
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.empty,

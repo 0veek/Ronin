@@ -1,4 +1,5 @@
 import type {
+  MessageId,
   ProviderInstanceId,
   ProviderDriverKind,
   ProviderSessionRuntimeStatus,
@@ -54,6 +55,7 @@ export interface ProviderSessionLedgerEntry {
   readonly runtimeMode: RuntimeMode;
   readonly resumeCursor: unknown | null;
   readonly runtimePayload: unknown | null;
+  readonly lastDeliveredMessageId: MessageId | null;
   readonly firstSeenAt: string;
   readonly lastSeenAt: string;
 }
@@ -100,6 +102,18 @@ export interface ProviderSessionDirectoryShape {
     readonly threadId: ThreadId;
     readonly continuationKey: string;
   }) => Effect.Effect<Option.Option<ProviderSessionLedgerEntry>, ProviderSessionDirectoryReadError>;
+
+  /**
+   * Move one group's delivery mark — the last message it is known to have
+   * processed. Written on its own rather than as part of a binding upsert: the
+   * runtime row describes who owns the thread now, and recording what a group
+   * finished must not disturb that.
+   */
+  readonly recordLedgerDelivery: (input: {
+    readonly threadId: ThreadId;
+    readonly continuationKey: string;
+    readonly messageId: MessageId;
+  }) => Effect.Effect<void, ProviderSessionDirectoryWriteError>;
 
   /** Every continuation group that has held a session on the thread. */
   readonly listLedgerEntries: (

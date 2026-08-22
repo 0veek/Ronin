@@ -1,4 +1,4 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { MessageId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,6 +26,7 @@ function entry(overrides: Partial<ProviderSessionLedgerEntry> = {}): ProviderSes
     runtimeMode: "full-access",
     resumeCursor: { sessionId: "codex-session-1" },
     runtimePayload: null,
+    lastDeliveredMessageId: null,
     firstSeenAt: "2026-03-01T00:00:00.000Z",
     lastSeenAt: "2026-03-01T00:00:00.000Z",
     ...overrides,
@@ -63,6 +64,42 @@ ledgerLayer("ProviderSessionLedgerRepository", (it) => {
       assert.deepStrictEqual(row?.runtimePayload, { home: "/home/dev/.codex" });
       assert.strictEqual(row?.firstSeenAt, "2026-03-01T00:00:00.000Z");
       assert.strictEqual(row?.lastSeenAt, "2026-03-05T00:00:00.000Z");
+    }),
+  );
+
+  it.effect("keeps the delivery mark when a later binding write has no opinion on it", () =>
+    Effect.gen(function* () {
+      const ledger = yield* ProviderSessionLedgerRepository;
+
+      yield* ledger.upsert(entry());
+      yield* ledger.markDelivered({
+        threadId: THREAD,
+        continuationKey: CODEX_KEY,
+        messageId: MessageId.make("message-7"),
+      });
+      // Binding writes happen on every session touch and know nothing about
+      // what the provider has processed; they must not reset the mark.
+      yield* ledger.upsert(entry({ lastSeenAt: "2026-03-06T00:00:00.000Z" }));
+
+      const stored = yield* ledger.get({ threadId: THREAD, continuationKey: CODEX_KEY });
+      assert.strictEqual(Option.getOrNull(stored)?.lastDeliveredMessageId, "message-7");
+    }),
+  );
+
+  it.effect("ignores a delivery mark for a group that has no row", () =>
+    Effect.gen(function* () {
+      const ledger = yield* ProviderSessionLedgerRepository;
+
+      // A group with no row has no cursor to resume from either, so it will be
+      // briefed from scratch and the mark would have nothing to qualify.
+      yield* ledger.markDelivered({
+        threadId: THREAD,
+        continuationKey: CLAUDE_KEY,
+        messageId: MessageId.make("message-1"),
+      });
+
+      const stored = yield* ledger.get({ threadId: THREAD, continuationKey: CLAUDE_KEY });
+      assert.isTrue(Option.isNone(stored));
     }),
   );
 

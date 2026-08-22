@@ -2329,6 +2329,28 @@ function providerBoundaryText(boundary: ProviderBoundaryWorkLogEntry): string {
 }
 
 /**
+ * What the handover actually carried, when the activity recorded the
+ * breakdown. "Trimmed" on its own leaves the user guessing how much of the
+ * thread the new provider is missing.
+ */
+function providerBoundaryComposition(boundary: ProviderBoundaryWorkLogEntry): string | null {
+  if (boundary.event !== "handoff") {
+    return null;
+  }
+  const parts: Array<string> = [];
+  if (boundary.briefFullMessages) {
+    parts.push(`${boundary.briefFullMessages} in full`);
+  }
+  if (boundary.briefSummarizedMessages) {
+    parts.push(`${boundary.briefSummarizedMessages} summarized`);
+  }
+  if (boundary.briefOmittedMessages) {
+    parts.push(`${boundary.briefOmittedMessages} left out`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+/**
  * The transcript boundary a provider handover leaves behind. Rendered as a
  * rule rather than a work row: everything below it was answered by a different
  * provider, which is context for reading the thread, not a step in it.
@@ -2338,6 +2360,7 @@ const ProviderBoundaryRow = memo(function ProviderBoundaryRow(props: {
 }) {
   const { boundary } = props;
   const isSwitch = boundary.event === "switched";
+  const composition = providerBoundaryComposition(boundary);
   return (
     <div className="flex select-none items-center gap-2 py-1">
       <span className="h-px flex-1 bg-border/60" />
@@ -2352,6 +2375,7 @@ const ProviderBoundaryRow = memo(function ProviderBoundaryRow(props: {
         {isSwitch && boundary.model ? (
           <span className="font-mono text-2xs opacity-70">{boundary.model}</span>
         ) : null}
+        {composition ? <span className="font-mono text-2xs opacity-70">{composition}</span> : null}
       </span>
       <span className="h-px flex-1 bg-border/60" />
     </div>

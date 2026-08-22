@@ -155,6 +155,16 @@ export type ProviderBoundaryWorkLogEntry =
       briefChars: number;
       /** True when the brief had to be trimmed to fit the provider's input budget. */
       briefCompressed: boolean;
+      /**
+       * How the conversation was carried: verbatim, reduced to a one-line
+       * summary, or left out. "Trimmed" alone does not tell the user whether
+       * the new provider lost a little formatting or half the thread, and that
+       * is the difference between a handoff to trust and one to redo. Null
+       * when the activity predates the breakdown.
+       */
+      briefFullMessages: number | null;
+      briefSummarizedMessages: number | null;
+      briefOmittedMessages: number | null;
     };
 
 interface DerivedWorkLogEntry extends WorkLogEntry {
@@ -931,12 +941,17 @@ function extractProviderBoundary(
       return null;
     }
     const handoff = payload.handoff === "resumed" ? "resumed" : "briefed";
+    const count = (value: unknown): number | null =>
+      typeof value === "number" && Number.isFinite(value) ? Math.max(0, value) : null;
     return {
       event: "handoff",
       toLabel,
       handoff,
       briefChars: typeof payload.briefChars === "number" ? Math.max(0, payload.briefChars) : 0,
       briefCompressed: payload.briefCompressed === true,
+      briefFullMessages: count(payload.briefFullMessages),
+      briefSummarizedMessages: count(payload.briefSummarizedMessages),
+      briefOmittedMessages: count(payload.briefOmittedMessages),
     };
   }
   return null;

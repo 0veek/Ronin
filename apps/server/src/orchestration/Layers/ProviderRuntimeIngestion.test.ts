@@ -126,6 +126,7 @@ function createProviderServiceHarness() {
       });
     },
     getContinuationState: () => unsupported(),
+    recordDeliveredMessage: () => Effect.void,
     clearContinuationLedger: () => unsupported(),
     rollbackConversation: () => unsupported(),
     get streamEvents() {

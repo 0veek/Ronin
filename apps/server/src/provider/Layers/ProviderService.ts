@@ -1101,10 +1101,22 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             providerInstanceId: value.providerInstanceId,
             resumeCursor: value.resumeCursor,
             runtimePayload: value.runtimePayload,
+            lastDeliveredMessageId: value.lastDeliveredMessageId,
             firstSeenAt: value.firstSeenAt,
             lastSeenAt: value.lastSeenAt,
           }),
     );
+  });
+
+  const recordDeliveredMessage: ProviderServiceMethod<"recordDeliveredMessage"> = Effect.fn(
+    "recordDeliveredMessage",
+  )(function* (input) {
+    const info = yield* registry.getInstanceInfo(input.instanceId);
+    yield* directory.recordLedgerDelivery({
+      threadId: input.threadId,
+      continuationKey: info.continuationIdentity.continuationKey,
+      messageId: input.messageId,
+    });
   });
 
   const clearContinuationLedger: ProviderServiceMethod<"clearContinuationLedger"> = (input) =>
@@ -1214,6 +1226,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     getCapabilities,
     getInstanceInfo,
     getContinuationState,
+    recordDeliveredMessage,
     clearContinuationLedger,
     rollbackConversation,
     // Each access creates a fresh PubSub subscription so that multiple

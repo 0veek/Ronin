@@ -130,6 +130,7 @@ function createProviderServiceHarness(
         },
       }),
     getContinuationState: () => unsupported(),
+    recordDeliveredMessage: () => Effect.void,
     clearContinuationLedger: () => unsupported(),
     rollbackConversation,
     get streamEvents() {

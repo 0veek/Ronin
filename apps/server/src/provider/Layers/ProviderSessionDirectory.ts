@@ -101,6 +101,7 @@ function toLedgerEntry(
           runtimeMode: row.runtimeMode,
           resumeCursor: row.resumeCursor,
           runtimePayload: row.runtimePayload,
+          lastDeliveredMessageId: row.lastDeliveredMessageId,
           firstSeenAt: row.firstSeenAt,
           lastSeenAt: row.lastSeenAt,
         }) satisfies ProviderSessionLedgerEntry,
@@ -193,6 +194,10 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
           runtimeMode,
           resumeCursor,
           runtimePayload,
+          // Null leaves whatever mark is already on file: only
+          // `recordLedgerDelivery` knows what this group has actually
+          // processed, and a binding write must not reset it.
+          lastDeliveredMessageId: null,
           // Ignored on conflict — the stored value is when this group first
           // touched the thread, which no later write should move.
           firstSeenAt: now,
@@ -201,6 +206,13 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
         .pipe(Effect.mapError(toPersistenceError("ProviderSessionDirectory.upsert:ledgerUpsert")));
     }
   });
+
+  const recordLedgerDelivery: ProviderSessionDirectoryShape["recordLedgerDelivery"] = (input) =>
+    ledgerRepository
+      .markDelivered(input)
+      .pipe(
+        Effect.mapError(toPersistenceError("ProviderSessionDirectory.recordLedgerDelivery:mark")),
+      );
 
   const getLedgerEntry: ProviderSessionDirectoryShape["getLedgerEntry"] = (input) =>
     ledgerRepository.get(input).pipe(
@@ -273,6 +285,7 @@ const makeProviderSessionDirectory = Effect.gen(function* () {
     listBindings,
     getLedgerEntry,
     listLedgerEntries,
+    recordLedgerDelivery,
     clearLedger,
   } satisfies ProviderSessionDirectoryShape;
 });

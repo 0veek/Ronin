@@ -38,12 +38,17 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
 import {
+  handoffMessageHasContent,
   handoffWrapOverhead,
   renderProviderHandoffBrief,
   selectHandoffMessages,
   wrapProviderHandoffInput,
-  type ProviderHandoffBriefMessage,
 } from "../providerHandoffBrief.ts";
+import {
+  buildProviderHandoffChangedFiles,
+  buildProviderHandoffMessages,
+  buildProviderHandoffPlan,
+} from "../providerHandoffContext.ts";
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ServerConfig } from "../../config.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
@@ -112,7 +117,16 @@ type ProviderSessionContinuity =
   /** The session was already running and has followed the whole conversation. */
   | { readonly kind: "live" }
   /** Started or restarted from a cursor belonging to this continuation group. */
-  | { readonly kind: "resumed"; readonly continuationKey: string }
+  | {
+      readonly kind: "resumed";
+      readonly continuationKey: string;
+      /**
+       * Last message the group is recorded as having processed, when the ledger
+       * has one. Absent for a resume off a live cursor, where the session never
+       * stopped following the thread in the first place.
+       */
+      readonly deliveredThroughMessageId?: MessageId | undefined;
+    }
   /** Started with no provider-side memory of this thread. */
   | { readonly kind: "fresh" };
 
@@ -156,6 +170,14 @@ const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
 const SKILLS_CATALOG_CACHE_MAX = 64;
 const SKILLS_CATALOG_CACHE_TTL = Duration.seconds(10);
+/**
+ * Continuation keys are stable for the life of an instance's configuration, and
+ * a brief resolves one per distinct author in the thread. Caching them keeps a
+ * handoff on a long, multi-provider thread from re-reading the registry once
+ * per author on every turn.
+ */
+const CONTINUATION_KEY_CACHE_MAX = 64;
+const CONTINUATION_KEY_CACHE_TTL = Duration.seconds(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const MAX_REGENERATION_ATTACHMENTS = 4;
 const MAX_THREAD_TITLE_CONTEXT_CHARS = 8_000;
@@ -396,6 +418,18 @@ const make = Effect.gen(function* () {
       ).pipe(Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => [])),
   });
 
+  const continuationKeyCache = yield* Cache.make<ProviderInstanceId, Option.Option<string>>({
+    capacity: CONTINUATION_KEY_CACHE_MAX,
+    timeToLive: CONTINUATION_KEY_CACHE_TTL,
+    lookup: (instanceId) =>
+      providerService.getInstanceInfo(instanceId).pipe(
+        Effect.map((info) => Option.some(info.continuationIdentity.continuationKey)),
+        // An instance that is no longer configured has no key. Its messages
+        // then stay in the brief, which is the safe direction.
+        Effect.orElseSucceed(() => Option.none<string>()),
+      ),
+  });
+
   const hasHandledTurnStartRecently = (key: string) =>
     Cache.getOption(handledTurnStartKeys, key).pipe(
       Effect.flatMap((cached) =>
@@ -563,16 +597,10 @@ const make = Effect.gen(function* () {
     if (input.continuity.kind === "live" || input.maxChars <= 0) {
       return undefined;
     }
-    const history: ReadonlyArray<ProviderHandoffBriefMessage> = input.thread.messages
-      .filter((message) => message.id !== input.excludeMessageId && message.text.trim().length > 0)
-      .map((message) => ({
-        role: message.role,
-        text: message.text,
-        ...(message.providerInstanceId !== undefined
-          ? { providerInstanceId: message.providerInstanceId }
-          : {}),
-        ...(message.providerName !== undefined ? { providerName: message.providerName } : {}),
-      }));
+    const history = buildProviderHandoffMessages({
+      thread: input.thread,
+      ...(input.excludeMessageId !== undefined ? { excludeMessageId: input.excludeMessageId } : {}),
+    }).filter(handoffMessageHasContent);
     if (history.length === 0) {
       return undefined;
     }
@@ -586,17 +614,9 @@ const make = Effect.gen(function* () {
         message.providerInstanceId !== undefined ? [message.providerInstanceId] : [],
       ),
     )) {
-      const info = yield* providerService.getInstanceInfo(instanceId).pipe(
-        Effect.map(Option.some),
-        Effect.orElseSucceed(() =>
-          Option.none<{ continuationIdentity: { continuationKey: string } }>(),
-        ),
-      );
-      if (Option.isSome(info)) {
-        continuationKeyByInstanceId.set(
-          instanceId,
-          info.value.continuationIdentity.continuationKey,
-        );
+      const continuationKey = yield* Cache.get(continuationKeyCache, instanceId);
+      if (Option.isSome(continuationKey)) {
+        continuationKeyByInstanceId.set(instanceId, continuationKey.value);
       }
     }
 
@@ -604,25 +624,16 @@ const make = Effect.gen(function* () {
       messages: history,
       continuationKeyByInstanceId,
       ...(input.continuity.kind === "resumed"
-        ? { resumedContinuationKey: input.continuity.continuationKey }
+        ? {
+            resumedContinuationKey: input.continuity.continuationKey,
+            ...(input.continuity.deliveredThroughMessageId !== undefined
+              ? { deliveredThroughMessageId: input.continuity.deliveredThroughMessageId }
+              : {}),
+          }
         : {}),
     });
     if (selected.length === 0) {
       return undefined;
-    }
-
-    // Cumulative line counts per file across every checkpoint in the thread, so
-    // the incoming provider can see where the work has been concentrated.
-    const changedFiles = new Map<string, { path: string; additions: number; deletions: number }>();
-    for (const checkpoint of input.thread.checkpoints) {
-      for (const file of checkpoint.files) {
-        const existing = changedFiles.get(file.path);
-        changedFiles.set(file.path, {
-          path: file.path,
-          additions: (existing?.additions ?? 0) + file.additions,
-          deletions: (existing?.deletions ?? 0) + file.deletions,
-        });
-      }
     }
 
     const project = yield* resolveProject(input.thread.projectId);
@@ -638,7 +649,8 @@ const make = Effect.gen(function* () {
           }) ?? null,
       },
       messages: selected,
-      changedFiles: [...changedFiles.values()],
+      changedFiles: buildProviderHandoffChangedFiles(input.thread),
+      plan: buildProviderHandoffPlan(input.thread),
       fromProviderName:
         selected.findLast(
           (message) =>
@@ -981,6 +993,12 @@ const make = Effect.gen(function* () {
             ? ({
                 kind: "resumed",
                 continuationKey: desiredInfo.continuationIdentity.continuationKey,
+                ...(Option.isSome(ledgerContinuation) &&
+                ledgerContinuation.value.lastDeliveredMessageId !== null
+                  ? {
+                      deliveredThroughMessageId: ledgerContinuation.value.lastDeliveredMessageId,
+                    }
+                  : {}),
               } as const)
             : ({ kind: "fresh" } as const),
       };
@@ -1004,6 +1022,9 @@ const make = Effect.gen(function* () {
         ? ({
             kind: "resumed",
             continuationKey: coldStartContinuation.value.continuationKey,
+            ...(coldStartContinuation.value.lastDeliveredMessageId !== null
+              ? { deliveredThroughMessageId: coldStartContinuation.value.lastDeliveredMessageId }
+              : {}),
           } as const)
         : ({ kind: "fresh" } as const),
     };
@@ -1081,6 +1102,10 @@ const make = Effect.gen(function* () {
     // reads the conversation first, then the request. Built here rather than at
     // switch time so an interrupted or retried turn reconstructs the same brief
     // from the same durable history.
+    const briefCeiling = yield* providerService.getCapabilities(ensured.boundInstanceId).pipe(
+      Effect.map((capabilities) => capabilities.maxHandoffBriefChars),
+      Effect.orElseSucceed(() => undefined),
+    );
     const handoffBrief = yield* buildProviderHandoffBrief({
       thread,
       continuity: ensured.continuity,
@@ -1088,7 +1113,7 @@ const make = Effect.gen(function* () {
       ...(input.messageId !== undefined ? { excludeMessageId: input.messageId } : {}),
       maxChars: Math.max(
         0,
-        PROVIDER_SEND_TURN_MAX_INPUT_CHARS -
+        Math.min(PROVIDER_SEND_TURN_MAX_INPUT_CHARS, briefCeiling ?? Number.POSITIVE_INFINITY) -
           handoffWrapOverhead(messageWithSkills) -
           debugPromptChars -
           PROVIDER_HANDOFF_BRIEF_RESERVED_CHARS,
@@ -1101,7 +1126,11 @@ const make = Effect.gen(function* () {
         threadId: input.threadId,
         handoff,
         briefChars: handoffBrief.chars,
+        briefEstimatedTokens: handoffBrief.estimatedTokens,
         briefMessages: handoffBrief.messageCount,
+        briefFullMessages: handoffBrief.fullMessageCount,
+        briefSummarizedMessages: handoffBrief.summarizedMessageCount,
+        briefOmittedMessages: handoffBrief.omittedMessageCount,
         briefCompressed: handoffBrief.compressed,
       });
       const activityPayload: ProviderHandoffActivityPayload = {
@@ -1110,6 +1139,9 @@ const make = Effect.gen(function* () {
         handoff,
         briefChars: handoffBrief.chars,
         briefCompressed: handoffBrief.compressed,
+        briefFullMessages: handoffBrief.fullMessageCount,
+        briefSummarizedMessages: handoffBrief.summarizedMessageCount,
+        briefOmittedMessages: handoffBrief.omittedMessageCount,
       };
       yield* appendThreadActivity({
         threadId: input.threadId,

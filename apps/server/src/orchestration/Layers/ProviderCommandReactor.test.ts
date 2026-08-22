@@ -340,6 +340,7 @@ describe("ProviderCommandReactor", () => {
     const seedContinuation = (seed: {
       readonly instanceId: ProviderInstanceId;
       readonly resumeCursor: unknown;
+      readonly lastDeliveredMessageId?: MessageId;
     }) => {
       const continuationKey = continuationKeyFor(seed.instanceId);
       continuationLedger.set(continuationKey, {
@@ -347,6 +348,7 @@ describe("ProviderCommandReactor", () => {
         providerInstanceId: seed.instanceId,
         resumeCursor: seed.resumeCursor,
         runtimePayload: null,
+        lastDeliveredMessageId: seed.lastDeliveredMessageId ?? null,
         firstSeenAt: now,
         lastSeenAt: now,
       });
@@ -392,6 +394,7 @@ describe("ProviderCommandReactor", () => {
         });
       },
       getContinuationState,
+      recordDeliveredMessage: () => Effect.void,
       clearContinuationLedger: () => unsupported(),
       rollbackConversation: () => unsupported(),
       get streamEvents() {
@@ -2652,6 +2655,67 @@ describe("ProviderCommandReactor", () => {
       thread?.activities.find((activity) => activity.kind === "provider.handoff"),
     ).toMatchObject({
       payload: { handoff: "briefed", briefCompressed: false },
+    });
+  });
+
+  it("reports how much of the conversation the brief carried", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-brief-counts-1"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-brief-counts-1"),
+          role: "user",
+          text: "the original ask",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-brief-counts-2"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-brief-counts-2"),
+          role: "user",
+          text: "carry on",
+          attachments: [],
+        },
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-opus-4-6",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 2);
+    await harness.drain();
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    const handoff = thread?.activities.find((entry) => entry.kind === "provider.handoff");
+    // Everything fitted, so the whole conversation went over verbatim — the
+    // user can tell that from the row without opening anything.
+    expect(handoff).toMatchObject({
+      payload: {
+        handoff: "briefed",
+        briefCompressed: false,
+        briefFullMessages: 1,
+        briefSummarizedMessages: 0,
+        briefOmittedMessages: 0,
+      },
     });
   });
 

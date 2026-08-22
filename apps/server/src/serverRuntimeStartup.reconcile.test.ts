@@ -51,6 +51,7 @@ const makeProviderService = (liveThreadIds: ReadonlyArray<ThreadId> = []) =>
     respondToRequest: () => Effect.die("unused"),
     stopAgent: () => Effect.die("unused"),
     getContinuationState: () => Effect.die("unused"),
+    recordDeliveredMessage: () => Effect.void,
     clearContinuationLedger: () => Effect.die("unused"),
     respondToUserInput: () => Effect.die("unused"),
     stopSession: () => Effect.die("unused"),
@@ -134,6 +135,7 @@ it.effect("reconciles multiple active and archived orphans but skips live sessio
       listBindings: () => Effect.die("unused"),
       getLedgerEntry: () => Effect.die("unused"),
       listLedgerEntries: () => Effect.die("unused"),
+      recordLedgerDelivery: () => Effect.die("unused"),
       clearLedger: () => Effect.die("unused"),
     },
     dispatch: (command) =>
@@ -206,6 +208,7 @@ it.effect(
         listBindings: () => Effect.die("unused"),
         getLedgerEntry: () => Effect.die("unused"),
         listLedgerEntries: () => Effect.die("unused"),
+        recordLedgerDelivery: () => Effect.die("unused"),
         clearLedger: () => Effect.die("unused"),
       },
       dispatch: (command) =>
@@ -246,6 +249,7 @@ it.effect("retries failed projections and continues after a persistent failure",
       listBindings: () => Effect.die("unused"),
       getLedgerEntry: () => Effect.die("unused"),
       listLedgerEntries: () => Effect.die("unused"),
+      recordLedgerDelivery: () => Effect.die("unused"),
       clearLedger: () => Effect.die("unused"),
     },
     dispatch: (command) => {
@@ -297,6 +301,7 @@ it.effect("does not fail startup when the live provider session inventory cannot
       listBindings: () => Effect.die("unused"),
       getLedgerEntry: () => Effect.die("unused"),
       listLedgerEntries: () => Effect.die("unused"),
+      recordLedgerDelivery: () => Effect.die("unused"),
       clearLedger: () => Effect.die("unused"),
     }),
     Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
