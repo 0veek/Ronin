@@ -34,6 +34,8 @@ import {
   GitManagerServiceError,
   GitPreparePullRequestThreadInput,
   GitPreparePullRequestThreadResult,
+  VcsApplyPatchInput,
+  VcsApplyPatchResult,
   VcsDiscardChangesInput,
   VcsDiscardChangesResult,
   VcsPullInput,
@@ -262,6 +264,7 @@ export const WS_METHODS = {
   // VCS methods
   vcsPull: "vcs.pull",
   vcsDiscardChanges: "vcs.discardChanges",
+  vcsApplyPatch: "vcs.applyPatch",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -889,6 +892,12 @@ export const WsVcsDiscardChangesRpc = Rpc.make(WS_METHODS.vcsDiscardChanges, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+export const WsVcsApplyPatchRpc = Rpc.make(WS_METHODS.vcsApplyPatch, {
+  payload: VcsApplyPatchInput,
+  success: VcsApplyPatchResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
 export const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
   payload: VcsStatusInput,
   success: VcsStatusResult,
@@ -1270,6 +1279,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeVcsStatusRpc,
   WsVcsPullRpc,
   WsVcsDiscardChangesRpc,
+  WsVcsApplyPatchRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,

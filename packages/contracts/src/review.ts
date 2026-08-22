@@ -10,7 +10,15 @@ export const ReviewDiffPreviewInput = Schema.Struct({
 });
 export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
 
-export const ReviewDiffPreviewSourceKind = Schema.Literals(["working-tree", "branch-range"]);
+/**
+ * `working-tree` is everything uncommitted (`git diff HEAD`), which is the default reading of
+ * "what has changed". `staged` narrows that to what the next commit would take.
+ */
+export const ReviewDiffPreviewSourceKind = Schema.Literals([
+  "working-tree",
+  "staged",
+  "branch-range",
+]);
 export type ReviewDiffPreviewSourceKind = typeof ReviewDiffPreviewSourceKind.Type;
 
 export const ReviewDiffPreviewSource = Schema.Struct({

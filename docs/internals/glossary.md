@@ -12,6 +12,7 @@ This is a living glossary for Ronin. It explains what common terms mean in this 
 - [Provider runtime](#provider-runtime)
 - [Scheduled work](#scheduled-work)
 - [Checkpointing](#checkpointing)
+- [Working copy edits](#working-copy-edits)
 
 ## Concepts
 
@@ -225,6 +226,20 @@ The patch difference between two checkpoints. Query logic lives in [CheckpointDi
 
 The file patch and changed-file summary for one turn. It is usually computed in [CheckpointDiffQuery.ts][20], represented in [the contracts][1], and recorded into thread state by [projector.ts][4].
 
+### Working copy edits
+
+#### Diff scope
+
+Which comparison the diff panel is showing: the working tree against `HEAD`, the index against `HEAD` (`staged`), a branch against its base, or one turn's checkpoint. The three Git scopes come back as separate sources from one `review.getDiffPreview` call in [GitVcsDriverCore.ts][3]; the panel picks between them in [DiffPanel.tsx][46].
+
+#### Patch slice
+
+A one-hunk or one-file patch cut out of the very diff text the panel is rendering, built in [patchHunks.ts][47]. Slicing the original text rather than re-rendering the parsed model is what keeps whitespace and end-of-file markers exactly as Git wrote them, so `git apply` accepts the result. Hunks are addressed by file line number because the viewer reshapes hunks when a file expands to full contents.
+
+#### Hunk action
+
+Staging, unstaging, or reverting one patch slice, sent as `vcs.applyPatch` and applied by [GitVcsDriverCore.ts][3]. A revert clears the change from the index as well as the working tree. A patch Git refuses comes back as `stale` rather than an error: the diff it was cut from can always have moved on.
+
 ## Practical Shortcuts
 
 - If you see `requested`, think "intent recorded".
@@ -285,3 +300,5 @@ The file patch and changed-file summary for one turn. It is usually computed in 
 [43]: ../../apps/server/src/buildSystem/BuildSystemService.ts
 [44]: ../user/build-systems.md
 [45]: ./build-systems.md
+[46]: ../../apps/web/src/components/DiffPanel.tsx
+[47]: ../../apps/web/src/lib/patchHunks.ts

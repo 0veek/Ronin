@@ -1239,6 +1239,12 @@ export default function GitActionsControl({
                   )}
                 </span>
               </div>
+              {/* A hand-built index wins over `add -A`, so the dialog has to say what it will take. */}
+              {gitStatusForActions?.hasStagedChanges && allSelected && (
+                <p className="text-xs text-muted-foreground">
+                  Only staged changes will be committed. Everything else stays in the working tree.
+                </p>
+              )}
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">

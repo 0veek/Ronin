@@ -1589,6 +1589,244 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
     );
   });
 
+  describe("index awareness", () => {
+    it.effect("reports a staged file and stops reporting it once committed", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        yield* writeTextFile(cwd, "loose.txt", "loose\n");
+        assert.equal((yield* driver.statusDetailsLocal(cwd)).hasStagedChanges, false);
+
+        yield* git(cwd, ["add", "loose.txt"]);
+        assert.equal((yield* driver.statusDetailsLocal(cwd)).hasStagedChanges, true);
+
+        yield* git(cwd, ["commit", "-m", "stage then commit"]);
+        assert.equal((yield* driver.statusDetailsLocal(cwd)).hasStagedChanges, false);
+      }),
+    );
+  });
+
+  describe("committing what is already staged", () => {
+    it.effect("commits only the staged subset instead of adding everything", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        yield* writeTextFile(cwd, "staged.txt", "before\n");
+        yield* writeTextFile(cwd, "loose.txt", "before\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "add files"]);
+
+        yield* writeTextFile(cwd, "staged.txt", "after\n");
+        yield* writeTextFile(cwd, "loose.txt", "after\n");
+        yield* git(cwd, ["add", "staged.txt"]);
+
+        const context = yield* driver.prepareCommitContext(cwd);
+
+        assert.equal(context?.stagedSummary, "M\tstaged.txt");
+        assert.equal(yield* git(cwd, ["diff", "--cached", "--name-only"]), "staged.txt");
+      }),
+    );
+
+    it.effect("still stages everything when the index is empty", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        yield* writeTextFile(cwd, "one.txt", "one\n");
+        yield* writeTextFile(cwd, "two.txt", "two\n");
+
+        const context = yield* driver.prepareCommitContext(cwd);
+
+        assert.isNotNull(context);
+        assert.deepStrictEqual(
+          (yield* git(cwd, ["diff", "--cached", "--name-only"])).split("\n").sort(),
+          ["one.txt", "two.txt"],
+        );
+      }),
+    );
+
+    it.effect("keeps an explicit file selection ahead of a stale index", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        yield* writeTextFile(cwd, "picked.txt", "picked\n");
+        yield* writeTextFile(cwd, "stale.txt", "stale\n");
+        yield* git(cwd, ["add", "stale.txt"]);
+
+        yield* driver.prepareCommitContext(cwd, ["picked.txt"]);
+
+        assert.equal(yield* git(cwd, ["diff", "--cached", "--name-only"]), "picked.txt");
+      }),
+    );
+  });
+
+  describe("applying a sliced patch", () => {
+    const twentyLines = (edits: Record<number, string> = {}) =>
+      Array.from({ length: 20 }, (_, index) => edits[index + 1] ?? `line${index + 1}`).join("\n") +
+      "\n";
+
+    /** Cuts one hunk out of a single-file patch the way the diff panel's slicer does. */
+    const sliceHunk = (patch: string, hunkIndex: number): string => {
+      const lines = patch.split("\n");
+      const hunkStarts = lines.flatMap((line, index) => (line.startsWith("@@ ") ? [index] : []));
+      const start = hunkStarts[hunkIndex];
+      const firstHunk = hunkStarts[0];
+      assert.isDefined(start);
+      assert.isDefined(firstHunk);
+      const end = hunkStarts[hunkIndex + 1] ?? lines.length;
+      const body = lines.slice(start, end).filter((line) => line.length > 0);
+      return [...lines.slice(0, firstHunk), ...body, ""].join("\n");
+    };
+
+    const seedTwoHunkFile = (cwd: string) =>
+      Effect.gen(function* () {
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "app.txt", twentyLines());
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "add app"]);
+        yield* writeTextFile(cwd, "app.txt", twentyLines({ 2: "two", 18: "eighteen" }));
+        const patch = yield* git(cwd, ["diff", "--no-color", "HEAD", "--", "app.txt"]);
+        assert.equal(patch.split("\n").filter((line) => line.startsWith("@@ ")).length, 2);
+        return patch;
+      });
+
+    it.effect("reverts one hunk and leaves the rest of the file changed", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const patch = yield* seedTwoHunkFile(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+
+        const result = yield* driver.applyPatch({
+          cwd,
+          action: "revert",
+          patch: sliceHunk(patch, 0),
+        });
+
+        assert.deepStrictEqual(result, { status: "applied", detail: null });
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(cwd, "app.txt")),
+          twentyLines({ 18: "eighteen" }),
+        );
+      }),
+    );
+
+    it.effect("clears a reverted hunk from the index as well when it was staged", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const patch = yield* seedTwoHunkFile(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        yield* git(cwd, ["add", "app.txt"]);
+        const result = yield* driver.applyPatch({
+          cwd,
+          action: "revert",
+          patch: sliceHunk(patch, 1),
+        });
+
+        assert.deepStrictEqual(result, { status: "applied", detail: null });
+        // Only the staged first hunk survives, so the file is staged and otherwise clean.
+        assert.equal(yield* git(cwd, ["status", "--porcelain"]), "M  app.txt");
+        assert.equal(yield* git(cwd, ["diff", "--cached", "--name-only"]), "app.txt");
+        assert.equal(yield* git(cwd, ["show", ":app.txt"]), twentyLines({ 2: "two" }).trimEnd());
+      }),
+    );
+
+    it.effect("stages a single hunk and leaves the other one unstaged", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const patch = yield* seedTwoHunkFile(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const result = yield* driver.applyPatch({
+          cwd,
+          action: "stage",
+          patch: sliceHunk(patch, 0),
+        });
+
+        assert.deepStrictEqual(result, { status: "applied", detail: null });
+        assert.equal(yield* git(cwd, ["status", "--porcelain"]), "MM app.txt");
+        assert.equal(yield* git(cwd, ["show", ":app.txt"]), twentyLines({ 2: "two" }).trimEnd());
+      }),
+    );
+
+    it.effect("unstages a single hunk without touching the working tree", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const patch = yield* seedTwoHunkFile(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const pathService = yield* Path.Path;
+
+        yield* git(cwd, ["add", "app.txt"]);
+        const result = yield* driver.applyPatch({
+          cwd,
+          action: "unstage",
+          patch: sliceHunk(patch, 0),
+        });
+
+        assert.deepStrictEqual(result, { status: "applied", detail: null });
+        assert.equal(
+          yield* git(cwd, ["show", ":app.txt"]),
+          twentyLines({ 18: "eighteen" }).trimEnd(),
+        );
+        assert.equal(
+          yield* fileSystem.readFileString(pathService.join(cwd, "app.txt")),
+          twentyLines({ 2: "two", 18: "eighteen" }),
+        );
+      }),
+    );
+
+    it.effect("resolves root-relative paths when invoked from a subdirectory", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const pathService = yield* Path.Path;
+        yield* initRepoWithCommit(cwd);
+        yield* writeTextFile(cwd, "nested/deep.txt", "before\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "add nested"]);
+        yield* writeTextFile(cwd, "nested/deep.txt", "after\n");
+        const patch = yield* git(cwd, ["diff", "--no-color", "HEAD"]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const result = yield* driver.applyPatch({
+          cwd: pathService.join(cwd, "nested"),
+          action: "revert",
+          patch: sliceHunk(patch, 0),
+        });
+
+        assert.deepStrictEqual(result, { status: "applied", detail: null });
+        assert.equal(yield* git(cwd, ["status", "--porcelain"]), "");
+      }),
+    );
+
+    it.effect("reports a patch the file has moved past as stale", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const patch = yield* seedTwoHunkFile(cwd);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        yield* writeTextFile(cwd, "app.txt", "rewritten from scratch\n");
+        const result = yield* driver.applyPatch({
+          cwd,
+          action: "revert",
+          patch: sliceHunk(patch, 0),
+        });
+
+        assert.equal(result.status, "stale");
+        assert.isNotNull(result.detail);
+      }),
+    );
+  });
+
   describe("remote operations", () => {
     it.effect("creates a worktree from the latest fetched remote commit", () =>
       Effect.gen(function* () {

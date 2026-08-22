@@ -10,6 +10,7 @@
 - [Agent skills](./user/agent-skills.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Since you last looked](./user/digest.md)
+- [Reviewing changes](./user/reviewing-changes.md)
 - [Checkpoints and restoring](./user/checkpoints.md)
 - [Replaying a turn](./user/turn-replay.md)
 - [Agent notifications](./user/notifications.md)

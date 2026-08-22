@@ -6,7 +6,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
-import type { ScopedThreadRef, TurnId } from "@t3tools/contracts";
+import type { ReviewDiffPreviewSourceKind, ScopedThreadRef, TurnId } from "@t3tools/contracts";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -27,7 +27,11 @@ import { type DraftId } from "../composerDraftStore";
 import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
 import { cn } from "~/lib/utils";
-import { selectThreadDiffPanelSelection, useDiffPanelStore } from "../diffPanelStore";
+import {
+  selectThreadDiffPanelSelection,
+  useDiffPanelStore,
+  type DiffPanelGitScope,
+} from "../diffPanelStore";
 import { useTheme } from "../hooks/useTheme";
 import {
   buildFileDiffRenderKey,
@@ -74,10 +78,52 @@ import { serverEnvironment } from "../state/server";
 import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
+import {
+  buildFilePatch,
+  buildHunkPatch,
+  findPatchHunkAtLine,
+  findPatchSection,
+  splitPatchSections,
+} from "../lib/patchHunks";
+import type {
+  DiffHunkActionKind,
+  DiffHunkActionRequest,
+  DiffHunkActionsConfig,
+} from "./diffs/DiffHunkActions";
+import { readLocalApi } from "../localApi";
+import { toastManager } from "./ui/toast";
 import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
 
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
+
+const GIT_SCOPE_LABELS: Record<DiffPanelGitScope, string> = {
+  unstaged: "Working tree",
+  staged: "Staged",
+  branch: "Branch changes",
+};
+
+const GIT_SCOPE_SOURCE_KINDS: Record<DiffPanelGitScope, ReviewDiffPreviewSourceKind> = {
+  unstaged: "working-tree",
+  staged: "staged",
+  branch: "branch-range",
+};
+
+/**
+ * Only the two working-copy scopes can be edited in place. Branch changes are already committed,
+ * and a turn's checkpoint diff has its own restore path.
+ */
+const GIT_SCOPE_HUNK_ACTIONS: Record<DiffPanelGitScope, ReadonlyArray<DiffHunkActionKind>> = {
+  unstaged: ["stage", "revert"],
+  staged: ["unstage"],
+  branch: [],
+};
+
+const HUNK_ACTION_VERBS: Record<DiffHunkActionKind, { pending: string; done: string }> = {
+  revert: { pending: "Reverting", done: "Reverted" },
+  stage: { pending: "Staging", done: "Staged" },
+  unstage: { pending: "Unstaging", done: "Unstaged" },
+};
 
 interface CollapsedDiffFilesState {
   readonly scopeKey: string | null;
@@ -187,7 +233,12 @@ export default function DiffPanel({
   }, [diffSelection, orderedTurnDiffSummaries, routeThreadRef]);
 
   const selectedTurnId = diffSelection.kind === "turn" ? diffSelection.turnId : null;
-  const selectedGitScope = diffSelection.kind === "unstaged" ? "unstaged" : "branch";
+  const selectedGitScope: DiffPanelGitScope =
+    diffSelection.kind === "unstaged"
+      ? "unstaged"
+      : diffSelection.kind === "staged"
+        ? "staged"
+        : "branch";
   const selectedBaseRef = diffSelection.kind === "branch" ? diffSelection.baseRef : null;
   const selectedFilePath = diffSelection.kind === "turn" ? diffSelection.filePath : null;
   const selectedFileRevealRequestId =
@@ -203,9 +254,7 @@ export default function DiffPanel({
   const latestTurn = orderedTurnDiffSummaries[0];
   const selectedScopeLabel =
     selectedTurnId === null
-      ? selectedGitScope === "unstaged"
-        ? "Working tree"
-        : "Branch changes"
+      ? GIT_SCOPE_LABELS[selectedGitScope]
       : selectedTurn?.turnId === latestTurn?.turnId
         ? "Latest turn"
         : `Turn ${selectedCheckpointTurnCount ?? "?"}`;
@@ -220,9 +269,7 @@ export default function DiffPanel({
       : EMPTY_COLLAPSED_DIFF_FILE_KEYS;
   const reviewSectionTitle = selectedTurn
     ? `Turn ${selectedCheckpointTurnCount ?? "?"}`
-    : selectedGitScope === "unstaged"
-      ? "Working tree"
-      : "Branch changes";
+    : GIT_SCOPE_LABELS[selectedGitScope];
   const selectedCheckpointRange = useMemo(
     () =>
       typeof selectedCheckpointTurnCount === "number"
@@ -309,7 +356,7 @@ export default function DiffPanel({
   }, [activeThreadRefreshKey, canRefreshGitDiff, latestTurn?.turnId, refreshBranchDiffPreview]);
 
   const selectedGitSource = branchDiffPreview.data?.sources.find(
-    (source) => source.kind === (selectedGitScope === "unstaged" ? "working-tree" : "branch-range"),
+    (source) => source.kind === GIT_SCOPE_SOURCE_KINDS[selectedGitScope],
   );
   const loadDiffFiles = useMemo<FileDiffContentsLoader | undefined>(() => {
     const preview = branchDiffPreview.data;
@@ -431,6 +478,148 @@ export default function DiffPanel({
   const diffFileKeys = useMemo(() => codeViewFiles.map((file) => file.fileKey), [codeViewFiles]);
   const allDiffFilesCollapsed = areAllDiffFilesCollapsed(diffFileKeys, collapsedDiffFileKeys);
   const diffLineStat = useMemo(() => getDiffLineStat(renderableFiles), [renderableFiles]);
+  const applyPatchAction = useAtomCommand(vcsEnvironment.applyPatch, { reportFailure: false });
+  const [pendingHunkAction, setPendingHunkAction] = useState(false);
+  const patchSections = useMemo(
+    () =>
+      selectedTurnId === null && GIT_SCOPE_HUNK_ACTIONS[selectedGitScope].length > 0
+        ? splitPatchSections(selectedPatch ?? "")
+        : [],
+    [selectedGitScope, selectedPatch, selectedTurnId],
+  );
+  const hunkActionCwd = branchDiffPreview.data?.cwd ?? activeCwd;
+  const hunkActionEnvironmentId = activeThread?.environmentId ?? null;
+
+  const runHunkAction = useCallback(
+    async (request: DiffHunkActionRequest) => {
+      if (!hunkActionEnvironmentId || !hunkActionCwd) return;
+      const section = findPatchSection(patchSections, request.filePath);
+      if (!section) return;
+
+      // A hunk action that cannot find its hunk has to stop here. Falling through to the file
+      // patch would quietly turn "revert this block" into "revert everything in this file".
+      const target = request.line
+        ? findPatchHunkAtLine({
+            sections: patchSections,
+            filePath: request.filePath,
+            lineNumber: request.line.lineNumber,
+            side: request.line.side,
+          })
+        : null;
+      if (request.line && !target) {
+        toastManager.add({
+          type: "error",
+          title: "The diff moved on",
+          description: "That hunk is no longer where the diff says it is. Refresh and try again.",
+        });
+        refreshBranchDiffPreview();
+        return;
+      }
+      const patch = target ? buildHunkPatch(target.section, target.hunk) : buildFilePatch(section);
+      const scopeLabel = target ? "hunk" : "file";
+      if (!patch) return;
+
+      if (!request.line && request.action === "revert") {
+        // A file-wide revert throws away work git cannot hand back, unlike a single hunk the
+        // pointer was already resting on.
+        const api = readLocalApi();
+        if (!api) return;
+        const confirmed = await api.dialogs.confirm(
+          [`Revert every change in ${request.filePath}?`, "", "This cannot be undone."].join("\n"),
+          { variant: "destructive" },
+        );
+        if (!confirmed) return;
+      }
+
+      const verbs = HUNK_ACTION_VERBS[request.action];
+      const toastId = toastManager.add({
+        type: "loading",
+        title: `${verbs.pending} ${scopeLabel}...`,
+        timeout: 0,
+      });
+      setPendingHunkAction(true);
+      try {
+        const result = await applyPatchAction({
+          environmentId: hunkActionEnvironmentId,
+          input: { cwd: hunkActionCwd, action: request.action, patch },
+        });
+        if (result._tag === "Failure") {
+          if (isAtomCommandInterrupted(result)) {
+            toastManager.close(toastId);
+            return;
+          }
+          const error = squashAtomCommandFailure(result);
+          toastManager.update(toastId, {
+            type: "error",
+            title: `${verbs.done} nothing`,
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+          return;
+        }
+
+        if (result.value.status === "stale") {
+          toastManager.update(toastId, {
+            type: "error",
+            title: "The diff moved on",
+            description:
+              result.value.detail ??
+              "This file changed since the diff was drawn. Refresh and try again.",
+          });
+        } else {
+          toastManager.update(toastId, {
+            type: "success",
+            title: `${verbs.done} ${scopeLabel}`,
+            description: request.filePath,
+          });
+        }
+      } finally {
+        setPendingHunkAction(false);
+        refreshBranchDiffPreview();
+      }
+    },
+    [
+      applyPatchAction,
+      hunkActionCwd,
+      hunkActionEnvironmentId,
+      patchSections,
+      refreshBranchDiffPreview,
+    ],
+  );
+
+  const hunkActions = useMemo<DiffHunkActionsConfig | undefined>(() => {
+    const actions = GIT_SCOPE_HUNK_ACTIONS[selectedGitScope];
+    if (
+      selectedTurnId !== null ||
+      actions.length === 0 ||
+      !isGitRepo ||
+      !hunkActionEnvironmentId ||
+      !hunkActionCwd
+    ) {
+      return undefined;
+    }
+    return {
+      actions,
+      isFileActionable: (filePath) => {
+        const section = findPatchSection(patchSections, filePath);
+        if (!section || section.binary || section.hunks.length === 0) return false;
+        // An untracked file has no committed side, so neither a revert nor a partial stage has
+        // anything to act on: Ronin's file-level commit picker already covers adding one.
+        if (section.untracked) return false;
+        return !section.hunks.some((hunk) => hunk.truncated);
+      },
+      onAction: (request) => void runHunkAction(request),
+      busy: pendingHunkAction,
+    };
+  }, [
+    hunkActionCwd,
+    hunkActionEnvironmentId,
+    isGitRepo,
+    patchSections,
+    pendingHunkAction,
+    runHunkAction,
+    selectedGitScope,
+    selectedTurnId,
+  ]);
   const selectedDiffFileKey = selectedFilePath
     ? (codeViewFiles.find((candidate) => candidate.filePath === selectedFilePath)?.fileKey ?? null)
     : null;
@@ -500,7 +689,7 @@ export default function DiffPanel({
     if (!routeThreadRef) return;
     useDiffPanelStore.getState().selectTurn(routeThreadRef, turnId);
   };
-  const selectGitScope = (scope: "branch" | "unstaged") => {
+  const selectGitScope = (scope: DiffPanelGitScope) => {
     if (!routeThreadRef) return;
     useDiffPanelStore.getState().selectGitScope(routeThreadRef, scope);
   };
@@ -530,6 +719,16 @@ export default function DiffPanel({
               onClick={() => selectGitScope("unstaged")}
             >
               <span>Working tree</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className={
+                selectedTurnId === null && selectedGitScope === "staged"
+                  ? "bg-foreground/[0.08]"
+                  : undefined
+              }
+              onClick={() => selectGitScope("staged")}
+            >
+              <span>Staged</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               className={
@@ -864,9 +1063,7 @@ export default function DiffPanel({
                   label={
                     selectedTurn
                       ? "Loading checkpoint diff..."
-                      : selectedGitScope === "unstaged"
-                        ? "Loading working tree diff..."
-                        : "Loading branch diff..."
+                      : `Loading ${GIT_SCOPE_LABELS[selectedGitScope].toLowerCase()} diff...`
                   }
                 />
               ) : (
@@ -922,6 +1119,7 @@ export default function DiffPanel({
                   sectionId={reviewSectionId}
                   sectionTitle={reviewSectionTitle}
                   composerDraftTarget={composerDraftTarget}
+                  {...(hunkActions ? { hunkActions } : {})}
                   renderHeaderPrefix={(fileDiff, fileKey, collapsed) => {
                     const filePath = resolveFileDiffPath(fileDiff);
                     return (

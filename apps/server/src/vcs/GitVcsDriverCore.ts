@@ -24,6 +24,8 @@ import {
   type ReviewDiffFileContentsInput,
   type ReviewDiffPreviewInput,
   type ReviewDiffPreviewSource,
+  type VcsApplyPatchAction,
+  type VcsApplyPatchInput,
   type VcsRef,
 } from "@t3tools/contracts";
 import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3tools/shared/git";
@@ -85,6 +87,7 @@ const NON_REPOSITORY_STATUS_DETAILS = Object.freeze<GitVcsDriver.GitStatusDetail
   branch: null,
   upstreamRef: null,
   hasWorkingTreeChanges: false,
+  hasStagedChanges: false,
   workingTree: { files: [], insertions: 0, deletions: 0 },
   hasUpstream: false,
   aheadCount: 0,
@@ -1680,6 +1683,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     let behindCount = 0;
     let aheadOfDefaultCount = 0;
     let hasWorkingTreeChanges = false;
+    let hasStagedChanges = false;
     const changedFilesWithoutNumstat = new Set<string>();
 
     for (const line of statusStdout.split(/\r?\n/g)) {
@@ -1702,6 +1706,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       if (line.trim().length > 0 && !line.startsWith("#")) {
         hasWorkingTreeChanges = true;
+        // In `--porcelain=2`, an ordinary or renamed entry carries `<XY>` as its second field,
+        // where a staged change is any X other than `.`.
+        if ((line.startsWith("1 ") || line.startsWith("2 ")) && line[2] !== ".") {
+          hasStagedChanges = true;
+        }
         const pathValue = parsePorcelainPath(line);
         if (pathValue) changedFilesWithoutNumstat.add(pathValue);
       }
@@ -1757,6 +1766,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       branch: refName,
       upstreamRef,
       hasWorkingTreeChanges,
+      hasStagedChanges,
       workingTree: {
         files,
         insertions,
@@ -1810,6 +1820,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         isDefaultRef: details.isDefaultBranch,
         refName: details.branch,
         hasWorkingTreeChanges: details.hasWorkingTreeChanges,
+        hasStagedChanges: details.hasStagedChanges ?? false,
         workingTree: details.workingTree,
         hasUpstream: details.hasUpstream,
         aheadCount: details.aheadCount,
@@ -1835,7 +1846,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ...filePaths,
         ]);
       } else {
-        yield* runGit("GitVcsDriver.prepareCommitContext.addAll", cwd, ["add", "-A"]);
+        const alreadyStaged = yield* runGitStdout(
+          "GitVcsDriver.prepareCommitContext.stagedCheck",
+          cwd,
+          ["diff", "--cached", "--name-only"],
+        );
+        // Someone who staged deliberately -- from the diff panel's hunk actions or from a
+        // terminal -- gets exactly that committed, the way `git commit` itself behaves.
+        // `add -A` stays the behaviour for the ordinary empty-index "commit everything" case.
+        if (alreadyStaged.trim().length === 0) {
+          yield* runGit("GitVcsDriver.prepareCommitContext.addAll", cwd, ["add", "-A"]);
+        }
       }
 
       const stagedSummary = yield* runGitStdout(
@@ -2121,6 +2142,59 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return { status: "discarded" as const, filesRestored };
     });
 
+  /**
+   * Reverting must also clear the change from the index when the hunk was
+   * already staged, but `--index` refuses a patch whose old side is not what
+   * the index holds -- the ordinary unstaged case. Trying the paired apply
+   * first and falling back to the working tree keeps both exact instead of
+   * half-reverting either.
+   */
+  const applyPatchAttempts = (
+    action: VcsApplyPatchAction,
+  ): ReadonlyArray<ReadonlyArray<string>> => {
+    switch (action) {
+      case "stage":
+        return [["apply", "--cached", "--whitespace=nowarn"]];
+      case "unstage":
+        return [["apply", "--cached", "--reverse", "--whitespace=nowarn"]];
+      case "revert":
+        return [
+          ["apply", "--index", "--reverse", "--whitespace=nowarn"],
+          ["apply", "--reverse", "--whitespace=nowarn"],
+        ];
+    }
+  };
+
+  const applyPatch: GitVcsDriver.GitVcsDriver["Service"]["applyPatch"] = Effect.fn("applyPatch")(
+    function* (input: VcsApplyPatchInput) {
+      const root = (yield* runGitStdout("GitVcsDriver.applyPatch.root", input.cwd, [
+        "rev-parse",
+        "--show-toplevel",
+      ])).trim();
+      // A slice carries the root-relative paths git wrote into the diff, while
+      // `git apply` resolves them against the directory it runs in.
+      const applyCwd = root.length > 0 ? root : input.cwd;
+      // git rejects a patch whose last hunk line has no terminator.
+      const patch = input.patch.endsWith("\n") ? input.patch : `${input.patch}\n`;
+
+      let refusal = "";
+      for (const args of applyPatchAttempts(input.action)) {
+        const result = yield* executeGit(
+          `GitVcsDriver.applyPatch.${input.action}`,
+          applyCwd,
+          args,
+          { stdin: patch, allowNonZeroExit: true },
+        );
+        if (result.exitCode === 0) {
+          return { status: "applied" as const, detail: null };
+        }
+        refusal = result.stderr.trim();
+      }
+
+      return { status: "stale" as const, detail: refusal.length > 0 ? refusal : null };
+    },
+  );
+
   const readRangeContext: GitVcsDriver.GitVcsDriver["Service"]["readRangeContext"] = Effect.fn(
     "readRangeContext",
   )(function* (cwd, baseRef) {
@@ -2270,6 +2344,35 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       .filter((diff) => diff.length > 0)
       .join("\n");
 
+    const stagedResult = yield* executeGit(
+      "GitVcsDriver.getReviewDiffPreview.staged",
+      input.cwd,
+      [
+        "diff",
+        "--patch",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--minimal",
+        ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
+        "--cached",
+        "--",
+      ],
+      {
+        maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
+        appendTruncationMarker: true,
+      },
+    ).pipe(
+      Effect.orElseSucceed(() => ({
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+      })),
+    );
+    const stagedDiff = stagedResult.stdout.trimEnd();
+
     const baseResult =
       baseRef && branch
         ? yield* executeGit(
@@ -2314,8 +2417,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             }),
         ),
       );
-    const [dirtyDiffHash, baseDiffHash] = yield* Effect.all([
+    const [dirtyDiffHash, stagedDiffHash, baseDiffHash] = yield* Effect.all([
       hashDiff(dirtyDiff),
+      hashDiff(stagedDiff),
       hashDiff(baseDiff),
     ]);
 
@@ -2329,6 +2433,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         diff: dirtyDiff,
         diffHash: dirtyDiffHash,
         truncated: dirtyTrackedResult.stdoutTruncated || dirtyUntracked.truncated,
+      },
+      {
+        id: "staged",
+        kind: "staged",
+        title: "Staged",
+        baseRef: "HEAD",
+        headRef: null,
+        diff: stagedDiff,
+        diffHash: stagedDiffHash,
+        truncated: stagedResult.stdoutTruncated,
       },
       {
         id: "branch-range",
@@ -2472,6 +2586,23 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           input.changeType === "deleted"
             ? Effect.succeed("")
             : readWorkingTreeReviewFile(input, repositoryRoot),
+        ],
+        { concurrency: 2 },
+      );
+      return { oldContents, newContents };
+    }
+
+    if (input.sourceKind === "staged") {
+      const [oldContents, newContents] = yield* Effect.all(
+        [
+          input.changeType === "new"
+            ? Effect.succeed("")
+            : readReviewFileAtRevision(input, input.baseRef ?? "HEAD", input.oldPath),
+          // An empty revision makes `git show :path` read the index copy, which is the new
+          // side of a staged diff.
+          input.changeType === "deleted"
+            ? Effect.succeed("")
+            : readReviewFileAtRevision(input, "", input.newPath),
         ],
         { concurrency: 2 },
       );
@@ -3229,6 +3360,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     pullCurrentBranch: (cwd) => withListRefsInvalidation(cwd, pullCurrentBranch(cwd)),
     discardWorkingTreeChanges: (cwd) =>
       withListRefsInvalidation(cwd, discardWorkingTreeChanges(cwd)),
+    applyPatch,
     readRangeContext,
     getReviewDiffPreview,
     getReviewDiffFileContents,

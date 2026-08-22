@@ -15,3 +15,13 @@ selected, each background thread creates its own worktree.
 Standard (the default reading column), Wide, or Full window. The command palette's **Cycle
 chat width** walks those three in order. You can bind it under **Settings → Keybindings**
 (`chat.cycleWidth`).
+
+## Seeing an answer's markdown
+
+Hover a finished answer and the row under it gains a **Show markdown source** button, next to Copy
+and Ask on the side. It swaps the rendered answer for the raw markdown the agent actually wrote,
+which is what you want when a table came out wrong, a code fence did not close, or you are about to
+paste the text somewhere else. Press it again to go back.
+
+The choice is per message and lasts as long as the app is open. Streaming answers do not offer it:
+the source of half an answer is a moving target.

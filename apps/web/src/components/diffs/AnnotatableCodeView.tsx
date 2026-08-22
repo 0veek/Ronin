@@ -20,6 +20,11 @@ import {
 
 import { nextFileCommentId } from "../files/fileCommentAnnotations";
 import { DiffCommentAnnotation } from "./DiffCommentAnnotation";
+import {
+  DiffFileActions,
+  DiffHunkGutterActions,
+  type DiffHunkActionsConfig,
+} from "./DiffHunkActions";
 import { StyledDiffCodeView, type StyledDiffCodeViewOptions } from "./StyledDiffCodeView";
 
 interface DiffCommentAnnotationEntry {
@@ -90,6 +95,12 @@ interface AnnotatableCodeViewProps {
     fileKey: string,
     collapsed: boolean,
   ) => ReactNode;
+  /**
+   * Git actions for the diff being shown. Supplying it replaces the viewer's lone gutter button
+   * with a pill that keeps commenting as its first action; leaving it out keeps the default button,
+   * which is what every read-only surface wants.
+   */
+  hunkActions?: DiffHunkActionsConfig | undefined;
 }
 
 interface DiffSelectionContext {
@@ -106,6 +117,7 @@ export function AnnotatableCodeView({
   viewerRef,
   className,
   renderHeaderPrefix,
+  hunkActions,
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
@@ -256,6 +268,39 @@ export function AnnotatableCodeView({
           ? renderHeaderPrefix(item.fileDiff, item.id, item.collapsed === true)
           : null
       }
+      {...(hunkActions
+        ? {
+            renderHeaderFilenameSuffix: (item) => {
+              const file = item.type === "diff" ? filesByKey.get(item.id) : undefined;
+              return file ? (
+                <DiffFileActions config={hunkActions} filePath={file.filePath} />
+              ) : null;
+            },
+            renderGutterUtility: (getHoveredLine, item) => {
+              const file = item.type === "diff" ? filesByKey.get(item.id) : undefined;
+              if (!file || hasOpenComment) return null;
+              return (
+                <DiffHunkGutterActions
+                  config={hunkActions}
+                  filePath={file.filePath}
+                  getHoveredLine={getHoveredLine}
+                  onComment={(line) =>
+                    // A drag over the gutter leaves a range behind; without one the comment
+                    // covers just the line the pill is sitting on.
+                    beginComment(
+                      selectedLines?.range ?? {
+                        start: line.lineNumber,
+                        end: line.lineNumber,
+                        ...(line.side ? { side: line.side, endSide: line.side } : {}),
+                      },
+                      { item },
+                    )
+                  }
+                />
+              );
+            },
+          }
+        : {})}
       renderAnnotation={(annotation) => {
         const hasDraft = annotation.metadata.entries.some((entry) => entry.kind === "draft");
         return (

@@ -35,6 +35,7 @@ describe("GitWorkflowService", () => {
         isDefaultRef: false,
         refName: null,
         hasWorkingTreeChanges: false,
+        hasStagedChanges: false,
         workingTree: {
           files: [],
           insertions: 0,
@@ -61,6 +62,7 @@ describe("GitWorkflowService", () => {
         isDefaultRef: false,
         refName: null,
         hasWorkingTreeChanges: false,
+        hasStagedChanges: false,
         workingTree: {
           files: [],
           insertions: 0,

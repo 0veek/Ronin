@@ -25,6 +25,8 @@ import {
   type VcsInitInput,
   type VcsListRefsInput,
   type VcsListRefsResult,
+  type VcsApplyPatchInput,
+  type VcsApplyPatchResult,
   type VcsDiscardChangesResult,
   type VcsPullResult,
   type VcsRemoveWorktreeInput,
@@ -64,6 +66,8 @@ export interface GitStatusDetails {
   branch: string | null;
   upstreamRef: string | null;
   hasWorkingTreeChanges: boolean;
+  /** Absent from stubs and older drivers that never looked at the index. */
+  hasStagedChanges?: boolean;
   workingTree: VcsStatusResult["workingTree"];
   hasUpstream: boolean;
   aheadCount: number;
@@ -275,6 +279,14 @@ export class GitVcsDriver extends Context.Service<
     readonly discardWorkingTreeChanges: (
       cwd: string,
     ) => Effect.Effect<VcsDiscardChangesResult, GitCommandError>;
+    /**
+     * Moves one client-sliced patch between the working tree and the index.
+     * Reports a refused patch as `stale` rather than failing: the diff the
+     * slice came from can always have moved on.
+     */
+    readonly applyPatch: (
+      input: VcsApplyPatchInput,
+    ) => Effect.Effect<VcsApplyPatchResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;

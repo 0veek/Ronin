@@ -17,6 +17,8 @@ import {
   type GitPreparePullRequestThreadInput,
   type GitPreparePullRequestThreadResult,
   type GitPullRequestRefInput,
+  type VcsApplyPatchInput,
+  type VcsApplyPatchResult,
   type VcsDiscardChangesResult,
   type VcsPullResult,
   type VcsRemoveWorktreeInput,
@@ -53,6 +55,9 @@ export class GitWorkflowService extends Context.Service<
     readonly discardWorkingTreeChanges: (
       cwd: string,
     ) => Effect.Effect<VcsDiscardChangesResult, GitCommandError>;
+    readonly applyPatch: (
+      input: VcsApplyPatchInput,
+    ) => Effect.Effect<VcsApplyPatchResult, GitCommandError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
       options?: GitManager.GitRunStackedActionOptions,
@@ -109,6 +114,7 @@ function nonRepositoryLocalStatus(): VcsStatusLocalResult {
     isDefaultRef: false,
     refName: null,
     hasWorkingTreeChanges: false,
+    hasStagedChanges: false,
     workingTree: {
       files: [],
       insertions: 0,
@@ -288,6 +294,10 @@ export const make = Effect.gen(function* () {
     discardWorkingTreeChanges: (cwd) =>
       ensureGitCommand("GitWorkflowService.discardWorkingTreeChanges", cwd).pipe(
         Effect.andThen(git.discardWorkingTreeChanges(cwd)),
+      ),
+    applyPatch: (input) =>
+      ensureGitCommand("GitWorkflowService.applyPatch", input.cwd).pipe(
+        Effect.andThen(git.applyPatch(input)),
       ),
     runStackedAction: (input, options) =>
       ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(

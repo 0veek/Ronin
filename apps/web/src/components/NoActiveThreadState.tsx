@@ -13,6 +13,7 @@ import { primaryServerKeybindingsAtom } from "~/state/server";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { selectResumableThreads } from "./NoActiveThreadState.logic";
+import { SnakeArcadeBackground } from "./SnakeArcadeBackground";
 import { WorkspaceTopbar } from "./shell/WorkspaceTopbar";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
@@ -75,8 +76,9 @@ export function NoActiveThreadState() {
           <span className="label-meta text-muted-foreground">No active thread</span>
         </WorkspaceTopbar>
 
-        <Empty className="flex-1">
-          <div className="w-full max-w-lg px-8 py-12">
+        <Empty className="relative flex-1">
+          <SnakeArcadeBackground />
+          <div className="relative w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
               <EmptyTitle className="text-foreground text-xl">
                 {resumableThreads.length > 0 ? "Pick up where you left off" : "Start something"}

@@ -862,6 +862,7 @@ export const make = Effect.gen(function* () {
     branch: null,
     upstreamRef: null,
     hasWorkingTreeChanges: false,
+    hasStagedChanges: false,
     workingTree: { files: [], insertions: 0, deletions: 0 },
     hasUpstream: false,
     aheadCount: 0,
@@ -885,6 +886,7 @@ export const make = Effect.gen(function* () {
       isDefaultRef: details.isDefaultBranch,
       refName: details.branch,
       hasWorkingTreeChanges: details.hasWorkingTreeChanges,
+      hasStagedChanges: details.hasStagedChanges ?? false,
       workingTree: details.workingTree,
     } satisfies VcsStatusLocalResult;
   });

@@ -300,6 +300,13 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    applyPatch: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:apply-patch",
+      tag: WS_METHODS.vcsApplyPatch,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
     refreshStatus: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:refresh-status",
       tag: WS_METHODS.vcsRefreshStatus,

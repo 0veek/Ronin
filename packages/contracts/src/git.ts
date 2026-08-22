@@ -114,6 +114,26 @@ export const VcsDiscardChangesInput = Schema.Struct({
 });
 export type VcsDiscardChangesInput = typeof VcsDiscardChangesInput.Type;
 
+/**
+ * How a hunk-scoped patch should move. `stage` and `unstage` only touch the
+ * index; `revert` throws the change away in both the index and the working
+ * tree, so the hunk disappears from the diff the user was looking at.
+ */
+export const VcsApplyPatchAction = Schema.Literals(["revert", "stage", "unstage"]);
+export type VcsApplyPatchAction = typeof VcsApplyPatchAction.Type;
+
+/**
+ * `patch` is a unified diff sliced by the client out of the very diff it is
+ * rendering, so a revert acts on exactly the hunk under the pointer rather
+ * than on a path the server re-derives and could resolve differently.
+ */
+export const VcsApplyPatchInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  action: VcsApplyPatchAction,
+  patch: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(2_000_000)),
+});
+export type VcsApplyPatchInput = typeof VcsApplyPatchInput.Type;
+
 export const GitRunStackedActionInput = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,
   cwd: TrimmedNonEmptyStringSchema,
@@ -219,6 +239,11 @@ const VcsStatusLocalShape = {
   isDefaultRef: Schema.Boolean,
   refName: Schema.NullOr(TrimmedNonEmptyStringSchema),
   hasWorkingTreeChanges: Schema.Boolean,
+  /**
+   * Something sits in the index. A commit takes exactly that rather than everything, so surfaces
+   * that offer to commit have to say so. Optional for servers that predate the field.
+   */
+  hasStagedChanges: Schema.optional(Schema.Boolean),
   workingTree: Schema.Struct({
     files: Schema.Array(
       Schema.Struct({
@@ -350,6 +375,18 @@ export const VcsDiscardChangesResult = Schema.Struct({
   filesRestored: NonNegativeInt,
 });
 export type VcsDiscardChangesResult = typeof VcsDiscardChangesResult.Type;
+
+/**
+ * `stale` means git refused the patch: the file moved on since the diff was
+ * rendered. It is an expected outcome rather than a failure, so the client can
+ * ask for a refresh instead of surfacing a command error. `detail` carries
+ * git's own explanation when it has one.
+ */
+export const VcsApplyPatchResult = Schema.Struct({
+  status: Schema.Literals(["applied", "stale"]),
+  detail: Schema.NullOr(Schema.String),
+});
+export type VcsApplyPatchResult = typeof VcsApplyPatchResult.Type;
 
 // RPC / domain errors
 export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()("GitCommandError", {

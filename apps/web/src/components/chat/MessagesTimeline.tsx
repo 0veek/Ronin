@@ -53,6 +53,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
+  CodeIcon,
   EyeIcon,
   GlobeIcon,
   HammerIcon,
@@ -76,6 +77,7 @@ import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { deriveTurnStartedAtByTurnId, turnDurationLabel } from "./turnReceipt";
 import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { selectShowsMessageSource, useMessageSourceStore } from "~/messageSourceStore";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
@@ -1158,18 +1160,25 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
 function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
   const messageText = row.message.text || (row.message.streaming ? "" : "(empty response)");
+  const showsSource = useMessageSourceStore((state) =>
+    selectShowsMessageSource(state, row.message.id),
+  );
 
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
-        <ChatMarkdown
-          text={messageText}
-          cwd={ctx.markdownCwd}
-          threadRef={ctx.threadRef ?? undefined}
-          isStreaming={Boolean(row.message.streaming)}
-          lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
-          skills={ctx.skills}
-        />
+        {showsSource ? (
+          <MessageSourceBlock text={messageText} />
+        ) : (
+          <ChatMarkdown
+            text={messageText}
+            cwd={ctx.markdownCwd}
+            threadRef={ctx.threadRef ?? undefined}
+            isStreaming={Boolean(row.message.streaming)}
+            lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
+            skills={ctx.skills}
+          />
+        )}
         <AssistantChangedFilesSection
           turnSummary={row.assistantTurnDiffSummary}
           routeThreadKey={ctx.routeThreadKey}
@@ -1177,8 +1186,19 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
           onOpenTurnDiff={ctx.onOpenTurnDiff}
         />
         {row.showAssistantMeta ? (
-          <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-(--duration-base) focus-within:opacity-100 group-hover/assistant:opacity-100">
+          <div
+            className={cn(
+              "mt-1.5 flex items-center gap-2 text-xs tabular-nums transition-opacity duration-(--duration-base) focus-within:opacity-100 group-hover/assistant:opacity-100",
+              // The way back to the rendered answer cannot be the thing that hides on pointer-out.
+              showsSource ? "opacity-100" : "opacity-0",
+            )}
+          >
             <AskOnTheSideButton messageId={row.message.id} streaming={row.message.streaming} />
+            <MessageSourceToggleButton
+              messageId={row.message.id}
+              streaming={row.message.streaming}
+              showsSource={showsSource}
+            />
             <AssistantCopyButton row={row} />
             {!row.message.streaming && (
               <Tooltip>
@@ -1233,6 +1253,53 @@ function AskOnTheSideButton({
       <TooltipPopup side="top" className="max-w-72">
         Open a new thread on this message, in the same checkout. The question stays out of this
         conversation&apos;s context.
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** The raw answer, for checking what the model actually wrote rather than what the renderer made. */
+function MessageSourceBlock({ text }: { readonly text: string }) {
+  return (
+    <pre className="my-0.5 max-w-full overflow-x-auto whitespace-pre-wrap wrap-break-word rounded-md border border-border/60 bg-background/60 px-2.5 py-2 font-mono text-2xs leading-relaxed text-muted-foreground">
+      {text}
+    </pre>
+  );
+}
+
+/**
+ * Hidden while the message streams: the source of half an answer is a moving target, and the
+ * rendered view is the one that reads while text arrives.
+ */
+function MessageSourceToggleButton({
+  messageId,
+  streaming,
+  showsSource,
+}: {
+  readonly messageId: MessageId;
+  readonly streaming: boolean | undefined;
+  readonly showsSource: boolean;
+}) {
+  const toggleMessageSource = useMessageSourceStore((state) => state.toggleMessageSource);
+  if (streaming) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            aria-label={showsSource ? "Show rendered answer" : "Show markdown source"}
+            aria-pressed={showsSource}
+            onClick={() => toggleMessageSource(messageId)}
+          >
+            {showsSource ? <EyeIcon className="size-3.5" /> : <CodeIcon className="size-3.5" />}
+          </Button>
+        }
+      />
+      <TooltipPopup side="top">
+        {showsSource ? "Show rendered answer" : "Show markdown source"}
       </TooltipPopup>
     </Tooltip>
   );
