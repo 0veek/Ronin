@@ -12,6 +12,8 @@ Open **Settings → Agent skills** to see every discovered skill, where it came 
 
 Ronin ships with [Matt Pocock's skills](https://github.com/mattpocock/skills): engineering workflows such as `tdd`, `implement`, `triage`, `to-spec`, and `diagnosing-bugs`, plus thinking-and-writing skills such as `grilling`, `handoff`, and `teach`. They are enabled out of the box and work on every provider.
 
+Ronin also ships [ponytail](https://github.com/DietrichGebert/ponytail), which puts a lazy senior developer in the chair: `$ponytail` makes the agent reach for the standard library and the platform before it writes anything custom, at `lite`, `full`, or `ultra` intensity. `$ponytail-review` and `$ponytail-audit` hunt over-engineering in a diff or across the repo, `$ponytail-debt` collects the shortcuts it left behind, and `$ponytail-help` is the reference card. Like every built-in, it stays out of the way until you name it — the agent does not get lazy on its own.
+
 They sit at the bottom of **Settings → Agent skills** under **Built-in skills**, where each has its own switch and the section header can turn the whole set on or off. Built-ins have the lowest precedence: if you keep your own `tdd` in `~/.ronin/skills`, or your provider ships one, yours is the copy that runs.
 
 Several built-ins are named after everyday words, so they only run when you name them as `$tdd` or `/tdd`. Writing "implement the login form" does not pull in the `implement` skill; `$implement the login form` does. Skills you installed yourself keep the looser match, where naming the skill in a sentence is enough.

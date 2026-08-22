@@ -14,9 +14,10 @@ is what ships in the npm package and inside the desktop app.
 
 ## Packs
 
-| Pack         | Source                                                                           | License |
-| ------------ | -------------------------------------------------------------------------------- | ------- |
-| `mattpocock` | [mattpocock/skills](https://github.com/mattpocock/skills) `068b6e0` (2026-08-15) | MIT     |
+| Pack         | Source                                                                                      | License |
+| ------------ | ------------------------------------------------------------------------------------------- | ------- |
+| `mattpocock` | [mattpocock/skills](https://github.com/mattpocock/skills) `068b6e0` (2026-08-15)            | MIT     |
+| `ponytail`   | [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail) `v4.9.0` (2026-08-08) | MIT     |
 
 ## Local changes
 
@@ -31,6 +32,19 @@ listed here and has to be reapplied after a refresh:
   renamed in the same four places. Six other skills tell the user to run it when
   a repo has no tracker configured, so the rename also has to be reapplied to
   every `/setup-ronin-skills` mention across the pack.
+- Every `ponytail` skill has its `description:` flattened onto one line.
+  Upstream writes them as folded YAML (`description: >` plus indented
+  continuation lines), and discovery parses frontmatter line by line, so a
+  folded description reads back as the literal `>`.
+- `ponytail/ponytail-help` documents the upstream plugin: a default mode
+  persisted through `PONYTAIL_DEFAULT_MODE` and `~/.config/ponytail/config.json`,
+  a status badge, and `/plugin` update steps. None of that machinery ships here
+  — the pack is SKILL.md files only — so the card's "Configure Default Mode" and
+  "Update" sections are replaced by one "In Ronin" section, and its per-provider
+  invocation note is replaced by Ronin's `$name` / `/name` convention.
+- `ponytail/ponytail-gain` cites its numbers as coming from `benchmarks/`, which
+  is upstream's directory and is not vendored. It points at the upstream repo
+  instead, so the skill does not send an agent hunting through the user's repo.
 
 ## Updating a vendored pack
 

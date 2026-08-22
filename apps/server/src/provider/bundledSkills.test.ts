@@ -40,6 +40,16 @@ describe("bundled skill packs", () => {
     expect(names.length).toBeGreaterThanOrEqual(25);
   });
 
+  it("ships the ponytail pack", async () => {
+    const names = (await bundledSkillDescriptors()).map((entry) => entry.descriptor?.name);
+    expect(names).toContain("ponytail");
+    expect(names).toContain("ponytail-review");
+    expect(names).toContain("ponytail-audit");
+    expect(names).toContain("ponytail-debt");
+    expect(names).toContain("ponytail-gain");
+    expect(names).toContain("ponytail-help");
+  });
+
   // See the "Local changes" section of apps/server/skills/README.md: refreshing
   // the pack from upstream reintroduces the original names unless the renames
   // are reapplied.
@@ -76,6 +86,14 @@ describe("bundled skill packs", () => {
     for (const entry of await bundledSkillDescriptors()) {
       expect(entry.descriptor, `${entry.skillPath} has no readable frontmatter`).not.toBeNull();
       expect(entry.descriptor?.description, `${entry.skillPath} has no description`).toBeTruthy();
+      // Frontmatter is parsed line by line, so a folded description
+      // (`description: >` over indented lines) reads back as the block marker
+      // itself and reaches the picker as ">". Upstream ponytail writes them
+      // that way, so a pack refresh has to reflatten them.
+      expect(
+        entry.descriptor?.description,
+        `${entry.skillPath} has a folded description; flatten it onto one line`,
+      ).not.toMatch(/^[>|]/);
     }
   });
 
@@ -92,7 +110,9 @@ describe("bundled skill packs", () => {
 
   it("keeps the upstream license next to the pack it covers", async () => {
     const dir = await requireBundledSkillsDir();
-    const license = await NodeFSP.readFile(NodePath.join(dir, "mattpocock", "LICENSE"), "utf8");
-    expect(license).toContain("MIT License");
+    for (const pack of ["mattpocock", "ponytail"]) {
+      const license = await NodeFSP.readFile(NodePath.join(dir, pack, "LICENSE"), "utf8");
+      expect(license, `${pack} is missing its upstream license`).toContain("MIT License");
+    }
   });
 });
