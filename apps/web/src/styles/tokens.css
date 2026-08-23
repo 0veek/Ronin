@@ -190,6 +190,13 @@
   --material-scrim-fill: color-mix(in srgb, var(--background) 55%, transparent);
   --material-scrim-blur: 8px;
 
+  /* Appearance -> Contrast writes these three at runtime; see appearanceContrast.ts. At 100%
+     the mixes below are identity, so an untouched install renders exactly as before. */
+  --appearance-contrast-base: 100%;
+  --appearance-contrast-boost: 0%;
+  --appearance-contrast-border-boost: 0%;
+  --appearance-contrast-target: black;
+
   --app-scrollbar-width: 10px;
   --app-scrollbar-thumb: rgb(0 0 0 / 28%);
 
@@ -222,7 +229,11 @@
   --app-scrollbar-thumb-hover: rgb(0 0 0 / 42%);
   --sidebar-content-inset: var(--space-2);
   --sidebar-control-gap: var(--space-2);
-  --sidebar-icon-color: color-mix(in srgb, var(--sidebar-muted-foreground) 60%, var(--sidebar));
+  --sidebar-icon-color: color-mix(
+    in srgb,
+    var(--contrast-sidebar-muted-foreground) 60%,
+    var(--sidebar)
+  );
   --sidebar-row-content-inset: var(--space-3);
   --command-shell-inset: var(--space-2);
   --command-content-inset: var(--space-4);
@@ -300,40 +311,40 @@
   --color-info: var(--info);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
+  --color-input: var(--contrast-input);
+  --color-border: var(--contrast-border);
   --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-foreground: var(--contrast-accent-foreground);
   --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
+  --color-muted-foreground: var(--contrast-muted-foreground);
   --color-muted: var(--muted);
-  --color-placeholder: var(--placeholder);
-  --color-secondary-label: var(--secondary-label);
-  --color-icon-muted: var(--icon-muted);
-  --color-secondary-foreground: var(--secondary-foreground);
+  --color-placeholder: var(--contrast-placeholder);
+  --color-secondary-label: var(--contrast-secondary-label);
+  --color-icon-muted: var(--contrast-icon-muted);
+  --color-secondary-foreground: var(--contrast-secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
+  --color-popover-foreground: var(--contrast-popover-foreground);
   --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
+  --color-card-foreground: var(--contrast-card-foreground);
   --color-card: var(--card);
-  --color-foreground: var(--foreground);
+  --color-foreground: var(--contrast-foreground);
   --color-background: var(--background);
   --color-surface-raised: var(--surface-raised);
   --color-message: var(--message-surface);
-  --color-message-foreground: var(--message-foreground);
+  --color-message-foreground: var(--contrast-message-foreground);
   --color-message-action: var(--message-action);
   --color-message-action-foreground: var(--message-action-foreground);
   --color-message-action-hover: var(--message-action-hover);
   --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-muted-foreground: var(--sidebar-muted-foreground);
+  --color-sidebar-foreground: var(--contrast-sidebar-foreground);
+  --color-sidebar-muted-foreground: var(--contrast-sidebar-muted-foreground);
   --color-sidebar-control-surface: var(--sidebar-control-surface);
   --color-sidebar-row-hover: var(--sidebar-row-hover);
   --color-sidebar-row-active: var(--sidebar-row-active);
   --color-sidebar-row-selected: var(--sidebar-row-selected);
-  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-border: var(--contrast-sidebar-border);
   /*
    * The radius ramp is additive from the 8px base. The steps that matter:
    * --radius-lg (10px) is the menu/popover corner, --radius-xl (12px) is the
@@ -425,6 +436,7 @@
 
   @variant dark {
     color-scheme: dark;
+    --appearance-contrast-target: white;
     /* Keep the workspace in the same neutral-black family as sidebar v2.
        Surfaces lift from this base instead of starting from a milky gray. */
     --background: var(--color-neutral-950);
@@ -686,4 +698,121 @@
     --animate-ghost-pulse: none;
     --animate-status-ping: none;
   }
+}
+
+/* Contrast stays in ordinary custom properties so both Tailwind utilities and
+   global/imperative chrome styles resolve the same adjusted role. Redeclare on
+   the sidebar because it owns a local semantic palette. */
+:root,
+[data-app-sidebar] {
+  --contrast-toolbar-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--toolbar-foreground) var(--appearance-contrast-base),
+      var(--toolbar-background)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-toolbar-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--toolbar-border) var(--appearance-contrast-base), transparent),
+    var(--toolbar-foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-toolbar-control-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--toolbar-control-foreground) var(--appearance-contrast-base),
+      var(--toolbar-control)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-input: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--input) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--border) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--foreground) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-muted-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--muted-foreground) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-placeholder: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--placeholder) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-secondary-label: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--secondary-label) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-icon-muted: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--icon-muted) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-card-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--card-foreground) var(--appearance-contrast-base), var(--card)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-popover-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--popover-foreground) var(--appearance-contrast-base), var(--popover)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-accent-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--accent-foreground) var(--appearance-contrast-base), var(--accent)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-secondary-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--secondary-foreground) var(--appearance-contrast-base),
+      var(--secondary)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-message-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--message-foreground) var(--appearance-contrast-base),
+      var(--message-surface)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-sidebar-foreground: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--sidebar-foreground) var(--appearance-contrast-base), var(--sidebar)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-sidebar-muted-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--sidebar-muted-foreground) var(--appearance-contrast-base),
+      var(--sidebar)
+    ),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-sidebar-border: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--sidebar-border) var(--appearance-contrast-base), transparent),
+    var(--sidebar-foreground) var(--appearance-contrast-border-boost)
+  );
 }

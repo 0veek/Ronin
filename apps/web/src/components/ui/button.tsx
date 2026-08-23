@@ -54,10 +54,10 @@ const buttonVariants = cva(
         "destructive-outline":
           "border-input bg-transparent text-destructive-foreground [:hover,[data-pressed]]:border-destructive/40 [:hover,[data-pressed]]:bg-destructive/8",
         ghost:
-          "[--control-icon-color:var(--muted-foreground)] border-transparent text-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent",
         link: "border-transparent underline-offset-4 [:hover,[data-pressed]]:underline",
         outline:
-          "[--control-icon-color:var(--muted-foreground)] border-input bg-transparent text-foreground [:hover,[data-pressed]]:bg-accent",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-input bg-transparent text-foreground [:hover,[data-pressed]]:bg-accent",
         secondary:
           "border-transparent bg-secondary text-secondary-foreground [:hover,[data-pressed]]:bg-secondary/80",
       },

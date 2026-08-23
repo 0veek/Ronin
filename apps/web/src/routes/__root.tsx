@@ -33,6 +33,7 @@ import {
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
 import { getChatWidthCssVariables, normalizeChatWidthMode } from "~/lib/chatWidth";
+import { applyAppearanceContrast } from "~/appearanceContrast";
 import { useClientSettings } from "../hooks/useSettings";
 import { PlanAgentSelectionHeal } from "../planAgentSelectionHeal";
 import {
@@ -135,6 +136,7 @@ function RootRouteView() {
       <AnchoredToastProvider>
         <AppUpdateProvider>
           <DocumentTitleSync />
+          <ContrastAppearanceSync />
           <FontAppearanceSync />
           {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
           <SshPasswordPromptDialog />
@@ -155,6 +157,16 @@ function RootRouteView() {
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+function ContrastAppearanceSync() {
+  const appearanceContrast = useClientSettings((settings) => settings.appearanceContrast);
+
+  useEffect(() => {
+    applyAppearanceContrast(document.documentElement, appearanceContrast);
+  }, [appearanceContrast]);
+
+  return null;
 }
 
 function FontAppearanceSync() {

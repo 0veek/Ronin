@@ -30,6 +30,7 @@ import {
   localEnvironmentUpdateNotificationKey,
   providerUpdateNotificationKey,
   resolveEnvironmentUpdateRowStatus,
+  shouldShowPrimaryProviderUpdateToast,
   type LocalEnvironmentProvidersInput,
   type LocalEnvironmentUpdateGroup,
   type LocalProviderUpdateOutcome,
@@ -324,6 +325,21 @@ describe("provider update launch notification logic", () => {
       type: "loading",
       title: "Updating provider",
     });
+    expect(shouldShowPrimaryProviderUpdateToast(view)).toBe(false);
+  });
+
+  it("keeps the initial prompt and terminal outcomes visible as toasts", () => {
+    expect(
+      shouldShowPrimaryProviderUpdateToast(
+        getProviderUpdateInitialToastView({
+          updateProviders: [updateCandidate({ driver: driver("codex") })],
+          oneClickProviders: [updateCandidate({ driver: driver("codex") })],
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      shouldShowPrimaryProviderUpdateToast(getProviderUpdateRejectedToastView(1, "boom")),
+    ).toBe(true);
   });
 
   it("uses server failure state for failed progress", () => {

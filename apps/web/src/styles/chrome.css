@@ -609,13 +609,13 @@
     background: linear-gradient(
       to right,
       var(--primary) 0 var(--settings-slider-fill-position),
-      var(--border) var(--settings-slider-fill-position) 100%
+      var(--contrast-border) var(--settings-slider-fill-position) 100%
     );
   }
 
   .settings-slider::-moz-range-track {
     height: 2px;
-    background: var(--border);
+    background: var(--contrast-border);
   }
 
   .settings-slider::-moz-range-progress {

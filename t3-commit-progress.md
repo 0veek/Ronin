@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                                        |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `035058a23` — `fix(mobile): stop a directly-saved backend from hiding its T3 Connect environment (#7086)` (2026-08-21) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                                        |
-| **Ported on**                 | 2026-08-22                                                                                                             |
+|                               |                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `2433f4c1c` — `fix(ci): let Macroscope approve pull requests again (#7970)` (2026-08-23) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                          |
+| **Ported on**                 | 2026-08-23                                                                               |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -1350,4 +1350,218 @@ Nothing in this range was already present.
   submission is a composer keybinding documented under `mod+enter`, not a palette command.
 - **Docs** — `docs/user/composer.md` and `docs/user/keybindings.md` both describe background
   submission (rebranded, with upstream's mobile-only qualifier dropped). No new vocabulary, so
+  `docs/internals/glossary.md` is untouched.
+
+## Batch 11 — reviewed through `2433f4c1c` (21 commits)
+
+Reviewed `035058a23..2433f4c1c`, snapshotted at `2433f4c1c` for the whole run. Two commits needed a
+product decision and were put to the developer before any code was written: the appearance contrast
+control was taken (adapted), and the Codex `/feedback` upload was declined.
+
+### Ported (16)
+
+| Upstream    | Title                                                                                 | Notes                                                                           |
+| ----------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `ce91284f8` | fix(web): stop marking mixed tool runs as failed (#7893)                              | **adapted** — server hunks only; the web hunk has no counterpart, see below     |
+| `f34b9d31b` | fix(web): command-click spaced folder links (#6439)                                   | clean                                                                           |
+| `2274444e9` | fix(chat): stop pushing follow-up messages to the top (#7897)                         | **adapted** — mobile hunks dropped; web and shared applied clean                |
+| `2c4158f87` | fix(web): handle wide ordered-list marker edge cases (#7856)                          | **adapted** — the CSS hunks live in `styles/markdown.css` here, not `index.css` |
+| `49c2b4471` | fix(ssh): restore user PATH for remote servers (#7213)                                | clean — matters more here, remote environments are core                         |
+| `d9c1732b2` | fix(desktop): keep tailscale spawn defects from breaking advertised endpoints (#7116) | clean                                                                           |
+| `dedcd99a9` | fix(web): keep Codex service tier labels readable (#4503)                             | clean                                                                           |
+| `77c9d1eb5` | fix: render workspace images in chat markdown (#6433)                                 | **partial** — only the UNC hunk; the feature itself is already here, see below  |
+| `6c693baec` | fix(clients): keep opening responses visible after turns settle (#7723)               | **adapted** — one test assertion keeps Ronin's row shape, see below             |
+| `6e9c57f7b` | feat(web): add appearance contrast control (#7906)                                    | **adapted** — 254 CSS lines redistributed across four stylesheets, see below    |
+| `4e00471d1` | fix(server): stop completed Codex threads from staying stuck on working (#7937)       | clean                                                                           |
+| `4e169df1d` | fix(web): remove duplicate provider update progress (#7761)                           | clean                                                                           |
+| `30be31195` | fix(server): fall back to the remote default branch instead of assuming main (#7078)  | clean                                                                           |
+| `fdd1572b6` | fix(web): give sidebar project menu rows the same side padding as other menus (#7913) | clean                                                                           |
+| `afa830980` | fix(clients): reconnect after credentials fail during remote server updates (#7953)   | clean                                                                           |
+| `4d12e5222` | fix(server): stop kills lingering Claude work (#5891)                                 | **adapted** — `stopTask` stays on the runtime interface, see below              |
+
+Fork-specific decisions worth recording:
+
+- **`ce91284f8` (mixed tool runs).** The two server hunks are the substantive fix and apply clean:
+  `mapItemLifecycle` now carries a Codex item's `failed`/`declined` status instead of flattening
+  every `item.completed` to `completed`, and `projectActivityPayload` projects that status onto the
+  payload for both the `mcp_tool_call` and generic branches. Ronin renders per-entry tool status
+  through `workEntryIndicatesToolFailure` in `session-logic.ts`, so the server fix is visible here.
+  The web hunk was dropped: it rewrites `hasFailure` on a `work-toggle` row that summarises a whole
+  tool group, and Ronin's `work-toggle` row carries no `summary`, `summaryKind`, or `hasFailure` —
+  this fork renders each work entry as its own row rather than collapsing a group behind a summary,
+  so there is no group-level failure flag to correct. The new upstream test asserting the projection
+  through `buildThreadFeed` (the mobile feed builder) had its mobile half removed and was renamed
+  "preserves failed stored tool outcomes for the web client"; the web half, which is the assertion
+  that matters here, is kept intact.
+
+- **`77c9d1eb5` (workspace images).** The feature is **already in the tree** and was solved
+  independently: `MarkdownImage` in `ChatMarkdown.tsx` routes a local image source through
+  `isLocalImageSource` / `localImagePathFromSource` / `isWorkspaceImagePreviewPath` to a
+  `WorkspaceMarkdownImage` backed by a signed workspace asset URL, with a `MissingMediaChip`
+  placeholder, and `chatMarkdownImage.test.ts` covers it. Ronin's version additionally gates on a
+  preview-supported extension, which upstream's `classifyMarkdownImageSource` does not. Nothing was
+  re-ported for it, and `packages/client-runtime/src/markdownImages.ts` was deliberately not added —
+  a second classifier would be a competing source of truth. What **was** taken is the one hunk in
+  `markdown-links.ts` that this fork genuinely lacked: `parseFileUrlHref` dropped a file URI's
+  authority, so `file://server/share/x.svg` resolved to `/share/x.svg` instead of the UNC path
+  `\\server\share\x.svg`, while `file://localhost/...` correctly stays a plain local path. Both
+  upstream test pairs came with it.
+
+- **`6c693baec` (opening responses).** `deriveTurnFolds` ports whole: a settled turn now keeps its
+  first assistant message visible alongside the terminal one, and the fold anchors at the first
+  _hidden_ entry rather than the first entry. One assertion in the expanded-rows test had to keep
+  Ronin's shape — with the same fixture upstream expects `work-toggle:work-entry-1` where this fork
+  expects `work-entry-1`, because Ronin expands a fold into its individual work rows instead of a
+  single toggle. A comment on that line records why the two differ.
+
+- **`6e9c57f7b` (appearance contrast).** Upstream's diff is 190 added lines in one 2,397-line
+  `index.css`; this fork's `index.css` is a 32-line import manifest, so the change was redistributed:
+  - `styles/tokens.css` gets the four runtime inputs (`--appearance-contrast-base`, `-boost`,
+    `-border-boost`, `-target`, with the target flipping to white under the `dark` variant), the
+    fifteen `@theme inline` remaps from `var(--role)` to `var(--contrast-role)`, the derived
+    `--sidebar-icon-color` now reading the adjusted sidebar role, and the whole
+    `:root, [data-app-sidebar]` block that computes every `--contrast-*` value. Declaring it on
+    `[data-app-sidebar]` as well as `:root` matters here because `.dark [data-app-sidebar]` in
+    `themes.css` redefines `--foreground`, `--border`, and friends for the sidebar's local palette.
+  - `styles/themes.css` gets the sidebar row hover/active/selected mixes and the themed chat-header
+    and panel-control toolbar roles.
+  - `styles/chrome.css` gets the settings-slider track. Ronin restyled that slider (2px track, no
+    box-shadows), so only the two `var(--border)` reads had a counterpart; upstream's thumb-shadow
+    substitutions have nothing to apply to.
+  - `styles/markdown.css` gets the file-link tooltip scrollbar. Upstream inlines those scrollbar
+    utilities on the element and edits them there; Ronin extracted them into
+    `.markdown-file-link-tooltip-scroll`, so the four `color-mix(in srgb, var(--border) 78%, …)`
+    reads were changed in the class instead and `ChatMarkdown.tsx` kept its class reference.
+
+  At the default 100% every mix is the identity (`base` 100%, `boost` 0%), so an untouched install
+  renders exactly as before. Three further adaptations: upstream's `button.tsx` hunk arrives with
+  its `ghost-muted`, `glass`, and rebuilt `outline` variants, none of which exist here — only the
+  `[--control-icon-color:…]` reads were switched to the contrast role. `usageProviders.ts` was left
+  alone entirely: upstream restructured `PROVIDER_COLOR` into `PROVIDER_PRESENTATION` and gave Codex
+  `var(--contrast-foreground)`, while Ronin keys usage colors off its own `--provider-*` brand
+  tokens, which are marks rather than contrast-adjusted roles. Finally, upstream's `GlassAppearanceSync`
+  and its glass-opacity settings row appear throughout the conflicts as context, because upstream has
+  them and this fork does not; they were excluded as out-of-batch. That exposed a **pre-existing fork
+  gap, deliberately not fixed here**: `glassOpacity` exists in `ClientSettingsSchema` but this fork
+  has no settings row for it and nothing that writes `--glass-opacity` to the document, so the
+  setting is inert. It is unrelated to this commit and belongs to its own change.
+
+- **`4d12e5222` (Stop kills lingering Claude work).** The behavior ports whole: `stopSessionInternal`
+  now closes the query _first_ so the SDK can escalate to SIGKILL before any cleanup that might wait
+  on the provider, emits `task.completed{status:"stopped"}` for every still-live task, guards both
+  the exit event and the map delete on the context still being the registered session, propagates
+  the first failure out of `stopAll` and the finalizer, and bounds the context-usage read with a
+  one-second timeout. `interruptTurn` becomes a hard session close, because SDK `interrupt()` can
+  acknowledge while resumed background work keeps the CLI alive. The one adaptation: upstream
+  deletes both `interrupt` and `stopTask` from `ClaudeQueryRuntime`, but this fork also has
+  `stopAgent` — the Agents-surface control that stops one subagent while its parent turn keeps
+  running — built on `stopLiveTask`, which is now the only caller of `stopTask`. So `stopTask` stays
+  on the interface (with a comment saying why it survived upstream's removal) and on the test fake,
+  while `interrupt` goes with the method that used it. Ronin's two `stopAgent` tests asserted
+  "the parent turn was never interrupted" via `interruptCalls.length === 0`; that assertion now
+  reads `closeCalls === 0`, which is the same claim against the mechanism that replaced it.
+
+### Already in the tree (0)
+
+Nothing in this range was wholly present, though `77c9d1eb5`'s workspace-image rendering was (see
+the Ported notes above — the commit is recorded there because one of its hunks was genuinely new).
+
+### Skipped (5)
+
+| Upstream    | Title                                                                         | Why                                                                 |
+| ----------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `11f051373` | feat(analytics): threads and turns now know which client started them (#7774) | telemetry is a cut surface; see below                               |
+| `0ede2ed0d` | test(desktop): remove redundant release note assertion (#7873)                | `apps/desktop/src/updates/releaseNotes.test.ts` does not exist here |
+| `5a7a7cf29` | fix(mobile): preserve markdown image dimensions (#7940)                       | no mobile app in this repo                                          |
+| `3db38b881` | feat(codex): submit thread feedback to OpenAI (#7949)                         | declined by the developer; see below                                |
+| `2433f4c1c` | fix(ci): let Macroscope approve pull requests again (#7970)                   | upstream governance: whether their review bot may approve their PRs |
+
+- **`11f051373`.** The commit's whole purpose is stamping an `origin` (client surface plus app
+  version) onto orchestration event metadata and auth session rows so upstream's analytics can
+  attribute threads and turns. This fork has no analytics sink — batch 9 already recorded that
+  `src/telemetry/AnalyticsService.ts` "does not exist here (telemetry is cut)" — so nothing would
+  consume the stamp, and it also collides on migration numbering: upstream adds
+  `041_AuthSessionClientConnection` while this fork's `041` is `ProviderSessionLedger` and the
+  sequence already runs to `049`. **One salvage if ever wanted:** `ClientSurface` plus `appVersion`
+  on `AuthClientPresentationMetadata` is the piece that would let Settings → Connections say
+  "desktop 0.6.8" rather than just "desktop", which is worth more in a fork that is remote-ready by
+  design than the analytics it was written for. That would be its own change, not this one.
+
+- **`3db38b881`.** Put to the developer with the case for and against and declined: a `/feedback`
+  slash command that uploads a thread transcript and Codex logs to OpenAI is a one-command path for
+  a whole conversation to leave the machine, and anyone who wants it can run `/feedback` in the
+  Codex CLI directly. Nothing else in the range depends on it; `provider.uploadFeedback`, the
+  `ProviderUploadFeedback*` contracts, and the composer surface are all absent here.
+
+### Verification
+
+- **Typecheck, all clean:** `@t3tools/contracts`, `@t3tools/client-runtime`, `@t3tools/shared`,
+  `@t3tools/web`, `@t3tools/desktop`, `@t3tools/ssh`, `@t3tools/tailscale`, and `t3` (server). The
+  same **pre-existing** suggestions from batches 8–10 survive untouched and nothing new appeared:
+  `DesktopAutoUpdate.ts:175` (`runEffectInsideEffect`) and three `unnecessaryFailYieldableError`
+  hits in `ClaudeAdapter.ts` and `ProviderService.ts`. One real error was introduced mid-port and
+  fixed rather than suppressed: `SettingsPanels.tsx` needed `CSSProperties` added to its type import
+  once the contrast slider style landed.
+
+- **Focused tests, 622 passing across 20 files.**
+  - server: `ClaudeAdapter` (77, including this fork's two `stopAgent` cases and upstream's two new
+    close-failure cases) · `CodexAdapter` (28) · `ActivityPayloadProjection` server-test (20) and
+    orchestration-test · `ProviderRegistry` · `GitManager` (46) · `GitVcsDriverCore` (62) ·
+    `GitWorkflowService`.
+  - web: `MessagesTimeline.logic` (31) · `MessagesTimeline` · `TraitsPicker` · `ChatView.logic` ·
+    `ChatMarkdown` · `markdown-links` · `appearanceContrast` (new file) · `contextMenuFallback` ·
+    `ui/button` · `ProviderUpdateLaunchNotification.logic` · `settingsSearch` (10).
+  - contracts: `settings` (45, including the four new contrast cases). shared: `chatList` (5).
+    client-runtime: `state/server` (13). ssh: `tunnel` (13). tailscale: `tailscale` (14).
+    desktop: `DesktopClientSettings` (8).
+
+- **One pre-existing failure, re-confirmed against this batch:**
+  `MessagesTimeline.test.tsx > keeps the copy button for collapsed long user messages` fails on
+  `aria-label="Copy link"`. Reproduced by restoring `MessagesTimeline.tsx`, `MessagesTimeline.logic.ts`,
+  and `MessagesTimeline.test.tsx` to `HEAD` and rerunning: the same test still fails. Recorded as
+  pre-existing in batches 9 and 10. With this batch applied it is the only failure in that file —
+  the two other failures visible at `HEAD` (`anchors a sent attachment message using its measured
+height`, `hands end-following back to the list once the send anchor is released`) are the ones
+  `2274444e9` fixes.
+
+- **Lint:** `vp lint --report-unused-disable-directives` over all 58 changed/added `.ts`/`.tsx`
+  files — 0 findings.
+- **Format:** `vp fmt --check` over all 62 changed/added files (including the four stylesheets) —
+  all correct.
+- `git diff --check` clean. Nothing staged; the index was left as found.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — `ClientSettingsSchema` and `ClientSettingsPatch` gain `appearanceContrast`, bounded
+  50–200 and defaulted to 100 through `withDecodingDefault`, so an older stored settings blob decodes
+  unchanged.
+- **Server** — Codex item lifecycle carries `failed`/`declined` through to activity projection;
+  Codex `collabAgent/interacted` no longer re-reports a settled child as running; Claude Stop is a
+  hard session boundary; base-branch resolution falls back to the remote's own default branch
+  (`resolveDefaultBranchName` is now exposed on the `GitVcsDriver` interface) instead of assuming
+  `main`.
+- **Desktop (Electron/IPC)** — no IPC change; `DesktopClientSettings` picks up the new client
+  setting through the shared contract, and its test asserts the added key.
+- **Web renderer** — chat (a follow-up message returns to the live edge instead of being anchored to
+  the top; a settled turn keeps its opening response visible; Codex service tiers read as their own
+  label), markdown (spaced folder links resolve, command-click opens in the editor, wide and negative
+  ordered-list markers get a gutter, file URIs keep their UNC authority), sidebar (project menu rows
+  match other menus' side padding), settings (a Contrast slider under Appearance, searchable), and
+  provider updates (one progress toast instead of two).
+- **Providers** — Codex and Claude adapters both changed; the other seven needed no decision, and
+  nothing in this range is shaped like a cross-provider capability.
+- **Reverse states** — the contrast slider ships with its reset-to-default action and reports itself
+  in the "changed from default" summary; a failed Claude process close now leaves the session
+  available and `ready` rather than half-torn-down, which upstream added a test for; `stopAgent`
+  still fails loudly when a task did not settle instead of reporting a stop that did not happen.
+- **Connection modes** — two fixes are specifically about non-local environments: remote servers
+  launched over SSH now start under a login shell (`sh -l`) so a user's PATH is present, and a
+  client whose credential is rejected by a just-restarted server keeps retrying on the paced
+  reconnect instead of parking in `blocked`. The Tailscale status reader no longer lets a synchronous
+  spawn defect (a non-directory entry on PATH throws `ENOTDIR`) escape as an uncaught error and take
+  the advertised endpoints with it.
+- **Entry points** — Contrast is reachable from Settings → Appearance and from settings search; it
+  is not a palette command or a keybinding.
+- **Docs** — no user-facing doc changed. The contrast control is self-describing in the settings row,
+  and every other port is a fix to existing documented behavior. No new vocabulary, so
   `docs/internals/glossary.md` is untouched.
