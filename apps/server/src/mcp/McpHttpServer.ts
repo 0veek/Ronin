@@ -10,6 +10,7 @@ import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 
 import packageJson from "../../package.json" with { type: "json" };
+import { toAdvertisedJsonSchema } from "./advertisedToolSchema.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
@@ -203,17 +204,46 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
   });
 });
 
-const PreviewStandardToolkitRegistrationLive = McpServer.toolkit(PreviewStandardToolkit).pipe(
+/**
+ * Rewrites the schema each registered tool advertises, in place.
+ *
+ * This runs after registration rather than replacing it because registration
+ * is also where a tool's error semantics live — how a declared failure, a
+ * parameter validation error, and a defect each become a `CallToolResult`.
+ * Reimplementing the loop to pass one different argument would mean owning a
+ * copy of all of that, which drifts from upstream on the next bump. Slimming
+ * the finished list keeps `registerToolkit` as the single source of that
+ * behavior and touches only the bytes we send to the model.
+ *
+ * If a future `effect` returns a copy from `tools` rather than the live array,
+ * this degrades to a no-op — the prompt gets fatter, nothing breaks — and
+ * `advertisedToolSchema.test.ts` fails so we find out.
+ */
+const slimAdvertisedToolSchemas = Effect.fn("McpHttpServer.slimAdvertisedToolSchemas")(
+  function* () {
+    const server = yield* McpServer.McpServer;
+    // `tools` is declared readonly because callers are meant to add, not edit.
+    // Rewriting the advertised schema of a tool already in the list is the one
+    // exception, and it is why this cast is confined to these three lines.
+    const registered = server.tools as unknown as Array<{ tool: McpSchema.Tool }>;
+    for (const entry of registered) {
+      entry.tool = new McpSchema.Tool({
+        ...entry.tool,
+        inputSchema: toAdvertisedJsonSchema(entry.tool.name, entry.tool.inputSchema),
+      });
+    }
+  },
+);
+
+const registerPreviewToolkits = Effect.fn("McpHttpServer.registerPreviewToolkits")(function* () {
+  yield* McpServer.registerToolkit(PreviewStandardToolkit);
+  yield* registerPreviewSnapshot();
+  yield* slimAdvertisedToolSchemas();
+});
+
+export const PreviewToolkitRegistrationLive = Layer.effectDiscard(registerPreviewToolkits()).pipe(
   Layer.provide(PreviewStandardToolkitHandlersLive),
-);
-
-const PreviewSnapshotRegistrationLive = Layer.effectDiscard(registerPreviewSnapshot()).pipe(
   Layer.provide(PreviewSnapshotToolkitHandlersLive),
-);
-
-export const PreviewToolkitRegistrationLive = Layer.mergeAll(
-  PreviewStandardToolkitRegistrationLive,
-  PreviewSnapshotRegistrationLive,
 );
 
 const McpTransportLive = McpServer.layerHttp({

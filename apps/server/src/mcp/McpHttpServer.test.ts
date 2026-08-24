@@ -286,3 +286,46 @@ it.effect("registers annotated tools and preserves authenticated request context
     }),
   ).pipe(Effect.provide(TestLayer)),
 );
+
+/** Every node of a JSON Schema, so an assertion cannot miss a nested one. */
+function* schemaNodes(value: unknown): Generator<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    for (const entry of value) yield* schemaNodes(entry);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  yield value as Record<string, unknown>;
+  for (const nested of Object.values(value)) yield* schemaNodes(nested);
+}
+
+it.effect("advertises the slimmed input schema for every registered tool", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      expect(server.tools.length).toBeGreaterThan(0);
+
+      // Proves the rewrite reaches the live registry rather than a copy. Were
+      // `tools` to start returning a snapshot, slimming would quietly no-op and
+      // every turn would carry the fat schema again with nothing to show for it.
+      for (const { tool } of server.tools) {
+        for (const node of schemaNodes(tool.inputSchema)) {
+          expect(node.type, `${tool.name} still advertises a nullable branch`).not.toBe("null");
+          expect(
+            String(node.pattern ?? ""),
+            `${tool.name} still advertises the trimmed-string regex`,
+          ).not.toContain("[\\s\\S]");
+        }
+      }
+
+      const click = server.tools.find((entry) => entry.tool.name === "preview_click");
+      if (!click) throw new Error("preview_click was not registered");
+      const clickProperties = (click.tool.inputSchema as { properties?: Record<string, unknown> })
+        .properties;
+      expect(
+        clickProperties?.selector,
+        "the legacy alias should not be advertised",
+      ).toBeUndefined();
+      expect(clickProperties?.locator, "locator is what replaces it").toBeDefined();
+    }),
+  ).pipe(Effect.provide(TestLayer)),
+);
