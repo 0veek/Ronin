@@ -187,7 +187,6 @@ export const checkDroidProviderStatus = Effect.fn("checkDroidProviderStatus")(fu
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = droidModelsFromSettings(droidSettings.customModels);
-  const skills = yield* discoverDroidSkills(environment, cwd);
 
   if (!droidSettings.enabled) {
     return buildServerProvider({
@@ -204,6 +203,10 @@ export const checkDroidProviderStatus = Effect.fn("checkDroidProviderStatus")(fu
       },
     });
   }
+
+  // Only after the enabled check: a provider the user turned off should not
+  // be walking the filesystem on every health refresh.
+  const skills = yield* discoverDroidSkills(environment, cwd);
 
   const versionResult = yield* runDroidVersionCommand(droidSettings, environment).pipe(
     Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS),

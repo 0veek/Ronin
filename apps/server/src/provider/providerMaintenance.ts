@@ -375,12 +375,15 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
   resolver: ProviderMaintenanceCapabilitiesResolver,
   options?: Omit<ProviderMaintenanceCapabilityResolutionOptions, "realCommandPath">,
 ) {
-  const platform = yield* HostProcessPlatform;
   const binaryPath = nonEmptyString(options?.binaryPath);
   if (!binaryPath) {
-    return resolver.resolve({ ...options, platform });
+    // No path to classify, so the platform never gets consulted. Reading it
+    // here anyway would add a fiber step to the one branch every default-
+    // configured provider takes while being created.
+    return resolver.resolve(options);
   }
 
+  const platform = yield* HostProcessPlatform;
   const env = options?.env ?? (yield* readCommandLookupEnv);
   const resolvedCommandPath =
     (yield* resolveCommandPath(binaryPath, { env }).pipe(
