@@ -800,7 +800,7 @@ const runCommand = Effect.fn("runCommand")(function* (
   }
 });
 
-const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
+export const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
   readonly repoRoot: string;
   readonly stageResourcesDir: string;
   readonly platform: typeof BuildPlatform.Type;
@@ -812,28 +812,37 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
   const manifestPath = path.join(input.repoRoot, "native/resource-monitor/Cargo.toml");
   const executableName = resourceMonitorExecutableName(input.platform);
   const rustTargets = resolveResourceMonitorRustTargets(input.platform, input.arch);
+  // Release CI restores the compiled binary from a cache keyed on the crate's
+  // sources, so the toolchain never has to be installed on a hit. The staging
+  // and existence checks below still run: a corrupt or missing restore fails
+  // here rather than shipping an artifact without a resource monitor.
+  const reuseResourceMonitor = yield* Config.boolean("T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR").pipe(
+    Config.withDefault(false),
+  );
   const builtBinaries: string[] = [];
 
   for (const rustTarget of rustTargets) {
-    const spawnCommand = yield* resolveSpawnCommand("cargo", [
-      "build",
-      "--locked",
-      "--release",
-      "--manifest-path",
-      manifestPath,
-      "--target",
-      rustTarget,
-    ]);
-    yield* runCommand(
-      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        cwd: input.repoRoot,
-        shell: spawnCommand.shell,
-      }),
-      {
-        label: `cargo build resource monitor (${rustTarget})`,
-        verbose: input.verbose,
-      },
-    );
+    if (!reuseResourceMonitor) {
+      const spawnCommand = yield* resolveSpawnCommand("cargo", [
+        "build",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        manifestPath,
+        "--target",
+        rustTarget,
+      ]);
+      yield* runCommand(
+        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+          cwd: input.repoRoot,
+          shell: spawnCommand.shell,
+        }),
+        {
+          label: `cargo build resource monitor (${rustTarget})`,
+          verbose: input.verbose,
+        },
+      );
+    }
 
     const binaryPath = path.join(
       input.repoRoot,
@@ -849,6 +858,9 @@ const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input:
         platform: input.platform,
         arch: input.arch,
       });
+    }
+    if (reuseResourceMonitor) {
+      yield* Effect.log(`[desktop-artifact] Reusing cached resource monitor (${rustTarget}).`);
     }
     builtBinaries.push(binaryPath);
   }

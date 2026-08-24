@@ -80,6 +80,13 @@ describe("shouldHideProviderNativeSlashCommand", () => {
     expect(shouldHideProviderNativeSlashCommand("review", new Set(["review"]))).toBe(true);
     expect(shouldHideProviderNativeSlashCommand("status", new Set(["review"]))).toBe(false);
   });
+
+  // Providers report their skills as native slash commands too, so the
+  // composer folds visible skill names into the offered set and the Skills
+  // row is the only entry left for that name.
+  it("hides a native command shadowed by a skill of the same name", () => {
+    expect(shouldHideProviderNativeSlashCommand("/Graphify", new Set(["graphify"]))).toBe(true);
+  });
 });
 
 describe("review and fork argument helpers", () => {

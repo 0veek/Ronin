@@ -22,6 +22,7 @@ import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/
 import {
   COMPOSER_SLASH_COMMAND_DEFINITIONS,
   getAvailableComposerSlashCommands,
+  normalizeComposerSlashCommandName,
   shouldHideProviderNativeSlashCommand,
   type BuiltInComposerSlashCommand,
 } from "@t3tools/shared/composerSlashCommands";
@@ -1131,10 +1132,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           description: definition.description,
         };
       });
+      const visibleSkills = selectedProviderSkills.filter(
+        (skill) =>
+          !(settings.skills?.disabled ?? []).some(
+            (name) => name.trim().toLowerCase() === skill.name.trim().toLowerCase(),
+          ),
+      );
+      // A skill and a native command of the same name are one thing to the
+      // reader, and providers report their skills as slash commands too. The
+      // Skills row wins the duplicate: it carries the install source, and
+      // selecting it inserts the $name token the provider actually expects.
+      const appOfferedCommandNames = new Set([
+        ...availableBuiltInCommandSet,
+        ...visibleSkills.map((skill) => normalizeComposerSlashCommandName(skill.name)),
+      ]);
       const providerSlashCommandItems = (selectedProviderStatus?.slashCommands ?? [])
         .filter(
-          (command) =>
-            !shouldHideProviderNativeSlashCommand(command.name, availableBuiltInCommandSet),
+          (command) => !shouldHideProviderNativeSlashCommand(command.name, appOfferedCommandNames),
         )
         .map((command) => ({
           id: `provider-slash-command:${selectedProvider}:${command.name}`,
@@ -1144,12 +1158,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: `/${command.name}`,
           description: command.description ?? command.input?.hint ?? "Run provider command",
         }));
-      const visibleSkills = selectedProviderSkills.filter(
-        (skill) =>
-          !(settings.skills?.disabled ?? []).some(
-            (name) => name.trim().toLowerCase() === skill.name.trim().toLowerCase(),
-          ),
-      );
       const skillItems = searchProviderSkills(visibleSkills, composerTrigger.query).map(
         (skill) => ({
           id: `skill:${selectedProvider}:${skill.name}`,

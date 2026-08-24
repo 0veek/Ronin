@@ -2,7 +2,9 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -33,6 +35,7 @@ import {
   resolveMockUpdateServerUrl,
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
+  stageResourceMonitor,
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
@@ -408,6 +411,48 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.equal(resourceMonitorExecutableName("mac"), "t3-resource-monitor");
     assert.equal(resourceMonitorExecutableName("win"), "t3-resource-monitor.exe");
   });
+  it.effect("stages a cached resource monitor without invoking Cargo", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const repoRoot = yield* fs.makeTempDirectoryScoped({
+          prefix: "t3-resource-monitor-cache-test-",
+        });
+        const binaryPath = path.join(
+          repoRoot,
+          "native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor",
+        );
+        const stageResourcesDir = path.join(repoRoot, "stage");
+        yield* fs.makeDirectory(path.dirname(binaryPath), { recursive: true });
+        yield* fs.writeFileString(binaryPath, "cached monitor");
+
+        yield* stageResourceMonitor({
+          repoRoot,
+          stageResourcesDir,
+          platform: "linux",
+          arch: "x64",
+          verbose: false,
+        }).pipe(
+          Effect.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromEnv({
+                env: { T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true" },
+              }),
+            ),
+          ),
+        );
+
+        assert.equal(
+          yield* fs.readFileString(
+            path.join(stageResourcesDir, "resource-monitor/t3-resource-monitor"),
+          ),
+          "cached monitor",
+        );
+      }),
+    ),
+  );
+
   it("promotes target fff binaries to direct staged dependencies", () => {
     assert.deepStrictEqual(resolveFffNativeDependencies("mac", "arm64", "0.9.4"), {
       "@ff-labs/fff-bin-darwin-arm64": "0.9.4",

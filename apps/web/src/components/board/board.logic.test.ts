@@ -149,22 +149,17 @@ describe("deriveBoardLane", () => {
     expect(laneOf(snoozedButBlocked)).toBe("needsYou");
   });
 
-  it("keeps a pinned thread out of Done, matching the sidebar's pin-beats-settle rule", () => {
+  it("settles a pinned thread into Done, matching the sidebar's settle-beats-pin rule", () => {
     const pinnedAndStale = makeThread({
       latestTurn: completedTurn("2026-04-01T00:00:00.000Z"),
       pinnedAt: NOW,
       pinOrderKey: "a",
     });
-    expect(laneOf(pinnedAndStale, context({ autoSettleAfterDays: 1 }))).toBe("upNext");
-    // The pin suppresses Done only; a pinned never-run thread is still a Draft.
+    expect(laneOf(pinnedAndStale, context({ autoSettleAfterDays: 1 }))).toBe("done");
+    // Settlement is the only thing the pin yields to: a pinned never-run
+    // thread is still a Draft, and a pinned live one still floats in its lane.
     expect(laneOf(makeThread({ pinnedAt: NOW, pinOrderKey: "a" }))).toBe("draft");
-    // Same thread without the pin does auto-settle, so the pin is what moved it.
-    expect(
-      laneOf(
-        makeThread({ latestTurn: completedTurn("2026-04-01T00:00:00.000Z") }),
-        context({ autoSettleAfterDays: 1 }),
-      ),
-    ).toBe("done");
+    expect(laneOf(pinnedAndStale, context({ autoSettleAfterDays: 30 }))).toBe("upNext");
   });
 
   it("never uses a lane whose exit command the environment cannot run", () => {

@@ -2064,3 +2064,89 @@ describe("rerun workflows", () => {
     expect(spawnRows.map((row) => row.turnId)).toEqual(["turn-1", "turn-2"]);
   });
 });
+
+describe("session activity performance", () => {
+  it("reuses entries for unchanged activities", () => {
+    const activities = ["status", "diff", "log"].map((command, index) =>
+      makeActivity({
+        id: `stable-tool-${index}`,
+        kind: "tool.completed",
+        sequence: index,
+        payload: {
+          itemType: "command_execution",
+          data: { toolCallId: `stable-tool-${index}`, item: { command: ["git", command] } },
+        },
+      }),
+    );
+
+    const initialEntries = deriveWorkLogEntries(activities.slice(0, 2));
+    const appendedEntries = deriveWorkLogEntries(activities);
+    expect(appendedEntries[0]).toBe(initialEntries[0]);
+    expect(appendedEntries[1]).toBe(initialEntries[1]);
+  });
+
+  // The cache is keyed on the label map, not on the options wrapper, so a
+  // renamed provider instance still re-derives the boundary row.
+  it("re-derives when the provider label map changes", () => {
+    const activity = makeActivity({
+      id: "stable-tool-labelled",
+      kind: "tool.completed",
+      sequence: 0,
+      payload: {
+        itemType: "command_execution",
+        data: { toolCallId: "stable-tool-labelled", item: { command: ["git", "status"] } },
+      },
+    });
+    const labels = new Map([["instance-1", "Claude"]]);
+
+    const first = deriveWorkLogEntries([activity], { providerLabelByInstanceId: labels });
+    expect(deriveWorkLogEntries([activity], { providerLabelByInstanceId: labels })[0]).toBe(
+      first[0],
+    );
+    expect(
+      deriveWorkLogEntries([activity], {
+        providerLabelByInstanceId: new Map([["instance-1", "Claude (work)"]]),
+      })[0],
+    ).not.toBe(first[0]);
+  });
+
+  it("updates 20,000 ordered tool activities within 100 ms", () => {
+    const activities = Array.from({ length: 20_000 }, (_unused, index) =>
+      makeActivity({
+        id: `benchmark-tool-${index}`,
+        createdAt: new Date(1_700_000_000_000 + index).toISOString(),
+        kind: "tool.completed",
+        summary: "Ran command",
+        sequence: index,
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          data: {
+            toolCallId: `benchmark-tool-${index}`,
+            item: { command: ["git", "status"] },
+          },
+        },
+      }),
+    );
+    deriveWorkLogEntries(activities);
+    const updatedActivities = [
+      ...activities,
+      makeActivity({
+        id: "benchmark-tool-appended",
+        createdAt: new Date(1_700_000_000_000 + activities.length).toISOString(),
+        kind: "tool.completed",
+        summary: "Ran command",
+        sequence: activities.length,
+        payload: {
+          itemType: "command_execution",
+          title: "Ran command",
+          data: { toolCallId: "benchmark-tool-appended", item: { command: ["git", "diff"] } },
+        },
+      }),
+    ];
+
+    const startedAt = performance.now();
+    expect(deriveWorkLogEntries(updatedActivities)).toHaveLength(20_001);
+    expect(performance.now() - startedAt).toBeLessThan(100);
+  });
+});

@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                          |
-| ----------------------------- | ---------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `2433f4c1c` — `fix(ci): let Macroscope approve pull requests again (#7970)` (2026-08-23) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                          |
-| **Ported on**                 | 2026-08-23                                                                               |
+|                               |                                                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `b4be33f07` — `fix(desktop): keep release notes visible while downloading (#6412)` (2026-08-23) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                 |
+| **Ported on**                 | 2026-08-24                                                                                      |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -1565,3 +1565,199 @@ height`, `hands end-following back to the list once the send anchor is released`
 - **Docs** — no user-facing doc changed. The contrast control is self-describing in the settings row,
   and every other port is a fix to existing documented behavior. No new vocabulary, so
   `docs/internals/glossary.md` is untouched.
+
+---
+
+## Batch 12 — reviewed through `b4be33f07` (12 commits)
+
+Reviewed `2433f4c1c..b4be33f07`, snapshotted at `b4be33f07` for the whole run.
+
+One decision went to the developer before any code was written, because it was a product call
+rather than port mechanics: **`9da0fab08` (#8009) `showSkillsInSlashMenu`**. Ronin already shows
+skills in the `/` menu under their own grouped **Skills** header with install-source labels, and
+already has per-skill disable through `settings.skills.disabled`. Decision: **skip the setting**,
+take only the behavior Ronin genuinely lacked. See _Partially ported_ below.
+
+### Ported (8)
+
+| Upstream    | Title                                                                        | Notes                                                                              |
+| ----------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `f70eeeeb0` | fix(clients): move settled pinned threads into the settled section (#7969)   | **adapted** — mobile hunks dropped; Ronin's `needsYou` shelf kept above; board too |
+| `25dcee00a` | perf(ci): speed up release builds and Windows packaging (#7975)              | **adapted** — Windows asar hunks dropped; see below                                |
+| `ea8c9e5ca` | fix(web): stop tool calls from leaving a blank page in threads (#7971)       | clean — machinery is identical here                                                |
+| `9da0fab08` | feat(web): redesign skills in `$` menu and in `/` menu (#8009)               | **partially ported** — native-command dedupe only; see below                       |
+| `fa219001d` | perf(web): reuse work log rows during streaming (#8006)                      | **adapted** — cache keyed on the provider label map; see below                     |
+| `a9cd94eb9` | fix(web): keep provider badge legible in dark themes (#7968)                 | clean                                                                              |
+| `69e5ad884` | fix(web): treat configured urls with uppercase schemes as secure (#8005)     | clean                                                                              |
+| `09df91f72` | fix(web): restore right panel toggle clicks after closing on desktop (#8016) | **adapted** — Ronin's raw `<header>` instead of `WorkspacePageHeader`              |
+
+Fork-specific decisions worth recording:
+
+- **`f70eeeeb0` (settle beats pin).** The classification loop lives inline in `Sidebar.tsx` here,
+  and Ronin has a fourth shelf upstream does not: **Needs you**, which sits between snooze and the
+  pin. The upstream reorder is snoozed → settled → pinned → active; Ronin's becomes snoozed →
+  needsYou → settled → pinned → active, so the "blocked on the user" rule is untouched and only the
+  pin/settle pair swaps. `isPinned` moves from `section === "pinned"` to `thread.pinnedAt != null`,
+  and the pin marker is lifted into one `pinIndicator` that the slim row now renders too — which is
+  what makes a pinned thread still readable as pinned from inside the settled and snoozed shelves.
+  The three mobile files (`threadListV2.ts`, `thread-list-v2-items.tsx`, and their test) are cut
+  surfaces.
+
+  **`board.logic.ts` had to follow.** Its Done lane carried the mirrored rule in so many words
+  ("same as the sidebar partition, which checks the pin first") and gated settlement on
+  `thread.pinnedAt == null`. Left alone, the same finished pinned thread would read as Settled in
+  the sidebar and Up Next on the board. The board is Ronin-only, so upstream had nothing to port
+  here; its existing pin-beats-settle test was rewritten into a settle-beats-pin one that still
+  pins the two things the pin does keep (a never-run pinned thread is a Draft, a live one still
+  floats in its lane).
+
+- **`25dcee00a` (release build perf).** Three of the four parts apply:
+
+  - The `quality` job split is portable as-is. Ronin's `preflight` had the same shape upstream's
+    did — resolve metadata, then run `vp check` / `typecheck` / `test` in front of everything — so
+    lint, typecheck, and tests move into their own job that runs beside the build matrix, and
+    `publish_cli` and `release` both grow a `needs: quality` gate so nothing ships on red.
+  - The resource-monitor cache and its `T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR` knob apply as-is.
+    Ronin's mac legs are per-arch (`arm64`, `x64`), never `universal`, so
+    `resolveResourceMonitorRustTargets` returns exactly one target per matrix leg and the
+    single-path cache key is correct. On a reuse hit the Rust toolchain install is skipped; the
+    existence check still runs, so a missing or corrupt restore fails loudly instead of shipping an
+    artifact with no monitor. `stageResourceMonitor` is now exported for the ported test.
+  - The `pnpm-workspace.yaml` overrides dropping the eight `@anthropic-ai/claude-agent-sdk-*`
+    platform binaries apply: Ronin's `ClaudeAdapter` passes `pathToClaudeCodeExecutable`, so the
+    bundled binaries are unused here for the same reason they are upstream. Lockfile regenerated
+    (8 insertions, 77 deletions) and reinstalled.
+  - **Dropped:** everything about the Windows server sidecar — `resolveWindowsServerAsarIgnoreGlobs`,
+    the `arch` parameter on `packWindowsServerAsar`, and the two asar tests. Ronin's
+    `scripts/build-desktop-artifact.ts` has no `WINDOWS_SERVER_ASAR_IGNORE_GLOBS` and no asar
+    packing path at all; that whole surface was cut long before this batch.
+
+- **`9da0fab08` (#8009), partially ported.** Upstream is converging on a `/` menu Ronin already
+  has, from the other side. Taken: **hiding a provider's native slash command when a visible skill
+  carries the same name**. Ronin's `shouldHideProviderNativeSlashCommand` already models "the app
+  is offering this name" against built-in commands, so the adaptation folds normalized visible-skill
+  names into that same set rather than adding upstream's separate
+  `getProviderSlashCommandsForSlashMenu` helper — `packages/client-runtime/src/providerSkills.ts`
+  does not exist here (it arrived with `792a1404f` / #7150, skipped in batch 8), and Ronin's
+  equivalents live in `apps/web/src/providerSkillPresentation.ts`.
+
+  Dropped, all superseded by Ronin's own design: the `showSkillsInSlashMenu` setting and its
+  Settings row, search entry, contract fields, and desktop fixture (developer's call, above); the
+  `/skill:Name` label prefix and `SkillSourceBadge` redesign (Ronin renders a grouped **Skills**
+  section with `formatProviderSkillInstallSource` and its own glyph); and the
+  `scoreSlashCommandItem` skill branch (Ronin ranks skills through `searchProviderSkills`, not
+  through `searchSlashCommandItems`, which only ever sees command items).
+
+- **`fa219001d` (reuse work log rows).** The commit ports whole — private `Symbol` for the collapse
+  key, `activityKind` renamed to `sourceActivityKind` so the derived entry is handed to callers
+  as-is instead of being copied field-by-field, and a `WeakMap` from activity to derived row. One
+  Ronin difference forced an adaptation: `deriveWorkLogEntries` and `toDerivedWorkLogEntry` take a
+  second `WorkLogDerivationOptions` argument that upstream does not have, and
+  `providerLabelByInstanceId` feeds `extractProviderBoundary`. A cache keyed on the activity alone
+  would keep serving a stale provider label after a rename, so the cache stores the label map that
+  produced the entry and re-derives when it differs. Keying on the map itself and not the options
+  wrapper matters: `ChatView` rebuilds `{ providerLabelByInstanceId }` on every recompute while the
+  map is `useMemo`'d on `providerStatuses`. Upstream's two tests were taken plus one for the
+  rename case.
+
+- **`09df91f72` (right panel toggle).** Same bug, same fix, different container. Ronin's pull
+  requests column uses a raw `<header className="workspace-topbar drag-region …">` rather than
+  upstream's `WorkspacePageHeader`, so the strip is passed down as `titlebarControls` and rendered
+  as the header's first child while the panel is closed. Upstream's `className="relative
+bg-background"` was dropped: `.workspace-topbar` is already `position: relative` (so the absolute
+  `.workspace-titlebar-controls` anchors to the same box), and it carries `material-toolbar`, which
+  `bg-background` would flatten.
+
+### Already in the tree (0)
+
+Nothing in this range was found already present.
+
+### Skipped (4)
+
+| Upstream    | Title                                                                     | Reason                                                                        |
+| ----------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `55c909334` | fix(mobile): isolate markdown image requests (#7942)                      | mobile-only; `apps/mobile` is a cut surface                                   |
+| `b1670ac7d` | fix(web): stop recovered tool failures from marking work logs red (#7999) | depends on the skipped collapsed tool-activity summary rows; see below        |
+| `5427ca056` | fix(web): keep server update banners flush with the composer (#8000)      | depends on the skipped composer drawer surface; see below                     |
+| `b4be33f07` | fix(desktop): keep release notes visible while downloading (#6412)        | `sidebar/SidebarUpdatePill.tsx` is absent and the bug does not reproduce here |
+
+- **`b1670ac7d`.** The fix narrows `hasFailure` on the `work-toggle` row so a tool failure that a
+  later retry recovered stops painting the collapsed group red. Ronin's `work-toggle` row has no
+  `hasFailure` — nor `summary` or `summaryKind`. Those three fields arrived with `4a9edff4c` (#7152,
+  collapse tool activity), whose visual rewrite batch 8 skipped; Ronin collapses overflow rows
+  behind a plain "+N" toggle with no failure state to get wrong.
+
+- **`5427ca056`.** A one-class fix (`before:mask-none`) on the `chat-composer-drawer-attached`
+  variant of `ComposerBannerStackAlert`. Ronin's alert has no attached/floating split — it renders
+  `surface-alert rounded-[var(--radius-lg)] border border-border` unconditionally — and neither
+  `chat-composer-drawer-surface` nor `chat-composer-drawer-attached` exists anywhere in
+  `apps/web/src`. The attached drawer arrived with the skipped composer state drawers
+  (`792a1404f`, #7150).
+
+- **`b4be33f07`.** The file it touches never existed here: batch 6 already recorded that
+  `sidebar/SidebarUpdatePill.tsx` is absent because Ronin replaced upstream's desktop update state
+  machine with `appUpdate.ts` + `AppUpdateProvider`. The bug is a `disabled` HTML button swallowing
+  hover, which kills the tooltip carrying the release notes mid-download. Ronin's two update
+  surfaces — `ServerUpdateAction.tsx` and `sidebar/SidebarProviderUpdatePill.tsx` — set `disabled`
+  on nothing, so there is no tooltip to lose.
+
+### Verification
+
+- Focused tests: `session-logic` + `session-logic.command-output` + `ChatView.logic` +
+  `MessagesTimeline` + `MessagesTimeline.logic` + `board.logic` + `primary/bootstrap` +
+  `composerSlashCommands` + `Sidebar.logic` + `Sidebar.snooze` — 10 files, 408 tests, 407 pass.
+  `scripts/build-desktop-artifact.test.ts` — 25 tests, all pass.
+- **One pre-existing failure**, verified as such by stashing every change and re-running on the
+  clean tree: `MessagesTimeline.test.tsx` › "keeps the copy button for collapsed long user messages"
+  expects `aria-label="Copy link"`, which the rendered footer does not emit. Clean tree: 21 pass /
+  1 fail. With this batch: 22 pass / 1 fail — the same one. Unrelated to anything here.
+- Typecheck: `@t3tools/web`, `@t3tools/contracts`, `@t3tools/shared`, `@t3tools/scripts`,
+  `@t3tools/desktop`, `t3` — 0 errors. (`t3` and `@t3tools/desktop` emit pre-existing Effect LSP
+  _suggestions_ in `ClaudeAdapter.ts`, `ProviderService.ts`, and `DesktopAutoUpdate.ts`; none are
+  errors and none are in files this batch touched.)
+- `vp lint --report-unused-disable-directives` over all 18 changed `.ts`/`.tsx` files — 0 findings.
+- `vp fmt --check` over all 23 changed files — all correct.
+- `.github/workflows/release.yml` re-parsed after editing; job graph confirmed as
+  `check_changes → preflight → {quality, build} → publish_cli → release → finalize → announce_discord`.
+- `git diff --check` clean. Nothing staged; the index was left as found.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — comment-only: `OrchestrationThread.pinnedAt` no longer claims a pin keeps a thread
+  out of every shelf. No schema change, so no decode-compatibility question.
+- **Server** — untouched. Nothing in this range is a server behavior change; settle-vs-pin is a
+  client classification and the decider already clears each on the other.
+- **Desktop (Electron/IPC)** — no IPC change. Two entries are desktop-shaped and were checked
+  against it: the pull requests toggle fix is specifically about Electron drag-region hit-testing,
+  and `b4be33f07` was skipped after confirming Ronin's update surfaces do not disable their
+  tooltip triggers.
+- **Web renderer** — sidebar (pinned rows classify into Settled, marker follows the row, slim rows
+  show it too), board (Done lane realigned to match), chat (a turn opening with tool calls no longer
+  parks on a blank page; work log rows keep identity across a streaming turn; the provider badge
+  reads on dark surfaces), composer (a skill and its native twin are one row), pull requests (the
+  right panel toggle is clickable again after closing), and environment bootstrap.
+- **Providers** — no adapter changed. The composer dedupe is provider-shaped but generic: it keys on
+  reported command names against reported skill names, so every adapter that reports both gets it
+  with no per-provider decision.
+- **Reverse states** — the pin is not consumed by settling: the marker stays on the row, the
+  `pinOrderKey` survives, and unsettling returns the thread to the pinned block at its old slot.
+  The anchor release is one-directional by design and already had its way back (the scroll-to-end
+  pill, plus `scrollToEnd` now clearing the positioned/settled anchor refs it used to leave behind).
+- **Connection modes** — `69e5ad884` is squarely a remote-access fix: an operator who configures
+  `VITE_HTTP_URL`/`VITE_WS_URL` with an uppercase scheme was being silently downgraded off TLS.
+  Two tests pin both directions of the derivation.
+- **Entry points** — the pin marker is reachable from every shelf that can hold a pinned thread, and
+  unpinning still lives in the context menu as well. The pull requests toggle keeps its one fixed
+  top-right anchor in both panel states.
+- **Docs** — `docs/user/thread-sidebar.md` (pinned threads settle, and come back),
+  `docs/user/slash-commands.md` (the skill/native duplicate resolves to the Skills row),
+  `docs/operations/release.md` (checks run beside the builds; the new job appears in the release
+  checklist). No new vocabulary, so `docs/internals/glossary.md` is untouched.
+
+### Not tested
+
+The sidebar shelf classification and the composer's slash-menu derivation both live inline inside
+`Sidebar.tsx` and `ChatComposer.tsx` with no pure seam, so neither ported behavior has a direct unit
+test. Extracting one would be a refactor beyond this sync. What is covered: the board's mirrored
+Done rule (`board.logic.test.ts`), and the dedupe predicate itself
+(`composerSlashCommands.test.ts`, extended with the skill-shadow case).

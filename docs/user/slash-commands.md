@@ -24,3 +24,6 @@ Provider skills appear under **Skills** in the `/` menu. You can still insert a 
 ## Provider commands
 
 Commands the selected provider reports stay in the **Provider** group and send as ordinary `/name` text.
+
+When a provider reports one of its skills as a command too, the duplicate is hidden and only the
+**Skills** row is offered, so picking it inserts `$name` rather than plain text.

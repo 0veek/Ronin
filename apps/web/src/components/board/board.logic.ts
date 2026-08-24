@@ -144,12 +144,11 @@ export function deriveBoardLane(
   if (status === "working" || status === "monitoring") {
     return "working";
   }
-  // A pin overrides settlement — pinned threads never auto-settle out of
-  // sight, same as the sidebar partition, which checks the pin first. It only
-  // suppresses Done, though: the Draft/Up Next split below is about whether
-  // work was ever asked of the thread, which pinning says nothing about.
+  // Settlement outranks the pin, same as the sidebar partition, which
+  // classifies into the settled shelf before the pinned block. A pinned
+  // thread that finished belongs in Done in both views, or the same thread
+  // reads as two different states depending on which one you are looking at.
   if (
-    thread.pinnedAt == null &&
     capabilities.settlement &&
     effectiveSettled(thread, {
       now: context.now,
