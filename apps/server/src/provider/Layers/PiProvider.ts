@@ -126,7 +126,6 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
 ): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = piModelsFromSettings(settings.customModels);
-  const skills = yield* discoverPiSkills(settings, environment, cwd);
 
   if (!settings.enabled) {
     return buildServerProvider({
@@ -143,6 +142,10 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
       },
     });
   }
+
+  // Only after the enabled check: a provider the user turned off should not
+  // be walking the filesystem on every health refresh.
+  const skills = yield* discoverPiSkills(settings, environment, cwd);
 
   // Sessions never spawn the CLI — `PiAdapter` imports the coding-agent module
   // in-process. Whether that import resolves is the only thing that decides if
