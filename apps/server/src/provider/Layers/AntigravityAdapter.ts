@@ -348,6 +348,7 @@ export function makeAntigravityAdapter(
 
         const openToolSteps = new Set<number>();
         let turnFailure: string | undefined;
+        let resultMessage: string | undefined;
         let sawAssistantText = false;
         const handleStreamEvent = (event: AntigravityStreamEvent) =>
           Effect.gen(function* () {
@@ -430,7 +431,15 @@ export function makeAntigravityAdapter(
                 return;
               }
               case "result": {
-                if (!event.succeeded) turnFailure = event.message ?? "Antigravity turn failed.";
+                // `status` is ERROR whenever any step errored, including ones
+                // the agent went on to recover from, so it cannot decide the
+                // turn on its own. A run that still answered finished its work,
+                // and the step that failed on the way is already on the
+                // timeline; only a run that answered nothing actually failed.
+                if (!event.succeeded) {
+                  resultMessage = event.message ?? "Antigravity turn failed.";
+                  if (!event.answered) turnFailure = resultMessage;
+                }
                 if (event.usage) {
                   yield* offerRuntimeEvent({
                     type: "thread.token-usage.updated",
@@ -513,7 +522,9 @@ export function makeAntigravityAdapter(
                     ? {
                         errorMessage:
                           [
-                            turnFailure ?? `Antigravity CLI exited with code ${String(code)}.`,
+                            turnFailure ??
+                              resultMessage ??
+                              `Antigravity CLI exited with code ${String(code)}.`,
                             stderrTail.trim(),
                           ]
                             .filter(Boolean)

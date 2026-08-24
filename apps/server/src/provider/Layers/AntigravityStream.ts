@@ -43,6 +43,12 @@ export type AntigravityStreamEvent =
       readonly kind: "result";
       readonly conversationId?: string;
       readonly succeeded: boolean;
+      /**
+       * Whether the run still produced an answer. `status` reports the worst
+       * thing that happened anywhere in the trajectory, so a tool error the
+       * agent recovered from lands here as ERROR beside a finished reply.
+       */
+      readonly answered: boolean;
       readonly message?: string;
       readonly usage?: AntigravityUsage;
     };
@@ -218,14 +224,20 @@ export function parseAntigravityStreamLine(line: string): AntigravityStreamEvent
       const succeeded = status.toUpperCase() === "SUCCESS";
       const conversationId = trimmedString(result.conversation_id);
       const usage = readUsage(result.usage);
-      // A failing run puts its explanation in `response`; the status alone
-      // ("ERROR") tells the user nothing about what went wrong.
+      const response = trimmedString(result.response);
+      // A run that answered did the work, whatever `status` says about the
+      // steps it took to get there.
+      const answered = response !== undefined;
+      // A failing run puts its explanation in `error`; `response` holds the
+      // assistant's reply, which on a recovered turn reads as a success.
+      const detail = trimmedString(result.error) ?? response;
       const message = succeeded
         ? undefined
-        : `Antigravity turn ${status}${trimmedString(result.response) ? `: ${truncate(trimmedString(result.response) ?? "", MAX_DETAIL_LENGTH)}` : "."}`;
+        : `Antigravity turn ${status}${detail ? `: ${truncate(detail, MAX_DETAIL_LENGTH)}` : "."}`;
       return {
         kind: "result",
         succeeded,
+        answered,
         ...(conversationId ? { conversationId } : {}),
         ...(message ? { message } : {}),
         ...(usage ? { usage } : {}),

@@ -169,18 +169,19 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
         ),
       );
       const response = printResult.response?.trim();
-      if (printResult.status !== undefined && printResult.status !== "SUCCESS") {
-        return yield* new TextGenerationError({
-          operation,
-          detail: printResult.error?.trim()
-            ? `Antigravity did not complete the request: ${printResult.error.trim()}`
-            : "Antigravity did not complete the request.",
-        });
-      }
+      // `status` reports the worst thing that happened anywhere in the run, so
+      // a tool error the agent recovered from comes back ERROR next to a
+      // perfectly good answer. Only a run that returned nothing to parse has
+      // actually failed, and then the status says why.
       if (!response) {
+        const failed = printResult.status !== undefined && printResult.status !== "SUCCESS";
         return yield* new TextGenerationError({
           operation,
-          detail: "Antigravity returned empty output.",
+          detail: !failed
+            ? "Antigravity returned empty output."
+            : printResult.error?.trim()
+              ? `Antigravity did not complete the request: ${printResult.error.trim()}`
+              : "Antigravity did not complete the request.",
         });
       }
 

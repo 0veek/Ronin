@@ -142,6 +142,33 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
     }),
   );
 
+  it.effect("keeps an answer the agent recovered its way to", () =>
+    Effect.gen(function* () {
+      // `status` goes ERROR for any step that errored on the way, so a run that
+      // hit a tool error and retried its way to a good commit message lands
+      // here. The answer is the verdict, not the status.
+      const binaryPath = makeFakeAgy({
+        stdout: printResult(
+          '{"subject":"Handle null nodes in parser","body":"- Return early on null"}',
+          "ERROR",
+        ),
+      });
+
+      const textGeneration = yield* makeAntigravityTextGeneration(
+        decodeAntigravitySettings({ binaryPath }),
+      );
+      const generated = yield* textGeneration.generateCommitMessage({
+        cwd: process.cwd(),
+        branch: "fix/parser-null",
+        stagedSummary: "M src/parser.ts",
+        stagedPatch: "@@ -1,3 +1,5 @@",
+        modelSelection,
+      });
+
+      expect(generated.subject).toBe("Handle null nodes in parser");
+    }),
+  );
+
   it.effect("names a non-SUCCESS run instead of reporting malformed output", () =>
     Effect.gen(function* () {
       const binaryPath = makeFakeAgy({ stdout: errorResult("invalid model selection") });

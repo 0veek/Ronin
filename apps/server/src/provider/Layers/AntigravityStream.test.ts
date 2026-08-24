@@ -9,6 +9,13 @@ const TOOL_ACTIVE = `{"event":"step_update","step_update":{"conversation_id":"c"
 const TOOL_DONE = `{"event":"step_update","step_update":{"conversation_id":"c","step_index":3,"state":"DONE","step_type":"tool","tool_name":"run_command","duration_seconds":0.05,"tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hi"},"output":"hi\\r\\n"}}}`;
 const VIEW_FILE = `{"event":"step_update","step_update":{"conversation_id":"c","step_index":4,"state":"DONE","step_type":"tool","tool_name":"view_file","tool_info":{"name":"view_file","parameters":{"AbsolutePath":"/tmp/agy-probe/MARKER.txt"},"output":"2 lines, 7 bytes"}}}`;
 const RESULT = `{"event":"result","result":{"conversation_id":"12b6afac-1e3d-42ea-8610-99b792048f8e","status":"SUCCESS","response":"Hello there, friend!","duration_seconds":3.5,"num_turns":1,"usage":{"input_tokens":15069,"output_tokens":136,"thinking_tokens":128,"cache_read_tokens":12,"total_tokens":15205}}}`;
+// A turn the agent finished after recovering from a failed tool call: `status`
+// is ERROR, the stale step error sits in `error`, and the finished answer is
+// right there in `response`. Copied from `agy 1.1.19`.
+const RECOVERED_RESULT = `{"event":"result","result":{"conversation_id":"29d66633-1b9b-4acf-acf2-9627f9923f7e","status":"ERROR","response":"I have successfully created the file done.txt.","error":"declaring permissions: cortex tool write_to_file: model output error: invalid tool call error (invalid_args)","duration_seconds":60.4,"num_turns":2,"usage":{"input_tokens":38130,"output_tokens":240,"thinking_tokens":100,"cache_read_tokens":12182,"total_tokens":38370}}}`;
+// A launch the CLI rejected outright: nothing answered, and the only
+// explanation is in `error`. Copied from `agy 1.1.19`.
+const FAILED_RESULT = `{"event":"result","result":{"conversation_id":"","status":"ERROR","response":"","error":"invalid model selection (--model \\"bogus\\"): model bogus is not recognized as a known model","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0}}}`;
 
 describe("parseAntigravityStreamLine", () => {
   it("reads the conversation id off the init event", () => {
@@ -82,6 +89,7 @@ describe("parseAntigravityStreamLine", () => {
     expect(parseAntigravityStreamLine(RESULT)).toEqual({
       kind: "result",
       succeeded: true,
+      answered: true,
       conversationId: "12b6afac-1e3d-42ea-8610-99b792048f8e",
       usage: {
         usedTokens: 15205,
@@ -93,7 +101,26 @@ describe("parseAntigravityStreamLine", () => {
     });
   });
 
-  it("carries the CLI's explanation on a failed result", () => {
+  it("marks a turn that answered as answered, however the CLI graded the steps", () => {
+    // The whole reason `answered` exists: `status` goes ERROR for any step that
+    // errored, so a recovered turn would otherwise be reported as a failure
+    // whose message is the assistant's own success notice.
+    const event = parseAntigravityStreamLine(RECOVERED_RESULT);
+    expect(event).toMatchObject({ kind: "result", succeeded: false, answered: true });
+    expect(event && "message" in event ? event.message : undefined).toContain(
+      "declaring permissions",
+    );
+  });
+
+  it("explains a failed result from the CLI's error rather than its empty response", () => {
+    const event = parseAntigravityStreamLine(FAILED_RESULT);
+    expect(event).toMatchObject({ kind: "result", succeeded: false, answered: false });
+    expect(event && "message" in event ? event.message : undefined).toContain(
+      "invalid model selection",
+    );
+  });
+
+  it("falls back to the response when a failure carries no error field", () => {
     const event = parseAntigravityStreamLine(
       `{"event":"result","result":{"status":"ERROR","response":"quota exhausted"}}`,
     );
