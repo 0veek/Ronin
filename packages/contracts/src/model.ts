@@ -263,6 +263,26 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
 
 // ── Provider display names ────────────────────────────────────────────
 
+/**
+ * Every driver kind this build ships, in picker order.
+ *
+ * Call sites that walk providers should read this rather than spelling out a
+ * subset: a hardcoded list silently skips whichever providers were added after
+ * it was written, which is how persisted model options for half the providers
+ * were being dropped on load.
+ */
+export const BUILT_IN_PROVIDER_DRIVER_KINDS = [
+  CODEX_DRIVER_KIND,
+  CLAUDE_DRIVER_KIND,
+  CURSOR_DRIVER_KIND,
+  GROK_DRIVER_KIND,
+  OPENCODE_DRIVER_KIND,
+  ANTIGRAVITY_DRIVER_KIND,
+  DROID_DRIVER_KIND,
+  KILO_DRIVER_KIND,
+  PI_DRIVER_KIND,
+] as const satisfies ReadonlyArray<ProviderDriverKind>;
+
 export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>> = {
   [CODEX_DRIVER_KIND]: "Codex",
   [CLAUDE_DRIVER_KIND]: "Claude",

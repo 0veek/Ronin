@@ -21,19 +21,39 @@ export interface AntigravityCliModel {
 const ANSI_SGR = /\x1b\[[0-9;]*m/g;
 /** `agy` marks the active model with a bullet in some builds. */
 const LEADING_MARKER = /^(?:[*•-]\s+)+/u;
+/** Column gap used by builds that align the two columns with spaces, not a tab. */
+const COLUMN_GAP = /\s{2,}/u;
+/**
+ * Model ids carry a digit or a separator (`gemini-3.7-flash-high`, `gpt-5`).
+ * Prose does not, which is how a space-aligned row is told apart from the
+ * progress chatter that shares its shape once the tab is gone.
+ */
+const LOOKS_LIKE_MODEL_ID = /[\d._:/-]/u;
 
 export function parseAntigravityModelLine(value: string): AntigravityCliModel | null {
   const stripped = value.replace(ANSI_SGR, "").trim();
-  const tabIndex = stripped.indexOf("\t");
-  // Progress chatter ("Fetching available models...") has no id column, and a
-  // row without one is not something we could ever pass to `--model`.
-  if (tabIndex < 0) return null;
+  const unmarked = stripped.replace(LEADING_MARKER, "").trim();
+  const tabIndex = unmarked.indexOf("\t");
+  if (tabIndex >= 0) {
+    const slug = unmarked.slice(0, tabIndex).trim();
+    if (!slug || /\s/u.test(slug)) return null;
+    const name = unmarked
+      .slice(tabIndex + 1)
+      .replace(LEADING_MARKER, "")
+      .trim();
+    return { slug, name: name || slug };
+  }
 
-  const slug = stripped.slice(0, tabIndex).replace(LEADING_MARKER, "").trim();
-  if (!slug || /\s/u.test(slug)) return null;
-
-  const name = stripped
-    .slice(tabIndex + 1)
+  // Builds that align the columns with spaces instead of a tab would otherwise
+  // report no models at all, and the picker falls back to a single hardcoded
+  // guess when that happens. Progress chatter ("Fetching available models...")
+  // still has to be turned away, so the id column has to look like an id.
+  const gap = COLUMN_GAP.exec(unmarked);
+  if (!gap) return null;
+  const slug = unmarked.slice(0, gap.index).trim();
+  if (!slug || /\s/u.test(slug) || !LOOKS_LIKE_MODEL_ID.test(slug)) return null;
+  const name = unmarked
+    .slice(gap.index + gap[0].length)
     .replace(LEADING_MARKER, "")
     .trim();
   return { slug, name: name || slug };

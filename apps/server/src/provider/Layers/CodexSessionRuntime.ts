@@ -54,14 +54,22 @@ const BENIGN_ERROR_LOG_SNIPPETS = [
   "state db record_discrepancy: find_thread_path_by_id_str_in_subdir, falling_back",
 ];
 const CODEX_APP_SERVER_FORCE_KILL_AFTER = "2 seconds" as const;
+/**
+ * Generic enough to show up in errors that have nothing to do with resuming, so
+ * they only count when the message is about a thread in the first place.
+ */
 const RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS = [
   "not found",
   "missing thread",
   "no such thread",
   "unknown thread",
   "does not exist",
-  "no rollout found",
 ];
+/**
+ * Specific to Codex's own rollout storage. These name the failure outright, and
+ * requiring the word "thread" alongside them only meant they never matched.
+ */
+const RECOVERABLE_ROLLOUT_ERROR_SNIPPETS = ["no rollout found"];
 
 export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | undefined): boolean {
   return appServerArgs?.some((argument) => argument.includes("mcp_servers.")) === true;
@@ -444,6 +452,9 @@ function classifyCodexStderrLine(rawLine: string): { readonly message: string } 
 
 export function isRecoverableThreadResumeError(error: unknown): boolean {
   const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+  if (RECOVERABLE_ROLLOUT_ERROR_SNIPPETS.some((snippet) => message.includes(snippet))) {
+    return true;
+  }
   if (!message.includes("thread")) {
     return false;
   }

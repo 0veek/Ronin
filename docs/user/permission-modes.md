@@ -43,3 +43,11 @@ translates the mode into its approval policy and sandbox level, so **Supervised*
 with prompting enabled and a restricted workspace while **Full access** disables both. The
 labels above describe what you get; the exact per-provider translation is internal and may
 change.
+
+A few providers cannot offer every mode:
+
+- **Pi** cannot pause to ask before it acts, so it does not support **Supervised**. A thread in
+  that mode refuses to start a Pi session rather than running one with no approvals at all.
+- **Antigravity** answers its own permission prompts in print mode, so a **Supervised** turn ends
+  up reporting what it was not allowed to do instead of asking you.
+- **OpenCode** and **Kilo** have no equivalent of **Auto**, so that mode asks like **Supervised**.

@@ -12,7 +12,9 @@ Binary path: kilo
 Server URL: empty
 ```
 
-Leave the server URL blank so Ronin starts a local Kilo server when you open a thread. Set a URL only if you already have a Kilo server running.
+Leave the server URL blank so Ronin starts a local Kilo server when you open a thread. Set a URL only if you already have a Kilo server running — Ronin authenticates to it with the server password and the `kilo` username the Kilo server expects.
+
+Kilo has its own release train, so Ronin does not hold it to OpenCode's minimum version. The version on the provider card is read from `kilo --version`, and a build Ronin cannot read a version from still works.
 
 ## Updates
 

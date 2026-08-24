@@ -393,9 +393,14 @@ export function EnvironmentProviderSettings({
     () => new Map(providerUpdateCandidates.map((candidate) => [candidate.instanceId, candidate])),
     [providerUpdateCandidates],
   );
+  // Cursor's panel is hidden on environments that never provisioned it, but not
+  // on one where its driver merely failed to come up: hiding it there takes away
+  // the only place to correct the binary path or turn it off, so an instance
+  // that broke could not be fixed from the UI at all.
   const visibleProviderSettings = PROVIDER_SETTINGS.filter(
     (providerSettings) =>
       providerSettings.provider !== "cursor" ||
+      settings.providers.cursor?.enabled === true ||
       serverProviders.some(
         (provider) =>
           provider.instanceId === defaultInstanceIdForDriver(ProviderDriverKind.make("cursor")),

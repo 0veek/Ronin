@@ -1,7 +1,12 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
 import {
   type ModelCapabilities,
   type PiSettings,
   type ServerProviderModel,
+  type ServerProviderSkill,
 } from "@t3tools/contracts";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
@@ -15,7 +20,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   buildServerProvider,
-  isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
   spawnAndCollect,
@@ -25,6 +29,8 @@ import {
   enrichProviderSnapshotWithVersionAdvisory,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
+import { loadPiCodingAgentModule } from "../piRuntime.ts";
+import { collectSkillsFromRoots, nativeSkillRootsForProvider } from "../skillsCatalog.ts";
 
 const PI_PRESENTATION = {
   displayName: "Pi",
@@ -38,6 +44,7 @@ const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
 });
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
+const RUNTIME_PROBE_TIMEOUT_MS = 4_000;
 
 const PI_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [];
 
@@ -84,12 +91,42 @@ export function buildInitialPiProviderSnapshot(
   });
 }
 
+/**
+ * Skills Pi loads for itself, so the reactor stops inlining them into the
+ * prompt on top of what the agent already read from `~/.pi/agent/skills`.
+ */
+const discoverPiSkills = (
+  settings: PiSettings,
+  environment: NodeJS.ProcessEnv,
+  cwd: string | undefined,
+) => {
+  const roots = nativeSkillRootsForProvider("pi", {
+    homeDir: environment.HOME ?? NodeOS.homedir(),
+    ...(cwd ? { cwd } : {}),
+  });
+  // `agentDir` names the agent directory itself, not a home to derive one from,
+  // so a configured one replaces the default `~/.pi/agent` root rather than
+  // being joined onto it.
+  const agentDir = settings.agentDir.trim();
+  const resolvedRoots = agentDir
+    ? [
+        ...roots.filter((root) => root.scope === "project"),
+        { path: NodePath.join(agentDir, "skills"), scope: "pi" },
+      ]
+    : roots;
+  return Effect.tryPromise(() => collectSkillsFromRoots(resolvedRoots)).pipe(
+    Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => []),
+  );
+};
+
 export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function* (
   settings: PiSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  cwd?: string,
 ): Effect.fn.Return<ServerProviderDraft, never, ChildProcessSpawner.ChildProcessSpawner> {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = piModelsFromSettings(settings.customModels);
+  const skills = yield* discoverPiSkills(settings, environment, cwd);
 
   if (!settings.enabled) {
     return buildServerProvider({
@@ -107,6 +144,37 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     });
   }
 
+  // Sessions never spawn the CLI — `PiAdapter` imports the coding-agent module
+  // in-process. Whether that import resolves is the only thing that decides if
+  // a session can start, so it decides the card too. `pi --version` is asked
+  // afterwards, for a version string and nothing else.
+  const runtimeResult = yield* Effect.tryPromise(() => loadPiCodingAgentModule()).pipe(
+    Effect.timeoutOption(RUNTIME_PROBE_TIMEOUT_MS),
+    Effect.result,
+  );
+  const runtimeReady = Result.isSuccess(runtimeResult) && Option.isSome(runtimeResult.success);
+
+  if (!runtimeReady) {
+    yield* Effect.logWarning("Pi coding-agent runtime is unavailable", {
+      errorTag: Result.isFailure(runtimeResult) ? runtimeResult.failure._tag : "timeout",
+    });
+    return buildServerProvider({
+      presentation: PI_PRESENTATION,
+      enabled: settings.enabled,
+      checkedAt,
+      models: fallbackModels,
+      probe: {
+        installed: false,
+        version: null,
+        status: "error",
+        auth: { status: "unknown" },
+        message: Result.isFailure(runtimeResult)
+          ? "Pi coding agent is not installed. Add `@earendil-works/pi-coding-agent` to this environment."
+          : "Pi coding agent timed out while loading.",
+      },
+    });
+  }
+
   const command = settings.binaryPath || "pi";
   const versionResult = yield* Effect.gen(function* () {
     const spawnCommand = yield* resolveSpawnCommand(command, ["--version"], { env: environment });
@@ -119,53 +187,29 @@ export const checkPiProviderStatus = Effect.fn("checkPiProviderStatus")(function
     );
   }).pipe(Effect.timeoutOption(VERSION_PROBE_TIMEOUT_MS), Effect.result);
 
-  if (Result.isFailure(versionResult)) {
-    return buildServerProvider({
-      presentation: PI_PRESENTATION,
-      enabled: settings.enabled,
-      checkedAt,
-      models: fallbackModels,
-      probe: {
-        installed: !isCommandMissingCause(versionResult.failure),
-        version: null,
-        status: "error",
-        auth: { status: "unknown" },
-        message: isCommandMissingCause(versionResult.failure)
-          ? "Pi CLI (`pi`) is not installed or not on PATH. Install `@earendil-works/pi-coding-agent`."
-          : "Failed to execute Pi CLI health check.",
-      },
-    });
-  }
+  // The CLI is optional next to the library, so a missing or slow `pi` binary
+  // only costs the version string. The runtime already answered the question
+  // that matters.
+  const versionOutput =
+    Result.isSuccess(versionResult) && Option.isSome(versionResult.success)
+      ? versionResult.success.value
+      : undefined;
+  const version =
+    versionOutput && versionOutput.code === 0
+      ? parseGenericCliVersion(`${versionOutput.stdout}\n${versionOutput.stderr}`)
+      : null;
 
-  if (Option.isNone(versionResult.success)) {
-    return buildServerProvider({
-      presentation: PI_PRESENTATION,
-      enabled: settings.enabled,
-      checkedAt,
-      models: fallbackModels,
-      probe: {
-        installed: true,
-        version: null,
-        status: "error",
-        auth: { status: "unknown" },
-        message: "Pi CLI is installed but timed out while running `pi --version`.",
-      },
-    });
-  }
-
-  const versionOutput = versionResult.success.value;
-  const version = parseGenericCliVersion(`${versionOutput.stdout}\n${versionOutput.stderr}`);
   return buildServerProvider({
     presentation: PI_PRESENTATION,
     enabled: settings.enabled,
     checkedAt,
     models: fallbackModels,
+    skills,
     probe: {
       installed: true,
       version,
-      status: versionOutput.code === 0 ? "ready" : "error",
+      status: "ready",
       auth: { status: "unknown" },
-      ...(versionOutput.code === 0 ? {} : { message: "Pi CLI is installed but failed to run." }),
     },
   });
 });

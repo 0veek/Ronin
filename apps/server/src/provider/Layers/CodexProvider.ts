@@ -409,16 +409,10 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     Effect.provide(clientContext),
   );
 
-  const initialize = yield* client.request("initialize", {
-    clientInfo: {
-      name: CODEX_CLIENT_NAME,
-      title: "Ronin Desktop",
-      version: "0.1.0",
-    },
-    capabilities: {
-      experimentalApi: true,
-    },
-  });
+  // Same handshake a session sends. Announcing a made-up client version here
+  // meant the probe and the live session identified themselves as two different
+  // clients to the same CLI.
+  const initialize = yield* client.request("initialize", buildCodexInitializeParams());
   yield* client.notify("initialized", undefined);
   yield* registerCodexSkillRoots(client, NodeOS.homedir());
 

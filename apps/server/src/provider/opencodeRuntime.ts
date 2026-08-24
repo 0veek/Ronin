@@ -59,6 +59,14 @@ export interface OpenCodeCompatibleCliSpec {
   readonly serverReadyPrefix: string;
   readonly configContentEnvVar: string;
   readonly serverAuthUsername: string;
+  /**
+   * Oldest CLI release Ronin can drive, or `null` when this CLI has no known
+   * floor. Only meaningful per CLI: an OpenCode-compatible fork versions on its
+   * own schedule, so measuring it against OpenCode's floor rejects perfectly
+   * good installs and tells the user to upgrade to a version that does not
+   * exist for their CLI.
+   */
+  readonly minimumVersion: string | null;
 }
 
 export const OPENCODE_CLI_SPEC: OpenCodeCompatibleCliSpec = {
@@ -67,6 +75,7 @@ export const OPENCODE_CLI_SPEC: OpenCodeCompatibleCliSpec = {
   serverReadyPrefix: OPENCODE_SERVER_READY_PREFIX,
   configContentEnvVar: "OPENCODE_CONFIG_CONTENT",
   serverAuthUsername: "opencode",
+  minimumVersion: "1.14.19",
 };
 
 export const KILO_CLI_SPEC: OpenCodeCompatibleCliSpec = {
@@ -75,6 +84,9 @@ export const KILO_CLI_SPEC: OpenCodeCompatibleCliSpec = {
   serverReadyPrefix: "kilo server listening",
   configContentEnvVar: "KILO_CONFIG_CONTENT",
   serverAuthUsername: "kilo",
+  // `@kilocode/cli` versions independently of OpenCode, so there is no release
+  // of it that OpenCode's floor describes.
+  minimumVersion: null,
 };
 export interface OpenCodeServerProcess {
   readonly url: string;
@@ -210,6 +222,7 @@ export interface OpenCodeRuntimeShape {
     readonly binaryPath: string;
     readonly cwd: string;
     readonly environment?: NodeJS.ProcessEnv;
+    readonly cliSpec?: OpenCodeCompatibleCliSpec;
   }) => Effect.Effect<OpenCodeInventory, OpenCodeRuntimeError>;
 }
 
@@ -242,7 +255,14 @@ export function parseModelsCliOutput(stdout: string): {
     { readonly id: string; readonly name: string; readonly models: { [key: string]: Model } }
   >;
   readonly connected: ReadonlyArray<string>;
+  /**
+   * Rows the parser could not read. A model missing from the picker with no
+   * trace anywhere is indistinguishable from one the CLI never offered, so the
+   * count is reported rather than swallowed.
+   */
+  readonly skipped: number;
 } {
+  let skipped = 0;
   const providers = new Map<
     string,
     { id: string; name: string; models: { [key: string]: Model } }
@@ -269,7 +289,7 @@ export function parseModelsCliOutput(stdout: string): {
             provider.models[modelID] = model;
           }
         } catch {
-          // Skip unparseable model JSON
+          skipped += 1;
         }
       }
     }
@@ -294,7 +314,7 @@ export function parseModelsCliOutput(stdout: string): {
   }
   flushModel();
 
-  return { providers, connected: [...providers.keys()] };
+  return { providers, connected: [...providers.keys()], skipped };
 }
 
 /** @internal */
@@ -404,10 +424,15 @@ export function buildOpenCodePermissionRules(runtimeMode: RuntimeMode): Permissi
     return [{ permission: "*", pattern: "*", action: "allow" }];
   }
 
+  // Auto-accept-edits waves through file edits and leaves every other gate up.
+  // Without this it fell through to the ruleset below and asked about edits
+  // too, which made the mode behave exactly like Supervised.
+  const editAction = runtimeMode === "auto-accept-edits" ? ("allow" as const) : ("ask" as const);
+
   return [
     { permission: "*", pattern: "*", action: "ask" },
     { permission: "bash", pattern: "*", action: "ask" },
-    { permission: "edit", pattern: "*", action: "ask" },
+    { permission: "edit", pattern: "*", action: editAction },
     { permission: "webfetch", pattern: "*", action: "ask" },
     { permission: "websearch", pattern: "*", action: "ask" },
     { permission: "codesearch", pattern: "*", action: "ask" },
@@ -755,6 +780,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
 
   const loadInventoryFromCli: OpenCodeRuntimeShape["loadInventoryFromCli"] = (input) =>
     Effect.gen(function* () {
+      const cliSpec = input.cliSpec ?? OPENCODE_CLI_SPEC;
       const env = input.environment !== undefined ? { environment: input.environment } : ({} as {});
       const commandContext = { cwd: input.cwd, ...env };
 
@@ -821,6 +847,12 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       }
 
       const parsed = parseModelsCliOutput(modelsResult.value.stdout);
+      if (parsed.skipped > 0) {
+        yield* Effect.logWarning("Some models were dropped while reading the CLI inventory", {
+          provider: cliSpec.displayName,
+          skipped: parsed.skipped,
+        });
+      }
       const connected = [...parsed.connected];
       const allProviders: ProviderListResponse["all"] = [...parsed.providers.values()].map(
         (provider) => ({
@@ -834,14 +866,24 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       );
 
       // Agent and skill metadata enrich the provider snapshot but are not required
-      // for an authoritative model inventory, so either may degrade to an empty list.
+      // for an authoritative model inventory, so either may degrade to an empty
+      // list. An empty agent picker with no explanation reads as "this CLI has
+      // no agents", so the degradation is logged rather than assumed harmless.
       let agents: ReadonlyArray<Agent> = [];
       if (agentsResult._tag === "Success" && agentsResult.value.code === 0) {
         agents = parseAgentListCliOutput(agentsResult.value.stdout);
+      } else {
+        yield* Effect.logWarning("Agent list unavailable; the agent picker will be empty", {
+          provider: cliSpec.displayName,
+        });
       }
       let skills: ReadonlyArray<OpenCodeSkill> = [];
       if (skillsResult._tag === "Success" && skillsResult.value.code === 0) {
         skills = parseSkillsCliOutput(skillsResult.value.stdout);
+      } else {
+        yield* Effect.logWarning("Skill list unavailable; native skills will not be reported", {
+          provider: cliSpec.displayName,
+        });
       }
 
       return {

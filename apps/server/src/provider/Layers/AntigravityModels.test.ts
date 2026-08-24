@@ -22,6 +22,22 @@ describe("parseAntigravityModelLine", () => {
     expect(parseAntigravityModelLine("Gemini 3.5 Flash")).toBeNull();
     expect(parseAntigravityModelLine("")).toBeNull();
   });
+
+  it("reads a build that aligns the columns with spaces instead of a tab", () => {
+    expect(parseAntigravityModelLine("gemini-3.7-flash-high   Gemini 3.7 Flash (High)")).toEqual({
+      slug: "gemini-3.7-flash-high",
+      name: "Gemini 3.7 Flash (High)",
+    });
+    expect(parseAntigravityModelLine("* gemini-3.5-flash-low   Gemini 3.5 Flash (Low)")).toEqual({
+      slug: "gemini-3.5-flash-low",
+      name: "Gemini 3.5 Flash (Low)",
+    });
+  });
+
+  it("still turns away space-aligned prose that has no id column", () => {
+    expect(parseAntigravityModelLine("Fetching   available models")).toBeNull();
+    expect(parseAntigravityModelLine("Available models:   pick one")).toBeNull();
+  });
 });
 
 describe("parseAntigravityModelLines", () => {

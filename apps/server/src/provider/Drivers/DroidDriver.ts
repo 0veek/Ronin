@@ -100,6 +100,7 @@ export const DroidDriver: ProviderDriver<DroidSettings, DroidDriverEnv> = {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
+      const serverConfig = yield* ServerConfig;
       const eventLoggers = yield* ProviderEventLoggers;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
@@ -125,7 +126,11 @@ export const DroidDriver: ProviderDriver<DroidSettings, DroidDriverEnv> = {
       });
       const textGeneration = yield* makeDroidTextGeneration(effectiveConfig, processEnv);
 
-      const checkProvider = checkDroidProviderStatus(effectiveConfig, processEnv).pipe(
+      const checkProvider = checkDroidProviderStatus(
+        effectiveConfig,
+        processEnv,
+        serverConfig.cwd,
+      ).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(Crypto.Crypto, crypto),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

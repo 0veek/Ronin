@@ -955,6 +955,16 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       subscriptionType: capabilities.subscriptionType,
       authMethod: capabilities.tokenSource,
     }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+  // The probe completing only proves the CLI starts. An account only shows up
+  // in the initialization result once the CLI actually has one, so without any
+  // trace of it "authenticated" would be a guess — and a logged-out CLI whose
+  // handshake succeeds would read as signed in right up until the first turn
+  // failed.
+  const hasAccountEvidence =
+    capabilities.email !== undefined ||
+    capabilities.subscriptionType !== undefined ||
+    capabilities.tokenSource !== undefined ||
+    capabilities.apiProvider !== undefined;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -966,12 +976,21 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       installed: true,
       version: parsedVersion,
       status: "ready",
-      auth: {
-        status: "authenticated",
-        ...(capabilities.email ? { email: capabilities.email } : {}),
-        ...(authMetadata ? authMetadata : {}),
-      },
-      ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),
+      auth: hasAccountEvidence
+        ? {
+            status: "authenticated",
+            ...(capabilities.email ? { email: capabilities.email } : {}),
+            ...(authMetadata ? authMetadata : {}),
+          }
+        : { status: "unknown" },
+      ...(versionUpgradeMessage
+        ? { message: versionUpgradeMessage }
+        : hasAccountEvidence
+          ? {}
+          : {
+              message:
+                "Claude Agent CLI is installed and running, but reported no account. Run `claude` and sign in if turns fail.",
+            }),
     },
   });
 });

@@ -251,8 +251,23 @@ function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings
     : fallbackTextGenerationProvider(settings);
 }
 
+/**
+ * A provider can only be fallen back to if we know a model it would accept.
+ * One with neither a text-generation default nor a plain default has no model
+ * story at all, and handing it `DEFAULT_TEXT_GENERATION_MODEL` — a Codex slug —
+ * used to leave commit messages, PR bodies and thread titles failing on every
+ * call with no hint of why.
+ */
+function textGenerationModelForProvider(kind: ProviderDriverKind): string | undefined {
+  return DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[kind] ?? DEFAULT_MODEL_BY_PROVIDER[kind];
+}
+
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
-  const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
+  const fallbackEntry = Object.entries(settings.providers).find(
+    ([kind, provider]) =>
+      provider.enabled &&
+      textGenerationModelForProvider(ProviderDriverKind.make(kind)) !== undefined,
+  );
   const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
   if (!fallback) {
     return settings;
@@ -262,10 +277,7 @@ function fallbackTextGenerationProvider(settings: ServerSettings): ServerSetting
     ...settings,
     textGenerationModelSelection: {
       instanceId: ProviderInstanceId.make(fallback),
-      model:
-        DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[fallback] ??
-        DEFAULT_MODEL_BY_PROVIDER[fallback] ??
-        DEFAULT_TEXT_GENERATION_MODEL,
+      model: textGenerationModelForProvider(fallback) ?? DEFAULT_TEXT_GENERATION_MODEL,
     } satisfies ModelSelection,
   };
 }

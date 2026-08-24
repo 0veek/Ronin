@@ -3,6 +3,7 @@ import * as NodeAssert from "node:assert/strict";
 import { describe, it } from "vite-plus/test";
 
 import {
+  buildOpenCodePermissionRules,
   parseAgentListCliOutput,
   parseModelsCliOutput,
   parseSkillsCliOutput,
@@ -282,5 +283,25 @@ describe("parseSkillsCliOutput", () => {
 
   it("degrades malformed output to an empty skill list", () => {
     NodeAssert.deepEqual(parseSkillsCliOutput("not json"), []);
+  });
+});
+
+describe("buildOpenCodePermissionRules", () => {
+  it("allows everything under full access", () => {
+    NodeAssert.deepEqual(buildOpenCodePermissionRules("full-access"), [
+      { permission: "*", pattern: "*", action: "allow" },
+    ]);
+  });
+
+  it("auto-accepts edits without dropping the other gates", () => {
+    const rules = buildOpenCodePermissionRules("auto-accept-edits");
+    NodeAssert.equal(rules.find((rule) => rule.permission === "edit")?.action, "allow");
+    NodeAssert.equal(rules.find((rule) => rule.permission === "bash")?.action, "ask");
+    NodeAssert.equal(rules.find((rule) => rule.permission === "webfetch")?.action, "ask");
+  });
+
+  it("asks about edits when approvals are required", () => {
+    const rules = buildOpenCodePermissionRules("approval-required");
+    NodeAssert.equal(rules.find((rule) => rule.permission === "edit")?.action, "ask");
   });
 });

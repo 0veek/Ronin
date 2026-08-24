@@ -97,6 +97,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
+      const serverConfig = yield* ServerConfig;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -114,13 +115,19 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         env: processEnv,
       });
 
+      const eventLoggers = yield* ProviderEventLoggers;
       const adapter = yield* makePiAdapter(effectiveConfig, {
         environment: processEnv,
         instanceId,
+        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
       });
       const textGeneration = makeUnsupportedTextGeneration("Pi");
 
-      const checkProvider = checkPiProviderStatus(effectiveConfig, processEnv).pipe(
+      const checkProvider = checkPiProviderStatus(
+        effectiveConfig,
+        processEnv,
+        serverConfig.cwd,
+      ).pipe(
         Effect.map(stampIdentity),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );

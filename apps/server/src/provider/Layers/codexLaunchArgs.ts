@@ -15,6 +15,15 @@ export const codexAppServerArgs = (launchArgs?: string) => [
   ...codexLaunchArgv(launchArgs),
 ];
 
+/**
+ * The subset of a user's launch args that `codex exec` will accept.
+ *
+ * `app-server` and `exec` do not share a flag set, so the args are filtered
+ * rather than forwarded whole: handing `exec` an app-server-only flag makes it
+ * exit on an unknown argument, which would take down commit-message and PR-body
+ * generation for anyone who set one. Config overrides are what carry over,
+ * because those are the ones that mean the same thing to both.
+ */
 export const codexExecLaunchArgs = (launchArgs?: string) => {
   const args = codexLaunchArgv(launchArgs);
   const execArgs: Array<string> = [];

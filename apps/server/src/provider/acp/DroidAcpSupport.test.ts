@@ -7,6 +7,7 @@ import {
   buildDroidAcpSpawnInput,
   resolveDroidAcpAuthMethodId,
   resolveDroidAcpBaseModelId,
+  droidAcpModeIdFor,
   resolveDroidCliBinaryPath,
 } from "./DroidAcpSupport.ts";
 
@@ -126,4 +127,28 @@ describe("applyDroidAcpModelSelection", () => {
       expect(result).toBe("claude-opus-4-8");
     }),
   );
+});
+
+describe("droidAcpModeIdFor", () => {
+  it("puts plan mode ahead of the autonomy level", () => {
+    expect(droidAcpModeIdFor({ interactionMode: "plan", runtimeMode: "full-access" })).toBe("spec");
+  });
+
+  it("raises Droid's own autonomy for a full-access thread", () => {
+    expect(droidAcpModeIdFor({ interactionMode: "default", runtimeMode: "full-access" })).toBe(
+      "auto-high",
+    );
+  });
+
+  it("stays normal when approvals are required", () => {
+    expect(droidAcpModeIdFor({ runtimeMode: "approval-required" })).toBe("normal");
+    expect(droidAcpModeIdFor({})).toBe("normal");
+  });
+});
+
+describe("resolveDroidCliBinaryPath", () => {
+  it("searches the instance PATH rather than the server's", () => {
+    const instancePath = "/nonexistent-instance-bin";
+    expect(resolveDroidCliBinaryPath(undefined, "linux", { PATH: instancePath })).toBe("droid");
+  });
 });
