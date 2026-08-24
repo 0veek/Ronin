@@ -144,7 +144,15 @@ export const make = Effect.gen(function* () {
     const providers = yield* Effect.all(
       [
         readProvider("claude", readClaudeRateLimits(deps, claudeHome)),
-        readProvider("codex", readCodexRateLimits(deps, codexLayout.sharedHomePath)),
+        // `auth.json` is a private entry: an auth-overlay instance keeps its own
+        // copy in the shadow home and never symlinks it to the shared one. The
+        // shared path only holds what instances have in common, so reading the
+        // token from there leaves every overlay instance stuck on
+        // "Not signed in to Codex".
+        readProvider(
+          "codex",
+          readCodexRateLimits(deps, codexLayout.effectiveHomePath ?? codexLayout.sharedHomePath),
+        ),
         readProvider("grok", readGrokRateLimits(deps, resolveGrokHome())),
       ],
       { concurrency: "unbounded" },

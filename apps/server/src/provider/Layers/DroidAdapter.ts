@@ -32,6 +32,8 @@ import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawne
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/schema";
 
+import { causeErrorTag } from "@t3tools/shared/observability";
+
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
@@ -54,7 +56,10 @@ import {
 import { parsePermissionRequest } from "../acp/AcpRuntimeModel.ts";
 import { makeAcpNativeLoggerFactory } from "../acp/AcpNativeLogging.ts";
 import {
+  applyDroidAcpInteractionMode,
   applyDroidAcpModelSelection,
+  droidAcpModeIdFor,
+  droidSettingsToRuntimeSettings,
   currentDroidModelIdFromSessionSetup,
   makeDroidAcpRuntime,
   resolveDroidAcpBaseModelId,
@@ -117,6 +122,8 @@ interface DroidSessionContext {
    * continues it, and only the last remaining prompt settles the turn. */
   promptsInFlight: number;
   currentModelId: string | undefined;
+  /** Droid-side mode last applied, so an unchanged turn skips the round trip. */
+  currentModeId: string | undefined;
   stopped: boolean;
 }
 
@@ -572,7 +579,9 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
 
           const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
           const acp = yield* makeDroidAcpRuntime({
-            droidSettings,
+            // Explicit conversion, not the settings object itself: only the
+            // fields Droid's spawn line understands should ever reach it.
+            droidSettings: droidSettingsToRuntimeSettings(droidSettings),
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
@@ -610,6 +619,9 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
             ),
           );
           const started = yield* Effect.gen(function* () {
+            // Droid's ACP surface carries xAI's ask-user extension verbatim,
+            // under both the prefixed and unprefixed spelling, so both are
+            // registered. The names are xAI's; the behaviour is Droid's.
             yield* Effect.forEach(
               ["x.ai/ask_user_question", "_x.ai/ask_user_question"] as const,
               (method) =>
@@ -747,6 +759,26 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
               mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
           });
 
+          // Without this Droid keeps its own default autonomy whatever the
+          // thread asked for, so Full access still round-tripped every tool
+          // call and plan mode never reached the CLI at all.
+          const boundModeId = yield* applyDroidAcpInteractionMode({
+            runtime: acp,
+            runtimeMode: input.runtimeMode,
+            mapError: ({ cause, method }) =>
+              mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
+          }).pipe(
+            // Autonomy level is an optimization: a build that will not take it
+            // still runs, it just asks about more than it needed to. Leaving
+            // the mode unrecorded means the next turn tries again.
+            Effect.catchCause((cause) =>
+              Effect.logWarning("Droid did not accept the session autonomy level", {
+                errorTag: causeErrorTag(cause),
+                threadId: input.threadId,
+              }).pipe(Effect.as(undefined)),
+            ),
+          );
+
           const now = yield* nowIso;
           const session: ProviderSession = {
             provider: PROVIDER,
@@ -779,6 +811,7 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
             interruptedTurnIds: new Set(),
             promptsInFlight: 0,
             currentModelId: boundModelId,
+            currentModeId: boundModeId,
             stopped: false,
           };
 
@@ -797,7 +830,11 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
                   yield* logNative(ctx.threadId, "session/update", event.rawPayload);
                 }
 
+                // Droid can change its own mode. Recording it keeps the next
+                // turn from skipping a mode it needs to set back, which was
+                // possible while this event was dropped outright.
                 if (event._tag === "ModeChanged") {
+                  ctx.currentModeId = event.modeId;
                   return;
                 }
 
@@ -806,6 +843,15 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
                   notificationTurnId === undefined ||
                   ctx.interruptedTurnIds.has(notificationTurnId)
                 ) {
+                  // Assistant text arriving before a turn starts or after it
+                  // settles has nowhere to go. Dropping it is right; dropping
+                  // it without a trace is how missing replies become
+                  // unexplainable.
+                  yield* Effect.logDebug("Dropped a Droid notification with no live turn", {
+                    threadId: ctx.threadId,
+                    event: event._tag,
+                    reason: notificationTurnId === undefined ? "no-active-turn" : "interrupted",
+                  });
                   return;
                 }
                 const stamp = yield* makeEventStamp();
@@ -956,6 +1002,36 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
                 mapError: (cause) =>
                   mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
               });
+
+              // Interaction mode is chosen per turn, so a thread that switches
+              // into plan mode has to carry that to Droid before it prompts.
+              // Skipped when nothing changed — this is a round trip per turn.
+              const desiredModeId = droidAcpModeIdFor({
+                interactionMode: input.interactionMode,
+                runtimeMode: ctx.session.runtimeMode,
+              });
+              if (desiredModeId !== ctx.currentModeId) {
+                const applyMode = applyDroidAcpInteractionMode({
+                  runtime: ctx.acp,
+                  interactionMode: input.interactionMode,
+                  runtimeMode: ctx.session.runtimeMode,
+                  mapError: ({ cause, method }) =>
+                    mapAcpToAdapterError(PROVIDER, input.threadId, method, cause),
+                });
+                // A refused plan mode has to be fatal. Carrying on would hand
+                // the user an agent that acts while the UI says it is planning.
+                ctx.currentModeId =
+                  input.interactionMode === "plan"
+                    ? yield* applyMode
+                    : yield* applyMode.pipe(
+                        Effect.catchCause((cause) =>
+                          Effect.logWarning("Droid did not accept the turn autonomy level", {
+                            errorTag: causeErrorTag(cause),
+                            threadId: input.threadId,
+                          }).pipe(Effect.as(ctx.currentModeId)),
+                        ),
+                      );
+              }
 
               const text = input.input?.trim();
               const imagePromptParts = yield* Effect.forEach(
@@ -1389,9 +1465,12 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
         const ctx = yield* requireSession(threadId);
         const pending = ctx.pendingUserInputs.get(requestId);
         if (!pending) {
+          // Not a wire method: Droid accepts this request under two different
+          // vendor spellings, so naming either one in the error would be a
+          // guess at which arrived.
           return yield* new ProviderAdapterRequestError({
             provider: PROVIDER,
-            method: "_x.ai/ask_user_question",
+            method: "respondToUserInput",
             detail: `Unknown pending user-input request: ${requestId}`,
           });
         }

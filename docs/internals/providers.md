@@ -129,7 +129,9 @@ original request and the plan of record are pinned out of that sequence entirely
 oldest-first, and without pinning the first thing a long thread loses is the thing it was asked to
 do. Bodies that have to be cut keep their opening _and_ their conclusion, land on line boundaries,
 and close any code fence the cut left open. The budget is the smallest of the wire cap, the
-adapter's `maxHandoffBriefChars` capability, and what the envelope leaves over.
+adapter's `maxHandoffBriefChars` capability, and what the envelope leaves over. No adapter
+currently sets `maxHandoffBriefChars` — the hook is there for a provider whose context window is
+too small for the wire cap, and until one declares a number the wire cap is the only ceiling.
 
 The brief is wrapped in `<handoff_context>` and the user's actual request in `<latest_user_message>`
 so the incoming model can tell background from the thing it has to answer. A `provider.handoff`

@@ -75,6 +75,7 @@ export function hasDroidApiKeyEnv(env: NodeJS.ProcessEnv = process.env): boolean
 export function resolveDroidCliBinaryPath(
   binaryPath: string | null | undefined,
   platform: NodeJS.Platform,
+  environment?: NodeJS.ProcessEnv,
 ): string {
   const configured = binaryPath?.trim();
   if (configured) {
@@ -84,7 +85,10 @@ export function resolveDroidCliBinaryPath(
   if (platform === "win32") {
     return name;
   }
-  const searchPath = process.env.PATH ?? "";
+  // The instance's own environment decides, not the server's: an instance that
+  // sets its own PATH or HOME is asking for a different `droid` than the one
+  // the server process would find.
+  const searchPath = environment?.PATH ?? process.env.PATH ?? "";
   for (const directory of searchPath.split(NodePath.delimiter)) {
     if (!directory.trim()) {
       continue;
@@ -94,7 +98,8 @@ export function resolveDroidCliBinaryPath(
       return candidate;
     }
   }
-  const localBin = NodePath.join(NodeOS.homedir(), ".local", "bin", name);
+  const home = environment?.HOME ?? NodeOS.homedir();
+  const localBin = NodePath.join(home, ".local", "bin", name);
   if (NodeFS.existsSync(localBin)) {
     return localBin;
   }
@@ -122,7 +127,7 @@ export function buildDroidAcpSpawnInput(
   }
 
   return {
-    command: resolveDroidCliBinaryPath(droidSettings?.binaryPath, platform),
+    command: resolveDroidCliBinaryPath(droidSettings?.binaryPath, platform, environment),
     args,
     cwd,
     ...(environment ? { env: environment } : {}),
@@ -223,25 +228,38 @@ export function applyDroidAcpModelSelection<E>(input: {
   }).pipe(Effect.as(input.requestedModelId ?? input.currentModelId));
 }
 
+/**
+ * The Droid-side mode a thread's interaction and runtime modes add up to.
+ *
+ * Plan wins outright: a thread in plan mode must not act however much autonomy
+ * it was granted. Otherwise Full access raises Droid's own autonomy level, which
+ * is the only way to stop the CLI round-tripping every tool call over ACP.
+ */
+export function droidAcpModeIdFor(input: {
+  readonly interactionMode?: string | undefined;
+  readonly runtimeMode?: string | undefined;
+}): string {
+  if (input.interactionMode === "plan") return DROID_PLAN_MODE_ID;
+  return input.runtimeMode === "full-access" ? "auto-high" : DROID_DEFAULT_MODE_ID;
+}
+
 export function applyDroidAcpInteractionMode<E>(input: {
   readonly runtime: Pick<
     AcpSessionRuntime.AcpSessionRuntime["Service"],
     "setConfigOption" | "setMode"
   >;
-  readonly interactionMode?: "plan" | "default" | string;
-  readonly runtimeMode?: "approval-required" | "full-access";
+  readonly interactionMode?: string | undefined;
+  readonly runtimeMode?: string | undefined;
   readonly mapError: (context: DroidAcpModelSelectionErrorContext) => E;
-}): Effect.Effect<void, E> {
-  const modeId =
-    input.interactionMode === "plan"
-      ? DROID_PLAN_MODE_ID
-      : input.runtimeMode === "full-access"
-        ? "auto-high"
-        : DROID_DEFAULT_MODE_ID;
+}): Effect.Effect<string, E> {
+  const modeId = droidAcpModeIdFor(input);
   return input.runtime.setMode(modeId).pipe(
+    // Builds that predate `session/set_mode` carry the same value as a config
+    // option instead. Only the shape differs, so a failure here is worth one
+    // more try before it becomes the caller's problem.
     Effect.catch(() => input.runtime.setConfigOption(DROID_AUTONOMY_CONFIG_ID, modeId)),
     Effect.mapError((cause) => input.mapError({ cause, method: "session/set_config_option" })),
-    Effect.asVoid,
+    Effect.as(modeId),
   );
 }
 

@@ -28,46 +28,18 @@ import {
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
+  ProviderOperationUnsupportedError,
 } from "../Errors.ts";
+import { loadPiCodingAgentModule, type PiAgentRuntime } from "../piRuntime.ts";
 import { type PiAdapterShape } from "../Services/PiAdapter.ts";
+import { type EventNdjsonLogger } from "./EventNdjsonLogger.ts";
 
 const PROVIDER = ProviderDriverKind.make("pi");
 const PI_RESUME_VERSION = 1 as const;
 
-interface PiAgentSession {
-  prompt: (input: string) => Promise<unknown>;
-  abort?: () => Promise<unknown> | unknown;
-  dispose?: () => Promise<unknown> | unknown;
-  subscribe?: (listener: (event: { type?: string; text?: string }) => void) => () => void;
-  sessionFile?: string;
-  sessionManager?: { getSessionFile?: () => string | undefined };
-}
-
-interface PiAgentRuntime {
-  session: PiAgentSession;
-}
-
-interface PiCodingAgentModule {
-  createAgentSessionRuntime: (input: {
-    cwd: string;
-    sessionFile?: string;
-    agentDir?: string;
-  }) => Promise<PiAgentRuntime>;
-}
-
-let piModulePromise: Promise<PiCodingAgentModule> | undefined;
-
-function loadPiCodingAgentModule(): Promise<PiCodingAgentModule> {
-  piModulePromise ??= (
-    Function("specifier", "return import(specifier)") as (
-      specifier: string,
-    ) => Promise<PiCodingAgentModule>
-  )("@earendil-works/pi-coding-agent");
-  return piModulePromise;
-}
-
 export interface PiAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
+  readonly nativeEventLogger?: EventNdjsonLogger;
   readonly instanceId?: ProviderInstanceId;
 }
 
@@ -128,6 +100,39 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
     const offerRuntimeEvent = (event: ProviderRuntimeEvent) =>
       PubSub.publish(runtimeEventPubSub, event).pipe(Effect.asVoid);
 
+    // Pi's SDK events are the only record of what the agent did — there is no
+    // process and no wire to tee. Everything the subscription sees goes to the
+    // native log, including the event kinds the adapter has no mapping for.
+    const nativeEventLogger = options?.nativeEventLogger;
+    const logNative = (threadId: ThreadId, method: string, payload: unknown) =>
+      Effect.gen(function* () {
+        if (!nativeEventLogger) return;
+        const observedAt = yield* nowIso;
+        yield* nativeEventLogger.write(
+          {
+            observedAt,
+            event: {
+              id: yield* randomUUIDv4,
+              kind: "notification",
+              provider: PROVIDER,
+              createdAt: observedAt,
+              method,
+              threadId,
+              payload,
+            },
+          },
+          threadId,
+        );
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Failed to write native Pi notification log.", {
+            cause,
+            threadId,
+            method,
+          }),
+        ),
+      );
+
     const requireSession = (threadId: ThreadId) => {
       const ctx = sessions.get(threadId);
       return ctx && !ctx.stopped
@@ -147,6 +152,18 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
             provider: PROVIDER,
             operation: "startSession",
             issue: "A Pi session is already active for this thread.",
+          });
+        }
+        // Pi runs in-process with no permission callback of any kind, so every
+        // tool call it makes is already done by the time Ronin could ask. A
+        // session that claims to be supervised and gates nothing is worse than
+        // one that refuses, so the modes that promise a gate are turned away.
+        if (input.runtimeMode === "approval-required") {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "startSession",
+            issue:
+              "Pi cannot ask for approval before it acts, so it cannot run in Supervised mode. Switch this thread to Full access to use Pi.",
           });
         }
         const module = yield* Effect.tryPromise({
@@ -208,6 +225,7 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
           stopped: false,
         };
         ctx.unsubscribe = runtime.session.subscribe?.((event) => {
+          void runDetached(logNative(input.threadId, event.type ?? "unknown", event));
           if (ctx.activeTurnId === undefined) return;
           if (event.type === "message_update" && typeof event.text === "string" && event.text) {
             const turnId = ctx.activeTurnId;
@@ -254,6 +272,15 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
             provider: PROVIDER,
             operation: "turn/start",
             issue: "A prompt is required.",
+          });
+        }
+        // The SDK takes a bare prompt string, so an attachment has nowhere to
+        // go and the agent would answer about a picture it never saw.
+        if (input.attachments && input.attachments.length > 0) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "turn/start",
+            issue: "Pi cannot receive image attachments.",
           });
         }
         const turnId = TurnId.make(yield* randomUUIDv4);
@@ -353,11 +380,12 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
         }
       });
 
-    const unsupportedRequest = (threadId: ThreadId, method: string) =>
-      new ProviderAdapterRequestError({
+    // Not a malformed request — Pi has no interactive request surface at all,
+    // and a caller has to be able to tell those two apart.
+    const unsupportedRequest = (_threadId: ThreadId, operation: string) =>
+      new ProviderOperationUnsupportedError({
         provider: PROVIDER,
-        method,
-        detail: `Pi does not expose this interactive request for ${threadId}.`,
+        operation,
       });
 
     const stopSessionInternal = (ctx: PiSessionContext) =>
@@ -407,7 +435,11 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
         Effect.gen(function* () {
           const ctx = yield* requireSession(threadId);
           if (!Number.isInteger(numTurns) || numTurns < 1) {
-            return { threadId, turns: ctx.turns };
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "rollbackThread",
+              issue: "numTurns must be an integer >= 1.",
+            });
           }
           const nextLength = Math.max(0, ctx.turns.length - numTurns);
           ctx.turns.splice(nextLength);

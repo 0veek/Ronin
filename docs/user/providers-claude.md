@@ -189,6 +189,11 @@ https://openrouter.ai/api
 
 You can also check the OpenRouter activity dashboard for requests from your API key.
 
+A Claude provider card can also read **Unknown** for its account while still being ready to use.
+That means the CLI started and answered, but reported no account for Ronin to name — normal for a
+gateway or API-key setup like OpenRouter or Bedrock. If turns fail as well, run `claude` in a
+terminal and sign in.
+
 ### Common OpenRouter Mistakes
 
 - Use `https://openrouter.ai/api`, not `https://openrouter.ai/api/v1`, for Claude Code.

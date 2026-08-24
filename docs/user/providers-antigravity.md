@@ -28,6 +28,14 @@ Print mode cannot pause to ask, so Antigravity answers its own permission prompt
 
 A supervised turn can therefore end with the agent explaining what it was not allowed to do rather than doing it. Use Full access when a turn needs to run tools unattended.
 
+## Attachments
+
+Antigravity's print mode takes text prompts only. Attaching an image to an Antigravity thread is refused rather than sent, so the agent never answers about a picture it could not see.
+
+## When a turn recovers
+
+`agy` reports its status as an error whenever any step errored, including ones the agent went on to work around. A turn that still produced an answer is kept as a completed turn — the step that failed on the way is already on the timeline, and what the CLI said about it appears as a warning on the turn. Only a run that answered nothing is treated as failed.
+
 ## Continuity
 
 Each turn runs a fresh `agy` process, and Ronin reconnects it to the conversation the thread started, so follow-up messages keep the earlier context.

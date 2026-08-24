@@ -816,6 +816,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   notificationTurnId === undefined ||
                   ctx.interruptedTurnIds.has(notificationTurnId)
                 ) {
+                  // Assistant text arriving before a turn starts or after it
+                  // settles has nowhere to go. Dropping it is right; dropping
+                  // it without a trace is how missing replies become
+                  // unexplainable.
+                  yield* Effect.logDebug("Dropped a Grok notification with no live turn", {
+                    threadId: ctx.threadId,
+                    event: event._tag,
+                    reason: notificationTurnId === undefined ? "no-active-turn" : "interrupted",
+                  });
                   return;
                 }
                 const stamp = yield* makeEventStamp();

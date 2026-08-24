@@ -756,10 +756,20 @@ function isCursorAboutJsonFormatUnsupported(result: CommandResult): boolean {
   );
 }
 
-const readCursorCliConfigChannel = Effect.fn("readCursorCliConfigChannel")(function* () {
+/**
+ * Reads the release channel the Cursor CLI is configured for.
+ *
+ * The home comes from the instance's own environment, not the server's: two
+ * Cursor instances pointed at different homes otherwise both read one global
+ * file, so one instance's channel decided whether the other published models.
+ */
+const readCursorCliConfigChannel = Effect.fn("readCursorCliConfigChannel")(function* (
+  environment?: NodeJS.ProcessEnv,
+) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const configPath = path.join(NodeOS.homedir(), ".cursor", "cli-config.json");
+  const home = environment?.HOME ?? environment?.USERPROFILE ?? NodeOS.homedir();
+  const configPath = path.join(home, ".cursor", "cli-config.json");
   const raw = yield* fileSystem.readFileString(configPath).pipe(Effect.orElseSucceed(() => ""));
   return parseCursorCliConfigChannel(raw);
 });
@@ -1056,7 +1066,7 @@ export const checkCursorProviderStatus = Effect.fn("checkCursorProviderStatus")(
   }
 
   const parsed = parseCursorAboutOutput(aboutProbe.success.value);
-  const cursorCliConfigChannel = yield* readCursorCliConfigChannel();
+  const cursorCliConfigChannel = yield* readCursorCliConfigChannel(environment);
   const parameterizedModelPickerUnsupportedMessage =
     getCursorParameterizedModelPickerUnsupportedMessage({
       version: parsed.version,

@@ -19,8 +19,10 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import {
+  OPENCODE_CLI_SPEC,
   OpenCodeRuntime,
   openCodeRuntimeErrorDetail,
+  type OpenCodeCompatibleCliSpec,
   type OpenCodeInventory,
 } from "../opencodeRuntime.ts";
 import type { Agent, ProviderListResponse } from "@opencode-ai/sdk/v2";
@@ -29,7 +31,6 @@ const OPENCODE_PRESENTATION = {
   displayName: "OpenCode",
   showInteractionModeToggle: false,
 } as const;
-const MINIMUM_OPENCODE_VERSION = "1.14.19";
 
 class OpenCodeProbeError extends Data.TaggedError("OpenCodeProbeError")<{
   readonly cause: unknown;
@@ -66,9 +67,12 @@ function formatOpenCodeProbeError(input: {
   readonly cause: unknown;
   readonly isExternalServer: boolean;
   readonly serverUrl: string;
+  readonly cliSpec: OpenCodeCompatibleCliSpec;
 }): { readonly installed: boolean; readonly message: string } {
   const detail = normalizedErrorMessage(input.cause);
   const lower = detail?.toLowerCase() ?? "";
+  const cli = input.cliSpec.displayName;
+  const binary = input.cliSpec.defaultBinaryPath;
 
   if (input.isExternalServer) {
     if (
@@ -79,7 +83,7 @@ function formatOpenCodeProbeError(input: {
     ) {
       return {
         installed: true,
-        message: "OpenCode server rejected authentication. Check the server URL and password.",
+        message: `${cli} server rejected authentication. Check the server URL and password.`,
       };
     }
 
@@ -94,44 +98,42 @@ function formatOpenCodeProbeError(input: {
     ) {
       return {
         installed: true,
-        message: `Couldn't reach the configured OpenCode server at ${input.serverUrl}. Check that the server is running and the URL is correct.`,
+        message: `Couldn't reach the configured ${cli} server at ${input.serverUrl}. Check that the server is running and the URL is correct.`,
       };
     }
 
     return {
       installed: true,
-      message: detail ?? "Failed to connect to the configured OpenCode server.",
+      message: detail ?? `Failed to connect to the configured ${cli} server.`,
     };
   }
 
   if (lower.includes("enoent") || lower.includes("notfound")) {
     return {
       installed: false,
-      message: "OpenCode CLI (`opencode`) is not installed or not on PATH.",
+      message: `${cli} CLI (\`${binary}\`) is not installed or not on PATH.`,
     };
   }
 
   if (lower.includes("quarantine")) {
     return {
       installed: true,
-      message:
-        "macOS is blocking the OpenCode binary (quarantine). Run `xattr -d com.apple.quarantine $(which opencode)` to fix this.",
+      message: `macOS is blocking the ${cli} binary (quarantine). Run \`xattr -d com.apple.quarantine $(which ${binary})\` to fix this.`,
     };
   }
 
   if (lower.includes("invalid code signature") || lower.includes("corrupted")) {
     return {
       installed: true,
-      message:
-        "macOS killed the OpenCode process due to an invalid code signature. The binary may be corrupted — try reinstalling OpenCode.",
+      message: `macOS killed the ${cli} process due to an invalid code signature. The binary may be corrupted — try reinstalling ${cli}.`,
     };
   }
 
   return {
     installed: true,
     message: detail
-      ? `Failed to execute OpenCode CLI health check: ${detail}`
-      : "Failed to execute OpenCode CLI health check.",
+      ? `Failed to execute ${cli} CLI health check: ${detail}`
+      : `Failed to execute ${cli} CLI health check.`,
   };
 }
 
@@ -279,8 +281,10 @@ function flattenOpenCodeSkills(input: OpenCodeInventory): ReadonlyArray<ServerPr
 
 export const makePendingOpenCodeProvider = (
   openCodeSettings: OpenCodeSettings,
+  cliSpec: OpenCodeCompatibleCliSpec = OPENCODE_CLI_SPEC,
 ): Effect.Effect<ServerProviderDraft> =>
   Effect.gen(function* () {
+    const cli = cliSpec.displayName;
     const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
     const models = providerModelsFromSettings(
       [],
@@ -301,8 +305,8 @@ export const makePendingOpenCodeProvider = (
           auth: { status: "unknown" },
           message:
             openCodeSettings.serverUrl.trim().length > 0
-              ? "OpenCode is disabled in Ronin settings. A server URL is configured."
-              : "OpenCode is disabled in Ronin settings.",
+              ? `${cli} is disabled in Ronin settings. A server URL is configured.`
+              : `${cli} is disabled in Ronin settings.`,
         },
       });
     }
@@ -317,7 +321,7 @@ export const makePendingOpenCodeProvider = (
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "OpenCode provider status has not been checked in this session yet.",
+        message: `${cli} provider status has not been checked in this session yet.`,
       },
     });
   });
@@ -326,8 +330,10 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
   openCodeSettings: OpenCodeSettings,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
+  cliSpec: OpenCodeCompatibleCliSpec = OPENCODE_CLI_SPEC,
 ): Effect.fn.Return<ServerProviderDraft, never, OpenCodeRuntime> {
   const openCodeRuntime = yield* OpenCodeRuntime;
+  const cli = cliSpec.displayName;
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const customModels = openCodeSettings.customModels;
@@ -338,6 +344,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
       cause,
       isExternalServer,
       serverUrl: openCodeSettings.serverUrl,
+      cliSpec,
     });
     return buildServerProvider({
       presentation: OPENCODE_PRESENTATION,
@@ -366,8 +373,8 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
         status: "warning",
         auth: { status: "unknown" },
         message: isExternalServer
-          ? "OpenCode is disabled in Ronin settings. A server URL is configured."
-          : "OpenCode is disabled in Ronin settings.",
+          ? `${cli} is disabled in Ronin settings. A server URL is configured.`
+          : `${cli} is disabled in Ronin settings.`,
       },
     });
   }
@@ -392,28 +399,34 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
     }
     version = parseGenericCliVersion(versionExit.value.stdout) ?? null;
 
-    if (!version) {
-      return fallback(
-        new Error(
-          `Unable to determine OpenCode version from \`opencode --version\` output. Ronin requires OpenCode v${MINIMUM_OPENCODE_VERSION} or newer.`,
-        ),
-        null,
-      );
-    }
-    if (compareSemverVersions(version, MINIMUM_OPENCODE_VERSION) < 0) {
-      return buildServerProvider({
-        presentation: OPENCODE_PRESENTATION,
-        enabled: openCodeSettings.enabled,
-        checkedAt,
-        models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
-        probe: {
-          installed: true,
-          version,
-          status: "error",
-          auth: { status: "unknown" },
-          message: `OpenCode v${version} is too old. Upgrade to v${MINIMUM_OPENCODE_VERSION} or newer.`,
-        },
-      });
+    const minimumVersion = cliSpec.minimumVersion;
+    // A CLI with no known floor is only version-probed for display. Refusing to
+    // start because its `--version` output was unreadable would take the whole
+    // provider down over a cosmetic field.
+    if (minimumVersion !== null) {
+      if (!version) {
+        return fallback(
+          new Error(
+            `Unable to determine ${cli} version from \`${cliSpec.defaultBinaryPath} --version\` output. Ronin requires ${cli} v${minimumVersion} or newer.`,
+          ),
+          null,
+        );
+      }
+      if (compareSemverVersions(version, minimumVersion) < 0) {
+        return buildServerProvider({
+          presentation: OPENCODE_PRESENTATION,
+          enabled: openCodeSettings.enabled,
+          checkedAt,
+          models: providerModelsFromSettings([], customModels, DEFAULT_OPENCODE_MODEL_CAPABILITIES),
+          probe: {
+            installed: true,
+            version,
+            status: "error",
+            auth: { status: "unknown" },
+            message: `${cli} v${version} is too old. Upgrade to v${minimumVersion} or newer.`,
+          },
+        });
+      }
     }
   }
 
@@ -430,6 +443,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
               openCodeRuntime.createOpenCodeSdkClient({
                 baseUrl: server.url,
                 directory: cwd,
+                cliSpec,
                 ...(openCodeSettings.serverPassword
                   ? { serverPassword: openCodeSettings.serverPassword }
                   : {}),
@@ -441,6 +455,7 @@ export const checkOpenCodeProviderStatus = Effect.fn("checkOpenCodeProviderStatu
           binaryPath: openCodeSettings.binaryPath,
           cwd,
           environment: resolvedEnvironment,
+          cliSpec,
         })
     ).pipe(
       Effect.mapError(

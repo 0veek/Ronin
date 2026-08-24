@@ -12,6 +12,7 @@
  */
 import {
   ProviderDriverKind,
+  isProviderDriverKind,
   type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
@@ -35,6 +36,14 @@ export interface UnavailableProviderSnapshotInput {
 }
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+
+/** Stand-in for a persisted driver kind that is not a legal slug. */
+const UNKNOWN_DRIVER_KIND = ProviderDriverKind.make("unknown");
+
+function resolveDriverKind(driverKind: ProviderDriverKind | string): ProviderDriverKind {
+  if (typeof driverKind !== "string") return driverKind;
+  return isProviderDriverKind(driverKind) ? driverKind : UNKNOWN_DRIVER_KIND;
+}
 
 /**
  * Produce a `ServerProvider` snapshot representing a configured instance
@@ -68,10 +77,11 @@ export function buildUnavailableProviderSnapshot(
       ...base,
       instanceId: input.instanceId,
       ...(input.accentColor ? { accentColor: input.accentColor } : {}),
-      driver:
-        typeof input.driverKind === "string"
-          ? ProviderDriverKind.make(input.driverKind)
-          : input.driverKind,
+      // `make` throws on anything that is not a valid slug, and this module
+      // exists precisely to survive driver kinds it has never seen. A persisted
+      // value that breaks the slug rules would otherwise take down the very
+      // path meant to render it.
+      driver: resolveDriverKind(input.driverKind),
       availability: "unavailable",
       unavailableReason: input.reason,
     };

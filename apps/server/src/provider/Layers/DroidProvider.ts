@@ -1,8 +1,12 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeOS from "node:os";
+
 import {
   type DroidSettings,
   type ModelCapabilities,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerProviderSkill,
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
@@ -17,6 +21,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
+import { collectSkillsFromRoots, nativeSkillRootsForProvider } from "../skillsCatalog.ts";
 import {
   buildServerProvider,
   isCommandMissingCause,
@@ -34,7 +39,7 @@ import { makeDroidAcpRuntime, resolveDroidAcpBaseModelId } from "../acp/DroidAcp
 const DROID_PRESENTATION = {
   displayName: "Droid",
   badgeLabel: "Early Access",
-  showInteractionModeToggle: false,
+  showInteractionModeToggle: true,
 } as const;
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -157,9 +162,24 @@ const runDroidVersionCommand = (
     );
   });
 
+/**
+ * Skills Droid loads for itself, so the reactor stops inlining them into the
+ * prompt on top of what the CLI already read from `~/.factory/skills`.
+ */
+const discoverDroidSkills = (environment: NodeJS.ProcessEnv, cwd: string | undefined) =>
+  Effect.tryPromise(() =>
+    collectSkillsFromRoots(
+      nativeSkillRootsForProvider("droid", {
+        homeDir: environment.HOME ?? NodeOS.homedir(),
+        ...(cwd ? { cwd } : {}),
+      }),
+    ),
+  ).pipe(Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => []));
+
 export const checkDroidProviderStatus = Effect.fn("checkDroidProviderStatus")(function* (
   droidSettings: DroidSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  cwd?: string,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -167,6 +187,7 @@ export const checkDroidProviderStatus = Effect.fn("checkDroidProviderStatus")(fu
 > {
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const fallbackModels = droidModelsFromSettings(droidSettings.customModels);
+  const skills = yield* discoverDroidSkills(environment, cwd);
 
   if (!droidSettings.enabled) {
     return buildServerProvider({
@@ -301,6 +322,7 @@ export const checkDroidProviderStatus = Effect.fn("checkDroidProviderStatus")(fu
     enabled: droidSettings.enabled,
     checkedAt,
     models,
+    skills,
     probe: {
       installed: true,
       version,

@@ -360,6 +360,42 @@ function ancestorsFromDeepest(cwd: string): string[] {
   }
 }
 
+/**
+ * The roots one provider loads its own skills from.
+ *
+ * A provider that reports its native skills in its snapshot lets the reactor
+ * see they are already loaded and leave them out of the prompt. One that
+ * reports nothing gets every referenced skill inlined again, so the agent reads
+ * the same instructions twice and pays for them twice.
+ */
+export function nativeSkillRootsForProvider(
+  origin: (typeof HOME_ORIGIN_ORDER)[number],
+  input: { readonly homeDir: string; readonly cwd?: string | null },
+): SkillRoot[] {
+  const discoveryInput: SkillsCatalogDiscoveryInput = {
+    homeDir: input.homeDir,
+    roninBaseDir: input.homeDir,
+    ...(input.cwd ? { cwd: input.cwd } : {}),
+  };
+  const homeRoots = homeRootsForOrigin(origin, discoveryInput).map((path) => ({
+    path,
+    scope: origin,
+  }));
+  const homeRootPaths = new Set(homeRoots.map((root) => NodePath.resolve(root.path)));
+  const projectRoots: SkillRoot[] = [];
+  const cwd = input.cwd?.trim();
+  if (cwd) {
+    for (const ancestor of ancestorsFromDeepest(cwd)) {
+      for (const rootName of projectRootNamesForOrigin(origin)) {
+        const rootPath = NodePath.join(ancestor, rootName, "skills");
+        if (homeRootPaths.has(NodePath.resolve(rootPath))) continue;
+        projectRoots.push({ path: rootPath, scope: "project" });
+      }
+    }
+  }
+  return [...projectRoots, ...homeRoots];
+}
+
 export function skillsCatalogRoots(input: SkillsCatalogDiscoveryInput): SkillRoot[] {
   const homeRoots = HOME_ORIGIN_ORDER.flatMap((origin) =>
     homeRootsForOrigin(origin, input).map((path) => ({

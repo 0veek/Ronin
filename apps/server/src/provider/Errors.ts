@@ -212,12 +212,15 @@ export type ProviderAdapterError =
   | ProviderAdapterSessionNotFoundError
   | ProviderAdapterSessionClosedError
   | ProviderAdapterRequestError
-  | ProviderAdapterProcessError;
+  | ProviderAdapterProcessError
+  // An adapter for a CLI that simply has no approvals, no per-agent stop, or no
+  // rollback needs to say so in a way a caller can tell apart from a request
+  // that was merely malformed.
+  | ProviderOperationUnsupportedError;
 
 export type ProviderServiceError =
   | ProviderValidationError
   | ProviderUnsupportedError
-  | ProviderOperationUnsupportedError
   | ProviderInstanceNotFoundError
   | ProviderSessionNotFoundError
   | ProviderSessionDirectoryPersistenceError

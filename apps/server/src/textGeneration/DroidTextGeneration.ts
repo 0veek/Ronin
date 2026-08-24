@@ -30,7 +30,7 @@ import {
   resolveDroidAcpBaseModelId,
 } from "../provider/acp/DroidAcpSupport.ts";
 
-const GROK_TIMEOUT_MS = 180_000;
+const DROID_TIMEOUT_MS = 180_000;
 
 const isTextGenerationError = Schema.is(TextGenerationError);
 
@@ -99,7 +99,7 @@ export const makeDroidTextGeneration = Effect.fn("makeDroidTextGeneration")(func
           prompt: [{ type: "text", text: prompt }],
         });
       }).pipe(
-        Effect.timeoutOption(GROK_TIMEOUT_MS),
+        Effect.timeoutOption(DROID_TIMEOUT_MS),
         Effect.flatMap(
           Option.match({
             onNone: () =>

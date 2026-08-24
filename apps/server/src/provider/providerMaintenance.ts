@@ -3,6 +3,7 @@ import {
   type ServerProvider,
   type ServerProviderVersionAdvisory,
 } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import * as Config from "effect/Config";
@@ -55,6 +56,13 @@ export interface ProviderMaintenanceCapabilityResolutionOptions {
   readonly env?: NodeJS.ProcessEnv;
   readonly resolvedCommandPath?: string | null;
   readonly realCommandPath?: string | null;
+  /**
+   * Host platform, which decides how an install path is read: `/usr/local/bin`
+   * means Homebrew on macOS and a hand-installed binary anywhere else.
+   * `resolveProviderMaintenanceCapabilitiesEffect` supplies it; omitting it
+   * reads paths the macOS way, which is the shape the prefixes describe.
+   */
+  readonly platform?: NodeJS.Platform;
 }
 
 export interface ProviderMaintenanceCapabilitiesResolver {
@@ -259,9 +267,9 @@ function isNpmGlobalCommandPath(commandPath: string): boolean {
   );
 }
 
-function isHomebrewCommandPath(commandPath: string): boolean {
+function isHomebrewCommandPath(commandPath: string, platform: NodeJS.Platform): boolean {
   const normalized = normalizeCommandPath(commandPath);
-  return (
+  if (
     normalized.includes("/opt/homebrew/cellar/") ||
     normalized.includes("/usr/local/cellar/") ||
     normalized.includes("/homebrew/cellar/") ||
@@ -269,8 +277,15 @@ function isHomebrewCommandPath(commandPath: string): boolean {
     normalized.includes("/usr/local/caskroom/") ||
     normalized.includes("/homebrew/caskroom/") ||
     normalized.startsWith("/opt/homebrew/bin/") ||
-    normalized.startsWith("/usr/local/bin/")
-  );
+    normalized.startsWith("/home/linuxbrew/.linuxbrew/")
+  ) {
+    return true;
+  }
+  // `/usr/local/bin` is Intel Homebrew's bin on macOS and the standard prefix
+  // for a hand-installed binary everywhere else. Claiming it on Linux offers a
+  // `brew upgrade` that cannot work — Homebrew there lives under
+  // `/home/linuxbrew/.linuxbrew`, which is matched above.
+  return platform === "darwin" && normalized.startsWith("/usr/local/bin/");
 }
 
 export function resolvePackageManagedProviderMaintenance(
@@ -313,7 +328,8 @@ export function resolvePackageManagedProviderMaintenance(
     if (commandPaths.some(isNpmGlobalCommandPath)) {
       return makeNpmGlobalProviderMaintenanceCapabilities(definition);
     }
-    if (commandPaths.some(isHomebrewCommandPath)) {
+    const platform = options?.platform ?? "darwin";
+    if (commandPaths.some((commandPath) => isHomebrewCommandPath(commandPath, platform))) {
       return makeHomebrewProviderMaintenanceCapabilities(definition);
     }
   }
@@ -359,9 +375,10 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
   resolver: ProviderMaintenanceCapabilitiesResolver,
   options?: Omit<ProviderMaintenanceCapabilityResolutionOptions, "realCommandPath">,
 ) {
+  const platform = yield* HostProcessPlatform;
   const binaryPath = nonEmptyString(options?.binaryPath);
   if (!binaryPath) {
-    return resolver.resolve(options);
+    return resolver.resolve({ ...options, platform });
   }
 
   const env = options?.env ?? (yield* readCommandLookupEnv);
@@ -370,7 +387,7 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
       Effect.catchTag("CommandResolutionError", () => Effect.succeed(null)),
     )) ?? (hasPathSeparator(binaryPath) ? binaryPath : null);
   if (!resolvedCommandPath) {
-    return resolver.resolve(options);
+    return resolver.resolve({ ...options, platform });
   }
 
   const fileSystem = yield* FileSystem.FileSystem;
@@ -379,6 +396,7 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
     .pipe(Effect.orElseSucceed(() => resolvedCommandPath));
   return resolver.resolve({
     ...options,
+    platform,
     env,
     resolvedCommandPath,
     realCommandPath,

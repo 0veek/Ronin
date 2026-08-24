@@ -41,6 +41,7 @@ import {
   ProviderAdapterRequestError,
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
+  ProviderOperationUnsupportedError,
 } from "../Errors.ts";
 import { type AntigravityAdapterShape } from "../Services/AntigravityAdapter.ts";
 import { type AntigravityStreamEvent, parseAntigravityStreamLine } from "./AntigravityStream.ts";
@@ -281,6 +282,15 @@ export function makeAntigravityAdapter(
             issue: "A prompt is required.",
           });
         }
+        // Print mode has no image input path at all, and a dropped attachment
+        // reads to the user as an answer about a picture the agent never saw.
+        if (input.attachments && input.attachments.length > 0) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "turn/start",
+            issue: "Antigravity cannot receive image attachments.",
+          });
+        }
         const turnId = TurnId.make(yield* randomUUIDv4);
         const modelSelection = selectionForThisInstance(input.modelSelection);
         const model = resolveAntigravityModel(modelSelection?.model ?? ctx.session.model);
@@ -349,6 +359,7 @@ export function makeAntigravityAdapter(
         const openToolSteps = new Set<number>();
         let turnFailure: string | undefined;
         let resultMessage: string | undefined;
+        let answeredResult = false;
         let sawAssistantText = false;
         const handleStreamEvent = (event: AntigravityStreamEvent) =>
           Effect.gen(function* () {
@@ -436,6 +447,7 @@ export function makeAntigravityAdapter(
                 // turn on its own. A run that still answered finished its work,
                 // and the step that failed on the way is already on the
                 // timeline; only a run that answered nothing actually failed.
+                if (event.answered) answeredResult = true;
                 if (!event.succeeded) {
                   resultMessage = event.message ?? "Antigravity turn failed.";
                   if (!event.answered) turnFailure = resultMessage;
@@ -496,7 +508,24 @@ export function makeAntigravityAdapter(
               const updatedAt = yield* nowIso;
               const { activeTurnId: _activeTurnId, ...readySession } = ctx.session;
               ctx.session = { ...readySession, status: "ready", updatedAt };
-              const failed = code !== 0 || turnFailure !== undefined;
+              // The CLI exits non-zero whenever a step errored, so on its own it
+              // re-fails the recovered runs the `result` grading just rescued.
+              // It only decides a turn that never reported a result at all,
+              // which is how a crash or a kill reaches here.
+              const failed = turnFailure !== undefined || (code !== 0 && !answeredResult);
+              // A recovered run keeps its answer, but the CLI's explanation of
+              // what went wrong on the way is the only record of it, and a
+              // completed turn carries no error message to put it in.
+              if (!failed && resultMessage) {
+                yield* offerRuntimeEvent({
+                  type: "runtime.warning",
+                  ...(yield* makeEventStamp()),
+                  provider: PROVIDER,
+                  threadId: input.threadId,
+                  turnId,
+                  payload: { message: resultMessage.slice(0, 500) },
+                });
+              }
               // A run that answers with nothing at all has a reason, and the CLI
               // only ever writes it to stderr — a supervised turn whose tools
               // were auto-declined otherwise reads as a blank success.
@@ -578,11 +607,12 @@ export function makeAntigravityAdapter(
         }
       });
 
-    const unsupportedRequest = (threadId: ThreadId, method: string) =>
-      new ProviderAdapterRequestError({
+    // Not a malformed request — print mode answers its own permission prompts
+    // and never surfaces one, and a caller has to tell those two apart.
+    const unsupportedRequest = (_threadId: ThreadId, operation: string) =>
+      new ProviderOperationUnsupportedError({
         provider: PROVIDER,
-        method,
-        detail: `Antigravity print mode does not expose interactive requests for ${threadId}.`,
+        operation,
       });
 
     const stopSessionInternal = (ctx: AntigravitySessionContext) =>
@@ -638,7 +668,11 @@ export function makeAntigravityAdapter(
         Effect.gen(function* () {
           const ctx = yield* requireSession(threadId);
           if (!Number.isInteger(numTurns) || numTurns < 1) {
-            return { threadId, turns: ctx.turns };
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "rollbackThread",
+              issue: "numTurns must be an integer >= 1.",
+            });
           }
           const nextLength = Math.max(0, ctx.turns.length - numTurns);
           ctx.turns.splice(nextLength);

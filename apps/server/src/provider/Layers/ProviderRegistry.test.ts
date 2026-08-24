@@ -1838,7 +1838,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         Effect.gen(function* () {
           const status = yield* checkClaudeProviderStatus(
             defaultClaudeSettings,
-            claudeCapabilities(),
+            // An account is what makes this "authenticated". The probe merely
+            // answering proves the CLI starts, which a logged-out one does too.
+            claudeCapabilities({ email: "dev@example.com", subscriptionType: "maxplan" }),
           );
           assert.strictEqual(status.status, "ready");
           assert.strictEqual(status.installed, true);
@@ -1854,6 +1856,29 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                   stderr: "",
                   code: 0,
                 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("does not claim authentication when the CLI reports no account", () =>
+        Effect.gen(function* () {
+          // A logged-out CLI still completes the local initialization the probe
+          // reads, so probe-succeeded is not the same as signed-in. Reporting
+          // it as authenticated hid the real problem until the first turn.
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities(),
+          );
+          assert.strictEqual(status.status, "ready");
+          assert.strictEqual(status.installed, true);
+          assert.strictEqual(status.auth.status, "unknown");
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
               throw new Error(`Unexpected args: ${joined}`);
             }),
           ),

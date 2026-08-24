@@ -31,6 +31,13 @@ for each provider you want, then refresh.
 Model slugs are namespaced by their upstream, like `openai/gpt-5`, and the list comes from
 OpenCode's own catalog. Switching model applies to the next message in the same conversation.
 
+## Permission modes
+
+**Auto-accept edits** lets OpenCode apply file changes without asking and keeps every other gate
+up, so commands, web access and work outside the workspace still stop for approval. OpenCode has
+no equivalent of **Auto**, so that mode asks like **Supervised**. See
+[Permission modes](./permission-modes.md).
+
 ## Updates
 
 Ronin checks the `opencode-ai` package for new versions and offers **Update** on the provider card.
