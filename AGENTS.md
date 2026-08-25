@@ -1,6 +1,6 @@
 # Ronin
 
-Ronin is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode) and powers the desktop app (Electron), which embeds the web UI as its renderer.
+Ronin is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Droid, Kilo, Pi) and powers the desktop app (Electron), which embeds the web UI as its renderer.
 
 You can think of Ronin as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
 
@@ -72,7 +72,7 @@ The most common defect in this repo is a change that works on the path you teste
 - **Contracts.** Anything crossing the wire is typed in `packages/contracts`. Change the schema and the server, web, and desktop all follow.
 - **Reverse states.** If you added a way in, add the way out and the way to see it. Snooze needs unsnooze. Close needs reopen. A one-way door is a bug.
 - **Connection modes.** Local, remote, and Tailscale/SSH paths behave differently. Multi-environment cases are real.
-- **Docs.** `docs/` splits by audience. Behavior changes that a user would notice belong in `docs/user/` (shipped-product voice, no repo tooling or source paths); architecture and contributor changes in `docs/internals/`; runbooks in `docs/operations/`; new vocabulary in `docs/internals/glossary.md`.
+- **Docs.** `docs/` splits by audience. Behavior changes that a user would notice belong in `docs/user/` (shipped-product voice, no repo tooling or source paths); architecture and contributor changes in `docs/internals/`; runbooks in `docs/operations/`; new vocabulary in `docs/internals/glossary.md`. Index anything you add in `docs/README.md`. `docs/architecture/` predates this split and is not part of it — do not add to it.
 
 ## Dev servers
 
@@ -85,14 +85,16 @@ The most common defect in this repo is a change that works on the path you teste
 
 ## Test data
 
-An empty database is a bad test. Seed your worktree's `.t3` with a copy of real data instead of pointing at live state:
+An empty database is a bad test. Seed your worktree's `.ronin` with a copy of real data instead of pointing at live state:
 
 - Copy from `~/.ronin/userdata` (the developer's real data, the most realistic test set) or `~/.ronin/dev`. Worktree state lives at `<worktree>/.ronin/userdata`.
 - Snapshot the database with `VACUUM INTO`, which is safe even while a server has the source open and yields one consistent file:
 
   ```bash
-  mkdir -p .t3/userdata
-  rm -f .t3/userdata/state.sqlite*  # VACUUM INTO refuses to overwrite
+  mkdir -p .ronin/userdata
+  # VACUUM INTO refuses to overwrite. Listed out, not globbed: an unmatched
+  # glob is an error in fish and zsh, and on a fresh worktree it matches nothing.
+  rm -f .ronin/userdata/state.sqlite .ronin/userdata/state.sqlite-wal .ronin/userdata/state.sqlite-shm
   bun -e "new (require('bun:sqlite').Database)(process.env.HOME + '/.ronin/userdata/state.sqlite', { readonly: true }).run(\"VACUUM INTO '.ronin/userdata/state.sqlite'\")"
   ```
 
