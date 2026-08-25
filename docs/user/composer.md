@@ -9,6 +9,12 @@ the background. Ronin opens another new thread and shows an **Open** action for 
 started. The new thread keeps the selected workspace mode and base branch. If **New worktree** is
 selected, each background thread creates its own worktree.
 
+## Image attachments
+
+On environments that support direct uploads, images upload as soon as you add them. The send
+button becomes available once every upload finishes. A failed upload can be retried or removed.
+Older environments still send the image with the message.
+
 ## Reading width
 
 **Settings → Appearance → Chat width** sets how wide the transcript and composer grow:

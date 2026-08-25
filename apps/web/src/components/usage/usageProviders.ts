@@ -1,4 +1,5 @@
 import type { UsageProviderKind } from "@t3tools/contracts";
+import { PROVIDER_ORDER } from "@t3tools/shared/providerVocabulary";
 
 import { AntigravityIcon, ClaudeAI, GrokIcon, type Icon, OpenAI } from "../Icons";
 
@@ -43,3 +44,26 @@ export const PROVIDER_MARK: Record<UsageProviderKind, Icon> = {
   grok: GrokIcon,
   antigravity: AntigravityIcon,
 };
+
+/**
+ * Providers with real activity in the window, independent of the metric shown.
+ *
+ * Only the time breakdown uses this. The provider panel and the chart legend
+ * deliberately keep every provider at zero -- see `providerRows` -- but the
+ * table is not a legend, and one column per idle provider is five columns of
+ * `$0.00` between the reader and the numbers they came for.
+ */
+export function providersWithUsage(
+  totals: readonly {
+    readonly provider: UsageProviderKind;
+    readonly costUsd: number;
+    readonly totalTokens: number;
+  }[],
+): readonly UsageProviderKind[] {
+  const active = new Set(
+    totals
+      .filter((entry) => entry.totalTokens > 0 || entry.costUsd > 0)
+      .map((entry) => entry.provider),
+  );
+  return PROVIDER_ORDER.filter((provider) => active.has(provider));
+}

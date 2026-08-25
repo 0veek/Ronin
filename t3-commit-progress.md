@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `b4be33f07` — `fix(desktop): keep release notes visible while downloading (#6412)` (2026-08-23) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                 |
-| **Ported on**                 | 2026-08-24                                                                                      |
+|                               |                                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `99960383d` — `fix: open agent file links in the file viewer (#8098)` (2026-08-24) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                    |
+| **Ported on**                 | 2026-08-25                                                                         |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -1761,3 +1761,242 @@ The sidebar shelf classification and the composer's slash-menu derivation both l
 test. Extracting one would be a refactor beyond this sync. What is covered: the board's mirrored
 Done rule (`board.logic.test.ts`), and the dedupe predicate itself
 (`composerSlashCommands.test.ts`, extended with the skill-shadow case).
+
+## Batch 10 — reviewed through `99960383d` (30 commits)
+
+### Ported (23)
+
+| Upstream    | Title                                                                           | Notes                                                                                              |
+| ----------- | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `17dbe8dda` | fix(web): show only providers with usage in usage views (#7563)                 | **adapted** — time-breakdown table only; the panel and chart legend keep every provider. See below |
+| `643daa516` | fix(web): prevent expanded tool calls from hiding thread content (#8052)        | clean — `@legendapp/list` patch; `apps/web` uses it, lockfile hash regenerated                     |
+| `b60a2c0b9` | test(server): remove no-op live activity tests (#8056)                          | clean — both tests existed here verbatim                                                           |
+| `10626c537` | fix(web): clarify terminal sidebar grouping (#7967)                             | **adapted** — Ronin's control radius and type scale on the shared button. See below                |
+| `7c6163c67` | fix(codex): show app access approval prompts (#8058)                            | **adapted** — Ronin's approval panel and button design. See below                                  |
+| `e9f50c3ef` | feat(web): upload image attachments before sending (#8048)                      | **adapted** — dropped the `providerUploadFeedback` RPC context. See below                          |
+| `58ba55944` | fix(server): bound OpenCode skill discovery output (#7675)                      | clean — bounds Kilo's discovery too, same runtime                                                  |
+| `be3da50e9` | fix(server): check out submodules in a new worktree (#7674)                     | clean                                                                                              |
+| `ba30177b5` | fix(server): preserve merged PR badges after branch deletion (#6216)            | clean                                                                                              |
+| `229b05df0` | fix(server): return fresh live pull request reads (#6472)                       | clean — drops the list/detail stale-while-revalidate windows, keeps the diff's                     |
+| `6f5c951a4` | fix(web): compare client and server versions as semver, not strings (#7579)     | **adapted** — the mismatch hint keeps Ronin's wording                                              |
+| `c0047c252` | fix(web): stop follow-ups from leaving giant blank space (#8068)                | clean — second `@legendapp/list` patch bump; final hash matches upstream's tip exactly             |
+| `6a2608292` | fix(server): keep the authoritative subagent model when snapshots race (#7583)  | clean                                                                                              |
+| `3fd506433` | fix(server): run the CLI on Node versions without import.meta.main (#7141)      | clean — `bin.ts` and `serviceLauncher.ts` both exist here                                          |
+| `17822fab7` | fix(server): recover from provider interrupt failures (#7412)                   | **adapted** — hand-ported around Ronin's agent-stop handler. See below                             |
+| `01fc7d228` | fix(server): recreate a thread's worktree before starting a turn (#7839)        | clean                                                                                              |
+| `e6a109b9f` | fix(server): thread delete no longer fails on already-removed worktrees (#8076) | clean — applies after `01fc7d228`, which introduces `pruneWorktrees`                               |
+| `5f1147cad` | fix(web): detect outdated nightly servers (#8124)                               | clean                                                                                              |
+| `8287f2c3a` | fix(web): align usage page skeleton layout (#8111)                              | **adapted** — only the missing Breakdown block reproduces here. See below                          |
+| `883e1a3cd` | fix(web): make terminal links appear clickable only when clickable (#7488)      | clean                                                                                              |
+| `a09f92171` | fix(web): make Windows file links clickable in chat (#8081)                     | **adapted** — dropped the `rehypeNormalizeWindowsImageSrc` hunk, absent here. See below            |
+| `a1379db81` | fix(web): sort usage models by token count (#8108)                              | **adapted** — same behavior against Ronin's extracted `ModelBreakdown`                             |
+| `99960383d` | fix: open agent file links in the file viewer (#8098)                           | clean (web hunks only; the mobile module is a cut surface)                                         |
+
+- **`17dbe8dda` (only providers with usage), scoped down on the developer's call.** Upstream drops
+  idle providers from the chart series, the tooltip, the provider panel, and the time table.
+  Ronin's `providerRows` carries an explicit counter-decision — "a key that gains and loses rows as
+  the range changes stops being one" — because that panel doubles as the chart's legend. That
+  rationale covers the panel and the legend; it does not cover the table, which with four providers
+  runs seven columns wide and puts up to five `$0.00` columns between the reader and the numbers.
+  So `providersWithUsage` landed in `usageProviders.ts` and only `TimeBreakdown` consumes it, taking
+  the provider list as a prop and sizing its empty-state `colSpan` from it. The panel, the share
+  bar, the chart series and its legend are untouched.
+
+- **`10626c537` (terminal sidebar grouping).** The commit is really two things: extract the
+  icon-swaps-to-X close button into `ui/panel-tab-close-button.tsx`, and replace the terminal
+  sidebar's `Group 1` / `Group 2` headers and `└` tree glyphs with the group's split shape
+  (Single / Stacked / Side by side) plus a pane count. Both port. The shared button takes Ronin's
+  `rounded-(--control-radius) hover:bg-accent` rather than upstream's `rounded-sm hover:bg-muted`,
+  since `RightPanelTabs` — the other caller — was already on the token. Upstream's `text-[10px]` /
+  `text-[11px]` literals become Ronin's `text-3xs` / `text-2xs`. As upstream intends, the close
+  action is no longer gated on `normalizedTerminalIds.length > 1`: the terminal glyph is the close
+  button on hover for every row, including the last one.
+
+- **`7c6163c67` (Codex app access approvals).** The server and contract halves apply as-is:
+  `mcp-elicitation` joins `ProviderRequestKind`, `acceptAlways` joins `ProviderApprovalDecision`,
+  `RequestOpenedPayload` grows `appName` and `options`, and `CodexSessionRuntime` handles
+  `mcpServer/elicitation/request` with `describeMcpElicitation` / `toMcpElicitationResponse`.
+  Ronin's generated `effect-codex-app-server` schemas already carry the method, so nothing had to
+  be regenerated.
+
+  Two client files needed rewriting rather than patching, because Ronin's approval UI diverged long
+  ago. Upstream's `ComposerPendingApprovalActions` renders four `size="micro" variant="ghost-muted"`
+  buttons and encodes emphasis in `className` strings; Ronin's renders `size="sm"` buttons with real
+  variants (`ghost` / `destructive-outline` / `outline` / `default`) and different labels
+  ("Cancel turn", "Approve once"). The adaptation keeps Ronin's design and makes the list
+  data-driven the same way upstream does: `DEFAULT_APPROVAL_OPTIONS` holds Ronin's four labels, and
+  `APPROVAL_ACTION_VARIANT` maps decision to variant so a provider-supplied list still reads with
+  the right emphasis regardless of its order. `ComposerPendingApprovalPanel` keeps Ronin's
+  headline-plus-`<pre>` block layout — upstream's is a single flex row of `<code>` — and the app
+  name goes on the headline beside the summary, because an elicitation can arrive with no detail
+  at all and upstream's placement assumes the detail element is always there.
+
+  `ComposerPendingApprovalActions.test.tsx` did not exist here and was written from upstream's,
+  minus the three assertions that pin upstream's button metrics (`h-5`, `sm:text-[11px]`,
+  `not sm:h-6`). The two new panel tests were rewritten against Ronin's markup. `docs/user/providers-codex.md`
+  gets the new section rebranded, without upstream's "mobile app" mention and without the
+  `/feedback` section that surrounded it in the patch context — that is a separate upstream feature
+  Ronin does not have.
+
+- **`e9f50c3ef` (upload attachments before sending), ported in full on the developer's call.**
+  Images now upload over HTTP through a signed, short-lived URL as soon as they are added, and the
+  turn command carries stored `ChatAttachment` references instead of base64 `dataUrl`s. This is
+  squarely a Ronin concern: a multi-megabyte data URL crossing the WebSocket is exactly the payload
+  problem `AGENTS.md` calls out, and it is worst over Tailscale and SSH.
+
+  Everything applied against Ronin's tree except three edges:
+
+  - `ClientThreadTurnStartCommand.attachments` becomes `Array(Union([UploadChatAttachment,
+ChatAttachment]))`, but keeps Ronin's `PROVIDER_SEND_TURN_MAX_ATTACHMENTS` and
+    `PROVIDER_SEND_TURN_MAX_INPUT_CHARS` checks, which upstream's version of this struct does not
+    have.
+  - The patch's `rpc.ts` and `RpcAuthorization.ts` hunks carried `WsProviderUploadFeedbackRpc` and
+    its scope as context. That RPC does not exist in Ronin, so only the two `attachments.*` entries
+    were taken.
+  - `ws.ts` gains the `cleanupFailedUploadedAttachments` tap on the dispatch failure path.
+    Upstream's neighboring `recordClientCommandAnalytics(normalizedCommand)` line was dropped; that
+    helper does not exist anywhere in this fork.
+
+  Client-side, `LegacySidebar.tsx` is gone, so its `releaseComposerDraftUploads` call has no
+  counterpart — `Sidebar.tsx`, `useThreadActions.ts` and `ProjectSettingsPanel.tsx` cover every way
+  a draft or thread is discarded here. `ComposerPreviewAnnotationCards`' new retry affordance uses
+  a raw `<button>` matching the file's existing remove button rather than upstream's `Button`,
+  which this file has never imported; upstream's accompanying "uses the shared button contract for
+  removal" test was left out for the same reason — it predates this commit and describes a
+  divergence, not a regression.
+
+- **`17822fab7` (recover from interrupt failures), hand-ported.** The patch's context runs straight
+  through `processAgentStopRequested`, which is Ronin-only, so a three-way apply produced a
+  conflict spanning both handlers in both the source and the test. `recoverInterruptFailure` was
+  written into `processTurnInterruptRequested` by hand instead, with one substitution: it calls
+  Ronin's existing `formatFailureDetail` (which unwraps a `ProviderAdapterRequestError` to its
+  `detail`) rather than `Cause.pretty`, matching upstream's own choice and the rest of this
+  reactor. The three tests were added the same way, and the harness gains upstream's
+  `interruptTurnEffect` / `stopSessionEffect` knobs beside Ronin's existing ones.
+
+- **`8287f2c3a` (usage skeleton), reduced to one hunk.** Upstream's other three parts do not
+  reproduce: Ronin's skeleton and its real page already agree on the grid track (`19rem` in both,
+  not upstream's mismatched `16rem`/`18rem`), and Ronin's skeleton deliberately renders real
+  `ProviderMark`s and labels rather than grey placeholders, which is the same legend-stability
+  decision as `providerRows`. What does reproduce is the missing Breakdown section: it is the
+  tallest block on the page, and leaving it out of the skeleton makes the whole view jump when
+  usage lands. Added, matching Ronin's own card and segmented-control geometry.
+
+- **`a09f92171` (Windows file links).** Two of the three parts port: `remarkTagInlineCode` becomes
+  `remarkNormalizeLinksAndTagInlineCode` and rewrites `C:\...` link and definition URLs to
+  `file:///C:/...` before sanitization, and the path-normalization fixes in
+  `buildFileLinkParentSuffixByPath`, `normalizeMarkdownLinkHrefKey`, and the file-link label
+  lookup apply as-is. Dropped: `rehypeNormalizeWindowsImageSrc`. Ronin's `ChatMarkdown` has no
+  image-src normalization pass at all, and adding one would be a new surface rather than a port.
+  `WINDOWS_DRIVE_PATH_REGEX` is still hoisted, since three call sites use it.
+
+### Already in the tree (1) — do not re-port
+
+| Upstream    | Title                                                                  | Where it lives                                                                |
+| ----------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `04df98db4` | fix(server): honor auto-accept edits for the OpenCode provider (#7100) | `opencodeRuntime.ts:430` — Ronin's own `editAction` fix, with its own comment |
+
+Ronin already gates `edit` on `runtimeMode === "auto-accept-edits"` and already covers it in
+`opencodeRuntime.cliParsers.test.ts`. Upstream's new `opencodeRuntime.permissions.test.ts` would
+have been a second file asserting the same three things, so it was not taken. Its one genuinely
+new case — that `"auto"` still asks, because providers without an AI reviewer fall back to
+Supervised — was folded into the existing block instead.
+
+### Skipped (6)
+
+| Upstream    | Title                                                                         | Reason                                                                  |
+| ----------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `9eba1252c` | fix(mobile): persist thread shelf collapse state (#5152)                      | mobile-only; `apps/mobile` is a cut surface                             |
+| `2d2efff28` | fix(mobile): restore Android tablet thread controls, clean up header (#5385)  | same                                                                    |
+| `f9a726e62` | fix(mobile): land the first thread open above the composer on Android (#5585) | same                                                                    |
+| `e31e568bd` | fix(marketing): stop automatic Vercel deployments on pull requests (#8070)    | `apps/marketing` does not exist here                                    |
+| `a00218741` | chore: vouch repeat contributors (#8071)                                      | upstream governance file                                                |
+| `f035a0f4c` | fix(web): stop update notices showing through the composer (#8083)            | reverts `5427ca056`, which batch 9 skipped for the same missing surface |
+
+- **`f035a0f4c`.** The commit deletes the `before:mask-none` class that `5427ca056` (#8000) added
+  one batch earlier. Batch 9 skipped that one because Ronin's `ComposerBannerStackAlert` has no
+  attached/floating split — it renders `surface-alert rounded-[var(--radius-lg)] border
+border-border` unconditionally — and neither `chat-composer-drawer-surface` nor
+  `chat-composer-drawer-attached` appears anywhere in `apps/web/src`. Confirmed still true. Taking
+  the revert of a change that was never taken would be a no-op at best.
+
+### Verification
+
+- Focused tests, all green:
+  - Web: the full `apps/web/src` suite — 294 files, 3038 tests, 3036 pass (two pre-existing
+    failures, below).
+  - Server: `server` (101), `ProviderCommandReactor` (58), `GitVcsDriverCore` + `GitManager` +
+    `PullRequestService` (242), `ClaudeAdapter` + `opencodeRuntime.cliParsers` +
+    `opencodeRuntime.inventory` + `OpenCodeProvider` + `entrypoint` + `ActivityPayloadProjection`
+    (133), `AttachmentUpload` + `attachmentStore` + `Normalizer.attachments` + `ServerEnvironment`
+    (26), `CodexAdapter` + `CodexSessionRuntime` + `ProviderRuntimeIngestion.approval` (69),
+    `CodexCollabRuntime.integration` + `effect-codex-app-server` (28).
+  - Contracts: the full `packages/contracts/src` suite — 21 files, 286 tests.
+- **Two pre-existing failures**, both verified by stashing every change and re-running on the clean
+  tree:
+  - `MessagesTimeline.test.tsx` › "keeps the copy button for collapsed long user messages" expects
+    `aria-label="Copy link"`, which the rendered footer does not emit. Same failure clean; carried
+    over from batch 9, where it was already recorded.
+  - `terminal/ghostty/runtimeAbi.test.ts` collects zero tests: Vite cannot parse
+    `vendor/ghostty-vt.wasm?inline` for import analysis. A build-config gap, unrelated to this
+    range; fails identically on the clean tree.
+- Typecheck: `@t3tools/contracts`, `@t3tools/web`, `t3`, `@t3tools/desktop`, `@t3tools/shared`,
+  `@t3tools/client-runtime` — 0 errors. (`t3` still emits the four pre-existing Effect LSP
+  _suggestions_ in `ClaudeAdapter.ts` and `ProviderService.ts`; none are errors and none are in
+  hunks this batch touched.)
+- `vp lint --report-unused-disable-directives` over all 91 changed `.ts`/`.tsx`/`.mjs` files —
+  0 findings.
+- `vp fmt --check` over all 93 changed files — all correct.
+- `vp install` re-run after the two `@legendapp/list` patch bumps; the regenerated
+  `patch_hash=064530db8…` matches upstream's tip byte for byte.
+- `git diff --check` clean. Nothing staged; the index was left as found.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — three additive changes, all backward-compatible on decode:
+  `ProviderRequestKind` gains `mcp-elicitation`, `ProviderApprovalDecision` gains `acceptAlways`,
+  and `RequestOpenedPayload` gains optional `appName` / `options`. `ExecutionEnvironmentCapabilities`
+  gains optional `attachmentUploads`, absent on older servers, which is exactly what the client
+  branches on. `ClientThreadTurnStartCommand.attachments` widens to a union, so an older client
+  still sending inline `dataUrl`s decodes unchanged.
+- **Server** — provider adapters (Codex elicitation handling, Claude subagent model buffering,
+  OpenCode discovery bounds), orchestration (interrupt recovery, worktree recreation, attachment
+  normalization), git/VCS (submodules, prune, tolerant remove), HTTP (the signed upload route),
+  WS (two new RPCs and the failed-turn attachment cleanup), and the CLI entrypoint guard.
+- **Desktop (Electron/IPC)** — no IPC change. The renderer picks up all of the web work; the
+  attachment upload posts to the same origin the renderer already uses, so nothing in the shell
+  needed a decision. Typechecked.
+- **Web renderer** — composer (upload state, retry, send gating, app-access approvals), chat
+  transcript (Windows and agent file links), terminal (link hover honesty, sidebar grouping),
+  right panel (shared close button), usage (active-provider columns, model sort, skeleton), and
+  version-skew banners.
+- **Providers** — Codex gets the elicitation surface; Claude gets the subagent-model fix; OpenCode
+  and Kilo share the bounded discovery. Grok, Cursor, Antigravity, Droid and Pi need no decision:
+  the composer's approval row is driven entirely by whatever `options` an adapter reports, and an
+  adapter that reports none falls back to the same four choices it had before.
+- **Reverse states** — every attachment upload has a release: removing an image, stashing a draft,
+  discarding a draft, deleting a thread, and removing a project all call through to
+  `releaseAttachmentUpload` / `releaseComposerDraftUploads` / `releaseProjectDraftUploads`, and a
+  turn that fails to dispatch has its uploads swept server-side. A failed upload is retryable in
+  place rather than only removable. An environment that loses the capability mid-session releases
+  its queued uploads and falls back to the inline path.
+- **Connection modes** — the upload URL is relative and signed, so it works unchanged over LAN,
+  Tailscale and SSH forwards, and its CORS headers are asserted from a cross-origin client in
+  `server.test.ts`. The capability flag is what keeps a new client talking to an old server.
+  `229b05df0` matters most remotely: a stale pull-request listing was being served for up to ten
+  minutes to whoever opened the page next.
+- **Entry points** — the terminal close action is reachable from the sidebar row and the context
+  menu; approvals answer from both the expanded and collapsed-mobile composer; usage columns follow
+  the same metric toggle everywhere on the page.
+- **Docs** — `docs/user/composer.md` (images upload as you add them; retry or remove a failed one),
+  `docs/user/providers-codex.md` (approving app access). No new vocabulary, so
+  `docs/internals/glossary.md` is untouched.
+
+### Not tested
+
+- The terminal sidebar's group header (split shape and pane count) and the shared
+  `PanelTabCloseButton` render inline inside `ThreadTerminalDrawer.tsx` and `RightPanelTabs.tsx`
+  with no pure seam, so neither has a direct unit test. Both were typechecked and linted; the
+  behavior they replace had no test either.
+- The usage skeleton's new Breakdown block is markup-only and untested, matching the rest of
+  `UsageSkeleton`.

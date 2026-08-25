@@ -28,6 +28,12 @@ Log in with Codex normally:
 codex login
 ```
 
+## Approve access to other apps
+
+When a Codex tool needs access to another app, Ronin shows the app name and asks for approval. You
+can approve, decline, or cancel the request from the composer. Some tools also offer approval for
+the current session or permanent approval.
+
 ## I Want Work And Personal Codex Accounts
 
 Use one real Codex home and one shadow home.

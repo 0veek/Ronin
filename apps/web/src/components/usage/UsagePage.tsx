@@ -27,7 +27,12 @@ import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadc
 import { WorkspaceTopbar } from "../shell/WorkspaceTopbar";
 import { ProviderMark } from "./ProviderMark";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
-import { PROVIDER_COLOR, PROVIDER_LABEL, PROVIDER_ORDER } from "./usageProviders";
+import {
+  PROVIDER_COLOR,
+  PROVIDER_LABEL,
+  PROVIDER_ORDER,
+  providersWithUsage,
+} from "./usageProviders";
 
 const WINDOW_OPTIONS = [
   { days: 1, label: "24h" },
@@ -192,6 +197,19 @@ export function UsagePage() {
   );
 
   const orderedProviders = useMemo(() => providerRows(merged.providers), [merged.providers]);
+  // The table answers whichever question the metric toggle is asking, so its
+  // order follows the toggle too: a cheap model that burned the most tokens
+  // belongs at the top of a token breakdown.
+  const breakdownModels = useMemo(
+    () =>
+      breakdown === "model" && metric === "tokens"
+        ? merged.models.toSorted(
+            (left, right) => right.totalTokens - left.totalTokens || right.costUsd - left.costUsd,
+          )
+        : merged.models,
+    [breakdown, merged.models, metric],
+  );
+  const activeProviders = useMemo(() => providersWithUsage(merged.providers), [merged.providers]);
 
   const activePeriods = (isPast24Hours ? merged.hourly : merged.daily).filter(
     (period) => period.totalTokens > 0,
@@ -404,10 +422,11 @@ export function UsagePage() {
                       </div>
 
                       {breakdown === "model" ? (
-                        <ModelBreakdown models={merged.models} />
+                        <ModelBreakdown models={breakdownModels} />
                       ) : (
                         <TimeBreakdown
                           periods={breakdownPeriods}
+                          providers={activeProviders}
                           isPast24Hours={isPast24Hours}
                           timeZone={window.timeZone}
                         />
@@ -575,10 +594,13 @@ function ModelBreakdown({
 
 function TimeBreakdown({
   periods,
+  providers,
   isPast24Hours,
   timeZone,
 }: {
   readonly periods: readonly (DailyTotals | HourlyTotals)[];
+  /** Only providers that billed something in the window; see `providersWithUsage`. */
+  readonly providers: readonly UsageProviderKind[];
   readonly isPast24Hours: boolean;
   readonly timeZone: string;
 }) {
@@ -587,7 +609,7 @@ function TimeBreakdown({
       <thead>
         <tr className="border-b border-border text-left label-meta text-muted-foreground/70">
           <th className="py-2 font-medium">{isPast24Hours ? "Hour" : "Day"}</th>
-          {PROVIDER_ORDER.map((provider) => (
+          {providers.map((provider) => (
             <th key={provider} className="py-2 text-right font-medium">
               {PROVIDER_LABEL[provider]}
             </th>
@@ -599,10 +621,7 @@ function TimeBreakdown({
       <tbody>
         {periods.length === 0 ? (
           <tr>
-            <td
-              colSpan={PROVIDER_ORDER.length + 3}
-              className="py-6 text-center text-muted-foreground"
-            >
+            <td colSpan={providers.length + 3} className="py-6 text-center text-muted-foreground">
               No activity in this window.
             </td>
           </tr>
@@ -617,7 +636,7 @@ function TimeBreakdown({
                   ? formatHourShort(period.hourStart, timeZone)
                   : formatDayShort(period.day)}
               </td>
-              {PROVIDER_ORDER.map((provider) => (
+              {providers.map((provider) => (
                 <td key={provider} className="py-2 text-right text-muted-foreground tabular-nums">
                   {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
                 </td>
@@ -875,6 +894,16 @@ function UsageSkeleton({ resolution }: { readonly resolution: "day" | "hour" }) 
             </div>
           ),
         )}
+      </section>
+
+      {/* The breakdown is the tallest block on the page. Leaving it out of the
+          skeleton made the whole view jump once usage arrived. */}
+      <section className="flex flex-col gap-3 rounded-md border border-border bg-card p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="label-meta text-muted-foreground">Breakdown</h2>
+          <div className="h-7 w-40 rounded-md bg-muted" />
+        </div>
+        <div className="h-44 rounded-sm bg-muted/35" />
       </section>
     </>
   );

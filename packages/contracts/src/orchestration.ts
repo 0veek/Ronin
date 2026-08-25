@@ -128,15 +128,26 @@ export const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 export const ProviderInteractionMode = Schema.Literals(["default", "plan", "debug"]);
 export type ProviderInteractionMode = typeof ProviderInteractionMode.Type;
 export const DEFAULT_PROVIDER_INTERACTION_MODE: ProviderInteractionMode = "default";
-export const ProviderRequestKind = Schema.Literals(["command", "file-read", "file-change"]);
+export const ProviderRequestKind = Schema.Literals([
+  "command",
+  "file-read",
+  "file-change",
+  "mcp-elicitation",
+]);
 export type ProviderRequestKind = typeof ProviderRequestKind.Type;
 export const ProviderApprovalDecision = Schema.Literals([
   "accept",
   "acceptForSession",
+  "acceptAlways",
   "decline",
   "cancel",
 ]);
 export type ProviderApprovalDecision = typeof ProviderApprovalDecision.Type;
+export const ProviderApprovalOption = Schema.Struct({
+  decision: ProviderApprovalDecision,
+  label: TrimmedNonEmptyString,
+});
+export type ProviderApprovalOption = typeof ProviderApprovalOption.Type;
 export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unknown);
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 
@@ -1003,7 +1014,9 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
-    attachments: Schema.Array(UploadChatAttachment).check(
+    // A pre-uploaded attachment arrives as a stored `ChatAttachment` reference
+    // rather than inline bytes; older clients still send `UploadChatAttachment`.
+    attachments: Schema.Array(Schema.Union([UploadChatAttachment, ChatAttachment])).check(
       Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
     ),
   }),

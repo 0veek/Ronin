@@ -9,6 +9,7 @@ import packageJson from "../package.json" with { type: "json" };
 import { authCommand } from "./cli/auth.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
+import { isEntrypoint } from "./entrypoint.ts";
 import { projectCommand } from "./cli/project.ts";
 import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
@@ -33,7 +34,13 @@ export const makeCli = () =>
 
 export const cli = makeCli();
 
-if (import.meta.main) {
+if (
+  isEntrypoint({
+    moduleUrl: import.meta.url,
+    entryPath: process.argv[1],
+    runtimeMain: import.meta.main,
+  })
+) {
   Command.run(cli, { version: packageJson.version }).pipe(
     Effect.scoped,
     Effect.provide(CliRuntimeLayer),

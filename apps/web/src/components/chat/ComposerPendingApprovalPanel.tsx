@@ -11,23 +11,35 @@ export const ComposerPendingApprovalPanel = memo(function ComposerPendingApprova
   pendingCount,
 }: ComposerPendingApprovalPanelProps) {
   const approvalSummary =
-    approval.requestKind === "command"
-      ? "Command approval requested"
-      : approval.requestKind === "file-read"
-        ? "File-read approval requested"
-        : "File-change approval requested";
+    approval.requestKind === "mcp-elicitation"
+      ? "App access approval requested"
+      : approval.requestKind === "command"
+        ? "Command approval requested"
+        : approval.requestKind === "file-read"
+          ? "File-read approval requested"
+          : "File-change approval requested";
   const detailLabel =
-    approval.requestKind === "command"
-      ? "Command"
-      : approval.requestKind === "file-read"
-        ? "File to read"
-        : "File change";
+    approval.requestKind === "mcp-elicitation"
+      ? "App access request"
+      : approval.requestKind === "command"
+        ? "Command"
+        : approval.requestKind === "file-read"
+          ? "File to read"
+          : "File change";
 
   return (
     <div className="min-w-0 px-4 py-3.5 sm:px-5 sm:py-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="uppercase text-sm tracking-[0.2em]">PENDING APPROVAL</span>
         <span className="text-sm font-medium">{approvalSummary}</span>
+        {/* The app is the subject of the request, so it reads on the headline
+            rather than buried in the detail block, which some elicitations
+            leave empty. */}
+        {approval.appName ? (
+          <span className="max-w-40 truncate text-sm font-medium text-muted-foreground">
+            {approval.appName}
+          </span>
+        ) : null}
         {pendingCount > 1 ? (
           <span className="text-xs text-muted-foreground">1/{pendingCount}</span>
         ) : null}

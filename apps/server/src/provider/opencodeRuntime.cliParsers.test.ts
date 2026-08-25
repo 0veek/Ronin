@@ -259,7 +259,7 @@ describe("parseAgentListCliOutput", () => {
 });
 
 describe("parseSkillsCliOutput", () => {
-  it("parses skill metadata from the CLI JSON output", () => {
+  it("parses only skill metadata from the CLI JSON output", () => {
     const result = parseSkillsCliOutput(
       JSON.stringify([
         {
@@ -276,7 +276,6 @@ describe("parseSkillsCliOutput", () => {
         name: "review-pr",
         description: "Review a pull request.",
         location: "/tmp/review-pr/SKILL.md",
-        content: "---\nname: review-pr\n---\n",
       },
     ]);
   });
@@ -302,6 +301,13 @@ describe("buildOpenCodePermissionRules", () => {
 
   it("asks about edits when approvals are required", () => {
     const rules = buildOpenCodePermissionRules("approval-required");
+    NodeAssert.equal(rules.find((rule) => rule.permission === "edit")?.action, "ask");
+  });
+
+  // Documented in docs/user/permission-modes.md: providers without an AI
+  // reviewer, OpenCode among them, fall back to Supervised for "auto".
+  it("leaves auto asking, as the docs say it does without a reviewer", () => {
+    const rules = buildOpenCodePermissionRules("auto");
     NodeAssert.equal(rules.find((rule) => rule.permission === "edit")?.action, "ask");
   });
 });
