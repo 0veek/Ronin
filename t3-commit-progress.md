@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                    |
-| ----------------------------- | ---------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `99960383d` — `fix: open agent file links in the file viewer (#8098)` (2026-08-24) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                    |
-| **Ported on**                 | 2026-08-25                                                                         |
+|                               |                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `994372ba4` — `fix(server): push no longer writes a feature branch's commits to its base branch (#8228)` (2026-08-25) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                                       |
+| **Ported on**                 | 2026-08-26                                                                                                            |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -1762,7 +1762,7 @@ test. Extracting one would be a refactor beyond this sync. What is covered: the 
 Done rule (`board.logic.test.ts`), and the dedupe predicate itself
 (`composerSlashCommands.test.ts`, extended with the skill-shadow case).
 
-## Batch 10 — reviewed through `99960383d` (30 commits)
+## Batch 13 — reviewed through `99960383d` (30 commits)
 
 ### Ported (23)
 
@@ -2000,3 +2000,242 @@ border-border` unconditionally — and neither `chat-composer-drawer-surface` no
   behavior they replace had no test either.
 - The usage skeleton's new Breakdown block is markup-only and untested, matching the rest of
   `UsageSkeleton`.
+
+## Batch 14 — reviewed through `994372ba4` (20 commits)
+
+Reviewed `99960383d..994372ba4`, snapshotted at `994372ba4` for the whole run. Nothing needed a
+product decision from the developer; every verdict fell out of what this fork already has.
+
+The worktree carried uncommitted local work on Claude/Codex text generation and the Claude
+context-window defaults (`ClaudeProvider.ts`, `ClaudeTextGeneration.*`, `CodexTextGeneration.*`).
+It was preserved untouched; nothing in this range overlapped it.
+
+### Ported (18)
+
+| Upstream    | Title                                                                                    | Notes                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `c034f51bb` | fix(server): stop routine events from rescanning thread history (#8150)                  | clean                                                                                 |
+| `2394998aa` | fix(deps): stop pnpm installs from changing the lockfile (#8163)                         | **adapted** — hand-applied; `git apply --3way` mangles this lockfile. See below       |
+| `143341b0b` | feat(web): settle and restore threads with a keyboard shortcut (#8089)                   | **adapted** — folded into Ronin's `runWorkspaceCommand`. See below                    |
+| `63eb0429f` | perf(desktop): cut macOS signing calls by 81% (#8093)                                    | **adapted** — the batched-`codesign` half only. See below                             |
+| `3c75eb113` | feat: link pull requests to threads (#8160)                                              | **adapted** — migration renumbered to `050`; mobile and `LegacySidebar` hunks dropped |
+| `bd9ed2b4b` | feat(web): safely attach HEIC photos as JPEG images (#8161)                              | **adapted** — `heic-to` added; docs rewritten in Ronin's desktop-first voice          |
+| `afc834280` | fix(grok): bound cumulative tool output updates (#7279)                                  | clean                                                                                 |
+| `e6d487e4f` | fix(web): delay thread shortcut hints by 200 ms (#8172)                                  | clean (import-adjacency conflict only)                                                |
+| `43f723f80` | fix(server): stop probing Cursor until enabled (#8175)                                   | clean                                                                                 |
+| `1a4a7596c` | docs(release): verify remote updates with database migrations (#8177)                    | clean                                                                                 |
+| `1baf99195` | fix(server): keep provider CLIs available in the macOS service (#8173)                   | clean                                                                                 |
+| `c7222ca4d` | feat(claude): compact old threads before they burn through usage (#8144)                 | **adapted** — `ChatView`/`ChatComposer` hand-ported. See below                        |
+| `589a9d0e2` | fix(client-runtime): retry queries after connection interruption (#8117)                 | clean                                                                                 |
+| `06de9e90a` | fix(server): keep previously used providers working after upgrades (#8176)               | **adapted** — Ronin-only write-failure test layer needed the new SQL dependency       |
+| `5d7665396` | fix(web): thread jump hints no longer stick after a dictation paste (#8189)              | clean                                                                                 |
+| `e67074f80` | fix(web): keep grouped project renames (#7831)                                           | clean                                                                                 |
+| `082e6ea52` | feat(web): reveal chat file chips in the system file manager (#7140)                     | **adapted** — the CSS hunk moved to `styles/markdown.css`. See below                  |
+| `994372ba4` | fix(server): push no longer writes a feature branch's commits to its base branch (#8228) | clean                                                                                 |
+
+Fork-specific decisions worth recording:
+
+- **`2394998aa` (lockfile churn), hand-applied.** The commit adds two `deprecated:` lines to the
+  `@xmldom/xmldom@0.8.13` / `@0.9.10` package entries so `pnpm install` stops rewriting the lockfile.
+  Both versions are in Ronin's lockfile too, via the same transitive path, so the same churn
+  reproduces here. `git apply --3way` on `pnpm-lock.yaml` produced a 4,665-line merge mess (the
+  preimage blob is upstream's whole lockfile), so the two lines were inserted directly.
+  `pnpm install --lockfile-only` afterwards was a no-op, which is the proof the fix works.
+
+- **`143341b0b` (`thread.settle` shortcut).** Upstream's handler lives inline in the `keydown`
+  effect and calls `event.preventDefault()` / `stopPropagation()` itself. Ronin long ago extracted
+  that dispatch into `runWorkspaceCommand(command, terminalFocusOwner): boolean`, shared with the
+  command palette, where returning `true` _is_ "we consumed the event". The handler was rewritten in
+  that shape: every `return;` becomes `return true;`, matching upstream's unconditional consumption
+  of the shortcut. A side effect Ronin gets for free: `thread.settle` is now reachable from the
+  command palette as well as the keyboard, because both go through the same function. Upstream's
+  `keydown` dependency-array hunk was dropped (Ronin's array is just
+  `[activeThreadId, composerRef, keybindings, runWorkspaceCommand, terminalUiState.terminalOpen]`);
+  the new dependencies went on `runWorkspaceCommand`'s own array instead.
+
+- **`63eb0429f` (macOS signing), reduced to the parts that reproduce.** Three of the four changes
+  port: `MAC_FILE_EXCLUSIONS` (Ronin ships `node-pty`, so the Windows `conpty`/`win32-*` prebuilds
+  are dead weight in a macOS bundle and slow signing and notarization), the custom
+  `scripts/sign-macos.ts` hook wiring `@electron/osx-sign` with `batchCodesignCalls: true` — the
+  actual 81% — and the mac-only `electron-osx-sign*` / `electron-notarize*` verbose DEBUG
+  namespaces. Dropped: `resolveMacStageDependencies`. It splits the macOS staged dependency tree the
+  way upstream splits Windows', and depends on `selectCliRuntimeExternalDependencies` and the
+  Windows `server.asar` sidecar machinery, neither of which exists in Ronin's much smaller
+  `build-desktop-artifact.ts`. Ronin's merged tree is the shape upstream's comment calls "Linux
+  retains its existing full dependency tree", so it stays as it is.
+  `@electron/osx-sign@2.7.0` is a new direct dependency of `scripts/`; the lockfile entry was
+  hand-written to match upstream's byte for byte and then confirmed stable by
+  `pnpm install --lockfile-only`. The new `sign-macos.test.ts` keeps upstream's assertions with its
+  fixture app name and signing identity rebranded.
+
+- **`3c75eb113` (link pull requests to threads), 39 files upstream, 33 here.** The whole feature
+  ports: a `linked_pull_request_json` column on `projection_threads`, `ThreadLinkedPullRequest` on
+  the thread contracts and the `thread.meta.update` command/event, the `threadPullRequestLinking`
+  capability, `matchesLinkedPullRequestUrl` / `changeRequestRepositoryUrl`, the
+  **Link to thread** / **Unlink from thread** entries on the chat markdown link context menu, and
+  the sidebar and chat-header PR indicators reading the linked PR ahead of the branch's own.
+  Three adaptations:
+  - The migration is `050_ProjectionThreadLinkedPullRequest`, not upstream's `042`. Ronin is
+    already at 49 migrations (upstream's 42 slot is `ProjectionThreadMessageProvider` here), so the
+    file, its test, and the manifest entry were renumbered and the test's
+    `runMigrations({ toMigrationInclusive })` pair moved to 49/50.
+  - `apps/mobile` and `LegacySidebar.tsx` hunks dropped — both cut surfaces. So was the
+    `ChatMarkdown.workspace-images.test.tsx` mock hunk: that file does not exist here.
+  - `ServerEnvironment.test.ts` conflicted because upstream's new
+    `threadPullRequestLinking` assertion sits next to `agentActivityPublishing` and a whole relay
+    publish-capability test. Only the capability assertion was taken.
+    `openPullRequestLink.ts` and its test now match upstream byte for byte.
+
+- **`c7222ca4d` (Claude compaction), the two large web files hand-ported.** Server, contracts,
+  shared, and the smaller web files applied. `ChatView.tsx` and `ChatComposer.tsx` did not:
+  `git apply --3way` reconstructs upstream's preimage and 3-way merges, and those two files have
+  diverged so far that the merge surfaced every Ronin-vs-upstream difference rather than this
+  commit's. Both were restored to their pre-apply state and the commit's own hunks re-applied by
+  hand. Substitutions:
+  - Ronin has no `feedbackUploading` (that upload surface is cut), so it is not part of
+    `compactDisabled`.
+  - The resume-compaction banner slots after `calmSystemItems`, as upstream places it — ahead of
+    Ronin's own `wokeThreadItems` and behind its `quotaResumeItems`, which keep the priority the
+    batch-9 comment gives them.
+  - `ContextWindowMeter.tsx` keeps Ronin's plain-`<button>` dial and `text-2xs` scale; only
+    `formatContextWindowCompactionMessage`'s new `autoCompactThreshold` argument and the
+    `Compact context` button were taken. The `Button` import upstream has on line 1 had to be
+    re-added: the merge kept Ronin's `cn` import in that slot and dropped it.
+  - `ComposerBannerStack.test.tsx`'s new case asserts `chat-composer-drawer-attached`. That class
+    does not exist in this fork — batch 10 already recorded that Ronin's `ComposerBannerStackAlert`
+    renders `surface-alert` unconditionally with no attached/floating split — so the assertion
+    checks `surface-alert` instead, which is the same "banners share one accessible surface" claim
+    against Ronin's markup.
+  - Two `ClaudeAdapter.test.ts` call sites needed a `requestId`. Ronin is on
+    `@anthropic-ai/claude-agent-sdk@^0.3.227`, where `OnUserDialog` and `CanUseTool` both require it
+    in their options; upstream's `^0.3.170` did not.
+
+- **`082e6ea52` (reveal file chips in the file manager).** The server, contracts, and web halves
+  apply. Two adaptations: the `.macroscope/check-run-agents/ui-consistency.md` hunk is upstream
+  check-run tooling this fork does not have, and the `index.css` hunk lands in
+  `apps/web/src/styles/markdown.css` instead — Ronin split the monolithic `index.css` into
+  `styles/*.css` long ago. Only upstream's selector widening was taken
+  (`a.chat-markdown-file-link` → `.chat-markdown-file-link`, so the chip styles apply now that it
+  can render as a `<button>`); Ronin's own colors and focus ring stay.
+  `server.test.ts` needed the new "advertises the usable file manager and its reveal label" case
+  spliced in as its own block: upstream's hunk landed on top of Ronin's
+  "disconnects an active websocket when its session is revoked" test, which is Ronin-only.
+  No desktop IPC decision: reveal travels over the existing `shell.openInEditor` RPC, so it works
+  the same locally, over the LAN, over Tailscale, and over SSH.
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (2)
+
+| Upstream    | Title                                                       | Reason                                                    |
+| ----------- | ----------------------------------------------------------- | --------------------------------------------------------- |
+| `bce680926` | feat(mobile): track device models and OS versions (#8169)   | mobile-only; `apps/mobile` is a cut surface. See below    |
+| `c6b8bb825` | feat(desktop): build macOS previews from a PR label (#8182) | upstream release CI; nothing here builds a `-pr.` version |
+
+- **`bce680926`.** The commit reads as cross-cutting — it touches `ws.ts`, `packages/contracts/auth`
+  and `packages/client-runtime` — but every path is gated on `clientSurface === "mobile"`.
+  `appendClientConnectionParams` only sets `clientOs` / `clientOsMajorVersion` /
+  `clientDeviceModel` when `clientMetadata.surface === "mobile"`, and
+  `readMobileDeviceAnalyticsProps` returns `{}` for any other surface. With no mobile client to send
+  them, the contract fields and the server reader would both be dead.
+
+- **`c6b8bb825`.** Two parts. `.github/workflows/desktop-macos-preview.yml` is a pingdotgg/t3code
+  workflow keyed to their PR label and signing secrets. The `build-desktop-artifact.ts` half adds
+  `isDesktopPreviewVersion` to suppress the publish config for `-pr.`-suffixed versions — which only
+  matters if something produces such a version. Nothing in Ronin does, so it would be machinery with
+  no caller. Worth revisiting if Ronin ever adds per-PR desktop previews.
+
+### Verification
+
+- Focused tests, all green except one pre-existing failure:
+  - Server: `orchestration` + `persistence` + `provider/acp` + `ClaudeAdapter` +
+    `ProviderRegistry` + `ProviderInstanceRegistryLive` + `serverSettings` + `keybindings` +
+    `bootService` + `GitVcsDriverCore` + `environment` + `externalLauncher` + `textGeneration` —
+    85 files / 881 tests pass, 2 files / 7 tests skipped. Plus `server.test.ts` — 103 tests.
+  - Web: the full `apps/web/src` suite — 297 files, 3,114 tests, 3,113 pass.
+  - Contracts: 21 files / 297 tests. Shared: 37 files / 352 tests.
+    Client-runtime: 45 files / 590 tests. Scripts: 16 files / 173 tests.
+- **One pre-existing failure**, verified by stashing every change and re-running on the clean tree:
+  `MessagesTimeline.test.tsx` › "keeps the copy button for collapsed long user messages" expects
+  `aria-label="Copy link"`, which the rendered footer does not emit. Carried over from batches 9
+  and 13, where it was already recorded.
+- **One flake, not a regression.** The first full server run failed
+  `ProviderRegistry.test.ts` › "re-probes when settings change the codex binaryPath". It polls a
+  real spawner under `TestClock` and is load-sensitive; it passes alone, passes with its own file,
+  and passed on a re-run of the identical 87-file selection. Recorded rather than "fixed".
+- Typecheck: `@t3tools/contracts`, `@t3tools/shared`, `@t3tools/client-runtime`,
+  `@t3tools/scripts`, `@t3tools/web`, `t3`, `@t3tools/desktop` — 0 errors. (`t3` still emits the
+  four pre-existing Effect LSP _suggestions_ in `ClaudeAdapter.ts` and `ProviderService.ts`, and
+  `@t3tools/desktop` the one in `DesktopAutoUpdate.ts`; none are errors, none are in hunks this
+  batch touched.)
+- `vp lint --report-unused-disable-directives` over all 103 changed `.ts`/`.tsx`/`.mjs`/`.css`
+  files — 0 findings.
+- `vp fmt --check` over the same 103 files — all correct except
+  `apps/server/src/textGeneration/ClaudeTextGeneration.test.ts`, which is the developer's
+  uncommitted local work and was left alone.
+- `pnpm install --lockfile-only` is a no-op after the three lockfile changes
+  (`@xmldom/xmldom` deprecation markers, `@electron/osx-sign@2.7.0`, `heic-to@1.5.2`).
+- `git diff --check` clean.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — every change is additive and backward-compatible on decode:
+  `ExecutionEnvironmentCapabilities` gains optional `threadPullRequestLinking`;
+  `OrchestrationThread` / `OrchestrationThreadShell` / `thread.meta.update` /
+  `ThreadMetaUpdatedPayload` gain optional `linkedPullRequest`; `ThreadTokenUsageSnapshot` gains
+  optional `autoCompactThreshold`; `ClaudeSettings` gains `autoCompactWindow` (pattern-checked at
+  both the full-schema and patch boundary); `ServerConfig` gains optional
+  `shellRevealInFileManager` / `shellRevealInFileManagerKind`; `LaunchEditorInput` gains optional
+  `reveal`; `ServerSettingsOperation` gains `read-provider-history`; `THREAD_KEYBINDING_COMMANDS`
+  gains `thread.settle`. `CursorSettings.enabled` flips its _default_ to `false` — an explicit
+  `true` in settings.json still decodes to enabled, and `06de9e90a` is the safety net for users who
+  never wrote one.
+- **Server** — projection pipeline (skip the full thread-shell refresh for events that cannot change
+  the summary; persist and read the linked PR), decider/projector/repositories, migration 050,
+  provider adapters (Claude resume-compaction dialog and `autoCompactWindow`, ACP/Grok bounded tool
+  output), settings load (provider history restores Cursor/Grok/OpenCode for existing users),
+  external launcher (file-manager reveal), WS config, git push refspec, and the macOS boot service's
+  `PATH`.
+- **Desktop (Electron/IPC)** — no IPC change. Reveal-in-file-manager goes over the same
+  `shell.openInEditor` RPC the renderer already uses, so the shell needed no decision. The build
+  script changes are packaging-only. Typechecked.
+- **Web renderer** — composer (HEIC/HEIF conversion, `/compact` injection and the context-meter
+  Compact button, the resume-compaction banner), chat transcript (link-to-thread context menu,
+  reveal-in-file-manager on file chips), sidebar (linked-PR indicator, 200 ms jump-hint delay,
+  dictation-paste modifier reset), settings (grouped project renames, Claude **Auto-compact after**),
+  and the keyboard/palette settle command.
+- **Providers** — Claude gets compaction and the resume dialog; Grok (and every other ACP provider)
+  gets the bounded tool-output cap; Cursor is off by default for new installs and restored for
+  anyone who used it. Codex, OpenCode, Antigravity, Droid, Kilo and Pi need no decision: the
+  compaction UI is gated on `selectedProvider === "claudeAgent"`, and the PR-linking menu is driven
+  by the server capability, not the provider.
+- **Reverse states** — `thread.settle` is a toggle: it un-settles a settled thread. **Link to
+  thread** has **Unlink from thread** on the same menu, and the unlink path no-ops unless the stored
+  PR actually matches the link that was right-clicked. The resume-compaction banner has both a
+  session dismissal and a permanent one, and the permanent one mirrors Claude's own
+  "Don't ask again" answer in either direction. **Auto-compact after** clears back to Claude's
+  default when emptied (`clearWhenEmpty: "omit"`).
+- **Connection modes** — `589a9d0e2` matters most remotely: an environment query interrupted by a
+  session swap now retries instead of surfacing a failure, and a query only settles as failed once
+  the supervisor is genuinely `available` / `offline` / `blocked`. Reveal-in-file-manager and PR
+  linking both run server-side, so they behave the same over LAN, Tailscale and SSH; both are gated
+  on a capability flag so a new client against an old server simply hides them.
+- **Entry points** — settle is reachable from the thread menu, the chat header, the command palette
+  and now `mod+shift+s`. Compaction is reachable from the context-window meter, the resume banner,
+  and `/compact`. Reveal is on the file chip's context menu alongside **Open in editor**.
+- **Docs** — `docs/user/keybindings.md` (`thread.settle`), `docs/user/thread-sidebar.md` (linking a
+  pull request to a thread), `docs/user/composer.md` (HEIC/HEIF), `docs/user/providers-claude.md`
+  (**Auto-compact after** and compaction, rewritten in Ronin's voice — upstream's version names the
+  product and splits by client), `docs/operations/release.md` (migration-bearing remote updates).
+  No new vocabulary, so `docs/internals/glossary.md` is untouched.
+
+### Not tested
+
+- The macOS `sign` hook is wired through `createBuildConfig` and asserted there, but the batched
+  `codesign` path itself only runs on a signed macOS build, which this Linux checkout cannot
+  produce. `MAC_FILE_EXCLUSIONS` and the `sign` path are both covered by unit assertions.
+- HEIC decoding runs through `heic-to/csp`, which needs a real browser codec. The unit tests cover
+  `isHeicImageFile` detection and the ISO-BMFF dimension pre-check; the decode itself is untested
+  here, matching upstream.

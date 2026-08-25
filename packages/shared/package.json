@@ -198,6 +198,10 @@
     "./providerVocabulary": {
       "types": "./src/providerVocabulary.ts",
       "import": "./src/providerVocabulary.ts"
+    },
+    "./claudeCompaction": {
+      "types": "./src/claudeCompaction.ts",
+      "import": "./src/claudeCompaction.ts"
     }
   },
   "scripts": {

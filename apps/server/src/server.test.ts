@@ -95,7 +95,11 @@ import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
 import { HTTP_REQUEST_MAX_BODY_BYTES } from "./http.ts";
 import { makeRoutesLayer } from "./server.ts";
-import { isThreadDetailEvent, resolveAvailableEditorsForConfig } from "./ws.ts";
+import {
+  isThreadDetailEvent,
+  resolveAvailableEditorsForConfig,
+  resolveFileManagerRevealKindForConfig,
+} from "./ws.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -645,6 +649,7 @@ const buildAppUnderTest = (options?: {
         Layer.mergeAll(
           Layer.mock(ExternalLauncher.ExternalLauncher)({
             resolveAvailableEditors: () => Effect.succeed([]),
+            resolveFileManagerRevealKind: () => Effect.sync((): undefined => undefined),
             ...options?.layers?.externalLauncher,
           }),
           Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({
@@ -2299,6 +2304,8 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(response.environment.environmentId, testEnvironmentDescriptor.environmentId);
       assert.equal(response.auth.policy, "desktop-managed-local");
       assert.equal(response.shellResumeCompletionMarker, true);
+      assert.isUndefined(response.shellRevealInFileManager);
+      assert.isUndefined(response.shellRevealInFileManagerKind);
       assert.equal(response.threadResumeCompletionMarker, true);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
@@ -2372,6 +2379,32 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("advertises the usable file manager and its reveal label", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          externalLauncher: {
+            resolveAvailableEditors: () => Effect.succeed(["file-manager"]),
+            resolveFileManagerRevealKind: () => Effect.succeed("file-explorer"),
+          },
+        },
+      });
+
+      const { cookie } = yield* bootstrapBrowserSession();
+      const wsUrl = appendSessionCookieToWsUrl(
+        yield* getWsServerUrl("/ws", { authenticated: false }),
+        cookie?.split(";")[0] ?? "",
+      );
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.serverGetConfig]({})),
+      );
+
+      assert.deepEqual(response.availableEditors, ["file-manager"]);
+      assert.equal(response.shellRevealInFileManager, true);
+      assert.equal(response.shellRevealInFileManagerKind, "file-explorer");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("does not block server config when editor discovery never resolves", () =>
     Effect.gen(function* () {
       const discoveryInterrupted = yield* Deferred.make<void>();
@@ -2386,6 +2419,23 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const availableEditors = yield* Fiber.join(responseFiber);
       yield* Deferred.await(discoveryInterrupted);
       assert.deepEqual(availableEditors, []);
+    }),
+  );
+
+  it.effect("does not block server config when file manager reveal discovery never resolves", () =>
+    Effect.gen(function* () {
+      const discoveryInterrupted = yield* Deferred.make<void>();
+      const responseFiber = yield* resolveFileManagerRevealKindForConfig(
+        Effect.never.pipe(
+          Effect.onInterrupt(() => Deferred.succeed(discoveryInterrupted, undefined)),
+        ),
+      ).pipe(Effect.forkChild);
+
+      yield* TestClock.adjust(Duration.seconds(5));
+
+      const revealKind = yield* Fiber.join(responseFiber);
+      yield* Deferred.await(discoveryInterrupted);
+      assert.isUndefined(revealKind);
     }),
   );
 

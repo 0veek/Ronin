@@ -196,6 +196,11 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           modelSelection.model,
           "--config",
           `model_reasoning_effort="${reasoningEffort}"`,
+          // Skip AGENTS.md embedding: these one-shot generations get all
+          // their context inline (diffs, messages, style examples), so the
+          // project docs are pure token cost on every title and commit run.
+          "--config",
+          "project_doc_max_bytes=0",
           ...(serviceTier ? ["--config", `service_tier="${serviceTier}"`] : []),
           "--output-schema",
           schemaPath,

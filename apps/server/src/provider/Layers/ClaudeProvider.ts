@@ -92,9 +92,11 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
+          // 200k default matches Claude Code; 1M is opt-in there too and its
+          // requests are usage-weighted at long-context premium past 200k.
           options: [
-            { value: "200k", label: "200k" },
-            { value: "1m", label: "1M", isDefault: true },
+            { value: "200k", label: "200k", isDefault: true },
+            { value: "1m", label: "1M" },
           ],
         }),
       ],
@@ -131,10 +133,11 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
-          // Claude Code selects the 1M variant explicitly (`claude-opus-5[1m]`).
+          // Claude Code selects the 1M variant explicitly (`claude-opus-5[1m]`);
+          // 200k default matches it and avoids long-context premium usage.
           options: [
-            { value: "200k", label: "200k" },
-            { value: "1m", label: "1M", isDefault: true },
+            { value: "200k", label: "200k", isDefault: true },
+            { value: "1m", label: "1M" },
           ],
         }),
       ],
@@ -222,9 +225,11 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
         buildSelectOptionDescriptor({
           id: "contextWindow",
           label: "Context Window",
+          // 200k default matches Claude Code; 1M is opt-in there too and its
+          // requests are usage-weighted at long-context premium past 200k.
           options: [
-            { value: "200k", label: "200k" },
-            { value: "1m", label: "1M", isDefault: true },
+            { value: "200k", label: "200k", isDefault: true },
+            { value: "1m", label: "1M" },
           ],
         }),
       ],
@@ -929,7 +934,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
-  const slashCommands = capabilities?.slashCommands ?? [];
+  const slashCommands = [
+    {
+      name: "compact",
+      description: "Summarize the conversation and reduce context usage",
+    },
+    ...(capabilities?.slashCommands ?? []),
+  ];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
   if (!capabilities) {

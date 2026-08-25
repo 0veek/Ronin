@@ -290,6 +290,35 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
+  it.effect(
+    "runs one-shot generations with a slim session (no settings, MCP, or persistence)",
+    () =>
+      withFakeClaudeEnv(
+        {
+          output: JSON.stringify({
+            structured_output: {
+              title: "Fix reconnect failures",
+            },
+          }),
+          argsMustContain:
+            "--setting-sources= --strict-mcp-config --no-session-persistence --dangerously-skip-permissions",
+        },
+        (textGeneration) =>
+          Effect.gen(function* () {
+            const generated = yield* textGeneration.generateThreadTitle({
+              cwd: process.cwd(),
+              message: "Please investigate reconnect failures after restarting the session.",
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("claudeAgent"),
+                model: "claude-sonnet-4-6",
+              },
+            });
+
+            expect(generated.title).toBe(sanitizeThreadTitle("Fix reconnect failures"));
+          }),
+      ),
+  );
+
   it.effect("generates thread titles through the Claude provider", () =>
     withFakeClaudeEnv(
       {

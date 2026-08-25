@@ -8,6 +8,10 @@ Pinned threads still move to **Settled** when they become inactive. They also mo
 request merges if **Auto-settle merged threads** is enabled. The pin marker stays on the row, and
 the thread returns to the pinned section when it is unsettled.
 
+Right-click a pull request link in a thread and choose **Link to thread** to show that pull request
+in the sidebar. The thread settles when the linked pull request merges if **Auto-settle merged
+threads** is enabled. Right-click the same link and choose **Unlink from thread** to remove it.
+
 Drag a pinned thread to change its position. The order is stored by the server and appears on your
 other connected devices.
 

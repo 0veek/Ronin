@@ -223,6 +223,9 @@ export function applyThreadDetailEvent(
           ...(event.payload.queuedPrompt !== undefined
             ? { queuedPrompt: event.payload.queuedPrompt }
             : {}),
+          ...(event.payload.linkedPullRequest !== undefined
+            ? { linkedPullRequest: event.payload.linkedPullRequest }
+            : {}),
           updatedAt: event.payload.updatedAt,
         },
       };

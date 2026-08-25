@@ -48,6 +48,19 @@ import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 const CLAUDE_TIMEOUT_MS = 180_000;
 
 /**
+ * Replaces the Claude Code system-prompt preset for these one-shot runs.
+ * Titles, branch names, and commit messages are generated from context passed
+ * inline on stdin, so the full agent system prompt — plus the CLAUDE.md,
+ * skills, and MCP servers it pulls in — is pure token cost on an uncached
+ * request. Tools stay available: title prompts may inspect a URL or
+ * attachment the user pasted.
+ */
+const TEXT_GENERATION_SYSTEM_PROMPT =
+  "You are a text-generation helper inside Ronin, a GUI for coding agents. " +
+  "Follow the task instructions exactly and produce only the requested structured output. " +
+  "Use tools only when the task requires inspecting a referenced URL or file.";
+
+/**
  * Schema for the wrapper JSON returned by `claude -p --output-format json`.
  * We only care about `structured_output`.
  */
@@ -169,6 +182,15 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           resolveClaudeApiModelId(modelSelection),
           ...(cliEffort ? ["--effort", cliEffort] : []),
           ...(settingsJson ? ["--settings", settingsJson] : []),
+          "--system-prompt",
+          TEXT_GENERATION_SYSTEM_PROMPT,
+          // `--setting-sources=` (empty) is the Agent SDK's own "load no
+          // filesystem settings" spelling: no CLAUDE.md, no skills. Paired
+          // with no `--mcp-config`, strict mode drops MCP servers entirely,
+          // and these throwaway runs never land in the `claude --resume` list.
+          "--setting-sources=",
+          "--strict-mcp-config",
+          "--no-session-persistence",
           "--dangerously-skip-permissions",
         ],
         { env: claudeEnvironment },

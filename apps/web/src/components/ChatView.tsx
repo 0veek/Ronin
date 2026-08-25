@@ -54,7 +54,7 @@ import {
   type ReviewSlashCommandTarget,
 } from "@t3tools/shared/composerSlashCommands";
 import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
-import { deriveLatestContextWindowSnapshot } from "../lib/contextWindow";
+import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import {
@@ -86,6 +86,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -182,6 +183,7 @@ import {
   GitBranchIcon,
   GitCompareIcon,
   LaptopIcon,
+  Minimize2Icon,
   WifiOffIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
@@ -199,7 +201,11 @@ import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { useBrowserHistoryStore } from "~/browserHistoryStore";
 import { registerFaviconProjectForThread } from "~/browserFaviconStore";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
-import { deriveProviderInstanceEntries, NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
+} from "../providerInstances";
 import {
   useClientSettings,
   useClientSettingsHydrated,
@@ -209,6 +215,7 @@ import {
 import { cycleChatWidthMode, normalizeChatWidthMode } from "../lib/chatWidth";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useThreadActions } from "../hooks/useThreadActions";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../lib/terminalFocus";
@@ -320,7 +327,13 @@ import {
 import {
   resolveDisplayedThreadPr,
   threadChangeRequestSnapshotsAtom,
+  useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
+import {
+  hasAvailableClaudeCompactionProvider,
+  hasDismissedResumeCompaction,
+  shouldOfferResumeCompaction,
+} from "./chat/ContextWindowMeter.logic";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { useQuotaResumeBanner } from "./chat/useQuotaResumeBanner";
 import { SideChatSelectionAction } from "./chat/SideChatSelectionAction";
@@ -1293,6 +1306,7 @@ function ChatViewContent(props: ChatViewProps) {
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
+  const { settleThread } = useThreadActions();
   const routeThreadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
@@ -1399,6 +1413,9 @@ function ChatViewContent(props: ChatViewProps) {
   );
   const composerActiveProvider = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.activeProvider ?? null,
+  );
+  const composerHasUnsentContent = useComposerDraftStore((store) =>
+    composerDraftHasUserContent(store.getComposerDraft(composerDraftTarget)),
   );
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
@@ -2674,6 +2691,10 @@ function ChatViewContent(props: ChatViewProps) {
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const activeContextWindow = useMemo(
+    () => deriveLatestContextWindowSnapshot(threadActivities),
+    [threadActivities],
+  );
   // Provider boundary rows in the transcript name instances the way the picker
   // does, so a handover reads as "Handed to Codex Personal", not as a routing id.
   const providerLabelByInstanceId = useMemo(
@@ -3167,6 +3188,29 @@ function ChatViewContent(props: ChatViewProps) {
     activeThread?.modelSelection.instanceId ??
     activeProject?.defaultModelSelection?.instanceId ??
     null;
+  const compactionProviderAvailable = useMemo(
+    () =>
+      hasAvailableClaudeCompactionProvider({
+        providers: applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(providerStatuses),
+          settings,
+        ),
+        instanceId: activeProviderInstanceId,
+        lockedInstanceId: lockedProvider
+          ? (activeThread?.session?.providerInstanceId ??
+            activeThread?.modelSelection.instanceId ??
+            null)
+          : null,
+      }),
+    [
+      activeProviderInstanceId,
+      activeThread?.modelSelection.instanceId,
+      activeThread?.session?.providerInstanceId,
+      lockedProvider,
+      providerStatuses,
+      settings,
+    ],
+  );
   const activeProviderStatus = useMemo(() => {
     if (activeProviderInstanceId) {
       return (
@@ -3189,6 +3233,25 @@ function ChatViewContent(props: ChatViewProps) {
       false
     );
   }, [activeThread?.session?.providerInstanceId, providerStatuses]);
+  const [resumeCompactionPermanentlyDismissed, setResumeCompactionPermanentlyDismissed] =
+    useLocalStorage(
+      `t3code:resume-compaction-dismissed:${environmentId}:${activeProviderInstanceId ?? "claudeAgent"}`,
+      false,
+      Schema.Boolean,
+    );
+  const nativeResumeCompactionDismissed = useMemo(
+    () => hasDismissedResumeCompaction(threadActivities),
+    [threadActivities],
+  );
+  useEffect(() => {
+    if (nativeResumeCompactionDismissed && !resumeCompactionPermanentlyDismissed) {
+      setResumeCompactionPermanentlyDismissed(true);
+    }
+  }, [
+    nativeResumeCompactionDismissed,
+    resumeCompactionPermanentlyDismissed,
+    setResumeCompactionPermanentlyDismissed,
+  ]);
   const providerStatusBannerKey = getProviderStatusBannerKey(activeProviderStatus);
   const [dismissedProviderStatusBannerKey, setDismissedProviderStatusBannerKey] = useState<
     string | null
@@ -3831,24 +3894,48 @@ function ChatViewContent(props: ChatViewProps) {
   );
   // The thread's own change request, placed against the project it belongs to. Without a
   // project there is nothing to resolve it against, so the caller falls back to the browser.
-  const threadRepository = activeProject?.repositoryIdentity?.displayName ?? null;
+  const linkedThreadPullRequest = activeThread?.linkedPullRequest ?? null;
+  const activeProjectRepository = activeProject?.repositoryIdentity?.displayName ?? null;
+  const threadRepository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
   const openThreadPullRequest = useCallback(
+    (number: number) => {
+      if (!supportsPullRequests || !activeThreadRef) {
+        return;
+      }
+      const projectId = linkedThreadPullRequest?.projectId ?? activeProject?.id;
+      const repository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
+      if (projectId === undefined || repository === null) return;
+      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+        projectId,
+        repository,
+        number,
+      });
+    },
+    [
+      activeProject,
+      activeProjectRepository,
+      activeThreadRef,
+      linkedThreadPullRequest,
+      supportsPullRequests,
+    ],
+  );
+  const openProjectPullRequest = useCallback(
     (number: number) => {
       if (
         !supportsPullRequests ||
         !activeThreadRef ||
         !activeProject ||
-        threadRepository === null
+        activeProjectRepository === null
       ) {
         return;
       }
       useRightPanelStore.getState().openPullRequest(activeThreadRef, {
         projectId: activeProject.id,
-        repository: threadRepository,
+        repository: activeProjectRepository,
         number,
       });
     },
-    [activeProject, activeThreadRef, supportsPullRequests, threadRepository],
+    [activeProject, activeProjectRepository, activeThreadRef, supportsPullRequests],
   );
   const togglePreviewPanel = useCallback(() => {
     if (!activeThreadRef || !isPreviewSupportedInRuntime()) return;
@@ -4770,11 +4857,17 @@ function ChatViewContent(props: ChatViewProps) {
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
   const autoSettleOnMerge = useClientSettings((settings) => settings.sidebarAutoSettleOnMerge);
+  const linkedPullRequestStatus = useLinkedThreadPullRequest(
+    activeThreadRef?.environmentId ?? null,
+    linkedThreadPullRequest,
+  );
   const activeThreadPr = resolveDisplayedThreadPr({
     threadBranch: activeThread?.branch ?? null,
     gitStatus: gitStatusQuery.data ?? null,
     snapshot: activeThreadKey ? changeRequestSnapshotByKey.get(activeThreadKey) : undefined,
     retainTerminalOnBranchMismatch: activeThread?.worktreePath === null,
+    linkedPullRequest: linkedThreadPullRequest,
+    linkedPullRequestStatus,
   });
   // The right panel offers the thread's own change request, so it can only offer it once the
   // branch has one; until then the picker says so rather than opening an empty panel.
@@ -4955,18 +5048,6 @@ function ChatViewContent(props: ChatViewProps) {
   // Dismissal lives in a module-level set (survives remounts); this tick just
   // forces a re-render so the banner leaves immediately.
   const [, setBranchMismatchDismissTick] = useState(0);
-  const composerHasDraftContent = useComposerDraftStore((store) => {
-    const draft = store.getComposerDraft(composerDraftTarget);
-    return Boolean(
-      draft &&
-      (draft.prompt.trim().length > 0 ||
-        draft.images.length > 0 ||
-        draft.terminalContexts.length > 0 ||
-        draft.elementContexts.length > 0 ||
-        draft.previewAnnotations.length > 0 ||
-        draft.reviewComments.length > 0),
-    );
-  });
   const activeBranchMismatchKey = branchMismatchKey(
     activeThread?.id ?? null,
     localCheckoutBranchMismatch,
@@ -4974,7 +5055,7 @@ function ChatViewContent(props: ChatViewProps) {
   const showBranchMismatchBanner = shouldShowBranchMismatchBanner({
     hasMismatch: localCheckoutBranchMismatch !== null,
     isDismissed: isBranchMismatchDismissedForSession(activeBranchMismatchKey),
-    composerHasContent: composerHasDraftContent,
+    composerHasContent: composerHasUnsentContent,
     wasShownForCurrentMismatch:
       revealedBranchMismatchKey !== null && revealedBranchMismatchKey === activeBranchMismatchKey,
   });
@@ -5206,6 +5287,106 @@ function ChatViewContent(props: ChatViewProps) {
     isUnsnoozing,
     isUnsettling,
   ]);
+  // Session-scoped dismissals, one key per (thread, snapshot). A set rather
+  // than a single slot so dismissing the banner on one thread does not
+  // resurface it on another thread dismissed earlier.
+  const [dismissedResumeCompactionKeys, setDismissedResumeCompactionKeys] = useState<
+    ReadonlySet<string>
+  >(new Set());
+  const resumeCompactionKey =
+    activeThread && activeContextWindow
+      ? `${activeThread.id}:${activeContextWindow.updatedAt}`
+      : null;
+  const compactDisabled =
+    !activeThread ||
+    !activeProject ||
+    !isServerThread ||
+    selectedProvider !== "claudeAgent" ||
+    !compactionProviderAvailable ||
+    isWorking ||
+    threadDetailLoading ||
+    isPreparingWorktree ||
+    activeEnvironmentUnavailable ||
+    pendingApprovals.length > 0 ||
+    pendingUserInputs.length > 0 ||
+    showPlanFollowUpPrompt ||
+    composerHasUnsentContent;
+  const compactDisabledReason = compactDisabled
+    ? composerHasUnsentContent
+      ? "Send or clear your draft before compacting"
+      : !activeProject
+        ? "Choose a project before compacting"
+        : !compactionProviderAvailable
+          ? "Enable a Claude provider before compacting"
+          : "Compacting is unavailable right now"
+    : null;
+  const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (
+      !activeThread ||
+      !activeContextWindow ||
+      resumeCompactionKey === null ||
+      dismissedResumeCompactionKeys.has(resumeCompactionKey) ||
+      resumeCompactionPermanentlyDismissed ||
+      nativeResumeCompactionDismissed ||
+      pendingUserInputs.length > 0 ||
+      phase === "running" ||
+      !shouldOfferResumeCompaction({
+        provider: selectedProvider,
+        usedTokens: activeContextWindow.usedTokens,
+        updatedAt: activeContextWindow.updatedAt,
+        now: `${nowMinute}:00.000Z`,
+      })
+    ) {
+      return null;
+    }
+
+    const dismiss = () =>
+      setDismissedResumeCompactionKeys((keys) => new Set(keys).add(resumeCompactionKey));
+    const compactAction = (
+      <Button
+        size="xs"
+        variant="outline"
+        disabled={compactDisabled}
+        onClick={() => {
+          if (compactDisabled) return;
+          composerRef.current?.compactContext();
+        }}
+      >
+        Compact
+      </Button>
+    );
+    return {
+      id: `resume-compaction:${resumeCompactionKey}`,
+      variant: "info",
+      icon: <Minimize2Icon />,
+      title: "Resume with less context",
+      description: `${formatContextWindowTokens(activeContextWindow.usedTokens)} tokens from an older session`,
+      actions: compactDisabledReason ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex">{compactAction}</span>} />
+          <TooltipPopup side="top">{compactDisabledReason}</TooltipPopup>
+        </Tooltip>
+      ) : (
+        compactAction
+      ),
+      dismissLabel: "Keep full history",
+      onDismiss: dismiss,
+    };
+  }, [
+    activeContextWindow,
+    activeThread,
+    compactDisabled,
+    compactDisabledReason,
+    composerRef,
+    dismissedResumeCompactionKeys,
+    nativeResumeCompactionDismissed,
+    nowMinute,
+    pendingUserInputs.length,
+    phase,
+    resumeCompactionKey,
+    resumeCompactionPermanentlyDismissed,
+    selectedProvider,
+  ]);
   const handleRestoreThreadBranch = useCallback(() => {
     if (gitStatusQuery.data?.hasWorkingTreeChanges) {
       setBranchRestoreConfirmOpen(true);
@@ -5224,6 +5405,8 @@ function ChatViewContent(props: ChatViewProps) {
     // explains why an idle-looking thread is about to start work by itself,
     // and its Cancel is the only way to stop that before it happens.
     const quotaResumeItems = quotaResumeBannerItem === null ? [] : [quotaResumeBannerItem];
+    const resumeCompactionItems =
+      resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
     const parkedThreadItems = parkedThreadBannerItem === null ? [] : [parkedThreadBannerItem];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
@@ -5232,6 +5415,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...quotaResumeItems,
         ...backgroundLivenessItems,
         ...calmSystemItems,
+        ...resumeCompactionItems,
         ...wokeThreadItems,
         ...parkedThreadItems,
       ];
@@ -5241,6 +5425,7 @@ function ChatViewContent(props: ChatViewProps) {
       ...quotaResumeItems,
       ...backgroundLivenessItems,
       ...calmSystemItems,
+      ...resumeCompactionItems,
       ...wokeThreadItems,
       {
         id: `branch-mismatch:${activeBranchMismatchKey}`,
@@ -5291,6 +5476,7 @@ function ChatViewContent(props: ChatViewProps) {
     localCheckoutBranchMismatch,
     parkedThreadBannerItem,
     quotaResumeBannerItem,
+    resumeCompactionBannerItem,
     showBranchMismatchBanner,
     systemComposerBannerItems,
     wokeThreadBannerItem,
@@ -5420,6 +5606,27 @@ function ChatViewContent(props: ChatViewProps) {
         return true;
       }
 
+      if (command === "thread.settle") {
+        if (!isServerThread || !activeThreadRef || !supportsSettlement) return true;
+        if (activeThreadSettled) {
+          void handleUnsettleActiveThread();
+          return true;
+        }
+
+        void settleThread(activeThreadRef).then((result) => {
+          if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+          const error = squashAtomCommandFailure(result);
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: "Failed to settle thread",
+              description: error instanceof Error ? error.message : "An error occurred.",
+            }),
+          );
+        });
+        return true;
+      }
+
       if (command === "digest.show") {
         openDigestRef.current?.();
         return true;
@@ -5501,17 +5708,23 @@ function ChatViewContent(props: ChatViewProps) {
     [
       activeProject,
       activeRightPanelSurface,
+      activeThreadRef,
+      activeThreadSettled,
       addTerminalSurface,
       chatWidth,
       requestClosePanelTerminal,
       requestCloseTerminal,
       composerRef,
       createNewTerminal,
+      handleUnsettleActiveThread,
+      isServerThread,
       onToggleDiff,
       runProjectScript,
       setTerminalOpen,
+      settleThread,
       splitPanelTerminal,
       splitTerminal,
+      supportsSettlement,
       terminalUiState.activeTerminalId,
       terminalUiState.terminalOpen,
       toggleRightPanel,
@@ -7125,7 +7338,7 @@ function ChatViewContent(props: ChatViewProps) {
         context={
           isThreadOwnPullRequest(
             {
-              projectId: activeProject?.id ?? null,
+              projectId: linkedThreadPullRequest?.projectId ?? activeProject?.id ?? null,
               repository: threadRepository,
               number: activeThreadPr?.number ?? null,
             },
@@ -7199,9 +7412,9 @@ function ChatViewContent(props: ChatViewProps) {
         >
           {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
-            {...(!supportsPullRequests || threadRepository === null
+            {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
-              : { onOpenPullRequest: openThreadPullRequest })}
+              : { onOpenPullRequest: openProjectPullRequest })}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}
@@ -7471,7 +7684,9 @@ function ChatViewContent(props: ChatViewProps) {
                               activeProject?.defaultModelSelection
                             }
                             activeThreadModelSelection={activeThread?.modelSelection}
-                            activeThreadActivities={activeThread?.activities}
+                            activeContextWindow={activeContextWindow}
+                            compactDisabled={compactDisabled}
+                            compactDisabledReason={compactDisabledReason}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
                             keybindings={keybindings}

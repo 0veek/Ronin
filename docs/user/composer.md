@@ -15,6 +15,9 @@ On environments that support direct uploads, images upload as soon as you add th
 button becomes available once every upload finishes. A failed upload can be retried or removed.
 Older environments still send the image with the message.
 
+HEIC and HEIF photos are converted to JPEG automatically when you drag them into the composer or
+paste them into a message.
+
 ## Reading width
 
 **Settings → Appearance → Chat width** sets how wide the transcript and composer grow:

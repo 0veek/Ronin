@@ -462,6 +462,9 @@ export function projectEvent(
             ...(payload.branch !== undefined ? { branch: payload.branch } : {}),
             ...(payload.worktreePath !== undefined ? { worktreePath: payload.worktreePath } : {}),
             ...(payload.queuedPrompt !== undefined ? { queuedPrompt: payload.queuedPrompt } : {}),
+            ...(payload.linkedPullRequest !== undefined
+              ? { linkedPullRequest: payload.linkedPullRequest }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),
