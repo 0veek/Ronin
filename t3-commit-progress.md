@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                                       |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `994372ba4` — `fix(server): push no longer writes a feature branch's commits to its base branch (#8228)` (2026-08-25) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                                       |
-| **Ported on**                 | 2026-08-26                                                                                                            |
+|                               |                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `b0a028126` — `fix(desktop): let Clerk UI receive stable auth fixes (#8248)` (2026-08-25) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                           |
+| **Ported on**                 | 2026-08-26                                                                                |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -2239,3 +2239,124 @@ None.
 - HEIC decoding runs through `heic-to/csp`, which needs a real browser codec. The unit tests cover
   `isHeicImageFile` detection and the ISO-BMFF dimension pre-check; the decode itself is untested
   here, matching upstream.
+
+## Batch 15 — reviewed through `b0a028126` (4 commits)
+
+Reviewed `994372ba4..b0a028126`, snapshotted at `b0a028126` for the whole run. Small range: three
+commits are Clerk or upstream release plumbing, one is a real feature. That feature needed the one
+product decision of this batch — where a fork should fetch its model manifest from — and the
+developer chose Ronin's own repository.
+
+The worktree was clean at the start of the run.
+
+### Ported (1)
+
+| Upstream    | Title                                                                          | Notes                                      |
+| ----------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
+| `badae6a5c` | feat(server): fetch legacy model classification from a hosted manifest (#8227) | adapted — manifest URL points at this fork |
+
+- **`badae6a5c` (hosted model manifest), one deliberate divergence.** The commit replaces the
+  hard-coded `CURRENT_CLAUDE_MODELS` / `CURRENT_CODEX_MODELS` sets with a `ModelManifest` service
+  reading `apps/server/src/provider/model-manifest.json`, refreshed at runtime over HTTP so a model
+  can leave the picker's legacy section with a commit instead of a release. Ronin carried the
+  identical static sets (`isLegacyClaudeModel`, `isLegacyCodexModel`) and the identical slugs, so
+  the bundled JSON is byte-for-byte upstream's and the classification a user sees today does not
+  change.
+  - **`MODEL_MANIFEST_URL` is `raw.githubusercontent.com/0veek/Ronin/main/...`, not
+    `pingdotgg/t3code`.** Ronin owns its own classification data: the bundled JSON that lands with
+    each sync batch is also the live source, so upstream's model list cannot silently outrank
+    Ronin's catalog if the two ever diverge, and Ronin servers do not phone home to upstream's
+    repository. The module and `docs/internals/providers.md` say "this repository's `main`" rather
+    than naming a repo. Until this change is on the fork's `main`, the fetch 404s and the service
+    falls back to the bundled copy — the failure path the commit already handles, so classification
+    is correct either way.
+  - The upstream tests that asserted `isLegacyClaudeModel` / `isLegacyCodexModel` are deleted with
+    their functions and replaced by `ModelManifest.test.ts`, which makes the same assertions against
+    the bundled manifest. Ronin's own Codex test file keeps its skill-roots case; only the legacy
+    block and its import were removed.
+  - `docs/internals/glossary.md` needed placement, not rewording: upstream drops **Model manifest**
+    after **Snapshot**, which in this fork is immediately followed by Ronin's **Scheduled work**
+    section. The entry goes in the provider section where upstream put it, ahead of that.
+  - No decision needed for the other seven drivers. Antigravity, Cursor, Droid, Grok, Kilo,
+    OpenCode and Pi never set `isLegacy`, and a driver kind absent from `currentModels` is left
+    unflagged — exactly their behavior before this commit.
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (3)
+
+| Upstream    | Title                                                        | Reason                                                        |
+| ----------- | ------------------------------------------------------------ | ------------------------------------------------------------- |
+| `504177797` | chore(deps): bump @clerk/electron to 0.0.37 (#8240)          | Clerk is a cut surface; no `@clerk/*` dependency in this fork |
+| `860caaa60` | chore(release): prepare v0.0.34                              | upstream release bookkeeping; Ronin versions independently    |
+| `b0a028126` | fix(desktop): let Clerk UI receive stable auth fixes (#8248) | removes a Clerk UI pin this fork never had                    |
+
+- **`504177797` and `b0a028126` are the same cut surface.** `grep -ri clerk` over the tree outside
+  `pnpm-lock.yaml` returns nothing, and `apps/web/src/main.tsx` renders `AppRoot` directly with no
+  provider wrapper — there is no `__internal_clerkUIVersion` pin to remove and no
+  `@clerk/electron` to bump.
+- **`860caaa60`** sets four `package.json` versions to `0.0.34`. Ronin's four are at `0.6.9` on its
+  own release line.
+
+### Considered and not changed
+
+- The Settings copy for **provider update checks** still reads "Check installed provider CLIs for
+  newer available versions", while the switch now also gates the manifest fetch. Upstream left the
+  string alone and rewording it would be an out-of-scope UI divergence that conflicts on every
+  future sync. Recorded here rather than silently changed.
+
+### Verification
+
+- Focused tests:
+  - `apps/server/src/provider` + `apps/server/src/server.test.ts` — 58 files, 784 tests,
+    777 pass / 6 skipped / **1 pre-existing failure**.
+  - Narrower confirmation runs, all green: `ModelManifest.test.ts` + `CodexProvider.test.ts` +
+    `ClaudeCapabilitiesProbe.test.ts` + `ProviderInstanceRegistryLive.test.ts` (4 files, 20 tests),
+    and `ProviderRegistry.test.ts` + `ProviderService.test.ts` (2 files, 77 tests).
+- **One pre-existing failure, verified.** `ProviderRegistry.test.ts` › "re-probes when settings
+  change the codex binaryPath" fails in the full 58-file selection and passes when its file runs
+  alone. Batch 14 recorded the same test as a load-sensitive flake. Confirmed not caused by this
+  port: the entire batch was stashed and the identical selection re-run on the clean tree, which
+  failed the same single test.
+- Typecheck: `tsgo --noEmit` in `apps/server` — 0 errors (the four pre-existing
+  `unnecessaryFailYieldableError` _suggestions_ in `ClaudeAdapter.ts` and `ProviderService.ts`
+  remain; neither file is in a hunk this batch touched).
+- `vp lint --report-unused-disable-directives` over the 11 changed `.ts` files — 0 findings.
+- `vp fmt --check` over all 14 changed files — all correct.
+- `git diff --check` and `git diff --cached --check` clean.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — none. `ServerProviderModel.isLegacy` already exists and is unchanged; only who
+  sets it moved.
+- **Server** — new `ModelManifest` service (`apps/server/src/provider/ModelManifest.ts`) plus its
+  bundled data, wired into `RuntimeCoreDependenciesLive` alongside `ProviderEventLoggers`. Both
+  model-producing paths on each affected driver — `initialSnapshot` and `checkProvider`, the latter
+  covering probe and error fallbacks — run `applyModelManifest`, so no snapshot escapes
+  classification. The disk cache lands in the state directory next to the rest of the runtime state,
+  so a worktree dev server and the real install never share it.
+- **Providers** — Codex and Claude are the only kinds with a `currentModels` entry; the other seven
+  drivers are unflagged as before. Custom (user-defined) models are never reclassified.
+- **Clients (desktop/web)** — no change. Classification is server-side and reaches every client over
+  the existing snapshot, so desktop and the renderer agree by construction.
+- **Connection modes** — the fetch is the server's, not the client's, so local, LAN, Tailscale and
+  SSH clients all see whatever classification the server resolved. An offline server keeps its disk
+  cache, then the bundle; a failed fetch never fails a provider check, and the retry floor keeps an
+  offline server from paying a timeout on every probe.
+- **Reverse states** — `classifyModels` clears a stale `isLegacy` as readily as it sets one, so a
+  model returning to the current list leaves the legacy section on the next probe without a restart.
+  Turning **provider update checks** off stops future fetches but keeps data already on disk: the
+  setting is about phoning home, not about discarding what the server holds.
+- **Entry points** — the legacy section of the model picker is the only surface; it reads the same
+  `isLegacy` flag it always did.
+- **Docs** — `docs/internals/providers.md` gains a **Model manifest** section and
+  `docs/internals/glossary.md` the matching term, both phrased as "this repository's `main`". No
+  `docs/user/` change: nothing a user sees behaves differently.
+
+### Not tested
+
+- The live fetch against `raw.githubusercontent.com` is not exercised — `ModelManifest.test.ts`
+  stubs `HttpClient` for the success, malformed-payload and opt-out paths, matching upstream. The
+  real URL cannot resolve until this change reaches the fork's `main`.
