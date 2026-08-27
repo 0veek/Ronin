@@ -24,21 +24,31 @@ const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
 
 /**
- * A `grok` stand-in that answers `--version` itself and hands everything else
- * to the ACP mock agent, which is the same two-step the real probe walks.
+ * A `grok` stand-in that answers `--version` and `inspect` itself and hands
+ * everything else to the ACP mock agent, which is the same three-step the real
+ * probe walks. `inspect` has to answer and exit like the real CLI: falling
+ * through to the stdio agent would leave a process that never exits.
  */
-async function makeMockGrokCli(extraEnv?: Record<string, string>) {
+async function makeMockGrokCli(
+  extraEnv?: Record<string, string>,
+  options?: { readonly inspectSkills?: ReadonlyArray<unknown> },
+) {
   const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-probe-mock-"));
   const cliPath = NodePath.join(dir, "fake-grok.sh");
   const envExports = Object.entries(extraEnv ?? {})
     .map(([key, value]) => `export ${key}=${JSON.stringify(value)}`)
     .join("\n");
+  const inspectJson = JSON.stringify(JSON.stringify({ skills: options?.inspectSkills ?? [] }));
   await NodeFSP.writeFile(
     cliPath,
     `#!/bin/sh
 ${envExports}
 if [ "$1" = "--version" ]; then
   printf "grok 1.0.4\\n"
+  exit 0
+fi
+if [ "$1" = "inspect" ]; then
+  printf "%s\\n" ${inspectJson}
   exit 0
 fi
 exec ${JSON.stringify(process.execPath)} ${JSON.stringify(mockAgentPath)} "$@"
@@ -140,6 +150,53 @@ describe("buildGrokDiscoveredModelsFromSessionModelState", () => {
         "medium",
         "high",
       ]);
+    }
+  });
+
+  it("honors a model that says it has no effort dial at all", () => {
+    const models = buildGrokDiscoveredModelsFromSessionModelState({
+      currentModelId: "grok-4.6",
+      availableModels: [
+        {
+          modelId: "grok-4.6",
+          name: "Grok 4.6",
+          _meta: { supportsReasoningEffort: false },
+        },
+      ],
+    });
+
+    // Not the same as advertising nothing: an explicit opt-out gets no control,
+    // where silence still falls back to the levels Grok has always shipped.
+    expect(reasoningEffortDescriptor(models[0])).toBeUndefined();
+  });
+
+  it("reads older builds that key an effort by id, and drops unusable tokens", () => {
+    const models = buildGrokDiscoveredModelsFromSessionModelState({
+      currentModelId: "grok-4.6",
+      availableModels: [
+        {
+          modelId: "grok-4.6",
+          name: "Grok 4.6",
+          _meta: {
+            reasoningEfforts: [
+              { id: "high", label: "High Effort", isDefault: true, description: "Thinks longer" },
+              { id: "not a token", label: "Bogus" },
+              { value: "low", label: "Low Effort" },
+            ],
+          },
+        },
+      ],
+    });
+
+    const effort = reasoningEffortDescriptor(models[0]);
+    if (effort?.type === "select") {
+      const descriptor = effort as unknown as {
+        options: ReadonlyArray<{ id: string; description?: string }>;
+        currentValue?: string;
+      };
+      expect(descriptor.options.map((option) => option.id)).toEqual(["high", "low"]);
+      expect(descriptor.options[0]?.description).toBe("Thinks longer");
+      expect(descriptor.currentValue).toBe("high");
     }
   });
 
@@ -311,6 +368,64 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.auth).toEqual({ status: "unauthenticated" });
       expect(snapshot.message).toContain("grok login");
       expect(snapshot.message).not.toContain("Check server logs");
+    }),
+  );
+
+  it.effect("puts the catalog `grok inspect` reports on the snapshot", () =>
+    Effect.gen(function* () {
+      const cliPath = yield* Effect.promise(() =>
+        makeMockGrokCli(undefined, {
+          inspectSkills: [
+            {
+              name: "review-diff",
+              description: "Review the working tree",
+              source: { type: "project", path: "/repo/.grok/skills/review-diff/SKILL.md" },
+            },
+            // Kept but disabled, so a picker filtering on `enabled` hides it.
+            {
+              name: "internal-only",
+              source: { type: "bundled", path: "/opt/grok/skills/internal/SKILL.md" },
+              userInvocable: false,
+            },
+            // No filesystem path: nothing a picker could open.
+            { name: "ghost" },
+          ],
+        }),
+      );
+
+      const snapshot = yield* checkGrokProviderStatus(
+        decodeGrokSettings({ enabled: true, binaryPath: cliPath }),
+      );
+
+      expect(snapshot.skills).toEqual([
+        {
+          name: "internal-only",
+          path: "/opt/grok/skills/internal/SKILL.md",
+          enabled: false,
+          scope: "bundled",
+        },
+        {
+          name: "review-diff",
+          path: "/repo/.grok/skills/review-diff/SKILL.md",
+          enabled: true,
+          scope: "project",
+          description: "Review the working tree",
+        },
+      ]);
+    }),
+  );
+
+  it.effect("never fails the snapshot because skill discovery did", () =>
+    Effect.gen(function* () {
+      // An older CLI has no `inspect`. A missing catalog is not a broken
+      // provider, so the card still reports a healthy, authenticated Grok.
+      const cliPath = yield* Effect.promise(() => makeMockGrokCli());
+      const snapshot = yield* checkGrokProviderStatus(
+        decodeGrokSettings({ enabled: true, binaryPath: cliPath }),
+      );
+
+      expect(snapshot.status).toBe("ready");
+      expect(snapshot.skills).toEqual([]);
     }),
   );
 });

@@ -63,6 +63,7 @@ import Migration0047 from "./Migrations/047_ProjectionThreadsComparisonGroup.ts"
 import Migration0048 from "./Migrations/048_BuildSystems.ts";
 import Migration0049 from "./Migrations/049_ProviderSessionLedgerDelivery.ts";
 import Migration0050 from "./Migrations/050_ProjectionThreadLinkedPullRequest.ts";
+import Migration0051 from "./Migrations/051_ProjectionThreadsUnsettledAt.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -125,6 +126,7 @@ export const migrationEntries = [
   [48, "BuildSystems", Migration0048],
   [49, "ProviderSessionLedgerDelivery", Migration0049],
   [50, "ProjectionThreadLinkedPullRequest", Migration0050],
+  [51, "ProjectionThreadsUnsettledAt", Migration0051],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

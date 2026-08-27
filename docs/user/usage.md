@@ -13,6 +13,9 @@ Each provider owns one colour across the whole page — the chart, the split, th
 model rows all key to the same set, in light and dark alike. The brand mark beside every value
 carries the same identity, so nothing on the page depends on telling two hues apart.
 
+Grok totals come from the session records it writes as each turn completes, so a turn that never
+finished writing one does not appear.
+
 Where a cost figure comes from depends on the provider: Grok records the exact cost of each turn and
 that figure is used as-is, while Codex, Claude Code, and Antigravity totals are priced from a
 published rate table. Models with no published rate still count their tokens; their cost is reported

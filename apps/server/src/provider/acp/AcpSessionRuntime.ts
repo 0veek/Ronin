@@ -27,6 +27,7 @@ import {
   extractModelConfigId,
   findSessionConfigOption,
   mergeToolCallState,
+  toolCallProgressLength,
   parseSessionModeState,
   parseSessionUpdateEvent,
   sessionUpdateIsReplay,
@@ -943,7 +944,7 @@ const handleSessionUpdate = ({
             next.set(nextToolCall.toolCallId, {
               state: nextToolCall,
               lastEmittedDetailLength: decision.emit
-                ? nextToolCall.detail?.length
+                ? toolCallProgressLength(nextToolCall)
                 : tracked?.lastEmittedDetailLength,
               skippedSinceEmit: decision.skippedSinceEmit,
             });

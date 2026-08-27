@@ -416,17 +416,44 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
   const entries: readonly (readonly [string, Record<string, unknown>])[] =
     perModel.length === 0 ? [["grok", usageRecord] as const] : perModel;
 
+  // Grok does not always repeat `costUsdTicks` inside each `modelUsage` entry:
+  // some turns report the money once at the top level and only split tokens.
+  // Reading each entry alone would then throw the turn's whole reported cost
+  // away and fall back to list pricing. Instead, entries that carry their own
+  // ticks keep them, and whatever is left of the turn's total is shared out
+  // across the entries that do not, by token share among just those. Zero-token
+  // entries are never emitted, so they never claim a slice.
+  const turnCostUsd = grokReportedCostUsd(usageRecord);
+  let claimedCostUsd = 0;
+  let unclaimedTokens = 0;
+  for (const [, raw] of entries) {
+    const tokens = totalTokens(grokTotals(raw));
+    if (tokens === 0) continue;
+    const entryCostUsd = grokReportedCostUsd(raw);
+    if (entryCostUsd === null) {
+      unclaimedTokens += tokens;
+    } else {
+      claimedCostUsd += entryCostUsd;
+    }
+  }
+  const shareableCostUsd = turnCostUsd === null ? null : Math.max(0, turnCostUsd - claimedCostUsd);
+
   const records: UsageRecord[] = [];
   for (const [model, raw] of entries) {
     const totals = grokTotals(raw);
-    if (totalTokens(totals) === 0) continue;
+    const tokens = totalTokens(totals);
+    if (tokens === 0) continue;
+    let reportedCostUsd = grokReportedCostUsd(raw);
+    if (reportedCostUsd === null && shareableCostUsd !== null && unclaimedTokens > 0) {
+      reportedCostUsd = shareableCostUsd * (tokens / unclaimedTokens);
+    }
     records.push({
       provider: "grok",
       timestampMs,
       model,
       sessionId,
       totals,
-      reportedCostUsd: grokReportedCostUsd(raw),
+      reportedCostUsd,
       dedupeKey: promptId === "" ? null : `${sessionId}:${promptId}:${model}`,
     });
   }

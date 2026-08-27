@@ -25,6 +25,16 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
  */
 export const USAGE_CONTRACT_VERSION = 6 as const;
 
+/**
+ * Oldest {@link UsageSummary} version a current client will still merge.
+ *
+ * v5 only added `grok` to {@link UsageProviderKind} and v6 only added
+ * `antigravity`; v4's Claude/Codex buckets remain valid under both, so
+ * mixed-version environments keep those totals instead of treating every older
+ * server as stale.
+ */
+export const USAGE_MERGE_COMPATIBLE_SINCE = 4 as const;
+
 export const UsageProviderKind = Schema.Literals(["claude", "codex", "grok", "antigravity"]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 

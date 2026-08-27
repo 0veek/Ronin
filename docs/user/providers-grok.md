@@ -52,10 +52,26 @@ on the provider card like it does for Codex and Claude. See [Updating](./updatin
 
 ## Skills
 
-Grok reads skills from `~/.grok/skills` and from `.grok/` at your repository root. Skills in those
-places show up in Ronin's skills list for this provider.
+Ronin asks the CLI for its own skill catalog rather than scanning folders, so the `$` picker shows
+exactly what Grok would run: skills from `~/.grok/skills` and from `.grok/` at your repository
+root, plus installed plugin skills, and with anything you have disabled in Grok's own settings left
+out. Skills Grok marks as not user-invocable are listed but cannot be picked.
+
+An older Grok Build that cannot report its catalog simply contributes no skills. Nothing else about
+the provider changes.
+
+## Permission modes
+
+Ronin puts the thread's permission mode on Grok's command line, so a thread behaves the way its
+mode reads even if your own Grok config is set to approve everything. **Supervised** asks,
+**Auto-accept edits** accepts edits, **Auto** runs Grok's own auto mode, and **Full access** starts
+Grok with always-approve.
+
+On an approval, **Always allow this session** remembers that one command or tool input for the rest
+of the session. Anything else still asks. It is not a shortcut to **Full access**.
 
 ## Usage
 
 Grok reports the exact cost of every turn, so the Stats page shows its spend as measured rather
-than estimated. See [Usage](./usage.md).
+than estimated. Totals come from the session records Grok writes to disk, so a turn that never
+finished writing one does not appear. See [Usage](./usage.md).

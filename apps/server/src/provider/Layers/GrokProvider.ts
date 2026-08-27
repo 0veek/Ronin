@@ -46,10 +46,12 @@ import {
 import {
   describeGrokAuthMethod,
   isGrokCredentialsMissingError,
+  isValidGrokReasoningEffortToken,
   makeGrokAcpRuntime,
   resolveGrokAcpAuthMethodId,
   resolveGrokAcpBaseModelId,
 } from "../acp/GrokAcpSupport.ts";
+import { discoverGrokSkills } from "../Drivers/GrokSkills.ts";
 
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
@@ -78,6 +80,11 @@ const GROK_REASONING_EFFORT_CAPABILITIES: ModelCapabilities = createModelCapabil
 
 type ModelInfoMeta = EffectAcpSchema.ModelInfo["_meta"];
 
+/** A model that reports no effort dial gets no control, not the default list. */
+const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
+  optionDescriptors: [],
+});
+
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS = 15_000;
 
@@ -104,9 +111,25 @@ const GROK_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
 interface GrokAdvertisedReasoningEffort {
   readonly value: string;
   readonly label: string;
+  readonly description: string | undefined;
   readonly isDefault: boolean;
 }
 
+function trimmedString(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() || undefined : undefined;
+}
+
+/**
+ * Reads the effort levels one model advertises, or none when it says it has
+ * no such control.
+ *
+ * `supportsReasoningEffort: false` is the CLI telling us this model has no
+ * effort dial at all, which is not the same as advertising nothing: the first
+ * must show no control, the second falls back to the levels Grok has always
+ * shipped. Values arrive as `value` on current builds and `id` on older ones,
+ * and either key can carry a token that has no business on a command line, so
+ * both are validated before they can reach `--reasoning-effort`.
+ */
 function readGrokAdvertisedReasoningEfforts(
   meta: ModelInfoMeta,
 ): ReadonlyArray<GrokAdvertisedReasoningEffort> {
@@ -122,13 +145,20 @@ function readGrokAdvertisedReasoningEfforts(
       continue;
     }
     const record = entry as Record<string, unknown>;
-    const value = typeof record.value === "string" ? record.value.trim() : "";
-    if (!value || seen.has(value)) {
+    const candidate = trimmedString(record.value) ?? trimmedString(record.id);
+    const value =
+      candidate !== undefined && isValidGrokReasoningEffortToken(candidate) ? candidate : undefined;
+    if (value === undefined || seen.has(value)) {
       continue;
     }
     seen.add(value);
-    const label = typeof record.label === "string" ? record.label.trim() : "";
-    efforts.push({ value, label: label || value, isDefault: record.default === true });
+    const description = trimmedString(record.description);
+    efforts.push({
+      value,
+      label: trimmedString(record.label) ?? value,
+      description,
+      isDefault: record.default === true || record.isDefault === true,
+    });
   }
   return efforts;
 }
@@ -154,6 +184,7 @@ function grokCapabilitiesFromAdvertisedEfforts(
         options: efforts.map((effort) => ({
           value: effort.value,
           label: effort.label,
+          ...(effort.description ? { description: effort.description } : {}),
           ...(effort.value === defaultValue ? { isDefault: true } : {}),
         })),
       }),
@@ -229,10 +260,14 @@ export function buildGrokDiscoveredModelsFromSessionModelState(
         slug,
         name: model.name.trim() || slug,
         isCustom: false,
-        // Per model: 4.6 advertises xhigh, 4.5 does not.
-        capabilities: grokCapabilitiesFromAdvertisedEfforts(
-          readGrokAdvertisedReasoningEfforts(model._meta),
-        ),
+        // Per model: 4.6 advertises xhigh, 4.5 does not, and a model can say it
+        // has no effort dial at all.
+        capabilities:
+          model._meta?.supportsReasoningEffort === false
+            ? EMPTY_CAPABILITIES
+            : grokCapabilitiesFromAdvertisedEfforts(
+                readGrokAdvertisedReasoningEfforts(model._meta),
+              ),
       };
     })
     .filter((model): model is ServerProviderModel => model !== undefined);
@@ -311,6 +346,7 @@ const runGrokVersionCommand = (
 export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(function* (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv = process.env,
+  cwd?: string,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -401,6 +437,8 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     });
   }
 
+  const skills = yield* discoverGrokSkills(grokSettings, environment, cwd);
+
   const discoveryExit = yield* probeGrokViaAcp(grokSettings, environment).pipe(
     Effect.timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
     Effect.exit,
@@ -414,6 +452,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      skills,
       probe: {
         installed: true,
         version,
@@ -432,6 +471,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      skills,
       probe: {
         installed: true,
         version,
@@ -448,6 +488,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
       enabled: grokSettings.enabled,
       checkedAt,
       models: fallbackModels,
+      skills,
       probe: {
         installed: true,
         version,
@@ -467,6 +508,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     enabled: grokSettings.enabled,
     checkedAt,
     models,
+    skills,
     probe: {
       installed: true,
       version,

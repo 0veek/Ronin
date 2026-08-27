@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                           |
-| ----------------------------- | ----------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `b0a028126` — `fix(desktop): let Clerk UI receive stable auth fixes (#8248)` (2026-08-25) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                           |
-| **Ported on**                 | 2026-08-26                                                                                |
+|                               |                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `ead4ce52a` — `fix(grok): improve skills, plans, usage, and turn reliability (#8358)` (2026-08-26) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                    |
+| **Ported on**                 | 2026-08-27                                                                                         |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -2360,3 +2360,269 @@ None.
 - The live fetch against `raw.githubusercontent.com` is not exercised — `ModelManifest.test.ts`
   stubs `HttpClient` for the success, malformed-payload and opt-out paths, matching upstream. The
   real URL cannot resolve until this change reaches the fork's `main`.
+
+## Batch 16 — reviewed through `ead4ce52a` (6 commits)
+
+Reviewed `b0a028126..ead4ce52a`, snapshotted at `ead4ce52a` for the whole run. Six commits: one
+sidebar-ordering fix, two CI, one generated-schema refresh, one release bump, and one very large
+Grok PR that is really five changes in a trench coat.
+
+The worktree was clean at the start of the run.
+
+Two product decisions were put to the developer before the Grok commit was implemented, because
+Ronin's Grok integration has diverged from upstream's on both points:
+
+- **Reasoning effort stays a spawn-line flag.** Upstream moves it to `session/set_model` with
+  `_meta.reasoningEffort`. Ronin keeps `--reasoning-effort` on the spawn line and
+  `sessionModelOptionsSwitch: "unsupported"`, so an effort change still restarts the session.
+- **The permission-mode mapping is ported.** Ronin's arg builder hardcoded `--permission-mode
+default` for everything except Full access, so Auto-accept edits and Auto prompted exactly like
+  Supervised. It now maps each mode the way upstream does.
+
+### Ported (4)
+
+| Upstream    | Title                                                                 | Notes                                                      |
+| ----------- | --------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `3b86ef941` | fix(app): un-settled threads return to the top of the list (#8231)    | clean apart from the migration number and the mobile hunks |
+| `a3a8cbd60` | perf(ci): cut about a minute from every release (#8250)               | partial — the two parallelised jobs are cut surfaces       |
+| `f925d6394` | fix(codex): accept Codex 0.150 multi-agent events (#8346)             | verbatim; only the new test file needed a lint fix         |
+| `ead4ce52a` | fix(grok): improve skills, plans, usage, and turn reliability (#8358) | heavily adapted — see below                                |
+
+- **`3b86ef941` (un-settle returns a thread to the top), one renumber.** The whole feature ports:
+  an `unsettled_at` column on `projection_threads`, optional `unsettledAt` on
+  `OrchestrationThread` / `OrchestrationThreadShell`, the stamp written by the projector, the
+  projection pipeline and the client-runtime thread reducer, `activeThreadAnchorTimestampMs` in
+  `packages/client-runtime/src/state/threadSort.ts`, and `sortThreadsForSidebar` reading the anchor
+  instead of raw creation time. Every non-mobile hunk applied with `git apply --3way` cleanly.
+  - The migration is `051_ProjectionThreadsUnsettledAt`, not upstream's `043`. Ronin is already at
+    50 migrations, so the file and its manifest entry were renumbered. Upstream ships no test for
+    this migration and neither does Ronin.
+  - `apps/mobile/src/features/threads/threadListV2*` hunks dropped — cut surface. The shared half
+    of that change lives in `packages/client-runtime`, which is ported in full, so web gets the
+    same ordering upstream gives both clients.
+  - A thread already pinned active keeps its existing stamp, so the activity reset that clears the
+    pin does not reorder the list. That rule is enforced in three places — decider-adjacent
+    projector, projection pipeline, and client reducer — exactly as upstream has it.
+
+- **`a3a8cbd60` (release CI), three hunks of five.** Ported: the `7 */3` cron minute, the
+  `concurrency` block that serialises nightlies without ever cancelling a running publisher
+  (`queue: max`, separate group for stable tags), and the removal of the redundant
+  `vp run --filter @t3tools/web build` step — confirmed unnecessary because
+  `apps/server/vite.config.ts` declares `dependsOn: ["@t3tools/web#build"]` on the `t3` build task.
+  Dropped: the hunks that move `relay_public_config` and `build_wsl_node_pty` off `preflight`.
+  Both jobs are cut surfaces (T3 Connect and WSL) and neither exists in this fork's
+  `release.yml`. Ronin's two remaining `needs: [preflight]` jobs, `quality` and `build`, genuinely
+  consume `preflight.outputs.version`, so there is nothing left to parallelise.
+
+- **`f925d6394` (Codex 0.150 multi-agent events), verbatim.** All three files in
+  `packages/effect-codex-app-server` were byte-identical to upstream's parent, so the commit
+  applied as-is: the `Codex0150DefinitionSchemas` override in `scripts/generate.ts`, the
+  regenerated `schema.gen.ts`, and the new `schema.test.ts`. One adaptation: `schema.test.ts`
+  tripped Ronin's own `t3code(no-inline-schema-compile)` oxlint rule five times, so the
+  `Schema.is(...)` calls are hoisted to module scope. The assertions are unchanged.
+
+- **`ead4ce52a` (Grok), the large one.** Upstream's 33 files land as 30 here. What ported:
+  - **Skills.** `GrokSkills.ts` and its test are new files taken verbatim: `grok inspect --json`
+    reports the CLI's own catalog, including plugin skills three levels deep under
+    `~/.grok/installed-plugins/` that a flat scan cannot see. `GrokDriver` now reads `cwd` off
+    `ServerConfig` and threads it into `checkGrokProviderStatus`, which calls `discoverGrokSkills`
+    once the version probe says the CLI is runnable. Upstream attaches `skills` to three provider
+    drafts; Ronin's probe has a fourth return (the unauthenticated path), and it gets `skills` too
+    — the catalog does not depend on being signed in.
+  - **Plans.** `XAiAcpExtension.ts` and its test were at zero divergence, so the whole
+    `x.ai/exit_plan_mode` gate applies verbatim: `isGrokPlanMarkdownPath`,
+    `extractGrokPlanMarkdownFromToolCallData`, `makeXAiExitPlanModeCapturedResponse`, and the
+    `rate_limit` / `error` stop reasons that now fail the pending prompt instead of resolving it.
+    `GrokAdapter` grows the matching handler, `planModeActive` tracking, and
+    `emitProposedPlanCompleted`, so a Grok plan lands on Ronin's proposed-plan card while it is
+    still being written rather than only on exit.
+  - **Turn reliability.** The whole liveness watchdog ports: `livenessSignals`,
+    `beginTurnLiveness` / `clearTurnLiveness` / `recordTurnActivity`, the 10-minute idle and
+    30-minute active-tool deadlines, `promptResponsesReady`, and `settleStalledTurn`. Approval and
+    user-input waits pause the deadline and refresh it on resolution, so a human thinking for
+    twenty minutes never trips it.
+  - **Bounded tool output.** `AcpRuntimeModel.ts` was at zero divergence, so
+    `boundToolCallContentEntries`, `distributeRetainedTailAcrossContent` and
+    `toolCallProgressLength` apply verbatim, along with the `decideToolCallUpdateEmission` fix that
+    measures `data.content` / `data.rawOutput` rather than only `detail`. This is shared ACP code:
+    Cursor and Droid get it too, and their adapter suites were re-run to confirm it.
+  - **Approval memory.** `selectGrokPermissionOptionId` falls back to `allow_once` when Grok omits
+    `allow_always`, and the adapter remembers the approved operation in
+    `sessionApprovedOperations` so **Always allow this session** works on builds that do not
+    implement it natively.
+  - **Usage.** `USAGE_MERGE_COMPATIBLE_SINCE = 4` in contracts and the
+    `isCompatibleContractVersion` gate in `usageMerge.ts`, so an environment on an older usage
+    contract keeps contributing its Claude/Codex totals instead of being dropped whole. Also the
+    cost-allocation rule from `parseGrokLine`: when Grok reports the money once at the top level
+    and only splits tokens per model, the remainder is now shared across the models that carry no
+    ticks of their own, by token share among just those.
+
+  Six adaptations were needed.
+
+  - **`stableStringify` is local.** Upstream imports it from `@t3tools/shared/relaySigning`, which
+    does not exist here — the relay is a cut surface. It is eleven lines and has exactly one caller,
+    so it lives in `GrokAdapter.ts` next to the `isRecord` it uses, rather than becoming a new
+    shared subpath export for one consumer.
+  - **The permission-mode mapping folds into Ronin's arg builder, not upstream's.**
+    `grokAcpSpawnArgs` returns a whole argv; Ronin's `buildGrokAcpSpawnInput` already builds a
+    richer one (`--no-leader`, `--sandbox read-only`, `-m`, `--reasoning-effort`). Only the mode
+    value moved, as `grokPermissionModeFor`. Full Access still gets `--always-approve` on top of
+    `--permission-mode default`, because it is a flag and not a mode.
+  - **Reasoning effort keeps its transport, but gains upstream's discovery hardening.** Dropped:
+    `normalizeGrokReasoningEffort`, `currentGrokReasoningEffortFromSessionSetup`, the
+    `currentReasoningEffort` / `requestedReasoningEffort` arguments to
+    `applyGrokAcpModelSelection`, the `_meta` parameter on `AcpSessionRuntime.setSessionModel`, the
+    `GrokTextGeneration` wiring, and the CLI-probe case asserting the CLI accepts the metadata.
+    Kept: `isValidGrokReasoningEffortToken`, now guarding the values that reach the
+    `--reasoning-effort` spawn flag, plus `supportsReasoningEffort === false` (a model with no
+    effort dial gets no control, where a model that advertises nothing still falls back to Ronin's
+    four static levels), the `id` fallback for `value`, `isDefault` alongside `default`, and
+    per-option `description`. Upstream's `buildGrokModelCapabilities` is not introduced; Ronin's
+    `grokCapabilitiesFromAdvertisedEfforts` absorbs the behaviour, and `currentValue` keeps coming
+    off the advertised default via `buildSelectOptionDescriptor`.
+  - **The mock ACP agent keeps Ronin's model list.** Upstream's hunk swaps it for
+    `grok-build` / `grok-mock-alt` with a `reasoningEffort` meta driven by
+    `T3_ACP_INITIAL_GROK_REASONING_EFFORT`. Ronin's `grok-4.6` / `grok-4.5` pair and its
+    spawn-line `-m` reading are what let its tests tell a redundant `session/set_model` from a real
+    one, so both stay and the unused env var was dropped. The rest of upstream's mock work — the
+    plan-mode, rate-limit and hang scenarios the new tests need — is in.
+  - **`makeMockGrokCli` now answers `inspect`.** Ronin's fake `grok` execs the stdio mock agent for
+    anything that is not `--version`, so skill discovery was handing `inspect --json` to a process
+    that never exits and two probe tests sat at 120 s. The stub now prints a catalog and exits, the
+    way a real `grok inspect` does, and takes an `inspectSkills` option that two new end-to-end
+    cases use. Those tests went from 242 s to 2.2 s.
+  - **Two test files were reverted and hand-edited instead of merged.**
+    `GrokAcpSupport.test.ts` and `GrokProvider.test.ts` have diverged far enough that `--3way`
+    surfaced every Ronin-vs-upstream difference rather than this commit's. Both were restored and
+    only the applicable cases added: the permission-mode mapping and
+    `isValidGrokReasoningEffortToken` for the first; `supportsReasoningEffort: false`, the
+    `id`-keyed effort with an unusable sibling token, and the two skill-catalog probes for the
+    second. One upstream `GrokAdapter.test.ts` case asked for model `grok-build` and asserted it
+    survived a usage-limit failure; it asks for `grok-4.6` here, which is what Ronin's mock agent
+    advertises. The claim under test is unchanged.
+
+### Already in the tree (0 commits, several hunks)
+
+No commit was wholly already present, but a large share of `ead4ce52a` was:
+
+- **Grok usage, end to end.** Ronin added it independently in `d4be33cba` and extended the same
+  machinery for Antigravity in `d443c89b2`. `UsageProviderKind` already lists `grok`, the contract
+  is at version 6 rather than upstream's 5, `usageScanCache` already accepts the provider (through
+  a `CACHEABLE_PROVIDERS` set rather than a literal chain), `usageTranscriptReader` already takes a
+  `fileName` filter and dispatches to `parseGrokLine`, `UsageService` already walks
+  `~/.grok/sessions` for `updates.jsonl`, and the web `usageProviders.ts` already carries Grok's
+  colour token and brand mark. Only the cost-allocation rule was missing.
+- **Grok spawn-time permission modes.** Ronin already passed `runtimeMode` into
+  `buildGrokAcpSpawnInput`; only the per-mode value was missing.
+- **`docs/user/usage.md`** already names Grok and already says its cost is used as measured.
+
+### Skipped (2)
+
+| Upstream    | Title                                                            | Reason                                                             |
+| ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `33b650a5b` | feat(ci): download macOS preview DMGs without signing in (#8243) | edits `desktop-macos-preview.yml`, a workflow this fork never took |
+| `d3c24a14b` | chore(release): prepare v0.0.35                                  | upstream release bookkeeping; Ronin versions independently         |
+
+- **`33b650a5b`** is 209 added lines in `.github/workflows/desktop-macos-preview.yml`. Batch 15
+  skipped `c6b8bb825`, the commit that created that workflow, because it is keyed to pingdotgg's PR
+  label and signing secrets and nothing in Ronin produces a `-pr.` version. This commit only makes
+  that workflow's artifacts downloadable anonymously, so it has nothing to attach to here.
+- **`d3c24a14b`** sets four `package.json` versions to `0.0.35`. Ronin's four are at `0.6.9`.
+
+### Considered and not changed
+
+- **`GROK_HOME` means different things in the two trees.** Upstream reads `$GROK_HOME` as the
+  `.grok` directory itself (`$GROK_HOME/sessions/...`), which is also what the new
+  `isGrokPlanMarkdownPath` assumes. Ronin's `resolveGrokHome` in
+  `apps/server/src/rateLimits/providerRateLimitSources.ts` reads it as the _parent_ and appends
+  `.grok`, and both the rate-limit reader and the usage scanner already depend on that reading.
+  The plan-path helper is ported verbatim, so it honours upstream's convention; the two other
+  call sites keep Ronin's. Nothing regresses either way — the plan helper also matches
+  `~/.grok/sessions/`, which is the layout on any machine with no `GROK_HOME` set — but the
+  inconsistency is real, and reconciling it means touching rate limits, which is outside this
+  sync's scope.
+- **`docs/user/install.md`** gains nothing. Upstream adds a paragraph about the Grok **Reasoning**
+  control; `docs/user/providers-grok.md` already documents it in more detail, and install.md is a
+  setup page.
+
+### Verification
+
+- Focused tests:
+  - `apps/server`: `src/provider` + `src/usage` + `src/orchestration` + `src/persistence` —
+    118 files, 1,180 tests, 1,173 pass / 7 skipped. Plus `src/server.test.ts` — 103 tests.
+    Plus `CursorAdapter` + `DroidAdapter` + `CursorProvider` (the other consumers of the shared ACP
+    tool-output change) — 42 tests.
+  - `apps/web`: the full `src` suite — 297 files, 3,116 tests, 3,115 pass.
+  - `packages/contracts` 21 files / 297 tests, `packages/shared` 37 files / 353 tests,
+    `packages/client-runtime` 45 files / 590 tests,
+    `packages/effect-codex-app-server` 5 files / 21 tests. All green.
+- **One pre-existing failure, verified.** `apps/web` ›
+  `MessagesTimeline.test.tsx` › "keeps the copy button for collapsed long user messages" expects
+  `aria-label="Copy link"`, which the rendered footer does not emit. Recorded in batches 9, 13 and
+  14; nothing in this batch touches that component.
+- **One flake, verified not a regression.** The first run of the 118-file server selection failed
+  `ProviderRegistry.test.ts` › "re-probes when settings change the codex binaryPath", the same
+  load-sensitive test batches 14 and 15 recorded. It passes alone, and a re-run of the identical
+  selection with the whole batch applied passed all 1,173. The clean tree was also re-run with the
+  batch stashed and passed, so the flake is not deterministic in either direction.
+- Typecheck: `tsgo --noEmit` in `apps/server`, `apps/web`, `apps/desktop`, `packages/contracts`,
+  `packages/shared`, `packages/client-runtime`, `packages/effect-codex-app-server` — 0 errors. The
+  four pre-existing `unnecessaryFailYieldableError` _suggestions_ in `ClaudeAdapter.ts` and
+  `ProviderService.ts` remain; neither file is in a hunk this batch touched.
+- `vp lint --report-unused-disable-directives` over the 44 changed `.ts`/`.tsx` files — 0 findings.
+- `vp fmt --check` over all 49 changed files — all correct.
+- `git diff --check` and `git diff --cached --check` clean.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — additive and backward-compatible on decode. `OrchestrationThread` and
+  `OrchestrationThreadShell` gain optional `unsettledAt`, so a payload from a pre-stamp server
+  still decodes and simply sorts by creation time. `USAGE_MERGE_COMPATIBLE_SINCE` is a new
+  constant, not a schema change.
+- **Server** — projector, projection pipeline, projection snapshot query, thread repositories and
+  migration 051 for the un-settle stamp; the Grok driver, provider probe, ACP support and adapter;
+  the shared ACP runtime model and session runtime; the Grok usage parser.
+- **Desktop (Electron/IPC)** — no change. The un-settle stamp travels on the existing thread
+  snapshot and the Grok work is entirely server-side. Typechecked.
+- **Web renderer** — `sortThreadsForSidebar` reads the new anchor, and `apps/web/src/lib/threadSort.ts`
+  re-exports `activeThreadAnchorTimestampMs`. The Stats page needed no change: Grok has been a
+  first-class provider there since `d4be33cba`.
+- **Providers** — Grok gets skills, plans, the liveness watchdog, approval memory and the finer
+  permission-mode mapping. Cursor and Droid share `AcpRuntimeModel`/`AcpSessionRuntime`, so they
+  get the bounded tool output and the emission fix; both suites were re-run. Claude, Codex,
+  OpenCode, Antigravity, Kilo and Pi need no decision — none of them route through the ACP session
+  runtime, and skill discovery is per-driver.
+- **Reverse states** — un-settling a thread stamps `unsettledAt`; settling it clears the stamp, so
+  the thread returns to its creation-order slot if it is ever un-settled again. Plan mode is
+  cleared on turn completion and on a fresh turn, so a later empty `exit_plan_mode` cannot
+  resurrect an earlier turn's markdown. The liveness watchdog's deadline is paused by an approval
+  and resumed when it resolves. **Always allow this session** is session-scoped and dies with the
+  session; there is no persisted grant to revoke.
+- **Connection modes** — every change is server-side or in shared client logic, so local, LAN,
+  Tailscale and SSH clients see the same result. `unsettledAt` is optional on the wire, so a new
+  client against an old server degrades to creation-order sorting rather than failing to decode.
+- **Entry points** — un-settle is reachable from the thread menu, the chat header, the command
+  palette and `mod+shift+s`; all four go through the same `thread.unsettled` event, so all four
+  re-anchor. Grok skills appear in the `$` picker, and the reasoning menu in the model picker.
+- **Docs** — `docs/user/thread-sidebar.md` (un-settle returns a thread to the top),
+  `docs/user/providers-grok.md` (skills now come from the CLI's own catalog; a new **Permission
+  modes** section covering the mapping and **Always allow this session**; the persisted-record
+  caveat on usage), `docs/user/permission-modes.md` (Grok's mapping and approval memory),
+  `docs/user/usage.md` (the same caveat). No new vocabulary, so `docs/internals/glossary.md` is
+  untouched. No new files, so `docs/README.md` needs no index entry.
+
+### Not tested
+
+- **`grok inspect --json` against a real Grok Build.** `GrokSkills.test.ts` drives a stubbed
+  spawner and the two new probe cases drive a shell script that prints a catalog. Whether the
+  installed CLI's `skills[]` shape matches is upstream's claim, taken on trust.
+- **`session/set_model` with reasoning metadata.** Deliberately not adopted, so upstream's live
+  CLI-probe case for it was dropped rather than ported and skipped.
+- **A `grok` binary whose `inspect` hangs.** Worth recording because it was measured rather than
+  assumed: `discoverGrokSkills` wraps `spawnAndCollect` in `Effect.timeoutOption(4_000)`, and that
+  timeout does **not** release a child that never exits — a scratch test against a `sleep 300`
+  stub sat until vitest killed it at 120 s. This is a property of `spawnAndCollect` itself, not of
+  this port: `runGrokVersionCommand` has had the identical shape since before this batch, and
+  `providerSnapshot.ts` is untouched here. It was confirmed by calling `spawnAndCollect` directly
+  under a 2 s `timeoutOption`, which also hung. Left alone — fixing it means changing the spawn
+  helper every provider probe shares, which is outside this sync's scope.

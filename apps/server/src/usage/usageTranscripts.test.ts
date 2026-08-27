@@ -373,6 +373,54 @@ describe("parseGrokLine", () => {
     expect(records[0]?.totals.outputTokens).toBe(2414);
   });
 
+  it("shares the turn's cost across models that report no cost of their own", () => {
+    const records = parseGrokLine(
+      grokLine({
+        // 738,300,000 ticks = $0.07383 for the turn, split 2:1 by tokens.
+        modelUsage: {
+          "grok-4.6-build": { inputTokens: 200, outputTokens: 20 },
+          "grok-4.5-build": { inputTokens: 100, outputTokens: 10 },
+        },
+      }),
+    );
+
+    expect(records.map((record) => record.reportedCostUsd?.toFixed(6))).toEqual([
+      "0.049220",
+      "0.024610",
+    ]);
+  });
+
+  it("shares only what the per-model costs left behind", () => {
+    const records = parseGrokLine(
+      grokLine({
+        modelUsage: {
+          // Claims $0.05383 of the turn's $0.07383, leaving $0.02 for the rest.
+          "grok-4.6-build": { inputTokens: 200, outputTokens: 20, costUsdTicks: 538300000 },
+          "grok-4.5-build": { inputTokens: 100, outputTokens: 10 },
+        },
+      }),
+    );
+
+    expect(records.map((record) => record.reportedCostUsd?.toFixed(6))).toEqual([
+      "0.053830",
+      "0.020000",
+    ]);
+  });
+
+  it("leaves a model's own cost alone and never shares a negative remainder", () => {
+    const records = parseGrokLine(
+      grokLine({
+        modelUsage: {
+          // Claims more than the turn total; the remainder clamps at zero.
+          "grok-4.6-build": { inputTokens: 200, outputTokens: 20, costUsdTicks: 938300000 },
+          "grok-4.5-build": { inputTokens: 100, outputTokens: 10 },
+        },
+      }),
+    );
+
+    expect(records.map((record) => record.reportedCostUsd)).toEqual([0.09383, 0]);
+  });
+
   it("prefers the millisecond agent stamp over the whole-second wrapper", () => {
     const [precise] = parseGrokLine(grokLine({}));
     const [coarse] = parseGrokLine(grokLine({ agentTimestampMs: null }));

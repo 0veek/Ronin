@@ -9,6 +9,7 @@ import {
   describeGrokAuthMethod,
   isGrokCredentialsMissingError,
   isGrokSessionStoragePathNotFoundError,
+  isValidGrokReasoningEffortToken,
   resolveGrokAcpAuthMethodId,
   resolveGrokAcpBaseModelId,
 } from "./GrokAcpSupport.ts";
@@ -116,6 +117,29 @@ describe("buildGrokAcpSpawnInput", () => {
       "--always-approve",
       "stdio",
     ]);
+  });
+
+  it("gives Grok the mode the thread is actually in", () => {
+    // Always explicit, so a user's own `always-approve` Grok config cannot
+    // quietly upgrade a Supervised thread.
+    const modeFor = (runtimeMode: Parameters<typeof buildGrokAcpSpawnInput>[2]) =>
+      buildGrokAcpSpawnInput(undefined, "/tmp/project", runtimeMode).args[1];
+
+    expect(modeFor("approval-required")).toBe("default");
+    expect(modeFor("auto-accept-edits")).toBe("acceptEdits");
+    expect(modeFor("auto")).toBe("auto");
+    // Full Access is the `--always-approve` flag, not a permission mode.
+    expect(modeFor("full-access")).toBe("default");
+  });
+});
+
+describe("isValidGrokReasoningEffortToken", () => {
+  it("accepts future ACP tokens and rejects malformed metadata values", () => {
+    expect(isValidGrokReasoningEffortToken("xhigh")).toBe(true);
+    expect(isValidGrokReasoningEffortToken("turbo_v2")).toBe(true);
+    expect(isValidGrokReasoningEffortToken("not a token")).toBe(false);
+    expect(isValidGrokReasoningEffortToken("-leading-dash")).toBe(false);
+    expect(isValidGrokReasoningEffortToken("x".repeat(33))).toBe(false);
   });
 });
 

@@ -6,7 +6,8 @@ on:
       - "v*.*.*"
       - "!v*-nightly.*"
   schedule:
-    - cron: "0 */3 * * *"
+    # Off minute zero: GitHub delays scheduled runs most at the top of the hour.
+    - cron: "7 */3 * * *"
   workflow_dispatch:
     inputs:
       channel:
@@ -21,6 +22,17 @@ on:
         description: "Release version (for example 1.2.3 or v1.2.3)"
         required: false
         type: string
+
+# Serialize nightlies (scheduled and manual) so overlapping runs cannot build
+# the same commit twice or publish out of order. Stable tag releases get their
+# own group so a nightly never blocks them. Running publishers are never
+# canceled, and queue: max keeps every pending run instead of the default
+# newest-wins single slot, so a queued stable tag can never be silently
+# dropped. Queued nightlies with no new commits skip via check_changes.
+concurrency:
+  group: release-${{ (github.event_name == 'schedule' || inputs.channel == 'nightly') && 'nightly' || 'stable' }}
+  cancel-in-progress: false
+  queue: max
 
 permissions:
   contents: read
@@ -551,9 +563,8 @@ jobs:
       - name: Align package versions to release version
         run: node scripts/update-release-package-versions.ts "${{ needs.preflight.outputs.version }}"
 
-      - name: Build web package
-        run: vp run --filter @t3tools/web build
-
+      # The t3 build task depends on @t3tools/web#build, so the web client is
+      # built (once) as part of this step.
       - name: Build CLI package
         run: vp run --filter t3 build
 

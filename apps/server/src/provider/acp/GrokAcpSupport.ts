@@ -114,16 +114,33 @@ export function hasGrokApiKeyEnv(env: NodeJS.ProcessEnv = process.env): boolean 
   return getGrokApiKeyEnv(env) !== undefined;
 }
 
+/**
+ * Grok's own name for each of Ronin's permission modes.
+ *
+ * Full Access is absent on purpose: it is not a `--permission-mode` value but
+ * the process-scoped `--always-approve` flag, applied below.
+ */
+export function grokPermissionModeFor(runtimeMode: RuntimeMode): string {
+  switch (runtimeMode) {
+    case "auto-accept-edits":
+      return "acceptEdits";
+    case "auto":
+      return "auto";
+    default:
+      return "default";
+  }
+}
+
 export function buildGrokAcpSpawnInput(
   grokSettings: GrokAcpRuntimeSettings | null | undefined,
   cwd: string,
   runtimeMode: RuntimeMode,
   environment?: NodeJS.ProcessEnv,
 ): AcpSessionRuntime.AcpSpawnInput {
-  // Keep Grok's request-based mode as the explicit baseline. Full Access also
-  // needs the process-scoped override because some Grok builds deny before
-  // emitting an ACP permission request.
-  const args = ["--permission-mode", "default"];
+  // Always explicit, so a user's own Grok config cannot decide the mode for a
+  // thread. Full Access also needs the process-scoped override because some
+  // Grok builds deny before emitting an ACP permission request.
+  const args = ["--permission-mode", grokPermissionModeFor(runtimeMode)];
   // `--sandbox` is process-scoped, so it has to precede the `agent` subcommand.
   const unattendedReadOnly = grokSettings?.unattendedReadOnly === true;
   if (unattendedReadOnly) {
@@ -270,6 +287,18 @@ export function resolveGrokAcpBaseModelId(model: string | null | undefined): str
     return undefined;
   }
   return normalizeModelSlug(trimmed, GROK_DRIVER_KIND) ?? undefined;
+}
+
+const GROK_REASONING_EFFORT_TOKEN = /^[a-z0-9][a-z0-9._-]{0,31}$/i;
+
+/**
+ * Whether an advertised effort level is safe to hand to `--reasoning-effort`.
+ *
+ * The levels come off the CLI's own model metadata, which is data, not code:
+ * anything that is not a bare token has no business on a spawn line.
+ */
+export function isValidGrokReasoningEffortToken(value: string): boolean {
+  return GROK_REASONING_EFFORT_TOKEN.test(value);
 }
 
 export function currentGrokModelIdFromSessionSetup(
