@@ -9,6 +9,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-settled";
 import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { SidebarAutoSettleMode } from "@t3tools/contracts/settings";
 
 import {
   parseTimestampMs,
@@ -104,7 +105,7 @@ export interface BoardClassifyContext {
   /** Second-precise "now" for snooze wake times, which are not minute-aligned. */
   readonly preciseNow: string;
   readonly autoSettleAfterDays: number | null;
-  readonly autoSettleOnMerge: boolean;
+  readonly autoSettleMode: SidebarAutoSettleMode;
   readonly capabilitiesByEnvironmentId: ReadonlyMap<string, BoardEnvironmentCapabilities>;
   readonly changeRequestByThreadKey: ReadonlyMap<string, ChangeRequestSettleSource | null>;
 }
@@ -153,7 +154,7 @@ export function deriveBoardLane(
     effectiveSettled(thread, {
       now: context.now,
       autoSettleAfterDays: context.autoSettleAfterDays,
-      autoSettleOnMerge: context.autoSettleOnMerge,
+      autoSettleMode: context.autoSettleMode,
       changeRequest: context.changeRequestByThreadKey.get(threadKey) ?? null,
     })
   ) {

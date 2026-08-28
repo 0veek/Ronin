@@ -1516,8 +1516,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 : undefined;
 
               const text = input.input?.trim();
+              // Grok ingests images only. Generic files reach the agent
+              // through the path line ProviderService puts in the prompt.
               const imagePromptParts = yield* Effect.forEach(
-                input.attachments ?? [],
+                (input.attachments ?? []).filter((attachment) => attachment.type === "image"),
                 (attachment) =>
                   Effect.gen(function* () {
                     const attachmentPath = resolveAttachmentPath({

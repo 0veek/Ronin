@@ -28,6 +28,12 @@ Log in with Codex normally:
 codex login
 ```
 
+## Sub-agent models
+
+The Agents panel shows each sub-agent's model and reasoning effort when Codex reports them. If
+Codex does not report either value, Ronin leaves it out instead of using the parent agent's
+settings.
+
 ## Approve access to other apps
 
 When a Codex tool needs access to another app, Ronin shows the app name and asks for approval. You

@@ -84,7 +84,7 @@ export function useThreadActionMenu(input: {
   const handleNewThread = useNewThreadHandler();
   const markThreadUnread = useUiStateStore((s) => s.markThreadUnread);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
+  const autoSettleMode = useClientSettings((s) => s.sidebarAutoSettleMode);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
@@ -141,7 +141,7 @@ export function useThreadActionMenu(input: {
               // parked-thread banner within the same minute.
               now: `${now.toISOString().slice(0, 16)}:00.000Z`,
               autoSettleAfterDays,
-              autoSettleOnMerge,
+              autoSettleMode,
               changeRequest,
             }),
           isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
@@ -349,7 +349,7 @@ export function useThreadActionMenu(input: {
     [
       archiveThread,
       autoSettleAfterDays,
-      autoSettleOnMerge,
+      autoSettleMode,
       changeRequest,
       confirmThreadArchive,
       confirmThreadDelete,

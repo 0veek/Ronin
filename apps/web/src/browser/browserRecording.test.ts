@@ -195,10 +195,10 @@ describe("browser recording", () => {
 
   it("starts recording for a visible tab", async () => {
     await startBrowserRecording("recording-tab");
-
-    expect(events).toEqual(["start-screencast", "publish:recording-tab"]);
+    const startupEvents = [...events];
 
     await stopBrowserRecording("recording-tab");
+    expect(startupEvents).toEqual(["publish:recording-tab", "start-screencast"]);
   });
 
   it("automatically saves and releases recordings before encoded data exceeds the limit", async () => {
@@ -226,11 +226,11 @@ describe("browser recording", () => {
     };
 
     await startBrowserRecording("recording-tab");
+    const startupEvents = [...events];
 
     expect(startScreencast).toHaveBeenCalledWith("recording-tab");
-    expect(events).toEqual(["start-screencast", "publish:recording-tab"]);
-
     await stopBrowserRecording("recording-tab");
+    expect(startupEvents).toEqual(["publish:recording-tab", "start-screencast"]);
   });
 
   it("fails startup instead of locking a fallback size when no frame arrives", async () => {

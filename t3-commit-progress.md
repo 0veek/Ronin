@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `ead4ce52a` — `fix(grok): improve skills, plans, usage, and turn reliability (#8358)` (2026-08-26) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                    |
-| **Ported on**                 | 2026-08-27                                                                                         |
+|                               |                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `b654911f8` — `fix(web): stop session activity timing test from blocking releases (#8585)` (2026-08-28) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                         |
+| **Ported on**                 | 2026-08-29                                                                                              |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -2626,3 +2626,322 @@ No commit was wholly already present, but a large share of `ead4ce52a` was:
   `providerSnapshot.ts` is untouched here. It was confirmed by calling `spawnAndCollect` directly
   under a 2 s `timeoutOption`, which also hung. Left alone — fixing it means changing the spawn
   helper every provider probe shares, which is outside this sync's scope.
+
+## Batch 17 — reviewed through `b654911f8` (36 commits)
+
+Reviewed `ead4ce52a..b654911f8`, snapshotted at `b654911f8` for the whole run. The largest batch
+since batch 8, and the one with the most fork-versus-upstream friction: three of the ported commits
+land on surfaces Ronin has deliberately generalised (the Providers settings panel, the OpenCode
+runtime that Kilo also drives, and the `runWorkspaceCommand` keybinding path the command palette
+shares).
+
+The worktree was clean at the start of the run.
+
+No commit needed a product decision put to the developer. The one that looked like it — upstream
+moving OpenCode's version floor from a per-CLI `--version` probe to a hardcoded server health check
+— was already answered by a rule this fork wrote down: `OpenCodeCompatibleCliSpec.minimumVersion` is
+`null` for Kilo precisely because "measuring a fork against OpenCode's floor rejects perfectly good
+installs". The health check was made spec-aware rather than hardcoded, and Ronin's existing
+`KiloProvider.test.ts` case pins it.
+
+### Ported (25)
+
+| Upstream    | Title                                                                          | Notes                                                     |
+| ----------- | ------------------------------------------------------------------------------ | --------------------------------------------------------- |
+| `230c5d4a5` | fix(server): recover stale Codex approval callbacks (#5195)                    | clean                                                     |
+| `64ca3b650` | test(server): remove duplicate missing worktree test (#8252)                   | clean                                                     |
+| `a6797b3b9` | fix(server): replay all un-applied events during projection bootstrap (#7538)  | clean                                                     |
+| `73f8cfc02` | test: remove low-signal test files (#8397)                                     | partial — mobile file dropped, two already absent here    |
+| `f6f2be32d` | test: prune trivial error and layout tests (#8400)                             | adapted — one file kept for a Ronin-only regression guard |
+| `e2d4d12a8` | feat(web): split provider settings into list and editor (#8380)                | adapted — design tokens and button variants               |
+| `94401d01b` | fix(codex): accept Codex 0.150 account plans (#8447)                           | adapted — `Schema.is` stays hoisted                       |
+| `b0ae3f3a8` | fix(tooling): allow ignored-only staged changes (#8468)                        | clean                                                     |
+| `f1e6f0c9b` | fix(web): stop showing red x summaries for ordinary tool failures (#8395)      | partial — most of it was already the shape here           |
+| `2fbe31309` | fix(desktop): allow preview automation in agent-created threads (#8483)        | clean                                                     |
+| `c8aba2587` | test(web): remove redundant cache key test (#8484)                             | clean                                                     |
+| `5766dfbf5` | fix(release): move nightly schedule to minute 38                               | clean                                                     |
+| `f276e632c` | fix(web): stabilize the provider settings editor (#8472)                       | adapted — one token in the grid header                    |
+| `7068e86f7` | fix(web): open GitHub pull requests in browser when loading fails (#8507)      | adapted — Ronin's per-tab loading ghost kept              |
+| `49f6241dd` | fix(codex): show sub-agent models (#8502)                                      | adapted — docs only                                       |
+| `8f4913221` | feat(server): accept PDF, ZIP, and other file uploads up to 50MB (#8235)       | adapted — analytics hunk dropped                          |
+| `4c51b4c9b` | feat(web): toggle thread pin from the keyboard                                 | adapted — folds into `runWorkspaceCommand`                |
+| `84b9d9bc2` | fix(clients): honor project default models in new threads (#6011)              | partial — web half, mobile dropped                        |
+| `48c176b3c` | feat(web): make the sidebar project filter a searchable combobox (#5931)       | adapted — Ronin's board button preserved                  |
+| `a40aef4cc` | fix(server): a draft can retry its first send after a failed bootstrap (#8226) | adapted — analytics and client-origin plumbing dropped    |
+| `ff1761012` | fix(desktop): stop hidden previews draining battery (#8567)                    | clean                                                     |
+| `0e2905eb7` | fix(desktop): oauth popups open from the browser preview (#8435)               | adapted — Ronin's URL normalization kept                  |
+| `cb49e5d72` | fix(opencode): handle child approvals, stops, and model catalogs (#8480)       | heavily adapted — see below                               |
+| `0bbecfabf` | fix: make thread auto-settling opt-in (#8321)                                  | adapted — Ronin's Board migrated to the new mode          |
+| `b654911f8` | fix(web): stop session activity timing test from blocking releases (#8585)     | adapted — insertion collision with a Ronin case           |
+
+- **`a6797b3b9` (projection bootstrap replay), a one-argument fix that matters.**
+  `readFromSequence` pages, and omitting its `limit` capped bootstrap replay at one page. Ronin's
+  signature and its `readAll` helper were byte-identical to upstream's, so the fix applied as-is.
+
+- **`f6f2be32d` (prune trivial tests), one file kept.** Eleven of the twelve deletions applied:
+  every one of those files was identical to upstream's pre-deletion copy, and the three
+  un-exported symbols (`THREAD_SIDEBAR_DEFAULT_WIDTH`, `initialConfigOption`,
+  `CatalogDependencyResolutionError`) have no consumer here beyond their own module.
+  `apps/web/src/components/threadSidebarWidth.test.ts` was **not** deleted: the fork added a
+  Ronin-only case that reads `styles/chrome.css` and pins the sidebar wordmark's container query
+  against `THREAD_SIDEBAR_MIN_WIDTH` — a real regression guard, not layout trivia. The five trivial
+  cases upstream targeted were removed from it and that one kept, which is why
+  `THREAD_SIDEBAR_DEFAULT_WIDTH` could still be un-exported.
+
+- **`e2d4d12a8` + `f276e632c` (Providers becomes list + editor), a design-system translation.**
+  The master-detail rewrite ports whole — `ProviderInstanceCard` gains `mode: "list" | "editor"`,
+  the panel grows a bounded-height two-column grid, and the account email moves into a redacted
+  **Configuration** field. Four conflict hunks, all from Ronin's own design system:
+  - Raw pixel sizes map onto Ronin's tokens exactly: `text-[10px]` → `text-3xs` (`0.625rem`),
+    `text-[11px]` → `text-2xs` (`0.6875rem`), `text-[13px]` → `text-sm` (`0.8125rem`). Same
+    rendered size, named instead of hardcoded.
+  - Ronin's `Button` has no `compact`, `icon-micro` or `ghost-muted` variant. `icon-micro` +
+    `ghost-muted` becomes `icon-xs` + `ghost` with the `size-5 rounded-sm p-0` class the rest of
+    this panel already uses; `compact` + `outline` becomes `xs` + `outline`.
+  - `SettingsPageContainer` takes no `width` prop here, so `width="expanded"` becomes
+    `className="max-w-6xl"` — the same value (`expanded` is `max-w-6xl` upstream) expressed the way
+    `DiagnosticsSettings.tsx` and `KeybindingsSettings.tsx` already widen a settings page.
+  - The disabled status dot becomes `bg-muted-foreground/50`, taking upstream's neutral over
+    Ronin's `bg-status-attention`. That is the behavioural half of the change: a locally disabled
+    provider is not an attention state. The `"Ronin"` string in `getProviderSummary` and the
+    Cursor-panel visibility fix both sit outside the conflicts and survived untouched.
+
+- **`f1e6f0c9b` (no red x for ordinary tool failures), mostly already true.** The collapsed
+  group-summary hunk and the `LiveActivityContent` hunk have nothing to attach to: Ronin's
+  `WorkGroupToggleTimelineRow` already renders a plain muted chevron with no `hasFailure` concept,
+  and there is no `LiveActivityContent`/`toolGroupSummaryIconName` in this tree. What ported is the
+  `PlainWorkEntryRow` change: `workEntrySignalsSevereFailure` (new in `session-logic.ts`) widens the
+  red treatment from `runtime.error` to every `*.failed` activity kind, and warnings move from
+  `text-destructive` to `text-warning` — which also settles an inconsistency here, since Ronin's
+  `headingClass` was already amber for warnings while its icon wrapper was red.
+  `isNoContentRuntimeWarning` applied clean.
+  - Two of upstream's three new test cases were taken. The group-summary case tests a surface this
+    fork does not have. The other two were rewritten around `"font-medium text-destructive"` (the
+    heading class `showDestructiveRowStyle` drives) instead of upstream's blanket
+    `not.toContain("text-destructive")`: Ronin's row carries a trailing red-X marker that upstream's
+    does not, so the blanket assertion is false here for reasons this commit is not about.
+
+- **`8f4913221` (50 MB file uploads), analytics excised.** `ChatFileAttachment` and the open-ended
+  `ChatUnknownAttachment` member, `PROVIDER_SEND_TURN_MAX_FILE_BYTES`, the
+  `fileAttachments.maxUploadBytes` capability, the signed-URL filename/mime, the attachment-path
+  line for every attachment, and OpenCode's native file parts all land. The one conflict is
+  upstream's `analytics.record("provider.turn.sent", ...)` block, which only had `attachmentCount`
+  retargeted — dropped whole, since Ronin has no `AnalyticsService`. The web half is type plumbing
+  (`isImageAttachment` guard); no file picker ships yet, so `docs/user/` needs nothing.
+
+- **`4c51b4c9b` (keyboard pin toggle), a better home than upstream's.** Upstream adds the handler to
+  the raw keydown switch. Ronin routes workspace commands through `runWorkspaceCommand`, which
+  returns `boolean` and does not touch the event (the caller owns it), so `event.preventDefault()` /
+  `event.stopPropagation()` were dropped and `return` became `return true`. The payoff is free:
+  that function is also the command palette's way in, so `thread.pin` is reachable from the palette
+  here, not only from `mod+shift+p`.
+
+- **`48c176b3c` (searchable project filter), Ronin's second row action preserved.** The combobox
+  rewrite ports whole, including `filterSidebarProjectScopeItems` and
+  `reduceSidebarProjectScopeMenuState`. Ronin's rows carry an **Open board** button upstream's do
+  not, and use plain `<button>` elements because `ghost-muted` does not exist here; both survive
+  inside upstream's `project ? … : null` guard. `handleOpenProjectBoard` closes the popup through
+  `dispatchProjectScopeMenu({ type: "open-changed", open: false })` rather than reusing upstream's
+  `"project-settings-opened"` action, which would have been a lie about what happened.
+
+- **`a40aef4cc` (draft retry after a failed bootstrap), the whole fence.** Every projector now drops
+  its own rows on `thread.created` so a re-created thread id rebuilds cleanly from any per-projector
+  cursor; `hasEventAfter` keeps replay from deleting attachments that belong to a later incarnation;
+  `requireThreadAbsent` admits a soft-deleted id; and `ThreadDeletionReactor.drainThrough(sequence)`
+  fences both the bootstrap path and a bare `thread.create` before anything can own terminals or
+  provider sessions under the reused id. Dropped: `dispatchFromClient`, `clientOrigin` and
+  `recordClientCommandAnalytics`, none of which exist here — the fence calls
+  `orchestrationEngine.dispatch` directly.
+  - Upstream's new invariant test was rewritten as `effectIt.effect` rather than this file's
+    `Effect.runPromise` idiom. `oxlint-plugin-t3code`'s `no-manual-effect-runtime-in-tests` caps
+    `commandInvariants.test.ts` at six manual runners as tracked debt; adding a seventh would have
+    meant raising the baseline, which is the one thing that rule exists to prevent.
+
+- **`cb49e5d72` (OpenCode child approvals, stops, and catalogs), the large one.** Upstream's 42
+  files land as 36 here. The adapter work — `relatedSessionIds` parent-chain traversal, the
+  request-relation retry, prompt admission, interrupted-output suppression, child request routing —
+  applies essentially whole, as does the whole web half (model picker **Unavailable** rows, traits,
+  `modelSelection.ts`, catalog refresh). Nine conflicts, in four groups:
+  - **The version floor stays per-CLI.** Upstream replaces the CLI `--version` probe with
+    `verifyOpenCodeServerVersion`, hardcoded to `MINIMUM_OPENCODE_VERSION`. Ronin's Kilo provider
+    shares this exact code path through `KILO_CLI_SPEC`, whose `minimumVersion` is `null` and whose
+    comment already explains why. `verifyOpenCodeServerVersion` therefore takes a `cliSpec`, names
+    the CLI in its errors, and returns the reported version without a floor comparison when there is
+    no floor. `KiloProvider.test.ts` › "does not judge the Kilo CLI against OpenCode's version
+    floor" passes unchanged.
+  - **`OpenCodeServerOwner` is CLI-spec aware.** The new lazily-started, 30-second-idle shared
+    server is a real improvement and it ports; it just could not spawn `opencode` for Kilo. `make`
+    and `layer` take an optional `cliSpec` and forward it to `startOpenCodeServerProcess`, and
+    `KiloDriver` builds its own owner with `KILO_CLI_SPEC` exactly as `OpenCodeDriver` does.
+    `makeOpenCodeTextGeneration` takes the spec too, so `makeKiloTextGeneration` keeps Kilo's
+    Basic-auth username and config env var.
+  - **`createOpenCodeSdkClient` moved, not rewritten.** Upstream hoists it and hardcodes
+    `opencode:` as the Basic-auth user; the hoisted copy here keeps Ronin's
+    `(input.cliSpec ?? OPENCODE_CLI_SPEC).serverAuthUsername`.
+  - **`checkOpenCodeProviderStatus` keeps its `cliSpec` parameter** while gaining the
+    `OpenCodeServerOwner` requirement, the `withServer` inventory path and the phase-aware failure
+    label — which is now built from `cliSpec.displayName`, so a Kilo probe failure says "Kilo", not
+    "OpenCode". `loadInventoryFromCli` is no longer called from the provider (it stays on the
+    runtime shape).
+  - Two test adaptations followed: `OpenCodeProvider.test.ts` strips the fork-only `cliSpec` field
+    before recording SDK-client inputs (its assertions are about server auth;
+    `KiloProvider.test.ts` owns spec routing), and Kilo's "reads its CLI inventory with Kilo's own
+    spec" case now asserts on the SDK client the server path builds rather than on the retired
+    `loadInventoryFromCli` call.
+  - `docs/user/providers-opencode.md` already existed here with Ronin-specific Install / Upstream
+    providers / Permission modes / Updates / Skills sections, so upstream's file-creation was merged
+    in as three new sections (**Server authentication**, **Refresh the model list**, **Continue an
+    existing thread**), rebranded and with the mobile paragraph dropped. `docs/README.md` keeps
+    Ronin's nine-provider index line.
+
+- **`0bbecfabf` (auto-settling opt-in), Board included.** `sidebarAutoSettleOnMerge: boolean`
+  becomes `sidebarAutoSettleMode: "never" | "change-request" | "inactivity"`, defaulting to
+  `"never"` — three independent toggles become one policy. Beyond upstream's files, Ronin's Board is
+  a fourth caller of `effectiveSettled`: `board.logic.ts`, `useBoard.ts` and `board.logic.test.ts`
+  were migrated to the mode, and the Board's pinned-thread settling case now passes
+  `autoSettleMode: "inactivity"` explicitly because its assertion is about the inactivity window.
+  `SettingsPanels.tsx` keeps Ronin's `AgentNotificationsRow` / `AgentSoundsRow`, which sit between
+  the two rows upstream's hunk spans.
+
+### Already in the tree (0 commits, several hunks)
+
+No commit was wholly present, but parts of three were:
+
+- **`f1e6f0c9b`** — the collapsed group-summary row and the live-activity icon are already neutral
+  here; Ronin never had the red-x summary this commit removes.
+- **`cb49e5d72`** — `writeNativeEventBestEffort` on `handleSubscribedEvent` is upstream's too, not a
+  fork addition; a 3-way anchoring artifact made it look like a conflict.
+- **`8f4913221`** — `docs/internals/providers.md` needed only the new **Attachment access** section;
+  nothing above it had diverged.
+
+### Skipped (11)
+
+| Upstream    | Title                                                            | Reason                                                           |
+| ----------- | ---------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `348367dcc` | Fix Android adaptive launcher icon (#4332)                       | mobile app is a cut surface                                      |
+| `b982847ab` | fix(mobile): keep iOS home header stable (#8467)                 | patches `react-native-screens`; no mobile app here               |
+| `850e4582e` | fix(mobile): refine Git action toast glass styling (#8399)       | mobile only                                                      |
+| `88be5631f` | feat(analytics): report connected client platforms (#8481)       | feeds an analytics service this fork does not have               |
+| `9257bd860` | fix(web): add back button to project settings (#8168)            | Ronin's sidebar footer has no Back-button mode to add a route to |
+| `018d7f277` | refactor(mobile): compile semantic themes for Uniwind (#7327)    | mobile only, including its oxlint rule and `vite.config.ts` hunk |
+| `f94a0d646` | fix(desktop): Cache Runtime locally on WSL Filesystem (#5769)    | WSL is a cut surface                                             |
+| `acb599d2d` | fix(mobile): show OpenCode model sources in picker (#8573)       | mobile only                                                      |
+| `45c0dff8e` | fix(mobile): show file actions on Android (#8215)                | mobile only                                                      |
+| `94f194816` | fix(connect): explain DPoP connection failures (#8351)           | T3 Connect, the relay and DPoP are all cut surfaces              |
+| `0009aacdf` | fix(web): keep long task drawers usable on small screens (#8313) | depends on `792a1404f` (#7150), skipped in batch 8               |
+
+- **`88be5631f`** is 27 files of client-platform telemetry with one consumer: `AnalyticsService`.
+  `apps/server/src/telemetry/` does not exist here, `apps/server/src/ws.ts` reads no `clientSurface`
+  / `clientOs` params, `appendClientConnectionParams` is absent from
+  `packages/client-runtime/src/authorization/remote.ts`, and this fork's
+  `AuthClientPresentationMetadata` carries only `label` / `deviceType` / `os`. With nothing reading
+  it, porting the plumbing would mean putting more client fingerprinting on the wire for no
+  consumer. The `verify-preload-bundle.mjs` CI script exists to guard the analytics preload.
+- **`9257bd860`** adds a `project-settings` case so upstream's footer collapses to a single **Back**
+  button on `/projects/$projectKey`. Ronin's `SidebarChromeFooter` has no such mode — the icon row
+  stays up on every route and `leaveOrOpen` makes re-clicking the current page's own icon go back.
+  There is no member of `SidebarFooterPage` a `project-settings` value could map to. The underlying
+  complaint is also already answered here: `ProjectSettingsPage` binds Escape to
+  `navigateBackWithinApp` and keeps a breadcrumb in the topbar.
+- **`f94a0d646`** touches four non-`wsl/` files, but every hunk in them is WSL runtime caching.
+  `docs/user/install.md` says outright that Ronin "runs natively on Windows. There is no WSL step".
+- **`94f194816`** spans `infra/relay/`, `apps/server/src/auth/dpop.ts`, `packages/shared/src/dpop.ts`
+  and `packages/client-runtime/src/relay/` — none of which exist here.
+
+### Considered and not changed
+
+- **The `MessagesTimeline` trailing failure marker stays red.** Ronin's `PlainWorkEntryRow` carries
+  an `XIcon` with `text-destructive` at the end of the row, which upstream's does not have; by this
+  commit's logic ("ordinary tool failures should not be red") it arguably should mute too. It is a
+  Ronin design decision made after the fork, and muting it is a UI change wider than the commit
+  being ported. Recorded rather than silently done.
+- **`loadInventoryFromCli` is left on `OpenCodeRuntimeShape`.** `checkOpenCodeProviderStatus` no
+  longer calls it, but removing it is dead-code cleanup outside this sync's scope, and Kilo's test
+  double still implements it.
+
+### Verification
+
+- Focused tests, full suite over every changed package:
+  `apps/server` + `apps/web` + `apps/desktop` + `packages/contracts` + `packages/client-runtime` +
+  `packages/shared` + `packages/effect-codex-app-server` — 720 files, 8,351 tests,
+  **8,340 pass / 9 skipped / 2 failures, both pre-existing** (plus one file that fails to load, also
+  pre-existing).
+- **Three pre-existing failures, each verified by stashing the entire batch and re-running on the
+  clean tree:**
+  - `apps/web` › `MessagesTimeline.test.tsx` › "keeps the copy button for collapsed long user
+    messages" expects `aria-label="Copy link"`, which the footer does not emit. Recorded in batches
+    9, 13, 14 and 16.
+  - `apps/server` › `orchestrationEngine.integration.test.ts` › "appends checkpoint.revert.failed
+    activity when revert is requested without an active session". Fails identically with the batch
+    stashed.
+  - `apps/web/src/terminal/ghostty/runtimeAbi.test.ts` fails to load at all — Vite cannot parse a
+    `.wasm?inline` import. Also identical on the clean tree.
+- **One flake, verified not a regression.** `ProviderRegistry.test.ts` › "re-probes when settings
+  change the codex binaryPath" failed in one 67-file selection and passed both alone and in the
+  final full run. Batches 14, 15 and 16 record the same load-sensitive test.
+- Typecheck: `tsgo --noEmit` in `apps/server`, `apps/web`, `apps/desktop`, `packages/contracts`,
+  `packages/shared`, `packages/client-runtime`, `packages/effect-codex-app-server` — 0 errors. The
+  pre-existing `unnecessaryFailYieldableError` and `runEffectInsideEffect` _suggestions_ remain in
+  files this batch did not touch.
+- `vp lint --report-unused-disable-directives` over the 154 changed `.ts`/`.tsx`/`.mjs` files — 0
+  findings.
+- `vp fmt --check` over all 161 changed files — all correct.
+- `git diff --check` and `git diff --cached --check` clean.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — `ChatFileAttachment` + `ChatUnknownAttachment` (open member, so a newer peer can
+  introduce an attachment type without breaking older decoders), `PROVIDER_SEND_TURN_MAX_FILE_BYTES`,
+  `fileAttachments` capability, `AssetResource.attachment` filename/mime,
+  `DesktopPreviewAutomationStatusSchema` (tab ids longer than the public 128-char limit),
+  `thread.pin` in `THREAD_KEYBINDING_COMMANDS`, and `sidebarAutoSettleMode` replacing
+  `sidebarAutoSettleOnMerge`. The settings change is the only non-additive one; it ships with its
+  own default and the settings decoder covers it.
+- **Server** — projection bootstrap replay, the per-projector `thread.created` reset and deletion
+  fence, Codex stale-approval recovery, Codex sub-agent model metadata, the attachment/upload path
+  across `AttachmentUpload`, `AssetAccess`, `attachmentStore`, `http.ts` and `Normalizer`, and the
+  OpenCode server owner, health gate and child-session routing.
+- **Providers** — Codex (0.150 plans, sub-agent models, stale approvals), OpenCode (the whole
+  `cb49e5d72` body), Kilo (rides the same runtime; its spec now reaches the server owner, the SDK
+  client, the health gate and text generation), Claude/Cursor/Grok/OpenCode adapters (attachment
+  handling). Antigravity, Droid and Pi need no decision — none of them take attachments through the
+  changed path or share the OpenCode runtime.
+- **Desktop (Electron/IPC)** — preview automation status schema, OAuth popups from the browser
+  preview (with a `did-create-window` handler that denies a second-level popup), and the hidden-
+  preview visibility change that stops offscreen guests repainting.
+- **Web renderer** — Providers settings list/editor, the searchable project filter, the PR
+  browser fallback, model picker **Unavailable** rows, the composer draft `modelSelectionExplicit`
+  marker, and the Board's migration to `sidebarAutoSettleMode`.
+- **Reverse states** — every new one-way door has its exit. `thread.pin` unpins as readily as it
+  pins, from the same shortcut and the same palette entry. Auto-settle's `"never"` mode is reachable
+  from the same Select that leaves it, and the Restore-defaults path resets mode and window
+  together through `hasChangedThreadSettlingSettings`. A hidden preview becomes visible again when
+  it is shown or an automation borrows it (`acquireBrowserSurfaceActivity` is refcounted, so the
+  last release re-hides it rather than the first).
+- **Connection modes** — the upload limit and attachment classification are the server's, so local,
+  LAN, Tailscale and SSH clients all see the environment's own answer through the existing
+  `fileAttachments` capability; a client against an older server simply does not offer files. The
+  OpenCode server owner is per-provider-instance and server-side, so a remote environment's
+  OpenCode login is the one that applies.
+- **Entry points** — pinning is reachable from the thread menu, the sidebar row, `mod+shift+p` and
+  the command palette, all through the same `pinThread`/`unpinThread` pair. The project filter is
+  reachable from the sidebar; project settings from that filter's row action and from the board
+  button beside it.
+- **Docs** — `docs/user/providers-opencode.md` (server auth, catalog refresh, unavailable models),
+  `docs/user/providers-codex.md` (sub-agent models), `docs/user/source-control.md` (**Open on
+  GitHub** on a failed PR load), `docs/user/keybindings.md` and `docs/user/thread-sidebar.md`
+  (`thread.pin`, and the single auto-settle policy), `docs/internals/providers.md` (attachment
+  access, and the server-owner link). No new vocabulary, so `docs/internals/glossary.md` is
+  untouched; no new doc files, so `docs/README.md` needs no index entry.
+
+### Not tested
+
+- **A real OpenCode or Kilo server.** The version gate, server owner and child-session routing are
+  driven entirely by test doubles. That the CLIs' `global.health` payload matches
+  `{ healthy: true, version }`, and that a child session's `parentID` chain resolves the way
+  `isRelatedOpenCodeSession` walks it, are upstream's claims taken on trust.
+- **The 50 MB upload end to end.** `AttachmentUpload.test.ts` and `http.test.ts` cover the signed
+  URL, the size ceiling and the mime handling, but no client can pick a non-image file yet — the web
+  half of `8f4913221` is type plumbing, as upstream's own note says.
+- **The Providers list/editor in a real client.** Typecheck and the 21 settings test files pass; no
+  browser pass was run, per `AGENTS.md`.

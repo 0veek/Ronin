@@ -132,10 +132,10 @@ describe("ClientSettings environment identification", () => {
 });
 
 describe("ClientSettings sidebar", () => {
-  it("defaults to automatic merge and three-day inactivity settling", () => {
+  it("defaults to the current sidebar with manual settling", () => {
     const settings = decodeClientSettings({});
     expect(settings.sidebarAutoSettleAfterDays).toBe(3);
-    expect(settings.sidebarAutoSettleOnMerge).toBe(true);
+    expect(settings.sidebarAutoSettleMode).toBe("never");
   });
 
   it("drops the retired sidebar beta and legacy keys, resetting everyone to the default", () => {
@@ -159,13 +159,27 @@ describe("ClientSettings sidebar", () => {
     ).toBeNull();
   });
 
-  it("allows auto-settle on merge to be disabled", () => {
-    expect(decodeClientSettings({ sidebarAutoSettleOnMerge: false }).sidebarAutoSettleOnMerge).toBe(
-      false,
-    );
-    expect(
-      decodeClientSettingsPatch({ sidebarAutoSettleOnMerge: false }).sidebarAutoSettleOnMerge,
-    ).toBe(false);
+  it("does not preserve the retired merge switch as a hidden automatic path", () => {
+    const decoded = decodeClientSettings({ sidebarAutoSettleOnMerge: true });
+    expect(decoded.sidebarAutoSettleMode).toBe("never");
+    expect(decoded).not.toHaveProperty("sidebarAutoSettleOnMerge");
+  });
+
+  it.each(["never", "change-request", "inactivity"] as const)(
+    "accepts the %s auto-settle mode",
+    (sidebarAutoSettleMode) => {
+      expect(decodeClientSettings({ sidebarAutoSettleMode }).sidebarAutoSettleMode).toBe(
+        sidebarAutoSettleMode,
+      );
+      expect(decodeClientSettingsPatch({ sidebarAutoSettleMode }).sidebarAutoSettleMode).toBe(
+        sidebarAutoSettleMode,
+      );
+    },
+  );
+
+  it("rejects unsupported auto-settle modes", () => {
+    expect(() => decodeClientSettings({ sidebarAutoSettleMode: "always" })).toThrow();
+    expect(() => decodeClientSettingsPatch({ sidebarAutoSettleMode: "always" })).toThrow();
   });
 
   it.each([-1, 0, 91])("rejects an auto-settle threshold outside 1..90: %s", (value) => {

@@ -12,10 +12,12 @@ import { ServerConfig } from "../../config.ts";
 import {
   OpenCodeRuntime,
   OpenCodeRuntimeError,
+  KILO_CLI_SPEC,
   type OpenCodeCompatibleCliSpec,
   type OpenCodeInventory,
   type OpenCodeRuntimeShape,
 } from "../opencodeRuntime.ts";
+import * as OpenCodeServerOwner from "../OpenCodeServerOwner.ts";
 import { checkKiloProviderStatus } from "./KiloProvider.ts";
 
 const decodeKiloSettings = Schema.decodeSync(KiloSettings);
@@ -31,12 +33,14 @@ const runtimeMock = {
     versionStdout: "kilo 0.9.2\n",
     sdkCliSpec: null as OpenCodeCompatibleCliSpec | null,
     inventoryCliSpec: null as OpenCodeCompatibleCliSpec | null,
+    serverVersion: "0.9.2",
   },
   reset() {
     this.state.runVersionError = null;
     this.state.versionStdout = "kilo 0.9.2\n";
     this.state.sdkCliSpec = null;
     this.state.inventoryCliSpec = null;
+    this.state.serverVersion = "0.9.2";
   },
 };
 
@@ -48,10 +52,16 @@ const EMPTY_INVENTORY = {
 
 const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
   startOpenCodeServerProcess: () =>
-    Effect.succeed({ url: "http://127.0.0.1:4301", exitCode: Effect.never }),
+    Effect.succeed({
+      url: "http://127.0.0.1:4301",
+      version: runtimeMock.state.serverVersion,
+      isRunning: Effect.succeed(true),
+      exitCode: Effect.never,
+    }),
   connectToOpenCodeServer: ({ serverUrl }) =>
     Effect.succeed({
       url: serverUrl ?? "http://127.0.0.1:4301",
+      version: runtimeMock.state.serverVersion,
       exitCode: null,
       external: Boolean(serverUrl),
     }),
@@ -81,6 +91,14 @@ beforeEach(() => {
 });
 
 const testLayer = Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble).pipe(
+  Layer.provideMerge(
+    OpenCodeServerOwner.layer({
+      binaryPath: "kilo",
+      directory: process.cwd(),
+      cliSpec: KILO_CLI_SPEC,
+    }),
+  ),
+  Layer.provideMerge(Layer.succeed(OpenCodeRuntime, OpenCodeRuntimeTestDouble)),
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), process.cwd())),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -140,14 +158,13 @@ it.layer(testLayer)("checkKiloProviderStatus", (it) => {
     }),
   );
 
-  it.effect("reads its CLI inventory with Kilo's own spec", () =>
+  // The local inventory now comes from a server the owner starts, so the spec
+  // has to reach the SDK client that reads it — not just the spawn line.
+  it.effect("reads its inventory with Kilo's own spec", () =>
     Effect.gen(function* () {
       yield* checkKiloProviderStatus(makeKiloSettings(), process.cwd());
 
-      NodeAssert.equal(
-        runtimeMock.state.inventoryCliSpec?.configContentEnvVar,
-        "KILO_CONFIG_CONTENT",
-      );
+      NodeAssert.equal(runtimeMock.state.sdkCliSpec?.configContentEnvVar, "KILO_CONFIG_CONTENT");
     }),
   );
 });
