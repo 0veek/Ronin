@@ -1,6 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -78,6 +80,37 @@ const TestHttpClientLive = Layer.succeed(
     Effect.succeed(HttpClientResponse.fromWeb(request, Response.json({ version: "0.0.0" }))),
   ),
 );
+
+/**
+ * Wait for a provider snapshot to reach an expected state.
+ *
+ * The probes these tests exercise spawn real subprocesses, so their results
+ * land on the host event loop while the test itself runs on `TestClock`. Each
+ * turn of this loop advances the virtual clock (firing scheduled work) and
+ * yields the fiber (letting the real ENOENT arrive). The budget is spent in
+ * *virtual* time, which only moves when this loop moves it, so the number of
+ * turns is fixed no matter how loaded the machine is — a slow host takes
+ * longer to spend the same budget instead of running out of attempts.
+ */
+const waitForProviders = (
+  read: Effect.Effect<ReadonlyArray<ServerProvider>>,
+  predicate: (providers: ReadonlyArray<ServerProvider>) => boolean,
+  description: string,
+  budget = Duration.seconds(30),
+) =>
+  Effect.gen(function* () {
+    const deadline = (yield* Clock.currentTimeMillis) + Duration.toMillis(budget);
+    let providers = yield* read;
+    while (!predicate(providers)) {
+      if ((yield* Clock.currentTimeMillis) >= deadline) {
+        return yield* Effect.die(new Error(`Timed out waiting for ${description}`));
+      }
+      yield* TestClock.adjust("10 millis");
+      yield* Effect.yieldNow;
+      providers = yield* read;
+    }
+    return providers;
+  });
 
 const BackgroundPolicyAlwaysRunLayer = Layer.mock(BackgroundPolicy.BackgroundPolicy)({
   reportClientActivity: () => Effect.void,
@@ -1725,17 +1758,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
 
           yield* Effect.gen(function* () {
             const registry = yield* ProviderRegistry.ProviderRegistry;
-            let providers = yield* registry.getProviders;
-            for (
-              let attempts = 0;
-              attempts < 50 &&
-              providers.find((provider) => provider.instanceId === "codex_personal")?.status !==
-                "error";
-              attempts += 1
-            ) {
-              yield* Effect.yieldNow;
-              providers = yield* registry.getProviders;
-            }
+            const providers = yield* waitForProviders(
+              registry.getProviders,
+              (snapshot) =>
+                snapshot.find((provider) => provider.instanceId === "codex_personal")?.status ===
+                "error",
+              "the real codex_personal probe to fail",
+            );
             const codexPersonal = providers.find(
               (provider) => provider.instanceId === "codex_personal",
             );
@@ -1824,18 +1853,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             // Boot-time probe: the default codex instance is enabled with
             // `firstMissing`, so the real spawner yields ENOENT and the
             // snapshot should be `status: "error"`.
-            let initialProviders = yield* registry.getProviders;
-            for (
-              let attempts = 0;
-              attempts < 50 &&
-              initialProviders.find((provider) => provider.instanceId === "codex")?.status !==
-                "error";
-              attempts += 1
-            ) {
-              yield* TestClock.adjust("10 millis");
-              yield* Effect.yieldNow;
-              initialProviders = yield* registry.getProviders;
-            }
+            const initialProviders = yield* waitForProviders(
+              registry.getProviders,
+              (snapshot) =>
+                snapshot.find((provider) => provider.instanceId === "codex")?.status === "error",
+              "the boot-time codex probe to fail",
+            );
             const initialCodex = initialProviders.find(
               (provider) => provider.instanceId === "codex",
             );
@@ -1857,25 +1880,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               },
             });
 
-            // Poll until the injected process boundary observes the new
+            // Wait until the injected process boundary observes the new
             // executable. This verifies the public settings-to-probe behavior
             // without depending on timestamps assigned by TestClock.
-            const refreshed = yield* Effect.gen(function* () {
-              for (let attempts = 0; attempts < 60; attempts += 1) {
-                const providers = yield* registry.getProviders;
-                const codex = providers.find((provider) => provider.instanceId === "codex");
-                if (
-                  codex !== undefined &&
-                  codex.status === "error" &&
-                  spawnedCommands.includes(secondMissing)
-                ) {
-                  return providers;
-                }
-                yield* TestClock.adjust("50 millis");
-                yield* Effect.yieldNow;
-              }
-              return yield* registry.getProviders;
-            });
+            const refreshed = yield* waitForProviders(
+              registry.getProviders,
+              (snapshot) =>
+                snapshot.find((provider) => provider.instanceId === "codex")?.status === "error" &&
+                spawnedCommands.includes(secondMissing),
+              "the rebuilt codex instance to re-probe the new binaryPath",
+            );
 
             const reprobedCodex = refreshed.find((provider) => provider.instanceId === "codex");
             assert.deepStrictEqual(spawnedCommands, [firstMissing, secondMissing]);

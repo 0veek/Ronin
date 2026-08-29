@@ -887,8 +887,11 @@ it.live("reverts to an earlier checkpoint and trims checkpoint projections + git
   ),
 );
 
+// A revert no longer needs a live provider session: the reactor falls back to
+// the thread's project workspace, so the failure path this covers is a turn the
+// thread never reached.
 it.live(
-  "appends checkpoint.revert.failed activity when revert is requested without an active session",
+  "appends checkpoint.revert.failed activity when the requested turn is beyond the thread's checkpoints",
   () =>
     withHarness((harness) =>
       Effect.gen(function* () {
@@ -896,9 +899,9 @@ it.live(
 
         yield* harness.engine.dispatch({
           type: "thread.checkpoint.revert",
-          commandId: CommandId.make("cmd-checkpoint-revert-no-session"),
+          commandId: CommandId.make("cmd-checkpoint-revert-unknown-turn"),
           threadId: THREAD_ID,
-          turnCount: 0,
+          turnCount: 5,
           createdAt: nowIso(),
         });
 
@@ -914,10 +917,11 @@ it.live(
           (activity) => activity.kind === "checkpoint.revert.failed",
         );
         assert.equal(failureActivity !== undefined, true);
+        assert.equal(failureActivity?.tone, "error");
         assert.equal(
           String(
             (failureActivity?.payload as { readonly detail?: string } | undefined)?.detail,
-          ).includes("No active provider session"),
+          ).includes("exceeds current turn count"),
           true,
         );
       }),

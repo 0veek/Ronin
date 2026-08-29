@@ -4758,12 +4758,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         Effect.catchCause(() => Effect.succeed(false)),
       );
       if (!stopped) {
-        return yield* Effect.fail(
-          toRequestError(
-            threadId,
-            "task/stop",
-            new Error(`Claude did not stop task ${taskId}; it may have already finished.`),
-          ),
+        return yield* toRequestError(
+          threadId,
+          "task/stop",
+          new Error(`Claude did not stop task ${taskId}; it may have already finished.`),
         );
       }
     },
@@ -4859,7 +4857,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     for (const result of results) {
       if (result._tag === "Failure") {
-        return yield* Effect.fail(result.failure);
+        return yield* result.failure;
       }
     }
   });

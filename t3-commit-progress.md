@@ -3292,3 +3292,54 @@ None.
 - **The file preview image fix in a real client.** The base-dir computation and path resolution are
   unit-tested; no browser pass was run, per `AGENTS.md`.
 - **A real edited PR comment refresh against GitHub.** The new test drives a fake RPC client.
+
+## Carried failures cleared (2026-08-30)
+
+Not an upstream batch. Every batch since 9 re-recorded the same failures as "pre-existing" and moved
+on; this is the pass that actually fixed them. **The next sync should expect a clean baseline** —
+if any of these reappear, it is a regression, not the known list.
+
+### Fixed (4 failures + 13 diagnostics)
+
+| Symptom                                                                                | Cause                                                                                                   | Fix                                                                   |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `MessagesTimeline.test.tsx` › "keeps the copy button for collapsed long user messages" | `25ce442f7` renamed the button's label from `Copy link` to `Copy to clipboard` and missed the assertion | assertion updated to the shipped label                                |
+| `orchestrationEngine.integration.test.ts` › revert "without an active session"         | `25ce442f7` also removed the active-session requirement for revert; the scenario can no longer fail     | retargeted at a turn the thread never reached; suite drops 65s → 5.3s |
+| `runtimeAbi.test.ts` fails to load                                                     | Vite's `.wasm` handling rejects the `?inline` suffix, so the whole file was unloadable                  | reads the vendored bytes off disk; **9 tests recovered**              |
+| `ProviderRegistry.test.ts` › "re-probes when settings change the codex binaryPath"     | real subprocess probes raced fixed `attempts < 50/60` caps, so load decided pass/fail                   | shared `waitForProviders` helper budgeted in virtual time             |
+
+- **The copy-button and revert failures were the same commit.** `25ce442f7` is a local squash whose
+  message ("feat(desktop): add deep link handling…") mentions neither change. Both are genuine
+  product improvements — a button that copies message text should not say "Copy link", and a revert
+  should not require a live agent — and in both cases only the test was left behind. The revert test
+  had been _timing out_ for 60s a batch, which is why the file looked slow rather than broken.
+
+- **`waitForProviders` replaces three attempt-capped loops** (the boot-probe test and both loops in
+  the re-probe test). These tests spawn real binaries, so results land on the host event loop while
+  the test runs on `TestClock`; each turn now advances the virtual clock _and_ yields the fiber, and
+  the 30s budget is spent in virtual time, which only moves when the loop moves it. A loaded machine
+  therefore takes longer to spend the same budget instead of running out of attempts. Verified with
+  six concurrent whole-file runs on a 12-core host: 46/46 every time. The old flake was never
+  reproducible on demand, which is exactly why it survived nine batches — the fix is structural.
+
+- **13 Effect diagnostics cleared, not suppressed-by-default.** Batch logs recorded "four
+  pre-existing suggestions"; that count came from a truncated `tail`, and the real number was 13
+  (11 of them in `cli/theme.ts`, landed by batch 18's environment-theme port). Twelve were the
+  mechanical `unnecessaryFailYieldableError` — `yield* Effect.fail(err)` on an already-yieldable
+  error — plus one `effectSucceedWithVoid`. The only judgement call was
+  `DesktopAutoUpdate.ts`'s `runEffectInsideEffect`: `publish` is a `Ref` write plus a sync callback
+  and needs no services, and the call runs on electron-updater's EventEmitter outside any fiber, so
+  the code is correct as written and carries a justified `@effect-diagnostics-next-line` instead.
+
+### Verification
+
+- 9 suites over every touched file — 324 pass / 1 skipped, 0 failures.
+- `tsgo --noEmit` in `apps/server`, `apps/web`, `apps/desktop` — **0 errors and 0 suggestions each**,
+  down from 13 suggestions.
+- `vp lint` and `vp fmt --check` over the 9 changed files — clean. `git diff --check` clean.
+
+### Not fixed
+
+- Nothing outstanding from the carried list. The `ProviderRegistry` flake is the one entry that
+  cannot be _proven_ gone (it never reproduced on demand); the attempt caps it depended on are gone,
+  which is the strongest available claim.

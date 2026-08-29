@@ -849,15 +849,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.task_id": input.taskId,
         });
         if (!routed.adapter.stopAgent) {
-          return yield* Effect.fail(
-            new ProviderOperationUnsupportedError({
-              provider: routed.adapter.provider,
-              operation: "stopAgent",
-            }),
-          );
+          return yield* new ProviderOperationUnsupportedError({
+            provider: routed.adapter.provider,
+            operation: "stopAgent",
+          });
         }
         if (!routed.isActive) {
-          return yield* Effect.fail(new ProviderSessionNotFoundError({ threadId: input.threadId }));
+          return yield* new ProviderSessionNotFoundError({ threadId: input.threadId });
         }
         // Called through the adapter so the receiver survives class-based or
         // proxied adapters.

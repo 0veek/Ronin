@@ -1,21 +1,28 @@
+// @effect-diagnostics nodeBuiltinImport:off - The vendored WASM is read off disk
+// because Vite's own `.wasm` handling rejects the `?inline` suffix.
+import * as NodeFS from "node:fs";
+
 import { describe, expect, it } from "vite-plus/test";
 
-import wasmDataUrl from "./vendor/ghostty-vt.wasm?inline";
-import writePtyWasmDataUrl from "./vendor/ghostty-write-pty.wasm?inline";
 import pinnedVersion from "../../../../../native/libghostty-vt/VERSION?raw";
 import { ghosttyKeyForCode } from "./keyCodes";
 
 type WasmFunction = (...args: number[]) => number;
 
-function decodeWasmDataUrl(dataUrl: string): Uint8Array {
-  const encoded = dataUrl.split(",", 2)[1];
-  if (!encoded) throw new Error("The vendored Ghostty WASM data URL is invalid");
-  return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+// Read straight off disk rather than through the bundler: `.wasm` carries its
+// own Vite handling that rejects the `?inline` suffix, and these assertions
+// only ever want the vendored bytes. The copy hands every call site an
+// ArrayBuffer holding exactly the module, with no pooled Buffer offset.
+function readVendoredWasm(fileName: string): Uint8Array {
+  return new Uint8Array(NodeFS.readFileSync(new URL(`./vendor/${fileName}`, import.meta.url)));
 }
+
+const wasmBytes = readVendoredWasm("ghostty-vt.wasm");
+const writePtyWasmBytes = readVendoredWasm("ghostty-write-pty.wasm");
 
 describe("vendored libghostty-vt WebAssembly", () => {
   it("stays pinned to the canonical revision and size budget", async () => {
-    const wasm = decodeWasmDataUrl(wasmDataUrl);
+    const wasm = wasmBytes;
     expect(wasm.byteLength).toBeLessThan(750_000);
 
     // The artifact carries its own provenance: the build embeds the pinned
@@ -39,9 +46,8 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("creates, writes multi-codepoint graphemes, and frees repeated terminals", async () => {
-    const bytes = decodeWasmDataUrl(wasmDataUrl);
     let memory: WebAssembly.Memory | null = null;
-    const instantiated = await WebAssembly.instantiate(bytes.buffer as ArrayBuffer, {
+    const instantiated = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
       env: {
         log: () => {},
       },
@@ -84,10 +90,9 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("blinks the default cursor until a program asks for a steady one", async () => {
-    const result = await WebAssembly.instantiate(
-      decodeWasmDataUrl(wasmDataUrl).buffer as ArrayBuffer,
-      { env: { log: () => {} } },
-    );
+    const result = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
+      env: { log: () => {} },
+    });
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
     const memory = instance.exports.memory as WebAssembly.Memory;
     const call = (name: string, ...args: number[]) =>
@@ -157,10 +162,9 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("reports and scrolls the viewport with Ghostty's scrollbar state", async () => {
-    const result = await WebAssembly.instantiate(
-      decodeWasmDataUrl(wasmDataUrl).buffer as ArrayBuffer,
-      { env: { log: () => {} } },
-    );
+    const result = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
+      env: { log: () => {} },
+    });
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
     const memory = instance.exports.memory as WebAssembly.Memory;
     const call = (name: string, ...args: number[]) =>
@@ -205,15 +209,14 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("routes terminal-generated replies through the shared callback table", async () => {
-    const mainResult = await WebAssembly.instantiate(
-      decodeWasmDataUrl(wasmDataUrl).buffer as ArrayBuffer,
-      { env: { log: () => {} } },
-    );
+    const mainResult = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
+      env: { log: () => {} },
+    });
     const main = mainResult instanceof WebAssembly.Instance ? mainResult : mainResult.instance;
     const memory = main.exports.memory as WebAssembly.Memory;
     let reply = "";
     const trampolineResult = await WebAssembly.instantiate(
-      decodeWasmDataUrl(writePtyWasmDataUrl).buffer as ArrayBuffer,
+      writePtyWasmBytes.buffer as ArrayBuffer,
       {
         env: {
           t3_write_pty: (_terminal: number, _userdata: number, pointer: number, length: number) => {
@@ -261,10 +264,9 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("formats the active selection with Ghostty's copy semantics", async () => {
-    const result = await WebAssembly.instantiate(
-      decodeWasmDataUrl(wasmDataUrl).buffer as ArrayBuffer,
-      { env: { log: () => {} } },
-    );
+    const result = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
+      env: { log: () => {} },
+    });
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
     const memory = instance.exports.memory as WebAssembly.Memory;
     const call = (name: string, ...args: number[]) =>
@@ -321,10 +323,9 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("formats a cell-drag selection installed from screen grid refs", async () => {
-    const result = await WebAssembly.instantiate(
-      decodeWasmDataUrl(wasmDataUrl).buffer as ArrayBuffer,
-      { env: { log: () => {} } },
-    );
+    const result = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
+      env: { log: () => {} },
+    });
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
     const memory = instance.exports.memory as WebAssembly.Memory;
     const call = (name: string, ...args: number[]) =>
@@ -404,10 +405,9 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("uses Ghostty for mouse encoding, word selection, and OSC 8 hit testing", async () => {
-    const result = await WebAssembly.instantiate(
-      decodeWasmDataUrl(wasmDataUrl).buffer as ArrayBuffer,
-      { env: { log: () => {} } },
-    );
+    const result = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
+      env: { log: () => {} },
+    });
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
     const memory = instance.exports.memory as WebAssembly.Memory;
     const call = (name: string, ...args: number[]) =>
@@ -597,10 +597,9 @@ describe("vendored libghostty-vt WebAssembly", () => {
   });
 
   it("encodes modified printable keys in Kitty keyboard mode", async () => {
-    const result = await WebAssembly.instantiate(
-      decodeWasmDataUrl(wasmDataUrl).buffer as ArrayBuffer,
-      { env: { log: () => {} } },
-    );
+    const result = await WebAssembly.instantiate(wasmBytes.buffer as ArrayBuffer, {
+      env: { log: () => {} },
+    });
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
     const memory = instance.exports.memory as WebAssembly.Memory;
     const call = (name: string, ...args: number[]) =>

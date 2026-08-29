@@ -171,7 +171,10 @@ export const make = Effect.fnUntraced(function* (options: {
 
   // electron-updater is an EventEmitter, so these fire outside the Effect
   // runtime; each handler just writes the Ref and notifies the renderer.
+  // `publish` is a Ref write plus a sync callback, so it needs no services and
+  // there is no surrounding context for these handlers to carry into it.
   const emit = (next: DesktopAppUpdateState) => {
+    // @effect-diagnostics-next-line runEffectInsideEffect:off - Runs on electron-updater's EventEmitter, outside any fiber.
     Effect.runSync(publish(next));
   };
 
