@@ -152,6 +152,8 @@ interface ChatMarkdownProps {
   lineBreaks?: boolean;
   /** Parse sanitized raw HTML instead of displaying its source text. */
   parseRawHtml?: boolean;
+  /** Directory relative image sources resolve against, when it is not the workspace root. */
+  imageBaseDir?: string | undefined;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -1091,11 +1093,13 @@ const MarkdownImage = memo(function MarkdownImage({
   alt,
   title,
   threadRef,
+  baseDir,
 }: {
   readonly src: string;
   readonly alt: string | undefined;
   readonly title: string | undefined;
   readonly threadRef: ScopedThreadRef | undefined;
+  readonly baseDir: string | undefined;
 }) {
   if (!isLocalImageSource(src)) {
     return <LoadableMarkdownImage src={src} alt={alt} title={title} fallbackTitle={src} />;
@@ -1110,7 +1114,7 @@ const MarkdownImage = memo(function MarkdownImage({
   }
   return (
     <WorkspaceMarkdownImage
-      path={localPath}
+      path={baseDir === undefined ? localPath : resolvePathLinkTarget(localPath, baseDir)}
       threadRef={threadRef}
       alt={alt}
       title={title}
@@ -1682,6 +1686,7 @@ function ChatMarkdown({
   className,
   lineBreaks = false,
   parseRawHtml = true,
+  imageBaseDir,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -2219,6 +2224,7 @@ function ChatMarkdown({
             alt={alt}
             title={undefined}
             threadRef={threadRef}
+            baseDir={imageBaseDir}
           />
         );
       },
@@ -2262,6 +2268,7 @@ function ChatMarkdown({
     cwd,
     diffThemeName,
     fileLinkParentSuffixByPath,
+    imageBaseDir,
     inlineCodeFileLinkMetaByText,
     isStreaming,
     markdownFileLinkMetaByHref,

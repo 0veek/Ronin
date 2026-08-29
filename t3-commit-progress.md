@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                     |
-| ----------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `053affbed` — `fix(mobile): prevent header overflow and back-button artifacts (#8624)` (2026-08-28) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                     |
-| **Ported on**                 | 2026-08-29                                                                                          |
+|                               |                                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `c0e09f323` — `fix(web): render nested markdown images correctly (#8501)` (2026-08-29) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                        |
+| **Ported on**                 | 2026-08-30                                                                             |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -3185,3 +3185,110 @@ None.
   covered by unit tests against fakes; no end-to-end upload to a live environment was run.
 - **The reworked Providers list/editor and the new composer controls in a real client.** Typecheck
   and the focused suites pass; no browser pass was run, per `AGENTS.md`.
+
+## Batch 19 — reviewed through `c0e09f323` (5 commits)
+
+Reviewed `053affbed..c0e09f323`, snapshotted at `c0e09f323` for the whole run. A small batch: five
+commits, all from one upstream day. The worktree was clean at the start of the run (batch 18 is
+committed as `b17d45b76`).
+
+### Ported (4, two of them partial)
+
+| Upstream    | Title                                                             | Notes                                                                                                                                                                 |
+| ----------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fc262f1a2` | fix(server): retry automatic thread title generation (#8087)      | verbatim — retry `times: 2`, exponential from 2s, plus the retry test                                                                                                 |
+| `ebb9b9fda` | fix(client-runtime): refresh edited pull request comments (#8094) | verbatim — `activity` hoisted, `updateComment` gets `onSuccess` refresh; upstream's new `pullRequests.test.ts` taken whole, every import it needs already exists here |
+| `72c44a847` | perf(desktop): skip duplicate browser updates (#8018)             | **partial** — web half only; the desktop half is picture-in-picture, a cut surface. See below                                                                         |
+| `c0e09f323` | fix(web): render nested markdown images correctly (#8501)         | **partial, adapted** — the headline fix reimplemented in Ronin's own image pipeline. See below                                                                        |
+
+- **`fc262f1a2` (title retry).** Ronin's `maybeGenerateThreadTitleForFirstTurn` matched upstream's
+  pre-patch shape exactly, so the retry applied verbatim. The adapted test keeps Ronin's `waitFor`
+  polling structure (upstream awaits directly) and adds the `attempts === 2` assertion; the 2-second
+  first backoff fits comfortably inside `waitFor`'s 10-second deadline.
+
+- **`72c44a847` (skip duplicate browser updates), the web half.** `applyPreviewDesktopState` now
+  returns the current state unchanged when the incoming `DesktopPreviewOverlay` is field-for-field
+  identical, so per-frame IPC state pushes stop re-rendering subscribers. Ronin's overlay has
+  exactly upstream's fields (including the always-false `pictureInPicture` flag), so
+  `isPreviewStateEqual` and the store test ported as-is. Dropped: everything in
+  `apps/desktop/src/preview/Manager.ts` — it dedupes and replays **picture-in-picture** frames, and
+  this fork has no PiP (recorded in batch 8's `fe281c540` note; `FrameCaptureConsumer` here is
+  `"recording"` only). The two upstream `Manager.test.ts` recording-cadence tests exist to pin that
+  the PiP dedupe does not leak into recording delivery; with no dedupe ported there is nothing to
+  pin, so they went with it.
+
+- **`c0e09f323` (nested markdown images).** Upstream's commit is built on its
+  `classifyMarkdownImageSource` classifier (`packages/client-runtime/src/markdownImages.ts`) and its
+  workspace-image surface, both deliberately not taken (batch 10's `77c9d1eb5` note: Ronin's
+  `MarkdownImage` / `WorkspaceMarkdownImage` pipeline solved this independently, and a second
+  classifier would be a competing source of truth). The headline defect is real here too: the file
+  preview rendered markdown with `cwd` only, so previewing `docs/README.md` containing
+  `![](images/diagram.png)` asked the workspace asset endpoint for `<root>/images/diagram.png` —
+  the server resolves relative paths against the workspace root (`AssetAccess.ts`). Reimplemented
+  in Ronin's shape:
+  - New `FileMarkdownPreview.tsx` wraps `ChatMarkdown` for the file preview panel and computes
+    `imageBaseDir` from the previewed file's own directory via the fork's existing
+    `resolvePathLinkTarget` (exported helper `fileMarkdownImageBaseDir`, with a focused test
+    covering upstream's three cases: posix nested, Windows nested, root-level file).
+  - `ChatMarkdown` gains an `imageBaseDir` prop; `MarkdownImage` resolves a local image path
+    against it (only when provided — chat rendering is byte-identical to before). The extension
+    gate in `isWorkspaceImagePreviewPath` runs before the resolve, so `resolvePathLinkTarget`'s
+    `:line:col` splitting can never fire on a path that already ends in an image extension.
+  - Dropped hunks, all tied to upstream's replaced image surface: `rehypePreserveImageSourceMeta`
+    (successor to the `rehypeNormalizeWindowsImageSrc` this fork declined in batch 14's
+    `a09f92171` note), `data-markdown-copy` on images, authored width/height sizing,
+    `inline-block!` layout, SVG `#fragment` re-appending (`markdownImageSourceFragment`), the
+    `isWindowsDrivePathHref` export in `markdown-links.ts` and its test, and the
+    `ChatMarkdown.workspace-images.test.tsx` additions (that file does not exist here).
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (1)
+
+| Upstream    | Title                                           | Reason                                                                                     |
+| ----------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `660cddd3b` | fix(web): four composer spacing defects (#8090) | every hunk serves the composer shoulder-tab design (`792a1404f`, #7150) skipped in batch 8 |
+
+- **`660cddd3b`.** All four defects live in the shoulder-tab composer: `shoulderTabReserve` measures
+  the tab band above the composer surface, the stash/tasks tab offsets move from `right-4` to
+  `right-5.5`, `ComposerTasksBadge` (a file this fork does not have) caps its step segments, and the
+  draft-hero padding keys off `group-has-[.chat-composer-shoulder-tab]`. This fork renders
+  `ComposerStashBadge` as its own floating pill, has no `.chat-composer-shoulder-tab` class anywhere,
+  and skipped the drawer redesign that introduced all of it — batch 13's `68966c1e6` was skipped on
+  identical grounds. The relocated `useLayoutEffect` + `MutationObserver` in `ChatView.tsx` exists
+  only to subtract the tab reserve from the scroll-to-end clearance; with no tabs the reserve is
+  always zero and the observer would be pure churn.
+
+### Verification
+
+- Focused tests: `ProviderCommandReactor.test.ts` (58 pass, includes the new retry case),
+  `pullRequests.test.ts` (1 pass, new file), `previewStateStore.test.ts` +
+  `FileMarkdownPreview.test.ts` + `chatMarkdownImage.test.ts` (36 pass),
+  `ChatMarkdown.test.tsx` + `markdown-clipboard.test.ts` (33 pass). No failures, none pre-existing
+  in these files.
+- Typecheck: `tsgo --noEmit` in `apps/server`, `apps/web`, `packages/client-runtime` — 0 errors.
+  The four `apps/server` suggestions (`ClaudeAdapter.ts`, `OpenCodeAdapter.ts`,
+  `ProviderService.ts`) are pre-existing and in files this batch does not touch.
+- `vp lint` over all ten touched files — 0 findings. `vp fmt --check` — all correct.
+- `git diff --check` clean.
+
+**Hit every surface (for this batch):**
+
+- **Clients** — web renderer only; the desktop shell needs no change (the overlay dedupe lives in
+  the shared store the desktop bridge writes into, and the PiP producer side does not exist here).
+- **Providers / contracts** — untouched; nothing in the batch crosses the wire in a new shape.
+- **Entry points** — the image base-dir fix covers the one place markdown files render with a known
+  file path (the file preview panel, reachable from the file browser, file links and file chips —
+  all of which land in `FilePreviewPanel`). Chat markdown has no file identity and is deliberately
+  unchanged.
+- **Reverse states / connection modes** — no new state was added; the comment-edit refresh and the
+  overlay dedupe are both idempotent read-side behaviors.
+- **Docs** — no user-visible behavior changed in a way any existing doc describes; nothing added.
+
+### Not tested
+
+- **The file preview image fix in a real client.** The base-dir computation and path resolution are
+  unit-tested; no browser pass was run, per `AGENTS.md`.
+- **A real edited PR comment refresh against GitHub.** The new test drives a fake RPC client.
