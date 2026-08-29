@@ -41,6 +41,7 @@ import {
   themeColorToHex,
   toCanonicalThemeColor,
   THEME_FILE_VERSION,
+  singleAppearanceOf,
 } from "./themePalette";
 
 function asHex(value: string): string {
@@ -1107,5 +1108,15 @@ describe("stored theme preferences", () => {
 
     vi.unstubAllGlobals();
     invalidateCustomThemes();
+  });
+});
+
+describe("singleAppearanceOf", () => {
+  it("reports the only half a theme can claim, and null for a pair", () => {
+    // PAPER_THEME stands in for upstream's T3_CHAT_THEME: any built-in that
+    // ships both halves proves the pair case.
+    const { variants: _pair, ...base } = PAPER_THEME;
+    expect(singleAppearanceOf({ ...base, id: "x", appearance: "dark" })).toBe("dark");
+    expect(singleAppearanceOf(PAPER_THEME)).toBe(null);
   });
 });

@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                         |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `b654911f8` — `fix(web): stop session activity timing test from blocking releases (#8585)` (2026-08-28) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                         |
-| **Ported on**                 | 2026-08-29                                                                                              |
+|                               |                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `053affbed` — `fix(mobile): prevent header overflow and back-button artifacts (#8624)` (2026-08-28) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                     |
+| **Ported on**                 | 2026-08-29                                                                                          |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -2945,3 +2945,243 @@ No commit was wholly present, but parts of three were:
   half of `8f4913221` is type plumbing, as upstream's own note says.
 - **The Providers list/editor in a real client.** Typecheck and the 21 settings test files pass; no
   browser pass was run, per `AGENTS.md`.
+
+## Batch 18 — reviewed through `053affbed` (21 commits)
+
+Reviewed `b654911f8..053affbed`, snapshotted at `053affbed` for the whole run. Two of these commits
+land directly on work batch 17 had just taken: `38154388d` reverts the auto-settle mode outright,
+and `5e63aea2d` reworks the Providers list/editor that batch 17 introduced. A third, `bcb855a63`,
+finally ships the composer half of the file-attachment feature whose server half landed last batch.
+
+The worktree was clean at the start of the run (batch 17 is committed as `b5b57c3eb`).
+
+One commit needed a product decision. `c1c2d5401` publishes environment themes from a
+`packages/shared/src/themePalettes.ts` that does not exist here, and the ids it needs live in a
+2,200-line fork-owned web module the server cannot import. The developer chose to extract Ronin's
+theme ids into a shared module rather than duplicate them server-side.
+
+### Ported (10)
+
+| Upstream    | Title                                                                    | Notes                                                         |
+| ----------- | ------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `ac3b2adf9` | fix(web): show the configured stash shortcut (#8437)                     | adapted — new test file, Ronin's component has no drawer ref  |
+| `22c311dde` | feat(web): add toggleable confirmation before unpinning a thread (#7313) | adapted — folds into `runWorkspaceCommand`                    |
+| `38154388d` | fix: restore automatic thread settling defaults (#8596)                  | adapted — reverts batch 17's port, Board included             |
+| `702a6ade3` | fix(codex): avoid quadratic app-server input buffering (#8605)           | verbatim                                                      |
+| `c131f2892` | fix(server): stop querying Claude context usage after turns (#8610)      | adapted — one import upstream could drop and this fork cannot |
+| `bcb855a63` | feat(web): attach PDFs, ZIPs, and other files to a turn (#8236)          | adapted — legacy sidebar and tasks drawer hunks dropped       |
+| `d22709f75` | fix(web): pass stashShortcutLabel in the mixed-attachments stash test    | folded into the adapted test from `ac3b2adf9`                 |
+| `c1c2d5401` | feat: let an environment publish themes as a file (#8569)                | heavily adapted — see below                                   |
+| `5e63aea2d` | fix(web): clean up provider settings list and editor (#8504)             | adapted — Ronin's design tokens re-applied                    |
+| `074bcd6dc` | fix(web): keep project picker popup inside the sidebar (#8627)           | verbatim                                                      |
+
+- **`c131f2892` (stop querying Claude context usage), one import this fork still needs.** The
+  commit is a real fix — `getContextUsage`'s token-count fallback can issue extra model requests
+  after every turn, so the adapter now tracks the latest assistant frame's usage instead. It also
+  deletes `import * as Option from "effect/Option"`, because removing `queryCurrentContextUsage`
+  left upstream's `ClaudeAdapter.ts` with no `Option` consumer. This fork has one:
+  `stopLiveTask`, which backs the Ronin-only per-subagent stop control on the Agents surface and
+  uses `Option.isNone` on its acknowledgement. Applied verbatim, the import removal made
+  `stopAgent` throw a `ReferenceError` that `Effect.catchCause` swallowed into "Claude did not stop
+  task", so the failure surfaced as a wrong-looking product error rather than a crash. The import is
+  kept with a comment saying why.
+
+- **`38154388d` (restore automatic settling defaults), a revert of a batch 17 port.** Upstream
+  reversed `0bbecfabf` in full: `sidebarAutoSettleMode` goes back to `sidebarAutoSettleOnMerge:
+boolean`, `changeRequestAutoSettles` returns to settling on unknown timestamps, and the exclusive
+  policy Select goes back to two switches. Everything batch 17 recorded for that commit is undone
+  here, including the Board migration: `board.logic.ts`, `useBoard.ts` and `board.logic.test.ts`
+  return to `autoSettleOnMerge`, and the pinned-thread lane case drops the explicit
+  `autoSettleMode: "inactivity"` it needed while the mode existed. `SettingsPanels.tsx` keeps
+  Ronin's `AgentNotificationsRow` / `AgentSoundsRow`, which sit between the two rows the hunk spans.
+
+- **`bcb855a63` (attach PDFs, ZIPs and other files), the composer half.** Batch 17 took the server
+  side of #8235 and recorded that no client could pick a non-image file yet; this is that client.
+  The whole staging pipeline ports: `composerAttachmentFiles.ts` (classification, capability gating,
+  size limits), `packages/client-runtime/src/state/attachments.ts`, the upload queue and state, the
+  paperclip control, file rows in the timeline, and files in the prompt stash. Three adaptations:
+  - **`LegacySidebar.tsx` dropped.** It is a cut surface; the hunk only threads the new
+    `releaseProjectDraftUploads` thread list, and `Sidebar.tsx` gets the same change.
+  - **`ComposerTasksBadge` imports and the two inline badges dropped.** They belong to the composer
+    state drawers (`792a1404f`, #7150), skipped in batch 8. Ronin renders its own
+    `ComposerStashBadge` higher in the tree, so only `inlineTasksBadge` / `inlineStashBadge` went.
+  - **`isHeicImageFile` moved rather than lost.** Ronin's HEIC/HEIF-to-JPEG conversion used to be
+    detected in `ChatComposer.tsx`; the new `composerAttachmentFiles.ts` imports the same helper
+    from this fork's `lib/imageCompression`, so the behaviour survives and the composer's import is
+    now genuinely unused. Lint caught it, and it was removed only after confirming the classifier
+    still calls it.
+  - `docs/user/composer.md` merges upstream's new copy into Ronin's existing sections: "Image
+    attachments" becomes "Attachments", a "Prompt stash" section is added, the mobile sentence is
+    dropped, and the stash shortcut is documented as `mod+s` — Ronin's actual default for
+    `composer.stash`, not upstream's `Cmd+S` prose.
+
+- **`ac3b2adf9` + `d22709f75` (configured stash shortcut).** The old copy hardcoded `⌘S`, which was
+  wrong on every rebind and on Windows and Linux. `ComposerStashMenu` is Ronin-authored (it came
+  from this fork's workspace-shell redesign, not from upstream) and had no test file, so upstream's
+  test changes could not apply. A focused `ComposerStashMenu.test.tsx` was written for the two cases
+  the commit is about — the label is shown when bound, and nothing is advertised when it is not.
+  Upstream's older thumbnail test was not adopted: it asserts classes from its own diverged
+  component. `d22709f75` is a same-day fix for the required prop and is folded into that test.
+
+- **`22c311dde` (unpin confirmation), same shape as batch 17's pin shortcut.** `confirmThreadUnpin`
+  defaults off; the confirmation covers the sidebar controls, the thread menus and the shortcut.
+  In `ChatView.tsx` the handler again folds into `runWorkspaceCommand`, which returns a boolean and
+  does not own the event, so upstream's `event.preventDefault()` / bare `return` become `return
+true` and `confirmAndUnpinThread` replaces `unpinThread` in that callback's deps.
+
+- **`c1c2d5401` (environment themes), the decided one.** An environment publishes theme JSON under
+  `themes/` in its state directory; the server watches the directory and streams the set over
+  `subscribeServerConfig`, clients render each as a library card, and `t3 theme set <id>` names the
+  environment's default. It is a good fit for a remote-ready fork: a remote client follows the
+  machine it is connected to.
+  - **Ronin's theme ids moved to `packages/shared/src/themePalettes.ts`.** Upstream's server and CLI
+    import `UNPUBLISHABLE_THEME_IDS` / `BUILT_IN_THEME_IDS` from a shared module this fork does not
+    have; Ronin's equivalent `RESERVED_THEME_IDS` lived in `apps/web/src/themePalette.ts`, which the
+    server cannot import. The ids (not the palettes) now live in shared and the web module imports
+    them, so the CLI, the publish path and the client library cannot drift. The new set was checked
+    against `HEAD`'s: 34 ids, identical, nothing added or dropped.
+  - **`BUILT_IN_THEME_IDS` is the eight themes this fork ships, not every reserved id.** The first
+    cut listed all 34, which made `t3 theme list` offer ids that resolve to nothing. Ronin's
+    `BUILT_IN_THEME_DEFINITIONS` has Paper, Tsukimi, Graphite, Aizome, Urushi, Obsidian, Carbon and
+    OLED Void; the rest (`t3-chat`, `grove`, `ocean`, `ember`, `iris`, `midnight`, `nebula` and the
+    other OLED variants, plus the `t3-*` aliases) are reserved-but-retired — held so a published or
+    custom theme cannot capture a client whose stored preference still names one. They are
+    `RETIRED_THEME_IDS`, and `RESERVED_THEME_IDS` is the union. Upstream's `useEnvironmentThemeSync`
+    test caught this by selecting `ocean` and getting `system` back.
+  - Upstream's palette exports (`BUILT_IN_THEMES`, `T3_CHAT_THEME`, `THEME_COLOR_ROLES`, the theme
+    types) are not imported: those live in this fork's own `themePalette.ts`. Its `singleAppearanceOf`
+    test uses `PAPER_THEME` in place of `T3_CHAT_THEME` — any built-in that ships both halves proves
+    the pair case. The CLI tests move off `ocean` to `graphite` for the same reason, and the
+    "rejects the mobile default theme id" case becomes "rejects a theme id this build does not
+    ship", which is the property that actually holds here.
+  - `apps/server/src/bin.ts` registers `themeCommand` only; upstream's hunk also adds `triageCommand`
+    (already here) and the T3 Connect commands (a cut surface). `__root.tsx` gains
+    `<EnvironmentThemeSync />` inside Ronin's own provider tree, without upstream's relay and connect
+    onboarding hosts.
+  - `docs/internals/glossary.md` needed renumbering: upstream's new section cites `[25]` and `[26]`,
+    which this fork already uses for other targets, so they became `[48]` and `[49]`.
+
+- **`5e63aea2d` (clean up provider settings), tokens re-applied.** Real behaviour, not just layout:
+  a failed probe's message now shows in both the list row and the editor, the account email moves
+  from a Configuration field back into the editor header status line, and `readOnly` is scoped so
+  the email reveal stays clickable. Upstream's structure was taken wholesale and batch 17's
+  substitutions re-applied on top — `text-[10px]/[11px]/[13px]` → `text-3xs/2xs/sm`,
+  `icon-micro` + `ghost-muted` → `icon-xs` + `ghost` with the fork's class list. Upstream itself
+  dropped `width="expanded"` in this commit, so the panel is back at the readable width and needs no
+  `max-w-6xl`. The Ronin-only instanceId `<code>` line, the Cursor-panel visibility fix and the
+  "Ronin" string in `getProviderSummary` all survive.
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (11)
+
+| Upstream    | Title                                                                    | Reason                                                              |
+| ----------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `e89800895` | fix(mobile): show composer menus when starting a task (#8587)            | mobile only, including its `docs/user/composer.md` paragraph        |
+| `8fc7f2294` | fix(mobile): restore composer glass and rounded shadows (#8597)          | mobile only                                                         |
+| `ac3a33191` | Remove Messages Glass Lab experiment (#8599)                             | deletes `experiments/`, a directory this fork never took            |
+| `3251b7548` | chore(release): prepare v0.0.36                                          | upstream release bookkeeping; Ronin versions independently          |
+| `2bc9e8ef6` | Require human review for pull requests changing product defaults (#8603) | edits `.macroscope/approvability.md`, which this fork does not have |
+| `4669eab8e` | fix(mobile): stabilize iOS header item transitions (#8607)               | mobile only; its new doc is `docs/internals/mobile-navigation.md`   |
+| `3e6ab36f6` | chore(mobile): upgrade to Expo SDK 57 (#8609)                            | mobile only                                                         |
+| `38dcd7a40` | fix(mobile): harden native header toolbar items (#8611)                  | mobile only, a `react-native-screens` patch                         |
+| `6a9d9f988` | chore: vouch ryanrhughes (#8613)                                         | upstream governance — that repo's contributor allowlist             |
+| `be218ac76` | feat(web): keybinding settings as settings rows (#8532)                  | presentational rewrite of a page this fork already redesigned       |
+| `053affbed` | fix(mobile): prevent header overflow and back-button artifacts (#8624)   | mobile only                                                         |
+
+- **`2bc9e8ef6`** appends a rule to `.macroscope/approvability.md`. This fork has `.macroscope/`
+  but only `check-run-agents/` inside it — the approvability file was never taken, so there is
+  nothing to append to.
+- **`6a9d9f988`** adds a GitHub handle to `.github/VOUCHED.td`. That file exists here and is wired
+  to `pr-vouch.yml`, but it is Ronin's own 39-entry trust list, not upstream's. Batches 1, 2, 8 and
+  13 skipped the same kind of commit for the same reason.
+- **`be218ac76`** rewrites `KeybindingsSettings.tsx` (+550/-314) from a custom grid into
+  `SettingsRow`s. No behaviour changes, and this fork already redesigned that page in
+  `7f7f1e7cb`: a tooltipped command label, an inline **Edit** affordance, `text-3xs` tokens, and
+  its own grid. Adopting upstream's layout would overwrite those choices for nothing. The one
+  functional detail in the diff — deduping repeated shortcut parts so a literal `+` renders — is
+  already handled better here by `keybindingDisplayParts` in `KeybindingsSettings.logic.ts`, whose
+  tests cover `"mod++"` → `["mod", "+"]` and `"mod+shift++"`. Upstream's inline `seenParts` map
+  produces `["mod", "", ""]` for the same input.
+
+### Considered and not changed
+
+- **The `ProviderRegistry` "re-probes when settings change the codex binaryPath" flake was
+  misdiagnosed once and is recorded here so the next batch does not repeat it.** It failed a single
+  run after `702a6ade3` landed, and a one-shot bisect appeared to pin it on that commit's removal of
+  an empty-line guard at stream end. Running each variant five times showed both pass 5/5:
+  `handleLine` already returns `Effect.void` for a blank line, so the guard was never load-bearing.
+  `protocol.ts` is byte-identical to upstream's, with no fork divergence carried for a phantom fix.
+  The test remains the load-sensitive flake batches 14 through 17 recorded.
+
+### Verification
+
+- Focused tests, full suite over every changed package:
+  `apps/server` + `apps/web` + `apps/desktop` + `packages/contracts` + `packages/client-runtime` +
+  `packages/shared` + `packages/effect-codex-app-server` — 729 files, 8,168 tests,
+  **8,156 pass / 9 skipped / 3 failures and 1 unloadable file, all four pre-existing.**
+- **Four pre-existing failures**, unchanged from batch 17, which verified each by stashing the
+  batch and re-running on the clean tree:
+  - `apps/web` › `MessagesTimeline.test.tsx` › "keeps the copy button for collapsed long user
+    messages" (recorded in batches 9, 13, 14, 16, 17).
+  - `apps/server` › `orchestrationEngine.integration.test.ts` › "appends checkpoint.revert.failed
+    activity when revert is requested without an active session". Re-confirmed on the clean tree
+    this batch.
+  - `apps/web/src/terminal/ghostty/runtimeAbi.test.ts` fails to load — Vite cannot parse a
+    `.wasm?inline` import.
+  - `ProviderRegistry.test.ts` › "re-probes when settings change the codex binaryPath", the
+    load-sensitive flake. Passes 8/8 when run alone this batch.
+- Typecheck: `tsgo --noEmit` in all seven packages — 0 errors.
+- `vp lint --report-unused-disable-directives` over the 84 changed `.ts`/`.tsx` files — 0 findings.
+  Two were fixed rather than accepted: the stale `isHeicImageFile` import, and
+  `no-inline-schema-compile` on upstream's new `rpc.test.ts`, whose decoder is now hoisted.
+- `vp fmt --check` over all 89 changed files — all correct.
+- `git diff --check` and `git diff --cached --check` clean.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — `confirmThreadUnpin` (defaulted off), the `sidebarAutoSettleMode` →
+  `sidebarAutoSettleOnMerge` revert, `ChatFileAttachment` staging types, and the environment-theme
+  additions to `server.ts`, `rpc.ts`, `environment.ts` and `settings.ts`. The
+  `subscribeServerConfig` payload field is optional on both ends, and `rpc.test.ts` pins that an
+  old server's empty-struct schema still accepts a client that sends it.
+- **Server** — the environment theme watcher and its `t3 theme` CLI, the Codex app-server
+  line-buffering fix, and the Claude post-turn usage change.
+- **Providers** — Claude (post-turn context usage) and Codex (app-server input buffering). No other
+  driver is touched; OpenCode, Cursor, Grok, Antigravity, Droid, Kilo and Pi need no decision here.
+- **Desktop (Electron/IPC)** — no code change; `DesktopClientSettings.test.ts` follows the two
+  settings-contract changes. Typechecked.
+- **Web renderer** — file attachments end to end (picker, staging, upload state, timeline rows,
+  stash), the unpin confirmation, the settling revert including the Board, the Providers
+  list/editor cleanup, the stash shortcut label, and the project picker popup containment.
+- **Reverse states** — every addition has its exit. Unpin confirmation is a setting that turns off,
+  and declining it leaves the thread pinned. A failed or pending file upload can be retried or
+  removed, and a draft that outlives its upload shows **Attach again** rather than silently
+  dropping the file. `t3 theme clear` undoes `t3 theme set` without changing what clients already
+  have, and a published theme that stops being published makes its card disappear with clients
+  falling back to the stock look.
+- **Connection modes** — environment themes are explicitly per-environment: a remote client follows
+  the machine it is anchored to, not the device it runs on, and the theme set streams over the
+  existing `subscribeServerConfig` subscription. File attachments upload to the environment that
+  will run the turn, so a remote thread's files land where the agent can read them; the capability
+  is advertised per environment, so a client against an older server simply does not offer files.
+- **Entry points** — unpinning is guarded from the sidebar row, the thread menus and `mod+shift+p`,
+  all through the same `confirmAndUnpinThread`. Files are attachable from the paperclip, drag and
+  paste. The environment theme is reachable from `t3 theme` on the server and from the theme
+  library in Settings.
+- **Docs** — `docs/user/composer.md` (attachments and the prompt stash), `docs/user/thread-sidebar.md`
+  (unpin confirmation, and the settling revert), `docs/user/environment-theme.md` (new, indexed in
+  `docs/README.md`), and `docs/internals/glossary.md` (**Appearance** with **Environment theme** and
+  **Default theme**).
+
+### Not tested
+
+- **A real published theme from a real desktop.** `environmentTheme.test.ts` and `theme.test.ts`
+  drive a temp directory; that a desktop rewrites its theme file when the system theme changes is
+  upstream's claim, taken on trust.
+- **A real file upload over a remote connection.** The staging, queue and capability gating are
+  covered by unit tests against fakes; no end-to-end upload to a live environment was run.
+- **The reworked Providers list/editor and the new composer controls in a real client.** Typecheck
+  and the focused suites pass; no browser pass was run, per `AGENTS.md`.

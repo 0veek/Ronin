@@ -4,20 +4,20 @@ Pin a thread from its context menu to keep it in the pinned section above your a
 `mod+shift+p` pins or unpins the thread you have open. Pinned threads are shown independently of
 their project, including when you connect to more than one environment.
 
-Pinned threads follow the auto-settle policy in **Settings** → **General**. Choose exactly one
-policy: settle when a pull request merges or closes, settle after a configurable period of
-inactivity, or never auto-settle. **Never** leaves every automatic path off, so threads settle only
-when you choose **Settle**. The pin marker stays on the row, and the thread returns to the pinned
-section when it is unsettled.
+To require confirmation before unpinning, enable **Settings** → **General** → **Unpin
+confirmation**. The confirmation applies to the sidebar controls, thread menus, and the
+`mod+shift+p` shortcut.
+
+Pinned threads still move to **Settled** when they become inactive. They also move when their pull
+request merges if **Auto-settle merged threads** is enabled. The pin marker stays on the row, and
+the thread returns to the pinned section when it is unsettled.
 
 When you un-settle a thread, it returns to the top of the active list so you can find it right
 away. Its timestamps do not change. Other threads keep their positions.
 
 Right-click a pull request link in a thread and choose **Link to thread** to show that pull request
-in the sidebar. The thread settles when the linked pull request merges or closes only when the
-pull-request policy is selected. Right-click the same link and choose **Unlink from thread** to
-remove it. If T3 Code cannot determine when a pull request entered its terminal state, it keeps the
-thread active.
+in the sidebar. The thread settles when the linked pull request merges if **Auto-settle merged
+threads** is enabled. Right-click the same link and choose **Unlink from thread** to remove it.
 
 Drag a pinned thread to change its position. The order is stored by the server and appears on your
 other connected devices.

@@ -29,7 +29,7 @@ function context(overrides: Partial<BoardClassifyContext> = {}): BoardClassifyCo
     now: NOW,
     preciseNow: NOW,
     autoSettleAfterDays: null,
-    autoSettleMode: "change-request",
+    autoSettleOnMerge: true,
     capabilitiesByEnvironmentId: new Map([[ENV, FULL]]),
     changeRequestByThreadKey: new Map(),
     ...overrides,
@@ -155,15 +155,11 @@ describe("deriveBoardLane", () => {
       pinnedAt: NOW,
       pinOrderKey: "a",
     });
-    expect(
-      laneOf(pinnedAndStale, context({ autoSettleAfterDays: 1, autoSettleMode: "inactivity" })),
-    ).toBe("done");
+    expect(laneOf(pinnedAndStale, context({ autoSettleAfterDays: 1 }))).toBe("done");
     // Settlement is the only thing the pin yields to: a pinned never-run
     // thread is still a Draft, and a pinned live one still floats in its lane.
     expect(laneOf(makeThread({ pinnedAt: NOW, pinOrderKey: "a" }))).toBe("draft");
-    expect(
-      laneOf(pinnedAndStale, context({ autoSettleAfterDays: 30, autoSettleMode: "inactivity" })),
-    ).toBe("upNext");
+    expect(laneOf(pinnedAndStale, context({ autoSettleAfterDays: 30 }))).toBe("upNext");
   });
 
   it("never uses a lane whose exit command the environment cannot run", () => {
@@ -241,7 +237,7 @@ describe("deriveBoardLane parity with the sidebar's own predicates", () => {
           effectiveSettled(thread, {
             now: ctx.now,
             autoSettleAfterDays: ctx.autoSettleAfterDays,
-            autoSettleMode: ctx.autoSettleMode,
+            autoSettleOnMerge: ctx.autoSettleOnMerge,
             changeRequest: null,
           }),
         ).toBe(true);

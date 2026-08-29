@@ -9,14 +9,33 @@ the background. Ronin opens another new thread and shows an **Open** action for 
 started. The new thread keeps the selected workspace mode and base branch. If **New worktree** is
 selected, each background thread creates its own worktree.
 
-## Image attachments
+## Attachments
 
-On environments that support direct uploads, images upload as soon as you add them. The send
-button becomes available once every upload finishes. A failed upload can be retried or removed.
-Older environments still send the image with the message.
+You can attach images up to 10 MB. On environments that support file uploads, you can also attach
+text files, PDFs, ZIP archives, and other files. Each file can be up to the limit advertised by the
+environment, capped at 50 MB. Each message can contain up to eight attachments in total. Files
+upload directly to the environment, where your agent can read, copy, or edit them by their file
+path.
+
+Attachments upload as soon as you add them. The send button becomes available once every upload
+finishes. A failed upload can be retried or removed. Older environments still send the image with
+the message.
+
+If you reload before a file finishes uploading, the draft keeps the file's name and shows **Attach
+again** next to it. Attach the file again or remove it, then send.
 
 HEIC and HEIF photos are converted to JPEG automatically when you drag them into the composer or
 paste them into a message.
+
+## Prompt stash
+
+Use the stash shortcut, `mod+s` by default, to stash the current prompt and its attachments
+after all file uploads finish. Restore the entry later from the stash menu. Stashes that contain
+files must be restored in the environment where those files were uploaded. Stashed files stay
+uploaded on the server for 24 hours. If you restore an entry after that, the file comes back with
+**Attach again** next to it. Attach the file again or remove it, then send.
+
+## Commands and skills
 
 ## Reading width
 

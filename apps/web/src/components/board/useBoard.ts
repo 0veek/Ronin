@@ -49,7 +49,7 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const sidebarProjectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
   const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
-  const autoSettleMode = useClientSettings((settings) => settings.sidebarAutoSettleMode);
+  const autoSettleOnMerge = useClientSettings((settings) => settings.sidebarAutoSettleOnMerge);
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const draftOrderByScopeKey = useBoardUiStore((state) => state.draftOrderByScopeKey);
   const pruneDraftOrders = useBoardUiStore((state) => state.pruneDraftOrders);
@@ -181,13 +181,13 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
       // (armed below at the exact next boundary) re-runs this memo on time.
       preciseNow: new Date().toISOString(),
       autoSettleAfterDays,
-      autoSettleMode,
+      autoSettleOnMerge,
       capabilitiesByEnvironmentId,
       changeRequestByThreadKey,
     }),
     [
       autoSettleAfterDays,
-      autoSettleMode,
+      autoSettleOnMerge,
       capabilitiesByEnvironmentId,
       changeRequestByThreadKey,
       nowMinute,

@@ -58,6 +58,14 @@ describe("searchSettings", () => {
     ]);
   });
 
+  it("lists thread confirmations in panel order", () => {
+    expect(searchSettings("confirmation").map((item) => item.id)).toEqual([
+      "unpin-confirmation",
+      "archive-confirmation",
+      "delete-confirmation",
+    ]);
+  });
+
   it("ranks direct setting-title matches ahead of broader section matches", () => {
     const matches = searchSettings("model");
 

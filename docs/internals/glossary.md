@@ -13,6 +13,7 @@ This is a living glossary for Ronin. It explains what common terms mean in this 
 - [Scheduled work](#scheduled-work)
 - [Checkpointing](#checkpointing)
 - [Working copy edits](#working-copy-edits)
+- [Appearance](#appearance)
 
 ## Concepts
 
@@ -244,6 +245,20 @@ A one-hunk or one-file patch cut out of the very diff text the panel is renderin
 
 Staging, unstaging, or reverting one patch slice, sent as `vcs.applyPatch` and applied by [GitVcsDriverCore.ts][3]. A revert clears the change from the index as well as the working tree. A patch Git refuses comes back as `stale` rather than an error: the diff it was cut from can always have moved on.
 
+### Appearance
+
+#### Environment theme
+
+A theme an environment's machine publishes for clients to follow, one file per theme under `themes/` in that environment's state directory; the filename is the theme id. [environmentTheme.ts][48] watches the directory and streams the set over `subscribeServerConfig`; clients render each as a library card, generating a full palette when the file carries seed colors and using the palette directly when it is a standard exported theme file. A desktop that retints its apps when the system theme changes rewrites its file, so Ronin follows along without a restart. See [environment-theme.md][49].
+
+#### Default theme
+
+The environment's theme, held in its `settings.json` as `defaultTheme` (with `defaultThemeSetAt`
+as the set-generation) and set with `t3 theme set <id>`. Web and desktop clients apply each set
+once — live when connected, on the next connect otherwise — so setting it switches them, while a
+theme a user picks in Settings afterwards sticks until the next set; Naming a published [environment theme](#environment-theme) is how a desktop
+ships Ronin already matching it.
+
 ## Practical Shortcuts
 
 - If you see `requested`, think "intent recorded".
@@ -306,3 +321,5 @@ Staging, unstaging, or reverting one patch slice, sent as `vcs.applyPatch` and a
 [45]: ./build-systems.md
 [46]: ../../apps/web/src/components/DiffPanel.tsx
 [47]: ../../apps/web/src/lib/patchHunks.ts
+[48]: ../../apps/server/src/environmentTheme.ts
+[49]: ../user/environment-theme.md
