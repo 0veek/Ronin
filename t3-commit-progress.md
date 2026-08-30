@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                        |
-| ----------------------------- | -------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `c0e09f323` — `fix(web): render nested markdown images correctly (#8501)` (2026-08-29) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                        |
-| **Ported on**                 | 2026-08-30                                                                             |
+|                               |                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| **Upstream reviewed through** | `2daff8c25` — `test(web): remove tests for unreachable helpers (#8738)` (2026-08-30) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                      |
+| **Ported on**                 | 2026-08-30                                                                           |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -3343,3 +3343,106 @@ if any of these reappear, it is a regression, not the known list.
 - Nothing outstanding from the carried list. The `ProviderRegistry` flake is the one entry that
   cannot be _proven_ gone (it never reproduced on demand); the attempt caps it depended on are gone,
   which is the strongest available claim.
+
+## Batch 20 — reviewed through `2daff8c25` (4 commits)
+
+Reviewed `c0e09f323..2daff8c25`, snapshotted at `2daff8c25` for the whole run. The smallest batch
+yet, and two of the four cancel each other out: `3d32797f6` rewrites the composer banner stack and
+`8dcb96314` reverts it wholesale the same day. `git diff 3d32797f6^ 8dcb96314` is empty, so upstream
+ended the range with the banner surface exactly as it started. The worktree was clean at the start of
+the run (batch 19 and the carried-failure pass are committed as `31fc04b6b`).
+
+### Ported (2, both partial)
+
+| Upstream    | Title                                                                | Notes                                                                                                                         |
+| ----------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `1f8ed54ad` | fix(mobile): reduce dev-client reload and Metro startup cost (#8694) | **partial** — the `client-runtime` registry-scope fix and the `AGENTS.md` testing line only; the mobile bulk is a cut surface |
+| `2daff8c25` | test(web): remove tests for unreachable helpers (#8738)              | **partial** — every removal except `formatRelativeTimeUntil*`, which Ronin's Board still calls                                |
+
+- **`1f8ed54ad` (registry scope), the client-runtime half.** Buried in a mobile dev-loop commit is a
+  real leak in shared code: `createServiceScope` built each environment supervisor in a bare
+  `Scope.make()`, a scope with no parent. Nothing tied it to the registry's own lifetime, so a
+  supervisor acquired after the registry layer's scope had closed stayed open forever — the session
+  it opened was never released. `make` now takes `const registryScope = yield* Scope.Scope` (the
+  layer build scope; `Layer.effect` runs its effect in that scope and erases the requirement) and
+  forks from it, so a closed registry scope closes the child immediately. Ronin's `registry.ts` was
+  byte-identical to upstream's pre-fix shape apart from the removed relay surface, so the two hunks
+  applied verbatim. Upstream's new test came whole: it builds the layer in a scope it owns, closes
+  that scope, then runs `registry.start` under a synchronous scheduler and flushes, asserting zero
+  sessions acquired and zero released. Confirmed meaningful by reverting the one-line fix — the test
+  fails, and passes again with it. Dropped: everything under `apps/mobile`, `patches/`,
+  `pnpm-lock.yaml`, `pnpm-workspace.yaml` (a `uniwind` patch entry), `.agents/skills/test-t3-mobile`,
+  and `docs/internals/mobile-development.md`. This fork has no mobile app.
+
+- **`1f8ed54ad` (the `AGENTS.md` line).** "Test meaningful logic or observable behavior. Do not
+  render components to static markup to assert props or attributes, or add tests that merely assert
+  callback wiring or mirror the implementation." Fork-agnostic authoring guidance, and it is the
+  rationale the very next upstream commit acts on. Taken into Ronin's `AGENTS.md` verbatim, in the
+  same position under **Verifying**.
+
+- **`2daff8c25` (unreachable helpers).** Upstream deletes seven helpers that only their own tests
+  called. Each was re-checked against this fork rather than assumed, because Ronin's call sites
+  diverge. Six are unreachable here too and went with their tests: `appearanceFontStack`,
+  `resolveSidebarStageBadgeLabel` (and the now-unused `resolveServerBackedAppStageLabel` import —
+  `SidebarStageBackdrop.tsx` still calls it directly, so `branding.logic.ts` keeps the export),
+  `findFirstUnansweredPendingUserInputQuestionIndex`, the module-level
+  `providerUpdateDismissal` read/write/dismiss quartet (`useDismissedProviderUpdateNotificationKeys`
+  is the only live entry point, and the storage key goes back to module-private), `formatTimestamp`,
+  and `appendVersionMismatchHint`. The `threadSyncLabel` hunk is test-only upstream and here too:
+  the function stays (`ThreadSyncStatusPill.tsx` calls it), and only the assertion mirroring its two
+  string literals goes. Dropped hunk: `formatRelativeTimeUntil` /
+  `formatRelativeTimeUntilLabel` in `timestampFormat.ts`. Upstream can delete them; this fork
+  cannot — `BoardCard.tsx:213` renders `formatRelativeTimeUntilLabel(thread.snoozedUntil)` as the
+  snooze countdown on Board cards, a Ronin-owned surface. Their tests stay for the same reason.
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (2)
+
+| Upstream    | Title                                                      | Reason                                                             |
+| ----------- | ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| `3d32797f6` | fix(web): unify activity logs and composer banners (#8693) | reverted upstream by `8dcb96314` inside this same range; net no-op |
+| `8dcb96314` | revert(web): restore previous composer banners (#8733)     | the revert half of that pair; nothing to port                      |
+
+- **The banner pair.** `3d32797f6` is a 33-file rewrite of the composer: a new `ComposerBanner.tsx`,
+  `ComposerSurface.tsx`, `ComposerActivityStatus.tsx` and `ComposerServerUpdateStatus.tsx`, with
+  `ComposerBannerStack` reduced to a shell and ~520 lines pulled out of `index.css`. `8dcb96314`
+  restores every one of those files a day later. `git diff --stat 3d32797f6^ 8dcb96314` is empty
+  across the whole tree, so upstream's considered position at the snapshot tip is the pre-`8693`
+  design — which is what this fork already renders. Porting the pair would be two large, opposing
+  refactors of `ChatComposer`, `ChatView` and `MessagesTimeline` for a guaranteed zero net change,
+  on top of a composer this fork has already diverged on (batch 8's `792a1404f`, batch 13's
+  `68966c1e6`, batch 19's `660cddd3b` — the shoulder-tab line was all declined). If upstream lands
+  the redesign again, it will arrive as a fresh commit in a later batch and gets judged then.
+
+### Verification
+
+- Focused tests: `registry.test.ts` (17 pass, includes the new scope case), plus
+  `appearanceFonts.test.ts`, `Sidebar.logic.test.ts`, `pendingUserInput.test.ts`,
+  `threadSync.test.ts`, `timestampFormat.test.ts`, `versionSkew.test.ts` — 7 files, 205 pass, 0
+  failures. Baseline stayed clean, as batch 19's carried-failure pass predicted.
+- Negative control: with `Scope.fork(registryScope)` reverted to `Scope.make()`, the new registry
+  test fails (1 failed / 16 passed); restored, 17 pass.
+- Typecheck: `tsgo --noEmit` in `apps/web` and `packages/client-runtime` — 0 errors, 0 suggestions.
+- `vp lint` over the 14 changed `.ts` files — 0 findings. `vp fmt --check` over all 15 changed files
+  (including `AGENTS.md`) — all correct. `git diff --check` clean.
+
+**Hit every surface (for this batch):**
+
+- **Clients** — the registry fix is in `packages/client-runtime`, so desktop and web both get it
+  from the shared layer; neither shell needed a change. The web removals are dead code with no
+  render path.
+- **Providers / contracts** — untouched. Nothing here crosses the wire.
+- **Entry points / reverse states** — no behavior was added or removed from any user-facing path.
+  The scope fix only changes what happens after the registry has already been torn down.
+- **Connection modes** — this is the connection layer, and the fix applies to every target kind
+  (primary, bearer, SSH) because it sits in the one place service scopes are created.
+- **Docs** — `AGENTS.md` gained the testing-guidance line. No `docs/` change: nothing a user would
+  notice changed.
+
+### Not tested
+
+- **A real teardown race in a running client.** The leak is unit-tested against the registry layer;
+  no app run was made to reproduce the original stranded-session case, per `AGENTS.md`.

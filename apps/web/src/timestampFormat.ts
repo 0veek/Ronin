@@ -78,12 +78,6 @@ export function parseTimestampDate(isoDate: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function formatTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {
-  const date = parseTimestampDate(isoDate);
-  if (!date) return "";
-  return getTimestampFormatter(timestampFormat, true).format(date);
-}
-
 // Deliberately not the host locale: the tooltip's ordinal suffix and
 // day-before-month order below are English, so a localized month alone would
 // read "4th Juni 2026". Localizing the whole label is a separate change.
