@@ -7,6 +7,12 @@
       "command": "vp i && ln -sf $T3CODE_PROJECT_ROOT/.env .env && node apps/web/scripts/warm-dep-cache.ts",
       "icon": "configure",
       "runOnWorktreeCreate": true
+    },
+    {
+      "name": "Setup Worktree (Windows)",
+      "command": "vp i && New-Item -ItemType SymbolicLink -Path .env -Target \"$env:T3CODE_PROJECT_ROOT\\.env\" -Force && node apps\\web\\scripts\\warm-dep-cache.ts",
+      "icon": "configure",
+      "runOnWorktreeCreate": true
     }
   ]
 }

@@ -12,14 +12,17 @@ selected, each background thread creates its own worktree.
 ## Attachments
 
 You can attach images up to 10 MB. On environments that support file uploads, you can also attach
-text files, PDFs, ZIP archives, and other files. Each file can be up to the limit advertised by the
-environment, capped at 50 MB. Each message can contain up to eight attachments in total. Files
-upload directly to the environment, where your agent can read, copy, or edit them by their file
-path.
+videos, text files, PDFs, ZIP archives, and other files. Each file can be up to the limit advertised
+by the environment, capped at 50 MB. Each message can contain up to eight attachments in total.
+Files upload directly to the environment, where your agent can read, copy, or edit them by their
+file path.
 
 Attachments upload as soon as you add them. The send button becomes available once every upload
 finishes. A failed upload can be retried or removed. Older environments still send the image with
 the message.
+
+Select a video attachment before or after sending to play it with the browser's built-in controls.
+Playback depends on the video formats and codecs that the browser supports.
 
 If you reload before a file finishes uploading, the draft keeps the file's name and shows **Attach
 again** next to it. Attach the file again or remove it, then send.

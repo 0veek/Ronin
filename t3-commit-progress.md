@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------ |
-| **Upstream reviewed through** | `2daff8c25` — `test(web): remove tests for unreachable helpers (#8738)` (2026-08-30) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                      |
-| **Ported on**                 | 2026-08-30                                                                           |
+|                               |                                                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `e3dcc1615` — `Add mobile composer attachment menu with video support (#8843)` (2026-08-30) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                             |
+| **Ported on**                 | 2026-08-31                                                                                  |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -3446,3 +3446,208 @@ None.
 
 - **A real teardown race in a running client.** The leak is unit-tested against the registry layer;
   no app run was made to reproduce the original stranded-session case, per `AGENTS.md`.
+
+## Batch 21 — reviewed through `e3dcc1615` (20 commits)
+
+Reviewed `2daff8c25..e3dcc1615`, snapshotted at `e3dcc1615` for the whole run. The worktree was
+clean at the start (batch 20 is committed as `a3b390ed5`). The batch is dominated by one large web
+feature — video attachments — plus a Codex markdown-directive renderer that needs new dependencies,
+and five mobile/release commits that are pure cut surface.
+
+### Ported (13)
+
+| Upstream    | Title                                                                     | Notes                                                                                  |
+| ----------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `ac4aae101` | feat(web): play video attachments in chat (#8688)                         | **adapted** — grafted onto Ronin's portal `Dialog`; dropped upstream's new dialog test |
+| `7980dfddb` | fix(web,mobile): snooze menu no longer offers the same wake time twice    | clean — shared `client-runtime` state, no mobile surface involved                      |
+| `6e324b9bb` | fix(web): reduce title bar scroll fade height (#8799)                     | **adapted** — Ronin uses named fade classes in `chrome.css`, not a Tailwind utility    |
+| `12fe2d6d0` | fix(windows): strip quotes from repaired PATH (#8746)                     | clean                                                                                  |
+| `8f525af5a` | fix(web): open agent images in expanded preview (#8807)                   | **adapted** — Ronin owns a different markdown-image component tree                     |
+| `60f2ce027` | fix(git): follow repository instructions in generated source control text | clean — docs line reworded for the Ronin name                                          |
+| `9072aa1fd` | fix(server): stop overpricing cached Claude tokens (#8806)                | **adapted** — kept Ronin's `aliasModelNames` lookup on top of the new keying           |
+| `e09b88b6a` | fix(web): keep right panel synced with agent edits (#8803)                | clean but for Ronin's `MissingMediaBlock` error state                                  |
+| `c1e70b5f8` | fix(web,mobile): render Codex citations and artifact templates (#8584)    | **partial** — web + `client-runtime` halves; the mobile half is a cut surface          |
+| `e4f7b14fa` | chore: add Windows setup script to t3.json (#8814)                        | **adapted** — Ronin's `t3.json` has no relay `.env` to symlink                         |
+| `17c48f7fc` | fix(web): fold interim turn responses (#8828)                             | clean — test row order adapted to Ronin's expanded work rows                           |
+| `8b817cbca` | fix(web): use circle alert for failed tool calls (#8840)                  | **adapted** — Ronin renders the failure marker as a separate badge                     |
+| `cefec32d6` | fix(web): prevent pull request metadata overlap (#8790)                   | **adapted** — Ronin has no condensed-topbar refresh control                            |
+
+- **`ac4aae101` (video attachments).** The largest change in the batch and a genuine capability, not
+  polish: a video attachment now plays in the expanded preview instead of downloading. Ronin's
+  generic-file attachment surface (`b5b57c3eb`) turned out to be byte-compatible with upstream's
+  pre-fix shape, so 20 of the 22 files applied verbatim — `AssetAccess` claims (`download` is now
+  suppressed for `video/*`), `http.ts` inline video `Content-Type`, the desktop CSP's new
+  `media-src`, `videoMimeType`/`isVideoAttachment` in `types.ts`, the composer's video tiles and
+  thumbnail element, `composerDraftStore`'s reattach-marker matching, and the timeline's play
+  buttons. Two files needed hand work. `ExpandedImageDialog.tsx` is a real divergence: upstream
+  renders a bare `fixed inset-0` div, Ronin renders a Base UI `Dialog`/`DialogPopup` with
+  `FallbackImage` and `MissingMediaBlock`. The video branch (player, unplayable-format fallback,
+  download button, `mediaLabel` aria strings) was grafted into Ronin's dialog, keeping Ronin's
+  radius/border tokens and its bounds-normalising `index`. `MessagesTimeline.tsx` conflicted only
+  on the lucide import block, where Ronin has `MinusIcon` and no `SearchIcon`.
+  Dropped: upstream's new `ExpandedImageDialog.test.tsx`. It asserts on `renderToStaticMarkup`
+  output, which Ronin's portalled dialog renders as the empty string — confirmed by running it — and
+  it is the exact shape `AGENTS.md` tells us not to write. The video render path is still covered by
+  the `MessagesTimeline` play-button test and `ExpandedImagePreview.test.ts`, both of which came
+  across whole and pass.
+  `docs/user/composer.md` took the playback paragraph, and its attachment-type list gained "videos"
+  (that half-sentence is upstream's, from `e3dcc1615`, but it is true of Ronin the moment this lands).
+
+- **`6e324b9bb` (scroll fade height).** Upstream collapses three different fade heights
+  (2.5rem, 3rem at `sm`, 1.5rem on the pull-request list) into one 1.5rem token. Ronin reaches the
+  same place by a different route: it has no `topbar-scroll-fade` Tailwind utility, it has
+  `.chat-timeline-scroll-fade` / `.settings-page-scroll-fade` / `.pull-requests-scroll-fade` in
+  `styles/chrome.css`, each carrying its own `--topbar-scroll-fade-height`. Added
+  `--workspace-titlebar-scroll-fade-height: 1.5rem` to `styles/tokens.css` next to the other
+  `--workspace-titlebar-*` tokens, pointed the three classes at it, and deleted both the
+  pull-request override and the `min-width: 40rem` bump. `MessagesTimeline`'s two spacers
+  (`h-10 sm:h-12`, `pt-10 sm:pt-12`) now read the token, exactly as upstream.
+
+- **`8f525af5a` (expandable agent images).** Behaviourally a clean win — an image an agent renders
+  in its message opens in the same preview a user attachment does — but not portable as a patch.
+  Upstream's `ChatMarkdown` has `ChatMarkdownWorkspaceImage`, `ChatMarkdownImageFallback` and a
+  `markdown-images` client-runtime subpath; Ronin has `MarkdownImage` → `WorkspaceMarkdownImage` →
+  `LoadableMarkdownImage` with `MissingMediaChip`, and no such subpath. Reimplemented on Ronin's
+  tree: `MarkdownLinkContext` and `expandableMarkdownImageProps` came over verbatim, the
+  `onImageExpand` prop threads down the three components, and the context is read once in
+  `LoadableMarkdownImage` — the single place Ronin renders an `<img>` for markdown, and already a
+  component, so upstream's `img: function MarkdownImage(...)` rename was unnecessary here. An image
+  inside a link still belongs to the link, by the context and by upstream's `closest("a")` guard.
+
+- **`9072aa1fd` (cached-token overpricing).** A real cost bug. LiteLLM publishes the same model
+  under several keys (`claude-fable-5`, `deepinfra/anthropic/claude-fable-5`), the old
+  `parseRateTable` normalised every key to its bare name, and whichever entry was parsed last won —
+  including entries with no `cache_read_input_token_cost`, which then fall back to the full input
+  rate and overcharge every cached token. Upstream keeps the qualified key and adds a bare alias
+  only when no canonical entry exists and all qualified entries agree. Ronin's `lookupRate` had
+  diverged with `aliasModelNames` (Grok's `-build` variants, Antigravity's `-preview` ids), so the
+  adaptation is: look up the full key first, then run Ronin's aliases against the bare name. The
+  Grok and Antigravity transcript suites confirm that path still resolves.
+
+- **`c1e70b5f8` (Codex citations and artifact templates).** Codex is a first-class Ronin provider,
+  and this is the renderer for the `:::codex-file-citation` and `:::artifact-template` directives it
+  emits — without it those come through as raw directive text. Took the three new `client-runtime`
+  modules whole (`codexFileCitations`, `codexArtifactTemplates`, `codexMarkdownDirectives`) with
+  their tests, the three package exports, and the web wiring: `remarkCodexDirectives` in both remark
+  plugin arrays, the `div` component renderer plus its sanitiser allowance, `CodexArtifactTemplateCard`,
+  `onUseArtifactTemplate` down through `MessagesTimeline` to `ChatMarkdown`, and
+  `renderCodexDirectivesForCopy` on the assistant copy path. This is the one port in the batch that
+  needed `pnpm-lock.yaml` movement: `mdast-util-directive` and `micromark-extension-directive` are
+  genuinely new (`micromark-util-character`, `remark-parse` and `unified` were already in the store
+  as transitive react-markdown deps). Conflicts were all additive — Ronin's `onAskOnTheSide`,
+  `shoulderTabReserve`, `dataHtmlPreview` sanitiser entry and `MessageSourceBlock` branch all sit
+  alongside the new members. Dropped: the mobile `ThreadFeed`/`ThreadDetailScreen` halves, the
+  `markdown-images` import (upstream's image module, which Ronin does not have), and the
+  `img: [..."dataLocalSrc", "dataMarkdownTitle"]` sanitiser entry that belongs to it.
+
+- **`8b817cbca` (circle alert).** Upstream folds warning and failure into one `circle-alert` icon
+  name inside `LiveActivityContent` and `PlainWorkEntryRow`. Ronin has no live-activity work rows at
+  all — no `LiveActivityRow`, `LiveActivityContent`, `LiveWorkEntryTimelineRow` or
+  `toolGroupSummaryIconName` — so that whole hunk was dropped rather than reintroducing an upstream
+  surface as a side effect. The two places Ronin does draw the glyph took the change: the warning
+  icon name in `PlainWorkEntryRow`, and the trailing failure badge, which swapped `XIcon` for
+  `CircleAlertIcon` behind its "Failed" tooltip. Both timeline assertions moved from `lucide-x` to
+  `lucide-circle-alert`; Ronin's `font-medium text-destructive` assertion stays.
+
+- **`cefec32d6` (pull request row overlap).** The row grid change, the `@container` meta line, the
+  search chip, `PullRequestActorLabel`'s `labelClassName`, `CompactFilterMenu`'s truncation and the
+  condensed-breadcrumb `searchExpanded` behaviour all came over. Two adaptations: the search chip
+  uses Ronin's `text-3xs` token rather than a raw `text-[10px]`, and the `shrink-0` → `shrink`
+  change on the condensed topbar wrapper does not apply — Ronin renders `ExpandableSearch` directly
+  there, with no `PullRequestRefreshControl` beside it, and `ExpandableSearch` now carries
+  `w-56 min-w-24 shrink` itself.
+
+- **`e4f7b14fa` (Windows worktree script).** Kept because Ronin ships a Windows desktop build and
+  this batch also carries a Windows PATH fix, so a contributor on Windows is a real case. Adapted:
+  Ronin's `t3.json` symlinks only `.env`, never `infra/relay/.env`.
+
+### Already in the tree (2)
+
+| Upstream    | Title                                                      | Confirmation                                                            |
+| ----------- | ---------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `7880a6e58` | fix(grok): allow model changes in existing threads (#8392) | `d31c6d5f7` removed `requiresNewThreadForModelChange` from Grok already |
+| `5885a68ad` | fix(web): keep image preview above sidebar control (#8811) | Ronin's preview is a portalled dialog, so it already paints on top      |
+
+- **`7880a6e58`.** Ronin dropped `requiresNewThreadForModelChange` from `GROK_PRESENTATION` in
+  `d31c6d5f7` ("switch Grok models in-session and detect real auth state"), months before upstream
+  landed #8392, and `GrokProvider.test.ts:247` already asserts the flag is `undefined`. Nothing to do.
+
+- **`5885a68ad`.** Upstream's expanded preview is a plain `fixed inset-0 z-50` div rendered inline in
+  `ChatView`, so at an equal z-index the later-in-DOM workspace titlebar control painted over it;
+  their fix bumps the preview to `z-[60]`. Ronin's preview goes through `DialogPopup`, which portals
+  to `document.body` — after every in-tree `z-50` fixed element — so the tie already resolves in the
+  preview's favour. The literal port would mean bumping the shared `DialogViewport` used by every
+  dialog in the app to fix a bug this fork does not have.
+
+### Skipped (5)
+
+| Upstream    | Title                                                            | Reason                                                                |
+| ----------- | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `f15680bd3` | feat(mobile): update tool summaries and chat transitions (#8793) | mobile feature; its web hunk is a byte-identical move for mobile only |
+| `86c9a9288` | feat(mobile): pick, share, and receive files in threads (#8237)  | entirely `apps/mobile`, patches, and mobile-only docs                 |
+| `352710d49` | feat(mobile): add offline iPhone voice input (#8614)             | iOS speech + expo-audio; the shared controller has no web consumer    |
+| `7963ac740` | chore(release): prepare v0.0.37                                  | Ronin versions independently (`0.6.9`)                                |
+| `e3dcc1615` | Add mobile composer attachment menu with video support (#8843)   | mobile composer menu and mobile navigation docs                       |
+
+- **`f15680bd3`.** Buried in a mobile commit is a web change worth looking at, and it turns out to be
+  nothing: `tokenizeShellCommand` and `commandProgramName` move out of `MessagesTimeline.tsx` into a
+  new `client-runtime/work-log/commandLabel.ts`. Diffed the extracted file against the deleted block
+  — identical apart from the added `export`. The sibling `work-log/presentation.ts` has no web
+  importer at all. In a fork with no mobile app the move buys nothing and costs a package export, so
+  Ronin keeps the helper inline. (This is why `c1e70b5f8`'s `commandProgramName` import line was
+  dropped when that commit's `MessagesTimeline` conflict was resolved.)
+
+- **`352710d49`.** The `client-runtime/voice-input` controller looks fork-agnostic but is not
+  reachable without a mobile transcription backend: it is driven by `expo-audio` recorder events and
+  an Apple on-device `VoiceTranscriber`, and no web or desktop surface calls it. Porting it would add
+  ~1,000 lines of dead code plus two patched native dependencies. Dictation on desktop would be a new
+  Ronin feature, not a sync.
+
+### Verification
+
+- Focused tests, 24 files over every changed module — 603 pass, 0 failures:
+  `ElectronProtocol`, `DesktopShellEnvironment`, `AssetAccess`, `GitManager`, `http`, `usagePricing`,
+  `usageScanCache`, `usageTranscripts`, `usageAggregation`, `ChatMarkdown`, `ChatView.logic`,
+  `ExpandedImagePreview`, `MessagesTimeline`, `MessagesTimeline.logic`, `composerAttachmentFiles`,
+  `projectFilesQueryState`, `composerDraftStore`, `useWorkspaceMutationRefresh`, `markdown-clipboard`,
+  `codexArtifactTemplates`, `codexFileCitations`, `codexMarkdownDirectives`, `threadSnoozed`, `shell`.
+- Neighbouring suites for the surfaces that were adapted rather than applied — pull-request list and
+  filters, `pullRequestMarkdown.logic`, `threadSettled`, the whole `textGeneration` directory:
+  12 files, 386 pass, 0 failures.
+- Negative control: upstream's `ExpandedImageDialog.test.tsx` was run before being dropped and fails
+  against Ronin's portalled dialog (`expected '' to contain '<video'`), which is why it is gone
+  rather than merely inconvenient.
+- Typecheck: `tsgo --noEmit` in `apps/web`, `apps/server`, `apps/desktop`, `packages/client-runtime`,
+  `packages/shared`, `packages/contracts` — 0 errors, 0 suggestions each.
+- `vp fmt --check` over all 61 changed files — clean. `git diff --check` — clean.
+- `vp i` after the `client-runtime` dependency additions; the `pnpm-lock.yaml` diff is confined to
+  the five new specifiers and the two genuinely new packages.
+
+**Hit every surface (for this batch):**
+
+- **Entry points** — video playback is reachable from both places a video attachment appears: the
+  composer tile before sending and the timeline play button after. Markdown image expansion is
+  reachable from any agent message. The right-panel refresh covers the diff panel, the file browser
+  and the file preview, all three wired from `ChatView`'s single `workspaceMutationId`.
+- **Clients** — desktop gets the CSP `media-src` it needs for `blob:` playback; the shared logic all
+  lives in `packages/client-runtime` or `apps/web`, which the desktop shell renders.
+- **Providers** — the Codex directive renderer is provider-shaped and Codex-only by construction:
+  other providers never emit those directives, so their markdown is untouched. The Grok verdict was
+  a no-op. No adapter needed a decision.
+- **Contracts** — unchanged. Video rides on the existing attachment asset claims; the new
+  `mimeType` handling is server-side policy on an already-typed field.
+- **Reverse states** — a video that cannot be decoded offers a download; a download that fails says
+  so; an in-flight preview is cancellable and cancels itself on thread switch and unmount. The
+  artifact-template card renders without its "Use template" action when no handler is supplied.
+- **Connection modes** — the video preview fetches through the environment's signed asset URL and
+  resolves against `connection.httpBaseUrl`, so remote and Tailscale environments take the same path
+  as local; `blob:` playback means no cross-origin media load.
+- **Docs** — `docs/user/composer.md` gained video playback and the attachment-type mention;
+  `docs/user/source-control.md` gained the `AGENTS.md`/`CLAUDE.md` line. Mobile-only doc edits from
+  the skipped commits were left behind, and `docs/internals/mobile-*.md` does not exist here.
+
+### Not tested
+
+- **A running client.** No dev server or browser was started, per `AGENTS.md`. The video player, the
+  expandable markdown images, the pull-request row layout and the scroll-fade height are all
+  visual/interaction changes verified by tests and typecheck only.

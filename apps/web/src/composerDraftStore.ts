@@ -42,6 +42,7 @@ import {
   DEFAULT_RUNTIME_MODE,
   type ChatFileAttachment,
   type ChatImageAttachment,
+  videoMimeType,
 } from "./types";
 import {
   type TerminalContextDraft,
@@ -761,6 +762,26 @@ function composerImageDedupKey(image: ComposerImageAttachment): string {
   // Keep this independent from File.lastModified so dedupe is stable for hydrated
   // images reconstructed from localStorage (which get a fresh lastModified value).
   return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
+}
+
+export function composerFileDedupKey(
+  file: Pick<ComposerFileAttachment, "mimeType" | "sizeBytes" | "name">,
+): string {
+  return `${file.mimeType}\u0000${file.sizeBytes}\u0000${file.name}`;
+}
+
+export function composerFileMatchesReattachMarker(
+  marker: Pick<ComposerFileAttachment, "mimeType" | "sizeBytes" | "name">,
+  file: Pick<ComposerFileAttachment, "mimeType" | "sizeBytes" | "name">,
+): boolean {
+  if (marker.name !== file.name || marker.sizeBytes !== file.sizeBytes) return false;
+  if (marker.mimeType === file.mimeType) return true;
+  const markerMimeType = marker.mimeType.toLowerCase();
+  return (
+    (markerMimeType === "" || markerMimeType === "application/octet-stream") &&
+    videoMimeType(marker) !== null &&
+    videoMimeType(file) !== null
+  );
 }
 
 function terminalContextDedupKey(context: TerminalContextDraft): string {
@@ -3210,29 +3231,32 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
             const knownIds = new Set(existing.files.map((file) => file.id));
             const knownFiles = new Map<string, ComposerFileAttachment>(
-              existing.files.map((file) => [
-                `${file.mimeType}\u0000${file.sizeBytes}\u0000${file.name}`,
-                file,
-              ]),
+              existing.files.map((file) => [composerFileDedupKey(file), file]),
             );
             const accepted: ComposerFileAttachment[] = [];
             // Needs-reattach markers replaced in place by a re-pick, keyed by
             // the marker's id.
             const replacements = new Map<string, ComposerFileAttachment>();
             for (const file of files) {
-              const key = `${file.mimeType}\u0000${file.sizeBytes}\u0000${file.name}`;
+              const key = composerFileDedupKey(file);
               if (knownIds.has(file.id)) {
                 continue;
               }
-              const duplicate = knownFiles.get(key);
+              const duplicate =
+                knownFiles.get(key) ??
+                existing.files.find(
+                  (candidate) =>
+                    composerFileNeedsReattach(candidate) &&
+                    !replacements.has(candidate.id) &&
+                    composerFileMatchesReattachMarker(candidate, file),
+                );
               if (duplicate) {
-                // A needs-reattach marker persists exactly the metadata this
-                // key hashes, so re-picking the same file matches its marker.
-                // Dropping the pick as a duplicate would leave the draft
-                // blocked forever; replace the marker so the upload restarts.
+                // A needs-reattach marker is not a usable duplicate. Replace
+                // it so the upload restarts.
                 if (composerFileNeedsReattach(duplicate) && !replacements.has(duplicate.id)) {
                   replacements.set(duplicate.id, file);
                   knownIds.add(file.id);
+                  knownFiles.set(key, file);
                 }
                 continue;
               }
@@ -3823,18 +3847,12 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             // A file the destination already holds (same id, or same
             // metadata key) stays behind instead of duplicating there.
             const destinationFileIds = new Set(destination.files.map((file) => file.id));
-            const destinationFileKeys = new Set(
-              destination.files.map(
-                (file) => `${file.mimeType}\u0000${file.sizeBytes}\u0000${file.name}`,
-              ),
-            );
+            const destinationFileKeys = new Set(destination.files.map(composerFileDedupKey));
             const transferableFiles = source.files.filter(
               (file) =>
                 (file.file !== null || file.uploadEnvironmentId === destinationEnvironmentId) &&
                 !destinationFileIds.has(file.id) &&
-                !destinationFileKeys.has(
-                  `${file.mimeType}\u0000${file.sizeBytes}\u0000${file.name}`,
-                ),
+                !destinationFileKeys.has(composerFileDedupKey(file)),
             );
             const remainingAttachmentSlots = Math.max(
               0,

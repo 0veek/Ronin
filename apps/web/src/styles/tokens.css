@@ -246,6 +246,7 @@
   --workspace-native-controls-inset: 0px;
   --workspace-titlebar-control-size: 1.75rem;
   --workspace-titlebar-control-gap: var(--space-3);
+  --workspace-titlebar-scroll-fade-height: 1.5rem;
 }
 
 .dark {

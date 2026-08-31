@@ -242,7 +242,6 @@
   .chat-timeline-scroll-fade,
   .settings-page-scroll-fade,
   .pull-requests-scroll-fade {
-    --topbar-scroll-fade-height: 2.5rem;
     -webkit-mask-image:
       linear-gradient(
         to bottom,
@@ -258,8 +257,8 @@
     -webkit-mask-position: top, bottom, right;
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-size:
-      100% var(--topbar-scroll-fade-height),
-      100% calc(100% - var(--topbar-scroll-fade-height)),
+      100% var(--workspace-titlebar-scroll-fade-height),
+      100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
       var(--app-scrollbar-width) 100%;
     mask-image:
       linear-gradient(
@@ -276,15 +275,9 @@
     mask-position: top, bottom, right;
     mask-repeat: no-repeat;
     mask-size:
-      100% var(--topbar-scroll-fade-height),
-      100% calc(100% - var(--topbar-scroll-fade-height)),
+      100% var(--workspace-titlebar-scroll-fade-height),
+      100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
       var(--app-scrollbar-width) 100%;
-  }
-
-  /* The pull request list sits directly under its topbar, so the tall band the
-     chat and settings pages fade under would read as empty padding here. */
-  .pull-requests-scroll-fade {
-    --topbar-scroll-fade-height: 1.5rem;
   }
 
   @keyframes settings-search-target-pulse {
@@ -692,11 +685,6 @@
   }
 
   @media (min-width: 40rem) {
-    .chat-timeline-scroll-fade,
-    .settings-page-scroll-fade {
-      --topbar-scroll-fade-height: 3rem;
-    }
-
     .chat-composer-horizontal-inset {
       padding-inline-start: calc(env(safe-area-inset-left) + var(--space-5));
       padding-inline-end: calc(env(safe-area-inset-right) + var(--space-5));
