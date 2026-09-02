@@ -30,6 +30,18 @@ again** next to it. Attach the file again or remove it, then send.
 HEIC and HEIF photos are converted to JPEG automatically when you drag them into the composer or
 paste them into a message.
 
+## Changing projects
+
+On web and desktop, changing the project from a new thread keeps the current environment when that
+project exists there. If it does not, Ronin selects another environment that has the project.
+
+## Notices above the composer
+
+When more than one notice is waiting, the extras peek out above the front one. Hover over the peek
+to reveal them, or focus **Show other notices** with `Tab` and press `Enter` or `Space` to move into
+the stack. Press `Escape` to close it and return focus to that control. On a touchscreen, tap the
+peek to open the stack. Interacting with the front notice or the composer closes it again.
+
 ## Prompt stash
 
 Use the stash shortcut, `mod+s` by default, to stash the current prompt and its attachments

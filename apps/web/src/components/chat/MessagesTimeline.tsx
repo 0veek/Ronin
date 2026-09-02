@@ -57,7 +57,8 @@ import {
   resolveDiffThemeName,
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
-import ChatMarkdown from "../ChatMarkdown";
+import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
+import { resolveViewedImageAsset, workEntryViewedImagePath } from "../../workLogViewedImage";
 import {
   BotIcon,
   CheckIcon,
@@ -89,7 +90,10 @@ import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import { deriveTurnStartedAtByTurnId, turnDurationLabel } from "./turnReceipt";
-import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
+import {
+  CHAT_TIMELINE_ANCHOR_OFFSET,
+  keepTimelineEndVisibleAfterOverlayGrowth,
+} from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
 import { selectShowsMessageSource, useMessageSourceStore } from "~/messageSourceStore";
 import {
@@ -493,8 +497,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [anchorMessageId, onAnchorReady],
   );
   const anchoredEndSpace = useMemo(() => {
-    const config = resolveChatListAnchoredEndSpace(rows, anchorMessageId, (row) =>
-      row.kind === "message" && row.message.role === "user" ? row.message.id : null,
+    const config = resolveChatListAnchoredEndSpace(
+      rows,
+      anchorMessageId,
+      (row) => (row.kind === "message" && row.message.role === "user" ? row.message.id : null),
+      { anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET },
     );
     return config ? { ...config, onReady: handleAnchorReady } : undefined;
   }, [anchorMessageId, handleAnchorReady, rows]);
@@ -1066,7 +1073,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
 
   return (
     <div className="group flex flex-col items-end gap-1">
-      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+      <div className="instruction-card relative max-w-[80%] px-3.5 py-2.5 text-message-foreground">
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {regularImages.map((image) => (
@@ -1253,16 +1260,17 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;
 
   return (
-    <div className="border-b border-border/60 pb-2 pt-1">
+    <div className="pb-2 pt-1">
       <button
         type="button"
         aria-expanded={row.expanded}
         data-scroll-anchor-ignore
         onClick={() => ctx.onToggleTurnFold(row.turnId)}
-        className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-xs text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="ledger-head w-full cursor-pointer select-none rounded-md px-1 py-0.5 transition-colors duration-(--duration-fast) hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
-        <span>{row.label}</span>
-        <Icon className="size-3.5" />
+        <span className="shrink-0">{row.label}</span>
+        <span className="ledger-leader" aria-hidden />
+        <Icon className="size-3.5 shrink-0" />
       </button>
     </div>
   );
@@ -1556,19 +1564,21 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
   const { workingStepLabel } = use(TimelineRowActivityCtx);
   return (
     <div className="py-0.5 pl-1.5">
-      <div className="flex min-w-0 items-center gap-2 pt-1 text-secondary-label text-2xs tabular-nums">
+      <div className="ledger-head pt-1">
         <WorkingGlyph />
-        <span className="shrink-0">
+        <span className="shrink-0 text-foreground/80">
           {row.createdAt ? (
             <>
-              Working for <WorkingTimer createdAt={row.createdAt} />
+              Working <WorkingTimer createdAt={row.createdAt} />
             </>
           ) : (
-            "Working..."
+            "Working"
           )}
         </span>
         {workingStepLabel ? (
-          <span className="min-w-0 truncate text-muted-foreground">· {workingStepLabel}</span>
+          <span className="min-w-0 truncate normal-case tracking-normal font-sans text-muted-foreground">
+            {workingStepLabel}
+          </span>
         ) : null}
       </div>
     </div>
@@ -1629,9 +1639,11 @@ const WorkGroupSection = memo(function WorkGroupSection({
   if (nonEmptyEntries.length === 0) return null;
 
   return (
-    <section className="-mx-1 space-y-0.5 px-1 py-0.5" aria-label={groupLabel}>
+    <section className="ledger -mx-1 space-y-0.5 px-1 py-0.5" aria-label={groupLabel}>
       {!onlyToolEntries && (
-        <p className="px-0.5 pb-0.5 font-medium text-secondary-label text-2xs">{groupLabel}</p>
+        <p className="ledger-head px-0.5 pb-0.5">
+          <span className="ledger-tick shrink-0 px-0.5">{groupLabel}</span>
+        </p>
       )}
       <div className="space-y-px">
         {nonEmptyEntries.map((workEntry) => (
@@ -1667,7 +1679,7 @@ function WorkGroupToggleTimelineRow({
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      <span className="flex size-5 shrink-0 items-center justify-center text-icon-muted">
+      <span className="ledger-tick flex size-5 shrink-0 items-center justify-center text-icon-muted">
         <ChevronDownIcon
           className={cn(
             "size-3.5 shrink-0 opacity-70 transition-transform duration-(--duration-base)",
@@ -1676,12 +1688,12 @@ function WorkGroupToggleTimelineRow({
         />
       </span>
       {row.expanded ? (
-        <span className="font-medium text-foreground">
+        <span className="ledger-head text-foreground">
           Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
         </span>
       ) : (
-        <span className="font-medium text-foreground">
-          +{row.hiddenCount} previous {labelNoun}
+        <span className="ledger-head text-foreground">
+          +{row.hiddenCount} earlier {labelNoun}
         </span>
       )}
     </button>
@@ -2584,6 +2596,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
 }) {
   const { workEntry, workspaceRoot } = props;
   const activity = use(TimelineRowActivityCtx);
+  const { threadRef, onImageExpand } = use(TimelineRowCtx);
   const [expanded, setExpanded] = useState(false);
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
@@ -2598,7 +2611,17 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : rawPreview;
   const displayText = preview ? `${heading} - ${preview}` : heading;
   const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
-  const canExpand = expandedBody !== null;
+  // An image the agent looked at is the point of the row, so the expanded body
+  // shows the picture above whatever text the tool reported.
+  const viewedImagePath = workEntryViewedImagePath(workEntry);
+  const viewedImage =
+    viewedImagePath && threadRef
+      ? resolveViewedImageAsset(viewedImagePath, {
+          threadId: threadRef.threadId,
+          workspaceRoot,
+        })
+      : null;
+  const canExpand = expandedBody !== null || viewedImage !== null;
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =
     showFailedIndicator &&
@@ -2606,7 +2629,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   // Ordinary tool failures stay muted; only runtime errors and warnings get
   // color. The red treatment is reserved for severe failures.
   const iconWrapperClass = cn(
-    "flex size-5 shrink-0 items-center justify-center",
+    "ledger-tick flex size-5 shrink-0 items-center justify-center",
     showWarningIndicator
       ? "text-warning"
       : showDestructiveRowStyle
@@ -2727,13 +2750,27 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
         </div>
       </div>
-      {expanded && canExpand && expandedBody ? (
+      {expanded && canExpand ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
           onClick={stopRowToggle}
           onPointerDown={stopRowToggle}
         >
-          <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          {viewedImage && threadRef ? (
+            <div className="mb-1.5">
+              <ChatMarkdownAssetImage
+                environmentId={threadRef.environmentId}
+                resource={viewedImage.resource}
+                alt={viewedImage.alt}
+                source={viewedImagePath ?? viewedImage.alt}
+                style={{ maxHeight: "16rem" }}
+                onImageExpand={onImageExpand}
+              />
+            </div>
+          ) : null}
+          {expandedBody ? (
+            <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
+          ) : null}
         </div>
       ) : null}
     </div>

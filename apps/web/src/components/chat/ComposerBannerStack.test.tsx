@@ -14,25 +14,28 @@ const banner = (
 });
 
 describe("ComposerBannerStack", () => {
-  it("keeps expanded banners in layout flow so surrounding content moves out of their way", () => {
+  it("collapses hidden banners behind a focusable peek that controls the expandable region", () => {
     const markup = renderToStaticMarkup(
       <ComposerBannerStack items={[banner("front"), banner("stacked")]} />,
     );
 
     const expandedItems = markup.match(
-      /<div data-composer-banner-stack-expanded-items="true" class="([^"]+)">/,
+      /<div id="([^"]+)"[^>]*data-composer-banner-stack-expanded-items="true" class="([^"]+)">/,
     );
 
-    expect(expandedItems?.[1]).toContain("grid-rows-[0fr]");
-    expect(expandedItems?.[1]).toContain("group-hover/banner-stack:grid-rows-[1fr]");
-    expect(expandedItems?.[1]).toContain("z-20");
-    expect(expandedItems?.[1]).not.toContain("absolute");
+    // Hover alone cannot reveal the stack on a touchscreen, so the peek is a
+    // real control: labelled, expandable, and wired to the region it opens.
+    expect(markup).toContain('aria-label="Show other notices"');
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).toContain(`aria-controls="${expandedItems?.[1]}"`);
+    expect(markup).toContain('role="group" aria-label="Other notices"');
+    expect(expandedItems?.[2]).toContain("grid-rows-[0fr]");
+    expect(expandedItems?.[2]).not.toContain("absolute");
     expect(markup.indexOf("front warning")).toBeLessThan(markup.indexOf("stacked warning"));
     expect(markup).toContain("invisible pointer-events-none");
-    expect(markup).toContain("group-focus-within/banner-stack:visible");
   });
 
-  it("colors the collapsed stack cap by the hidden banner's variant, not a fixed warning", () => {
+  it("colors the collapsed peek by the hidden banner's variant, not a fixed warning", () => {
     const neutralBehind = renderToStaticMarkup(
       <ComposerBannerStack items={[banner("front", "default"), banner("stacked", "default")]} />,
     );

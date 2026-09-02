@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { XIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
@@ -22,9 +30,9 @@ const exitTransitionStyle = {
   transition: `transform ${DISMISS_TRANSITION_MS}ms ease-in, opacity ${DISMISS_TRANSITION_MS}ms ease-in`,
 } satisfies CSSProperties;
 
-// The collapsed cap peeking above the front banner is the only hint that more
-// banners are stacked behind it, so its border must match the severity of the
-// first hidden banner — a neutral banner must not masquerade as a warning.
+// The collapsed peek above the front banner is the only hint that more banners
+// are stacked behind it, so its border must match the severity of the first
+// hidden banner — a neutral banner must not masquerade as a warning.
 const stackCapBorderClass: Record<ComposerBannerStackItem["variant"], string> = {
   default: "border-border",
   error: "border-destructive/24",
@@ -55,6 +63,12 @@ interface ComposerBannerStackProps {
 }
 
 export function ComposerBannerStack({ className, items }: ComposerBannerStackProps) {
+  const [stackExpanded, setStackExpanded] = useState(false);
+  const noticesRef = useRef<HTMLDivElement>(null);
+  const peekRef = useRef<HTMLButtonElement>(null);
+  const expandedItemsRef = useRef<HTMLDivElement>(null);
+  const pendingFocusRef = useRef<"peek" | "notice" | null>(null);
+  const expandedItemsId = useId();
   const [requestedExitingItemId, setExitingItemId] = useState<string | null>(null);
   const dismissTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitingItemId =
@@ -69,6 +83,23 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (items.length < 2) setStackExpanded(false);
+  }, [items.length]);
+
+  useLayoutEffect(() => {
+    if (stackExpanded && pendingFocusRef.current === "notice") {
+      pendingFocusRef.current = null;
+      const firstControl = expandedItemsRef.current?.querySelector<HTMLElement>(
+        'button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]',
+      );
+      (firstControl ?? expandedItemsRef.current)?.focus({ preventScroll: true });
+    } else if (!stackExpanded && pendingFocusRef.current === "peek") {
+      pendingFocusRef.current = null;
+      peekRef.current?.focus({ preventScroll: true });
+    }
+  }, [stackExpanded]);
 
   if (items.length === 0) {
     return null;
@@ -104,25 +135,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         className,
       )}
     >
-      <div
-        className={cn(
-          "relative flex flex-col-reverse",
-          hasStack ? "group-hover/banner-stack:z-50 group-focus-within/banner-stack:z-50" : null,
-        )}
-      >
-        {showCollapsedStackCap && firstStackedItem ? (
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-x-0 -top-3 z-0 mx-auto h-3 rounded-t-[22px]",
-              "border border-b-0 bg-background/96 shadow-[var(--shadow-raised)]",
-              stackCapBorderClass[firstStackedItem.variant],
-              "transition-opacity duration-(--duration-fast) ease-out",
-              "group-hover/banner-stack:opacity-0 group-focus-within/banner-stack:opacity-0",
-            )}
-            style={{ width: "96%" }}
-            aria-hidden="true"
-          />
-        ) : null}
+      <div className={cn("relative flex flex-col-reverse", hasStack && stackExpanded && "z-50")}>
         <div
           className={cn(
             "relative z-10",
@@ -131,6 +144,16 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
           style={{
             ...exitTransitionStyle,
             ...(exitingItemId === frontItem.id ? frontExitStyle : restingStyle),
+          }}
+          onPointerDownCapture={() => {
+            setStackExpanded(false);
+            const activeElement = document.activeElement;
+            if (
+              activeElement instanceof HTMLElement &&
+              noticesRef.current?.contains(activeElement)
+            ) {
+              activeElement.blur();
+            }
           }}
         >
           <ComposerBannerStackAlert
@@ -141,37 +164,97 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         </div>
         {hasStack ? (
           <div
-            data-composer-banner-stack-expanded-items="true"
-            className={cn(
-              "relative z-20 grid grid-rows-[0fr] transition-[grid-template-rows] duration-(--duration-fast) ease-out",
-              "group-hover/banner-stack:grid-rows-[1fr] group-focus-within/banner-stack:grid-rows-[1fr]",
-            )}
+            ref={noticesRef}
+            className={cn("relative z-20", stackExpanded && "min-h-3")}
+            onPointerEnter={(event) => {
+              if (event.pointerType === "touch") return;
+              if (document.activeElement === peekRef.current) {
+                pendingFocusRef.current = "notice";
+              }
+              setStackExpanded(true);
+            }}
+            onPointerLeave={(event) => {
+              if (!event.currentTarget.contains(document.activeElement)) setStackExpanded(false);
+            }}
+            onBlurCapture={(event) => {
+              if (
+                !event.currentTarget.contains(event.relatedTarget) &&
+                !event.currentTarget.matches(":hover")
+              ) {
+                setStackExpanded(false);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || !stackExpanded) return;
+              event.preventDefault();
+              event.stopPropagation();
+              pendingFocusRef.current = "peek";
+              setStackExpanded(false);
+            }}
           >
-            <div className="min-h-0 overflow-hidden">
-              <div
+            {showCollapsedStackCap && firstStackedItem ? (
+              <button
+                ref={peekRef}
+                type="button"
+                aria-label="Show other notices"
+                aria-expanded={stackExpanded}
+                aria-controls={expandedItemsId}
+                aria-hidden={stackExpanded || undefined}
+                tabIndex={stackExpanded ? -1 : 0}
+                onClick={(event) => {
+                  event.currentTarget.focus({ preventScroll: true });
+                  pendingFocusRef.current = "notice";
+                  setStackExpanded(true);
+                }}
                 className={cn(
-                  "invisible pointer-events-none space-y-2 pb-2 opacity-0",
-                  "translate-y-1 transform-gpu transition-[opacity,transform] duration-(--duration-fast) ease-out will-change-[opacity,transform]",
-                  "group-hover/banner-stack:visible group-hover/banner-stack:pointer-events-auto group-hover/banner-stack:translate-y-0 group-hover/banner-stack:opacity-100",
-                  "group-focus-within/banner-stack:visible group-focus-within/banner-stack:pointer-events-auto group-focus-within/banner-stack:translate-y-0 group-focus-within/banner-stack:opacity-100",
+                  "absolute inset-x-0 bottom-0 z-0 mx-auto h-3 w-[96%] cursor-pointer rounded-t-[22px]",
+                  "border border-b-0 bg-background/96 shadow-[var(--shadow-raised)]",
+                  stackCapBorderClass[firstStackedItem.variant],
+                  "transition-opacity duration-(--duration-fast) ease-out",
+                  "focus-visible:outline-2 focus-visible:outline-ring",
+                  stackExpanded && "pointer-events-none invisible opacity-0",
                 )}
-              >
-                {stackedItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className={cn(exitingItemId === item.id ? "pointer-events-none" : null)}
-                    style={{
-                      ...exitTransitionStyle,
-                      ...(exitingItemId === item.id ? stackedExitStyle : restingStyle),
-                    }}
-                  >
-                    <ComposerBannerStackAlert
-                      item={item}
-                      exiting={exitingItemId === item.id}
-                      onDismissRequest={() => requestDismiss(item)}
-                    />
-                  </div>
-                ))}
+              />
+            ) : null}
+            <div
+              id={expandedItemsId}
+              ref={expandedItemsRef}
+              role="group"
+              aria-label="Other notices"
+              tabIndex={-1}
+              data-composer-banner-stack-expanded-items="true"
+              className={cn(
+                "grid transition-[grid-template-rows] duration-(--duration-fast) ease-out",
+                "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+                stackExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+              )}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div
+                  className={cn(
+                    "transform-gpu space-y-2 pb-2 transition-[opacity,transform] duration-(--duration-fast) ease-out will-change-[opacity,transform]",
+                    stackExpanded
+                      ? "pointer-events-auto visible translate-y-0 opacity-100"
+                      : "invisible pointer-events-none translate-y-1 opacity-0",
+                  )}
+                >
+                  {stackedItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className={cn(exitingItemId === item.id ? "pointer-events-none" : null)}
+                      style={{
+                        ...exitTransitionStyle,
+                        ...(exitingItemId === item.id ? stackedExitStyle : restingStyle),
+                      }}
+                    >
+                      <ComposerBannerStackAlert
+                        item={item}
+                        exiting={exitingItemId === item.id}
+                        onDismissRequest={() => requestDismiss(item)}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>

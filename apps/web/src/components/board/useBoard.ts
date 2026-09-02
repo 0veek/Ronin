@@ -1,6 +1,4 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { ChangeRequestSettleSource } from "@t3tools/client-runtime/state/thread-settled";
-import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { boardDraftOrderScopeKey, useBoardUiStore } from "../../boardUiStore";
@@ -13,7 +11,6 @@ import { useProjects, useServerConfigs, useThreadShells } from "../../state/enti
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import type { SidebarThreadSummary } from "../../types";
 import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
-import { threadChangeRequestSnapshotsAtom } from "../ThreadStatusIndicators";
 import {
   buildBoard,
   type Board,
@@ -48,9 +45,6 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const sidebarProjectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
-  const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((settings) => settings.sidebarAutoSettleOnMerge);
-  const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const draftOrderByScopeKey = useBoardUiStore((state) => state.draftOrderByScopeKey);
   const pruneDraftOrders = useBoardUiStore((state) => state.pruneDraftOrders);
 
@@ -153,26 +147,6 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
     return capabilities;
   }, [serverConfigs]);
 
-  const changeRequestByThreadKey = useMemo(() => {
-    const states = new Map<string, ChangeRequestSettleSource | null>();
-    const threadByKey = new Map(
-      threads.map((thread) => [
-        scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-        thread,
-      ]),
-    );
-    for (const [threadKey, snapshot] of changeRequestSnapshotByKey) {
-      const thread = threadByKey.get(threadKey);
-      if (!thread) continue;
-      // Same guard the sidebar applies: a worktree thread only inherits a PR
-      // snapshot recorded for the branch it is actually on. Without this a
-      // stale merged-PR snapshot auto-settles work that is still live.
-      const applies = thread.worktreePath === null || snapshot.branch === thread.branch;
-      states.set(threadKey, applies ? snapshot.pr : null);
-    }
-    return states;
-  }, [changeRequestSnapshotByKey, threads]);
-
   const context = useMemo(
     (): BoardClassifyContext => ({
       now: `${nowMinute}:00.000Z`,
@@ -180,19 +154,9 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
       // hold a woken thread on the shelf for up to a minute. snoozeWakeTick
       // (armed below at the exact next boundary) re-runs this memo on time.
       preciseNow: new Date().toISOString(),
-      autoSettleAfterDays,
-      autoSettleOnMerge,
       capabilitiesByEnvironmentId,
-      changeRequestByThreadKey,
     }),
-    [
-      autoSettleAfterDays,
-      autoSettleOnMerge,
-      capabilitiesByEnvironmentId,
-      changeRequestByThreadKey,
-      nowMinute,
-      snoozeWakeTick,
-    ],
+    [capabilitiesByEnvironmentId, nowMinute, snoozeWakeTick],
   );
 
   const draftOrderScopeKey = boardDraftOrderScopeKey(scopeKey);

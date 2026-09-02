@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  filterAvailableSettingsSearchItems,
   searchableSetting,
   searchSettings,
   SETTINGS_SEARCH_ITEMS,
@@ -90,6 +91,32 @@ describe("searchSettings", () => {
     expect(searchSettings("quit confirmation")).toEqual([]);
   });
 
+  it("hides automatic settlement settings when the server cannot settle threads itself", () => {
+    const gated = new Set([
+      "auto-settle-inactive-threads",
+      "auto-settle-merged-threads",
+      "days-before-auto-settle",
+    ]);
+    const available = filterAvailableSettingsSearchItems({ hasThreadAutoSettlement: false });
+
+    expect(available.map((item) => item.id).filter((id) => gated.has(id))).toEqual([]);
+  });
+
+  it("shows automatic settlement settings when the server supports them", () => {
+    const available = filterAvailableSettingsSearchItems({ hasThreadAutoSettlement: true });
+
+    expect(searchSettings("auto-settle", available).map((item) => item.id)).toEqual([
+      "auto-settle-inactive-threads",
+      "auto-settle-merged-threads",
+      "days-before-auto-settle",
+    ]);
+  });
+
+  it("finds a setting by its description rather than its title", () => {
+    expect(searchSettings("dark mode")[0]).toMatchObject({ id: "color-scheme" });
+    expect(searchSettings("monospace").map((item) => item.id)).toContain("code-font");
+  });
+
   it("keeps catalog result ids unique", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);
@@ -118,6 +145,14 @@ describe("searchSettings", () => {
       id: "environment-identification",
       to: "/settings/appearance",
       targetId: "appearance",
+    });
+  });
+
+  it("routes browser recording quality to integrations", () => {
+    expect(searchSettings("recording frame rate")[0]).toMatchObject({
+      id: "browser-recording-frame-rate",
+      to: "/settings/integrations",
+      targetId: "browser",
     });
   });
 });

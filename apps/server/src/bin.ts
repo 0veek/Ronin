@@ -7,6 +7,7 @@ import { Command } from "effect/unstable/cli";
 import * as NetService from "@t3tools/shared/Net";
 import packageJson from "../package.json" with { type: "json" };
 import { authCommand } from "./cli/auth.ts";
+import { appCommand } from "./cli/app.ts";
 import { pairCommand } from "./cli/pair.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { isEntrypoint } from "./entrypoint.ts";
@@ -25,6 +26,7 @@ export const makeCli = () =>
     Command.withSubcommands([
       startCommand,
       serveCommand,
+      appCommand,
       pairCommand,
       authCommand,
       projectCommand,

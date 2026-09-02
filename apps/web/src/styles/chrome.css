@@ -500,25 +500,126 @@
      lightest elevation tier is what separates it from the messages scrolling
      underneath without turning it into a menu. */
   .composer-surface {
+    --composer-radius: var(--radius-2xl);
     position: relative;
     isolation: isolate;
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
+    border-radius: var(--composer-radius);
     background-color: var(--card);
     box-shadow: var(--shadow-raised);
+    transition: border-color var(--duration-fast) var(--ease-out);
+  }
+
+  /* The focus bloom lives on a pseudo-element and fades on opacity, so the
+     composer can light up without animating a box-shadow. Sits beneath the
+     surface's own content (isolation keeps the negative z-index local). */
+  .composer-surface::after {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    border-radius: inherit;
+    box-shadow: 0 0 0 4px var(--composer-glow);
+    opacity: 0;
+    transition: opacity var(--duration-base) var(--ease-out);
+    pointer-events: none;
+  }
+
+  .composer-surface:focus-within {
+    border-color: color-mix(in srgb, var(--ring) 55%, var(--border));
+  }
+
+  .composer-surface:focus-within::after {
+    opacity: 1;
   }
 
   .composer-context-strip {
     position: relative;
     border-top: 1px solid var(--border);
     /* Inset by the shell's own border so the corner curves stay concentric. */
-    border-end-start-radius: calc(var(--radius-lg) - 1px);
-    border-end-end-radius: calc(var(--radius-lg) - 1px);
+    border-end-start-radius: calc(var(--composer-radius) - 1px);
+    border-end-end-radius: calc(var(--composer-radius) - 1px);
     background-color: color-mix(in srgb, var(--card) 60%, var(--background));
   }
 
-  .composer-surface:focus-within {
-    border-color: color-mix(in srgb, var(--ring) 45%, var(--border));
+  @media (forced-colors: active) {
+    .composer-surface::after {
+      display: none;
+    }
+  }
+
+  /*
+   * The instruction card: what the user asked for. The one filled surface in
+   * the timeline, washed with the ink and closed with an ink hairline, with the
+   * corner nearest the composer held tight so the card points back at where it
+   * came from. Assistant prose stays unframed, so the two voices read apart at
+   * a glance.
+   */
+  .instruction-card {
+    border: 1px solid var(--message-border);
+    border-radius: var(--radius-2xl) var(--radius-2xl) var(--radius-sm) var(--radius-2xl);
+    background-color: var(--message-surface);
+  }
+
+  /*
+   * The work ledger: the record of what the agent did, kept apart from what it
+   * said. A rail runs down the group's leading edge and each entry's glyph
+   * sits on it as a tick, so a long run of tool calls reads as one ruled list
+   * rather than a stack of loose rows. The head line above it is set in the
+   * mono annotation face with a dotted leader, the way a drawing index reads.
+   */
+  .ledger {
+    position: relative;
+  }
+
+  /* Each entry is its own timeline row with an 8px gap above it, so the rail
+     reaches up by that gap to meet the entry before it; a run of entries then
+     draws one unbroken line, and the first entry's stub lands in the padding
+     under the prose above. */
+  .ledger::before {
+    content: "";
+    position: absolute;
+    inset-block: -0.5rem 0;
+    inset-inline-start: 1rem;
+    width: 1px;
+    background-color: var(--ledger-rail);
+    pointer-events: none;
+  }
+
+  .ledger-tick {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* The glyph interrupts the rail with a halo of the canvas color, which is
+     what makes it read as a tick on the line rather than a mark beside it. */
+  .ledger-tick > svg {
+    border-radius: 3px;
+    background-color: var(--background);
+    box-shadow: 0 0 0 3px var(--background);
+  }
+
+  .ledger-head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    line-height: var(--text-2xs--line-height);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-variant-numeric: tabular-nums;
+    color: var(--contrast-muted-foreground);
+  }
+
+  .ledger-leader {
+    flex: 1 1 auto;
+    min-width: var(--space-4);
+    height: 0;
+    border-top: 1px dotted color-mix(in srgb, var(--border) 100%, transparent);
+    opacity: 0.9;
   }
 
   /*
@@ -546,12 +647,27 @@
 
   .surface-alert {
     --alert-surface-tint: transparent;
+    isolation: isolate;
     background:
       linear-gradient(
         color-mix(in srgb, var(--alert-surface-tint) 8%, transparent),
         color-mix(in srgb, var(--alert-surface-tint) 8%, transparent)
       ),
       var(--background);
+    box-shadow: var(--shadow-raised);
+  }
+
+  /* An opaque backing behind the tint. The alert variants set their own
+     translucent background-color from the utilities layer, which beats this
+     block's shorthand and left the composer banners see-through over the
+     timeline. The pseudo-element cannot be out-ranked by a utility. */
+  .surface-alert::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background-color: var(--background);
   }
 
   .surface-alert[data-variant="error"] {

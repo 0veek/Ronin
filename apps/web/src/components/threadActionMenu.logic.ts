@@ -8,6 +8,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  */
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
+  | "project-settings"
   | "pin"
   | "unpin"
   | "settle"
@@ -134,6 +135,7 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id" as const, label: "Thread ID", icon: "hash" },
       ],
     },
+    { id: "project-settings", label: "Project settings", icon: "settings" },
     // Export reads the loaded transcript in the client, so it is only offered
     // where the thread's messages are actually in hand.
     ...(state.canExport

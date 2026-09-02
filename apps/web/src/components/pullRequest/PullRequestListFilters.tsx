@@ -18,35 +18,67 @@ import {
   ListFilterIcon,
   LoaderIcon,
   SearchIcon,
+  TagIcon,
+  UserRoundIcon,
 } from "lucide-react";
-import type { ElementType } from "react";
+import { type ElementType, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { pullRequestProjectKey } from "./pullRequestList.logic";
 
 import {
   Menu,
+  MenuCheckboxItem,
   MenuGroupLabel,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
   MenuTrigger,
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  pullRequestLabelColor,
+  type PullRequestAuthorFacet,
+  type PullRequestLabelFacet,
+} from "./pullRequestList.logic";
+import { PullRequestActorAvatar } from "./pullRequestPresentation";
 
 export interface PullRequestFilterOption<Value extends string> {
   readonly value: Value;
   readonly label: string;
-  /**
-   * Carries the option's own tone, so an icon reads the same here as it does on a row. Left
-   * uncoloured, which lets the item's selected state stay the thing the eye follows.
-   */
+  /** Uses the option's native icon tone. */
   readonly Icon: ElementType<{ className?: string }>;
+  readonly favicon?: {
+    readonly environmentId: EnvironmentId;
+    readonly cwd: string;
+  };
   /** Why it cannot be chosen, carried onto the item as its title. */
   readonly unavailable?: string | undefined;
+}
+
+export function PullRequestFilterOptionIcon<Value extends string>({
+  option,
+}: {
+  option: PullRequestFilterOption<Value>;
+}) {
+  return option.favicon ? (
+    <ProjectFavicon
+      environmentId={option.favicon.environmentId}
+      cwd={option.favicon.cwd}
+      fallbackIcon={FolderGit2Icon}
+      className="size-3.5"
+    />
+  ) : (
+    <option.Icon aria-hidden className="size-3.5" />
+  );
 }
 
 export interface PullRequestExpectedHost {
@@ -108,10 +140,8 @@ export function PullRequestSearchInput({
 }
 
 /**
- * Every list filter lives behind the one filter icon so the control row stays two controls
- * wide: the search and this. The trigger carries a dot whenever any filter is off its
- * default, so a narrowed list is never a mystery. Same menu chrome as the detail panel's
- * actions, which also owns its own spacing.
+ * List narrowings live behind one filter control, separate from sorting. The trigger carries a
+ * count whenever any filter is off its default, so a narrowed list is never a mystery.
  */
 const ALL_PROJECTS_VALUE = "all";
 /** MenuRadioGroup wants a string, so "every host" wears the one value no host can be. */
@@ -170,8 +200,9 @@ function PullRequestFilterRadioGroup<Value extends string>({
             disabled={option.unavailable !== undefined}
           >
             <span className="flex min-w-0 items-center gap-2">
-              <option.Icon aria-hidden className="size-3.5" />
-              {option.label}
+              <PullRequestFilterOptionIcon option={option} />
+              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              {option.unavailable ? <span className="shrink-0">· Unavailable</span> : null}
             </span>
           </MenuRadioItem>
         );
@@ -189,7 +220,188 @@ function PullRequestFilterRadioGroup<Value extends string>({
   );
 }
 
+function PullRequestFilterRadioSubmenu<Value extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: Value;
+  options: ReadonlyArray<PullRequestFilterOption<Value>>;
+  onChange: (value: Value) => void;
+}) {
+  const current = options.find((option) => option.value === value) ?? options[0];
+  if (!current) return null;
+  return (
+    <MenuSub>
+      <MenuSubTrigger>
+        <PullRequestFilterOptionIcon option={current} />
+        <span className="flex-1">{label}</span>
+        <span className="min-w-0 max-w-32 truncate text-xs text-muted-foreground">
+          {current.label}
+        </span>
+      </MenuSubTrigger>
+      <MenuSubPopup className="min-w-56">
+        <PullRequestFilterRadioGroup
+          label={label}
+          value={value}
+          options={options}
+          onChange={onChange}
+        />
+      </MenuSubPopup>
+    </MenuSub>
+  );
+}
+
+function PullRequestAuthorFilter({
+  value,
+  options,
+  onChange,
+}: {
+  value: string | undefined;
+  options: ReadonlyArray<PullRequestAuthorFacet>;
+  onChange: (author: string | undefined) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const needle = query.trim().toLowerCase();
+  const login = value?.toLowerCase() ?? "";
+  const selected = options.find((option) => option.actor.login.toLowerCase() === login);
+  const visible = [
+    ...(selected ? [selected] : []),
+    ...options.filter(
+      (option) =>
+        option !== selected &&
+        (needle.length === 0 ||
+          option.actor.login.toLowerCase().includes(needle) ||
+          option.actor.name?.toLowerCase().includes(needle)),
+    ),
+  ].slice(0, 10);
+  const select = (next: string) => next.toLowerCase() !== login && onChange(next || undefined);
+  return (
+    <MenuSub>
+      <MenuSubTrigger>
+        <UserRoundIcon aria-hidden className="size-3.5" />
+        <span className="flex-1">Author</span>
+        <span className="min-w-0 max-w-32 truncate text-xs text-muted-foreground">
+          {value ?? "Anyone"}
+        </span>
+      </MenuSubTrigger>
+      <MenuSubPopup className="w-80">
+        <div className="p-1 pb-2">
+          <InputGroup>
+            <InputGroupAddon>
+              <SearchIcon aria-hidden />
+            </InputGroupAddon>
+            <InputGroupInput
+              autoFocus
+              size="sm"
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowDown" && event.key !== "Escape") event.stopPropagation();
+              }}
+              placeholder="Search authors"
+              aria-label="Search authors"
+            />
+          </InputGroup>
+        </div>
+        <MenuRadioGroup value={selected?.actor.login ?? value ?? ""} onValueChange={select}>
+          <MenuRadioItem value="">
+            <span className="flex min-w-0 items-center gap-2">
+              <LayersIcon aria-hidden className="size-3.5" />
+              Anyone
+            </span>
+          </MenuRadioItem>
+          {visible.map((option) => (
+            <MenuRadioItem key={option.actor.login.toLowerCase()} value={option.actor.login}>
+              <span className="flex min-w-0 items-center gap-2">
+                <PullRequestActorAvatar actor={option.actor} />
+                <span className="min-w-0 flex-1 truncate">{option.actor.login}</span>
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                  {option.mergedCount} merges loaded
+                </span>
+              </span>
+            </MenuRadioItem>
+          ))}
+          {visible.length === 0 ? <MenuItem disabled>No authors found</MenuItem> : null}
+        </MenuRadioGroup>
+      </MenuSubPopup>
+    </MenuSub>
+  );
+}
+
+function PullRequestLabelFilter({
+  value,
+  options,
+  onChange,
+}: {
+  value: ReadonlyArray<string>;
+  options: ReadonlyArray<PullRequestLabelFacet>;
+  onChange: (labels: ReadonlyArray<string>) => void;
+}) {
+  const selected = new Set(value.map((name) => name.toLowerCase()));
+  const visible = [
+    ...value
+      .filter((name) => !options.some((option) => option.name.toLowerCase() === name.toLowerCase()))
+      .map((name) => ({ name, color: null, count: 0 })),
+    ...options,
+  ];
+  return (
+    <MenuSub>
+      <MenuSubTrigger>
+        <TagIcon aria-hidden className="size-3.5" />
+        <span className="flex-1">Labels</span>
+        <span className="text-xs text-muted-foreground">
+          {value.length === 0 ? "Any" : `${value.length} selected`}
+        </span>
+      </MenuSubTrigger>
+      <MenuSubPopup className="w-72">
+        {visible.length === 0 ? (
+          <MenuItem disabled>No labels in this view</MenuItem>
+        ) : (
+          visible.map((option) => {
+            const key = option.name.toLowerCase();
+            const checked = selected.has(key);
+            const dot = pullRequestLabelColor(option.color);
+            return (
+              <MenuCheckboxItem
+                key={key}
+                className="grid-cols-[1rem_minmax(0,1fr)]"
+                checked={checked}
+                onCheckedChange={(next) =>
+                  onChange(
+                    next
+                      ? [...value, option.name]
+                      : value.filter((name) => name.toLowerCase() !== option.name.toLowerCase()),
+                  )
+                }
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="size-2.5 shrink-0 rounded-full bg-muted-foreground"
+                    {...(dot ? { style: { backgroundColor: dot } } : {})}
+                  />
+                  <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                    {option.count}
+                  </span>
+                </span>
+              </MenuCheckboxItem>
+            );
+          })
+        )}
+      </MenuSubPopup>
+    </MenuSub>
+  );
+}
+
+const NO_AUTHOR_FACETS: ReadonlyArray<PullRequestAuthorFacet> = [];
+const NO_LABEL_FACETS: ReadonlyArray<PullRequestLabelFacet> = [];
+
 export function PullRequestFiltersMenu({
+  onOpenChange,
   state,
   stateOptions,
   onState,
@@ -198,6 +410,8 @@ export function PullRequestFiltersMenu({
   onInvolvement,
   filters,
   onFilters,
+  authorOptions = NO_AUTHOR_FACETS,
+  labelOptions = NO_LABEL_FACETS,
   host,
   hostOptions,
   onHost,
@@ -210,6 +424,7 @@ export function PullRequestFiltersMenu({
   unavailable,
   onProject,
 }: {
+  onOpenChange?: (open: boolean) => void;
   state: PullRequestListState;
   stateOptions: ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
   onState: (state: PullRequestListState) => void;
@@ -219,6 +434,8 @@ export function PullRequestFiltersMenu({
   /** The narrowings beyond state and involvement; an absent field is that group unfiltered. */
   filters: PullRequestListFilters;
   onFilters: (filters: PullRequestListFilters) => void;
+  authorOptions?: ReadonlyArray<PullRequestAuthorFacet>;
+  labelOptions?: ReadonlyArray<PullRequestLabelFacet>;
   host: string | undefined;
   /**
    * Includes the "all hosts" entry, whose value is the empty string. With fewer than two real
@@ -272,8 +489,17 @@ export function PullRequestFiltersMenu({
         ([, held]) => held !== undefined,
       ),
     ) as PullRequestListFilters;
+  /** Same rebuild rule as `withFilter`, for the groups that write more than one key. */
+  const updateFilters = (next: Partial<PullRequestListFilters>): void => {
+    onFilters(
+      Object.fromEntries(
+        Object.entries({ ...filters, ...next }).filter(([, held]) => held !== undefined),
+      ) as PullRequestListFilters,
+    );
+  };
+  const selectedLabels = (filters.labels ?? []).flatMap((group) => group);
   return (
-    <Menu>
+    <Menu onOpenChange={onOpenChange}>
       <MenuTrigger
         className={cn(
           // The icon-button size that pairs with a full-height input, so the two read as one strip.
@@ -303,6 +529,21 @@ export function PullRequestFiltersMenu({
           value={involvement}
           options={involvementOptions}
           onChange={onInvolvement}
+        />
+        <MenuSeparator />
+        <PullRequestAuthorFilter
+          value={filters.author}
+          options={authorOptions}
+          onChange={(author) => updateFilters({ author })}
+        />
+        <PullRequestLabelFilter
+          value={selectedLabels}
+          options={labelOptions}
+          onChange={(labels) =>
+            updateFilters({
+              labels: labels.length === 0 ? undefined : labels.slice(0, 10).map((label) => [label]),
+            })
+          }
         />
         <MenuSeparator />
         <PullRequestFilterRadioGroup
@@ -339,7 +580,7 @@ export function PullRequestFiltersMenu({
         {serverOptions.length > 2 ? (
           <>
             <MenuSeparator />
-            <PullRequestFilterRadioGroup
+            <PullRequestFilterRadioSubmenu
               label="Server"
               value={server ?? ALL_SERVERS_VALUE}
               options={serverOptions}

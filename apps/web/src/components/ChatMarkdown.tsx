@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type {
+  AssetResource,
   EnvironmentId,
   ScopedThreadRef,
   ServerProviderSkill,
@@ -53,6 +54,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
@@ -178,6 +180,7 @@ interface ChatMarkdownProps {
   /** Directory relative image sources resolve against, when it is not the workspace root. */
   imageBaseDir?: string | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -210,6 +213,7 @@ export function shouldUseMarkdownFileBrowserPrimaryAction(input: {
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
 
 const ARTIFACT_TEMPLATE_ICON_BY_KIND = {
   document: FileTextIcon,
@@ -333,6 +337,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     p: [...(defaultSchema.attributes?.p ?? []), "dataHtmlPreview"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
+    a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
   },
   protocols: {
     ...defaultSchema.protocols,
@@ -629,12 +634,7 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
       className="chat-markdown-table-container"
       data-expanded={expanded ? "true" : "false"}
     >
-      <ScrollArea
-        chainVerticalScroll
-        scrollFade
-        hideScrollbars
-        className="w-full max-w-full rounded-none"
-      >
+      <ScrollArea chainVerticalScroll scrollFade className="w-full max-w-full rounded-none">
         <table ref={tableRef} {...props}>
           {children}
         </table>
@@ -1152,12 +1152,14 @@ function LoadableMarkdownImage({
   alt,
   title,
   fallbackTitle,
+  style,
   onImageExpand,
 }: {
   readonly src: string;
   readonly alt: string | undefined;
   readonly title: string | undefined;
   readonly fallbackTitle: string;
+  readonly style?: CSSProperties | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const [failed, setFailed] = useState(false);
@@ -1173,33 +1175,32 @@ function LoadableMarkdownImage({
       {...(title ? { title } : {})}
       loading="lazy"
       className={cn(MARKDOWN_IMAGE_CLASS_NAME, imageExpand && "cursor-zoom-in")}
+      {...(style ? { style } : {})}
       {...expandableMarkdownImageProps(imageExpand, src, alt)}
       onError={() => setFailed(true)}
     />
   );
 }
 
-/** Local file, resolved through the signed workspace-asset URL. */
-function WorkspaceMarkdownImage({
-  path,
-  threadRef,
+/** An environment-hosted image, resolved through its signed asset URL. */
+export function ChatMarkdownAssetImage({
+  environmentId,
+  resource,
   alt,
   title,
   source,
+  style,
   onImageExpand,
 }: {
-  readonly path: string;
-  readonly threadRef: ScopedThreadRef;
+  readonly environmentId: EnvironmentId;
+  readonly resource: Extract<AssetResource, { readonly _tag: "attachment" | "workspace-file" }>;
   readonly alt: string | undefined;
-  readonly title: string | undefined;
+  readonly title?: string | undefined;
   readonly source: string;
+  readonly style?: CSSProperties | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
-  const assetUrl = useAssetUrlState(threadRef.environmentId, {
-    _tag: "workspace-file",
-    threadId: threadRef.threadId,
-    path,
-  });
+  const assetUrl = useAssetUrlState(environmentId, resource);
   if (assetUrl._tag === "Failure") {
     return <MissingMediaChip label={alt} title={source} />;
   }
@@ -1212,6 +1213,7 @@ function WorkspaceMarkdownImage({
       alt={alt}
       title={title}
       fallbackTitle={source}
+      style={style}
       onImageExpand={onImageExpand}
     />
   );
@@ -1252,9 +1254,13 @@ const MarkdownImage = memo(function MarkdownImage({
     return <MissingMediaChip label={alt} title={src} />;
   }
   return (
-    <WorkspaceMarkdownImage
-      path={baseDir === undefined ? localPath : resolvePathLinkTarget(localPath, baseDir)}
-      threadRef={threadRef}
+    <ChatMarkdownAssetImage
+      environmentId={threadRef.environmentId}
+      resource={{
+        _tag: "workspace-file",
+        threadId: threadRef.threadId,
+        path: baseDir === undefined ? localPath : resolvePathLinkTarget(localPath, baseDir),
+      }}
       alt={alt}
       title={title}
       source={src}
@@ -1829,6 +1835,7 @@ function ChatMarkdown({
   onUseArtifactTemplate,
   imageBaseDir,
   onImageExpand,
+  extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
@@ -2244,6 +2251,16 @@ function ChatMarkdown({
           : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
+          const pullRequestAutolink = String(
+            (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
+          );
+          const pullRequestCopy =
+            pullRequestAutolink === "commit"
+              ? /\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
+              : pullRequestAutolink === "reference"
+                ? plainHastText(node)
+                : undefined;
+          const isPullRequestAutolink = pullRequestCopy !== undefined;
           const isSameDocumentLink = href?.startsWith("#") ?? false;
           const onClick = props.onClick;
           const canOpenInPreview = Boolean(threadRef) && isPreviewSupportedInRuntime();
@@ -2251,6 +2268,8 @@ function ChatMarkdown({
           const link = (
             <a
               {...props}
+              className={cn(props.className, pullRequestAutolink === "commit" && "font-mono")}
+              data-markdown-copy={pullRequestCopy}
               href={href}
               target={isSameDocumentLink ? undefined : "_blank"}
               rel={isSameDocumentLink ? undefined : "noopener noreferrer"}
@@ -2322,7 +2341,7 @@ function ChatMarkdown({
                 });
               }}
             >
-              {faviconHost && hastHasText(node) ? (
+              {faviconHost && hastHasText(node) && !isPullRequestAutolink ? (
                 <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
                   {linkChildren}
                 </MarkdownExternalLinkContent>
@@ -2445,6 +2464,14 @@ function ChatMarkdown({
   ]);
   /* eslint-enable react/no-unstable-nested-components */
 
+  const remarkPlugins = useMemo(
+    () => [
+      ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
+      ...extraRemarkPlugins,
+    ],
+    [extraRemarkPlugins, lineBreaks],
+  );
+
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
   // Keep that behavior explicit because literal mode depends on escaping the
   // complete source token instead of dropping it from the rendered message.
@@ -2457,9 +2484,7 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <ReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
+        remarkPlugins={remarkPlugins}
         rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
         skipHtml={false}
         components={markdownComponents}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { splitPullRequestBody } from "./pullRequestMarkdown.logic";
+import type { MarkdownNode } from "~/vendor/mdast-find-and-replace";
+
+import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestMarkdown.logic";
 
 describe("pull request body segmentation", () => {
   it("keeps a plain body as a single markdown run", () => {
@@ -142,5 +144,62 @@ describe("pull request body segmentation", () => {
     expect(splitPullRequestBody(body)).toEqual([
       { id: "markdown:0", kind: "markdown", text: body },
     ]);
+  });
+});
+
+describe("remarkPullRequestAutolinks", () => {
+  const transform = remarkPullRequestAutolinks({
+    repositoryUrl: "https://github.com/pingdotgg/t3code/",
+  });
+
+  const run = (value: string) => {
+    const tree: MarkdownNode = { type: "root", children: [{ type: "text", value }] };
+    transform(tree);
+    return tree.children ?? [];
+  };
+
+  it("links a bare issue reference to the repository", () => {
+    expect(run("Closes #123 today")).toEqual([
+      { type: "text", value: "Closes " },
+      {
+        type: "link",
+        url: "https://github.com/pingdotgg/t3code/issues/123",
+        data: { hProperties: { dataPullRequestAutolink: "reference" } },
+        children: [{ type: "text", value: "#123" }],
+      },
+      { type: "text", value: " today" },
+    ]);
+  });
+
+  it("abbreviates a commit sha and marks it as a commit link", () => {
+    const sha = "a".repeat(40);
+    expect(run(`See ${sha}.`)).toEqual([
+      { type: "text", value: "See " },
+      {
+        type: "link",
+        url: `https://github.com/pingdotgg/t3code/commit/${sha}`,
+        data: { hProperties: { dataPullRequestAutolink: "commit" } },
+        children: [{ type: "text", value: "aaaaaaa" }],
+      },
+      { type: "text", value: "." },
+    ]);
+  });
+
+  it("leaves references that are part of a longer word alone", () => {
+    const sha = "b".repeat(40);
+    expect(run(`color#123x and x${sha}`)).toEqual([
+      { type: "text", value: `color#123x and x${sha}` },
+    ]);
+  });
+
+  it("does not rewrite text inside an authored link", () => {
+    const tree: MarkdownNode = {
+      type: "root",
+      children: [
+        { type: "link", url: "https://example.com", children: [{ type: "text", value: "#7" }] },
+      ],
+    };
+    transform(tree);
+    expect(tree.children?.[0]?.children).toEqual([{ type: "text", value: "#7" }]);
   });
 });

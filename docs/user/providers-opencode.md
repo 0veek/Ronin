@@ -44,6 +44,15 @@ OpenCode uses this password for HTTP Basic authentication.
 Ronin uses the OpenCode setup on the connected environment. With a remote environment, its OpenCode
 login and configuration apply, not the setup on the machine you are sitting at.
 
+## Stop a turn
+
+When you select **Stop**, Ronin stops the main OpenCode session and all nested child sessions.
+Ronin waits for this cleanup before it marks the turn as stopped or sends the next prompt. It
+does not stop unrelated OpenCode sessions.
+
+Stop reports an error if OpenCode cannot list or stop a child session. When Ronin closes an
+OpenCode session, it also tries to stop the child sessions, but this teardown is best effort.
+
 ## Refresh the model list
 
 Ronin loads the model list when an enabled OpenCode provider starts and keeps the list in its

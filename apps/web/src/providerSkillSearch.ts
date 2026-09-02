@@ -84,12 +84,31 @@ function scoreProviderSkill(skill: ServerProviderSkill, query: string): number |
   return Math.min(...scores);
 }
 
+/**
+ * One skill name can be defined in more than one scope (a personal copy and a
+ * project copy, say). The menus offer a name, not a file, so only the first
+ * enabled definition is offered.
+ */
+export function dedupeProviderSkillsByName(
+  skills: ReadonlyArray<ServerProviderSkill>,
+): ServerProviderSkill[] {
+  const seenNames = new Set<string>();
+  return skills.filter((skill) => {
+    const key = providerSkillNameKey(skill.name);
+    if (seenNames.has(key)) {
+      return false;
+    }
+    seenNames.add(key);
+    return true;
+  });
+}
+
 export function searchProviderSkills(
   skills: ReadonlyArray<ServerProviderSkill>,
   query: string,
   limit = Number.POSITIVE_INFINITY,
 ): ServerProviderSkill[] {
-  const enabledSkills = skills.filter((skill) => skill.enabled);
+  const enabledSkills = dedupeProviderSkillsByName(skills.filter((skill) => skill.enabled));
   const normalizedQuery = normalizeSearchQuery(query, { trimLeadingPattern: /^\$+/ });
 
   if (!normalizedQuery) {

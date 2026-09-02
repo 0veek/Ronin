@@ -16,6 +16,7 @@ import { WorkspaceShell } from "../components/shell/WorkspaceShell";
 import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
+import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAppActivationCoordinator";
 import { AgentAttentionNotifier } from "../components/AgentAttentionNotifier";
 import { DockAttentionBadge } from "../components/DockAttentionBadge";
 import { AppUpdateNotification } from "../components/AppUpdateNotification";
@@ -142,6 +143,7 @@ function RootRouteView() {
           <EnvironmentThemeSync />
           <FontAppearanceSync />
           {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+          {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
           <SshPasswordPromptDialog />
           <ConfirmDialogHost />
           <SlowRpcRequestToastCoordinator />

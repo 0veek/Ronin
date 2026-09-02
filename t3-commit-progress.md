@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                             |
-| ----------------------------- | ------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `e3dcc1615` — `Add mobile composer attachment menu with video support (#8843)` (2026-08-30) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                             |
-| **Ported on**                 | 2026-08-31                                                                                  |
+|                               |                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `b21d87243` — `chore: vouch six repeat contributors (#9131)` (2026-09-01) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`           |
+| **Ported on**                 | 2026-09-02                                                                |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -3651,3 +3651,510 @@ and five mobile/release commits that are pure cut surface.
 - **A running client.** No dev server or browser was started, per `AGENTS.md`. The video player, the
   expandable markdown images, the pull-request row layout and the scroll-fade height are all
   visual/interaction changes verified by tests and typecheck only.
+
+## Batch 22 — reviewed through `31c1c5996` (19 commits)
+
+Reviewed `e3dcc1615..31c1c5996`, snapshotted at `31c1c5996` for the whole run. The worktree was
+clean at the start. The batch is dominated by two large web changes — a native rewrite of browser
+recording, and an upstream redesign of the composer surface — plus seven mobile/governance commits
+that are pure cut surface.
+
+The composer redesign (`30175a8af` and its two follow-ups) was an **Ask**, resolved by the
+maintainer as _skip the visual rewrite, take the fixes inside it_. That decision shapes four
+entries below and is spelled out under **The composer trilogy**.
+
+### Ported (8)
+
+| Upstream    | Title                                                        | Notes                                                                                   |
+| ----------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `30175a8af` | fix(web): restore unified activity logs and composer banners | **partial** — the touch/keyboard-reachable banner stack and the failed-update dismissal |
+| `9842518c9` | fix(web): address composer banner review follow-ups (#8850)  | **partial** — the focus-management refinement of the same banner stack                  |
+| `395811105` | fix(preview): improve browser recording quality (#8839)      | **adapted** — Ronin has no picture-in-picture, so the JPEG frame pipeline goes with it  |
+| `e9c4775e8` | fix(web): mark pull request links as external (#8856)        | clean                                                                                   |
+| `f86c5e8c8` | fix(server): skip IDE detection in Claude probes (#8634)     | clean                                                                                   |
+| `038bf3739` | Delete app.json (#8934)                                      | clean — an inert `{"expo": {}}` stub with no reference anywhere in the tree             |
+| `35da58133` | fix(web): show scrollbar for wide markdown tables (#8868)    | clean                                                                                   |
+| `ef84bc987` | fix(chat): smooth worktree setup status (#8922)              | **partial** — the draft-promotion fix and the anchor offset, not the timeline shimmer   |
+
+- **`395811105` (browser recording quality).** The batch's largest real change and a genuine
+  capability, not polish: recording stops re-encoding a 12 fps `capturePage` JPEG stream through a
+  canvas and instead captures the guest natively. `startRecording` now measures the guest's
+  viewport with `executeJavaScript`, forces a warm-up frame, and returns
+  `{ sourceId, width, height }` from `webContents.getMediaSourceId`; the renderer feeds that into
+  `getUserMedia`'s `chromeMediaSource: "tab"` constraints and hands the resulting `MediaStream`
+  straight to `MediaRecorder`. A new client-local `browserRecordingFrameRate` setting (30 or 60 fps,
+  default 30) rides along in Settings → Integrations, with its search entry and reset button.
+  The adaptation is forced by a Ronin divergence upstream does not have. Upstream keeps the
+  `capturePage` loop because picture-in-picture still consumes it; Ronin removed
+  picture-in-picture entirely (`openPictureInPicture` is a no-op stub), so `"recording"` was that
+  loop's only consumer. Leaving it running would have meant a 12 fps GPU capture feeding nothing
+  for the length of every recording. So the loop, `capturePreviewFrame`, the recording-frame
+  listener set, the `Page.screencastFrame` forwarding block, `PREVIEW_RECORDING_FRAME_CHANNEL`,
+  the preload `onFrame` bridge and the `DesktopPreviewRecordingFrame` contract all came out with
+  it; `FrameCaptureSession` keeps only the background-throttling lease. Ronin's own 128 MB
+  auto-stop (`encodedBytes`, `autoStoppedRecordings`, `subscribeBrowserRecordingAutoStopped`)
+  survives unchanged on top of the new stream.
+  Upstream's `Manager.test.ts` rewrite came across for the recording cases — warm-up failure,
+  invalid dimensions, the two start races — and its ~570 lines of picture-in-picture and
+  element-picking cases were dropped, matching surfaces this fork does not have.
+
+- **`ef84bc987` (worktree setup).** The real defect is in `resolveDraftPromotionNavigationTarget`:
+  it promoted the draft route to the canonical thread route as soon as the thread existed, which
+  during worktree setup unmounts the local preparation feedback before the server has a running
+  turn to render. It now waits for `latestTurn.startedAt`, or for a session that ended as
+  `error`/`stopped`/`interrupted` so a startup failure still lands on the thread. `threadHasStarted`
+  stays — four other call sites still use it. `CHAT_TIMELINE_ANCHOR_OFFSET` (24) came over as its
+  own constant in `timelineScrollAnchoring.ts`, replacing the shared `CHAT_LIST_ANCHOR_OFFSET` (16)
+  at the four web call sites: upstream sizes it to the titlebar fade inset so promotion preserves
+  the first row's position, and Ronin's fade is the `1.5rem` `--workspace-titlebar-scroll-fade-height`
+  token taken in batch 21, so 24 is the matching number here too. `packages/shared/chatList.ts`
+  keeps its 16 default for any other consumer.
+  Dropped: the presentation half. Upstream moves the status out of the composer and into the
+  timeline's working row as a shimmering "Setting up worktree…", which needs `LiveActivityRow`,
+  `LiveActivityContent` and the `live-activity-focus` classes — none of which exist here (batch 21
+  recorded the same absence for `8b817cbca`). Ronin keeps its composer-side "Preparing worktree..."
+  indicator, which the promotion fix now keeps mounted for the whole setup, so the feedback the
+  commit is about is present either way. The `isWorktreeSetupActivity` filter on
+  `deriveWorkLogEntries` went with it: it exists to stop `setup-script.requested`/`.started` rows
+  duplicating upstream's new timeline status, and without that status it would only delete Ronin's
+  one in-timeline signal that setup is running.
+
+### The composer trilogy — `30175a8af`, `9842518c9`, `3f62e6fa6`
+
+`30175a8af` "restore unified activity logs and composer banners" (#8734) is 1410/2235 lines over 33
+files. It introduces `ComposerSurface` and `ComposerBanner` primitives, deletes
+`ThreadSyncStatusPill.tsx`, deletes `deriveTurnPlans` and the `turn-plan` timeline row (moving plan
+progress into a composer tasks badge), rewrites work-log grouping, and removes 524 lines from
+`index.css`. `9842518c9` and `3f62e6fa6` are follow-ups that only compile against those primitives.
+
+This is exactly where Ronin has diverged most. `ChatView.tsx` is +1224/−483 against this commit's
+parent, `index.css` was split into `styles/*.css` long ago, there is no `ComposerTasksBadge.tsx`
+here, and `turnReplay.ts:73` depends on the `turn-plan` entry kind. Taking the trilogy whole would
+have meant replacing Ronin's composer with upstream's and rebuilding a tasks surface to hold the
+plan progress the inline chips currently show. The maintainer chose to keep Ronin's composer and
+take only the behavior. What that came to:
+
+**Taken.**
+
+- The banner stack is reachable without a pointer. Both forks previously revealed the stacked
+  notices with `group-hover:`/`group-focus-within:` only, behind a non-interactive peek `div` — on a
+  touchscreen there was no way to open it at all. The peek is now a real `button` ("Show other
+  notices") with `aria-expanded`/`aria-controls`, the reveal is driven by `stackExpanded` state
+  (pointer enter for mice, click for touch), `Escape` closes it and returns focus to the peek, the
+  expanded region is a labelled `role="group"`, and pressing anything on the front banner collapses
+  it. `9842518c9`'s refinement came with it: focus moves into the first control of the region on
+  open, the peek is `aria-hidden` and untabbable while expanded, and the focus handoffs run through
+  a `pendingFocusRef` in a layout effect rather than an imperative `focus()` at the call site.
+  Ronin's own surface treatment (`surface-alert`, `rounded-[22px]`, `--duration-fast`,
+  `--shadow-raised`, the variant-coloured peek border) is untouched.
+- A failed server update can be dismissed. `versionSkew.ts` gains the `WeakSet`-keyed
+  `dismissServerUpdateFailure`/`isServerUpdateFailureDismissed` pair, so dismissing a failure hides
+  that attempt across chat remounts without clearing the error in Settings and without hiding the
+  next attempt. `ChatView`'s banner condition and dismiss spread follow.
+- `docs/user/composer.md` gained a "Notices above the composer" section describing the peek,
+  reworded for Ronin's floating stack (upstream's says "attached banner").
+
+**Not taken, and why.**
+
+- `ComposerSurface`, `ComposerBanner`, `ComposerActivityStatus`, `ComposerServerUpdateStatus` — the
+  visual system the maintainer chose to skip. Ronin keeps `Alert`/`AlertTitle`/`AlertAction` and
+  `ThreadSyncStatusPill`.
+- The removal of `deriveTurnPlans` and the `turn-plan` row. It is only safe upstream because the
+  plan moved into a composer tasks badge Ronin does not have, and `turnReplay.ts` reads that entry
+  kind here.
+- The in-stack `bannerPriority` sort. Upstream sorts items into three buckets
+  (`activity` / urgent / rest) inside `ComposerBannerStack`. Ronin's `composerBannerItems` assembler
+  already orders seven categories deliberately — quota resume ahead of background liveness because
+  its Cancel is the only way to stop a self-starting turn, parked-thread last because it must never
+  cover another — and a three-bucket sort would flatten that. Ronin's `urgent` flag stays.
+- `3f62e6fa6` **entirely**. Its banner-width changes are the skipped visual layer, and its one
+  behavior change — deleting `workingStepLabel` from the timeline's working row — is only correct
+  upstream because that commit's sibling puts the plan step in the composer instead. In Ronin the
+  working row is where the current plan step is shown, so the deletion would strand users.
+
+### Already in the tree (1)
+
+| Upstream    | Title                                | Confirmation                                       |
+| ----------- | ------------------------------------ | -------------------------------------------------- |
+| `4a9d2d0ce` | chore(deps): bump Electron to 43.4.1 | `apps/desktop/package.json:22` is already `43.4.1` |
+
+- **`4a9d2d0ce`.** Ronin moved to Electron 43 independently and `BrowserSession.ts:160` already
+  clears `["cookies", "localstorage", "indexdb", "serviceworkers"]` with no `"websql"` — the exact
+  storage-key change the bump required. Nothing to do.
+
+### Skipped (10)
+
+| Upstream    | Title                                                          | Reason                                                                   |
+| ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `f9137a0c8` | fix(mobile): map native menu icon colors explicitly            | `apps/mobile` only                                                       |
+| `9b2d04317` | fix(mobile): replace Callstack glass with Expo glass (#8862)   | `apps/mobile` only, plus a mobile-only doc                               |
+| `746c932e1` | fix(mobile): defer draft navigation until submission completes | `apps/mobile` only                                                       |
+| `5ce92c2f1` | fix(mobile): shimmer active tool rows (#8932)                  | `apps/mobile` only                                                       |
+| `31c1c5996` | feat(mobile): add video playback with native iOS controls      | mobile; its three non-mobile hunks are mobile plumbing — see below       |
+| `3f62e6fa6` | fix(web): widen sync banners and simplify the working timer    | composer redesign follow-up; see **The composer trilogy**                |
+| `ad38700ac` | chore(macroscope): review diagnostic overrides (#8917)         | upstream review-bot governance                                           |
+| `4e8e64fc0` | chore: disable CodeRabbit review status (#8933)                | upstream review-bot config; Ronin runs neither bot                       |
+| `2921050c6` | fix(contracts): accept CLI event origins (#8905)               | the `ClientSurface` schema and `metadata.origin` field do not exist here |
+| `bba79cc25` | fix(web): hide invalid slash skill completions (#8904)         | fixes an inline slash typeahead this fork does not render                |
+
+- **`31c1c5996`.** Three hunks land outside `apps/mobile` and all three are mobile plumbing.
+  `apps/server/src/http.ts` gains HTTP Range support (`assetByteRange`, `assetFileResponse`) so iOS
+  can stream a video as it plays; Ronin's web player fetches the whole asset and plays a `blob:`
+  URL built in `ExpandedImagePreview.tsx`, so it never issues a range request. `packages/shared/src/video.ts`
+  extracts `videoMimeType` out of `apps/web/src/types.ts` purely so mobile can import it — the same
+  shape as `f15680bd3`'s `commandLabel` extraction that batch 21 declined, so the helper stays
+  inline. The `docs/user/composer.md` hunk is mobile share-sheet and iOS-player copy.
+  Worth writing down: streaming rather than buffering a whole video before playback would be a real
+  improvement for remote and Tailscale environments. That is a Ronin feature on top of the server
+  change, not a port of it.
+- **`ad38700ac`.** Half of it edits `.macroscope/approvability.md`, which this fork does not have
+  (batch 18 skipped `2bc9e8ef6` for the same reason). The other half edits
+  `.macroscope/check-run-agents/effect-service-conventions.md`, which does exist here — but only as
+  an artifact inherited from before the fork (last touched by upstream's `c3e8fb67d`), with no
+  Macroscope wiring in `.github/workflows`. Batch 11 skipped `2433f4c1c` on the same grounds.
+- **`2921050c6`.** Adds `"cli"` to `ClientSurface` and asserts a `metadata.origin` round-trip.
+  Ronin has no `ClientSurface` schema at all, and `OrchestrationEventMetadata`
+  (`packages/contracts/src/orchestration.ts:1598`) carries only `providerTurnId`, `providerItemId`,
+  `adapterKey`, `requestId` and `ingestedAt` — no `origin`. The event store test patch applies
+  cleanly on context alone and then fails, which is why it was reverted rather than kept.
+- **`bba79cc25`.** Filters skills out of slash completions once the caret is past the start of the
+  prompt. It lands in `ChatComposer`'s `ComposerCommandItem` menu — and Ronin does not render one.
+  `ComposerCommandMenu.tsx` and `composerSlashCommandSearch.ts` are orphans here with no importer
+  outside their own test; Ronin's slash surface is `ComposerSlashStatusDialog` and
+  `ComposerSlashTargetPicker` in `ChatView`, and skills are inline Lexical chips
+  (`ComposerSkillDecorator` in `ComposerPromptEditor.tsx`), not typeahead rows.
+
+### Verification
+
+- Focused tests over every changed module — 13 files, 435 pass, 0 failures: `Manager`,
+  `DesktopClientSettings`, `browserRecording`, `ChatView.logic`, `ComposerBannerStack`,
+  `MessagesTimeline`, `MessagesTimeline.logic`, `SettingsPanels.logic`, `settingsSearch`,
+  `versionSkew`, `session-logic`, `contracts/settings`, `turnReplay`.
+- Neighbouring suites for the adapted surfaces — the whole `apps/web/src/components/preview`,
+  `apps/web/src/browser` and `apps/desktop/src/preview` directories plus `ComposerPrimaryActions`,
+  `ComposerStashMenu` and `composerSlashCommandSearch`: 47 files, 411 pass, 0 failures.
+- Claude probe and pull-request suites: 17 files, 331 pass, 0 failures.
+- Typecheck: `tsgo --noEmit` in `apps/web`, `apps/desktop`, `apps/server`, `packages/contracts`,
+  `packages/client-runtime`, `packages/shared` — 0 errors each.
+- `vp lint` over all 33 changed files — clean. `vp fmt --check` — clean. `git diff --check` — clean.
+- No pre-existing failures were observed in any suite that was run.
+
+**Hit every surface (for this batch):**
+
+- **Entry points** — browser recording is reachable from both places it starts: the user's record
+  button in `PreviewView.tsx` and the agent's `preview_recording_start` through
+  `PreviewAutomationHosts.tsx`. Both go through `startBrowserRecording`, so both get the native
+  stream and the frame-rate setting. The new setting is reachable from Settings → Integrations and
+  from settings search. The banner peek is reachable by pointer, touch and keyboard.
+- **Clients** — the recording rewrite spans desktop (Manager, IPC, preload) and web (renderer);
+  the frame-rate setting is client-local by design, so it lives in `ClientSettings`, not server
+  settings.
+- **Providers** — only the Claude adapter changed, and only its capability probe environment.
+  No other adapter needed a decision.
+- **Contracts** — `DesktopPreviewRecordingSource` added, `DesktopPreviewRecordingFrame` removed,
+  `DesktopPreviewBridge.recording.startScreencast` now returns the source, and
+  `ClientSettings`/`ClientSettingsPatch` carry `browserRecordingFrameRate`. Desktop, web and the
+  preload bridge all follow.
+- **Reverse states** — a failed update can now be dismissed and comes back on the next attempt; a
+  media capture that never settles fails with `BrowserRecordingCaptureTimeoutError` after 5s and
+  releases the surface lease and the tab's recording lease; a recorder that reports no output
+  format fails with `BrowserRecordingFormatUnavailableError` instead of writing an untyped blob; a
+  `startRecording` that fails anywhere after taking the lease releases it via `Effect.onError`.
+- **Connection modes** — recording is desktop-local by construction: the media source id names a
+  Chromium guest in this process, so nothing crosses the wire differently for remote or Tailscale.
+  The draft-promotion fix reads thread state the server already sends everywhere.
+- **Docs** — `docs/user/composer.md` gained the notice-peek section. The frame-rate setting carries
+  its own description in Settings and, like upstream, has no separate doc page; Ronin has no user
+  documentation of browser recording to extend.
+
+### Not tested
+
+- **A running client.** No dev server or browser was started, per `AGENTS.md`. The native recording
+  path in particular is verified by tests and typecheck only — `getMediaSourceId`, `getUserMedia`
+  with `chromeMediaSource: "tab"`, and `MediaRecorder` codec selection are all mocked in the suite,
+  so the first real capture is worth watching before this ships.
+
+## Batch 23 — reviewed through `b21d87243` (51 commits)
+
+The largest batch so far, and the one with the most load-bearing server work: automatic thread
+settlement moved into the server, the Claude model catalog moved into the manifest, and the
+Electron 43 recording path was rebuilt. Two commits needed a maintainer decision before they could
+be resolved; both are recorded below with the answer that settled them.
+
+### Ported (36)
+
+| Upstream    | Title                                                                         | Notes                                                                                  |
+| ----------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `f47e74004` | fix(web): prevent chat metadata overlap (#8851)                               | **adapted** — same four hunks against Ronin's own breadcrumb classes                   |
+| `6d15c5bbc` | fix(server): preserve usage cache outside walked roots (#8540)                | clean                                                                                  |
+| `41adccc83` | fix(server): allow long thread IDs in HTTP routes (#8898)                     | clean                                                                                  |
+| `929f7e647` | fix(shared): preserve Windows shell PATH priority (#8748)                     | **adapted** — Ronin's extra known CLI dirs reordered in all three expectations         |
+| `17f00f602` | feat(web): add expand/collapse all control to the files surface (#8889)       | clean                                                                                  |
+| `c78ae50a5` | fix(server): isolate remote web session cookies (#8085)                       | **adapted** — see below                                                                |
+| `42a8fd510` | feat(pull-requests): link GitHub references in markdown (#8812)               | **adapted** — Ronin's detail panel had no `repositoryUrl`; added one                   |
+| `b17cc3d1b` | perf(server): reduce frequency of full tool call output being loaded (#8988)  | clean                                                                                  |
+| `d35c71d1b` | feat(web): add pull request list filters (#8809)                              | **adapted** — see below                                                                |
+| `ff93aba61` | feat(web): search individual settings by detail (#8831)                       | **adapted** — see below                                                                |
+| `73776d4e5` | test: remove static presentation snapshots (#9008)                            | web half only; `menu.test.tsx` deleted, mobile file absent                             |
+| `a9ffb8279` | perf(server): bound snapshot activity payload memory (#9000)                  | **adapted** — Ronin already had the `new Set` id refactor; fixture + assertions took   |
+| `0bfb6df34` | perf(server): cut idle CPU use and stop provider event leaks (#8187)          | 15 of 19 files clean; four hand-applied                                                |
+| `8f1ef8b9e` | perf(server): scan only appended transcript bytes for usage summaries (#9024) | **adapted** — see below                                                                |
+| `7e4ce3bbb` | perf(server): cut chatty tool-update frames by 90% (#8368)                    | **adapted** — see below                                                                |
+| `f32f9a2f4` | fix(server): settle threads server-side (#8600)                               | **adapted** — see below                                                                |
+| `8b033de48` | fix(clients): dedupe skills in composer menus (#8043)                         | **adapted** — dedupe lives in Ronin's `providerSkillSearch`, its only skill-menu entry |
+| `62d39bf00` | fix(server): stop OpenCode child sessions (#9005)                             | clean; doc rewritten in Ronin's voice                                                  |
+| `3c73fa7ce` | perf(web): defer pull request line stats until visible (#6471)                | **adapted** — `diffStatKey` renamed to `pullRequestDiffStatKey` first                  |
+| `e86604d33` | perf(server): skip full-message reads while streaming (#9032)                 | clean but one hunk                                                                     |
+| `b883fc066` | perf(client-runtime): halve server config bootstrap traffic (#8367)           | **adapted** — `layerWithOptions` without upstream's relay layer                        |
+| `b5b6abb11` | fix(web): block type-to-focus behind open dialogs (#8139)                     | clean — all five slot selectors resolve here                                           |
+| `2d156a83b` | feat(shortcuts): copy active thread reference (#8994)                         | **adapted** — see below                                                                |
+| `643b21eda` | fix(server): cache project favicon resolution (#9080)                         | clean                                                                                  |
+| `c17d02cff` | feat(claude): add Claude Fable 5.1 model (#9078)                              | **adapted** — 200k context default, matching Ronin's other Claude entries              |
+| `ef7014d85` | fix(preview): restore recording and macOS rendering after Electron 43 (#9001) | **adapted** — see below. The most important commit in the batch.                       |
+| `9d1879b14` | feat(desktop): add configurable quit shortcut confirmation (#9076)            | **adapted** — Ronin's settings row and search entry renamed to "Quit shortcut"         |
+| `cb0074691` | feat(web): open project settings from thread menus (#8925)                    | **adapted** — placed before Ronin's Export submenu                                     |
+| `035428368` | feat(models): discover Claude models from remote manifest (#9084)             | **adapted** — see below. Maintainer-decided.                                           |
+| `692eb1a57` | fix(web): sync sidebar PR state from open panel (#9092)                       | clean                                                                                  |
+| `3b3465f2a` | fix(web): changing projects no longer creates a draft (#9097)                 | clean                                                                                  |
+| `d0b4acbd1` | fix(web): keep theme placeholder text dimmer than entered text (#9104)        | clean                                                                                  |
+| `c0995d2ea` | fix(web): keep the selected environment when changing projects (#9102)        | clean; doc in Ronin's voice                                                            |
+| `0222aa255` | fix(web): preserve theme when toggling advanced colors (#8500)                | clean                                                                                  |
+| `04efa7907` | feat(cli): open projects in the running desktop app (#8824)                   | **adapted** — see below                                                                |
+| `ce71c04f0` | feat(client): render viewed images in work logs (#8936)                       | **adapted** — rebuilt on Ronin's own image plumbing; see below                         |
+
+**`c78ae50a5` (remote web session cookies).** Remote web cookie names are now keyed by the persisted
+environment id rather than the state directory, so a moved state dir or a changed public port keeps
+the session, and two environments on one hostname stop clobbering each other. `ServerEnvironment`
+splits into a `ServerEnvironmentIdentity` service so `SessionStore` and `EnvironmentAuthPolicy` can
+read the id without pulling the whole descriptor, and ID initialization is now atomic with a
+`.recovery` file. Two Ronin adaptations: `cli/connect.ts` does not exist here (T3 Connect is cut),
+and `selectRequestCredential` keeps **Ronin's** credential order — bearer before cookie, with the
+written rationale that an ambient cookie must never override an explicit bearer — where upstream
+checks cookie first. The unscoped `t3_session` legacy cookie is accepted last and re-issued under
+the new name on the next `/api/auth/session` call, so existing remote sessions survive the rename.
+Ronin has no DPoP path, so that branch was dropped.
+
+**`d35c71d1b` + `3c73fa7ce` (pull request list).** Taken together because the stats work builds on
+the filters. Author and label facets, label chips on rows, and update/creation/size sorts all
+landed; line-count reads now happen per visible row through an IntersectionObserver instead of for
+the whole loaded list, with size sorts falling back to an eager read because their order needs every
+count. Adaptations: Ronin renamed `diffStatKey`, so the stats helpers were retargeted; Ronin's
+`Input` has no `compact` size, so the author search field uses `sm`; Ronin's project radio group is
+inline rather than in a labelled submenu, so the two filter tests keep their unscoped walk; and the
+author/label submenus had to be wired into `PullRequestFiltersMenu` by hand, along with a
+multi-key `updateFilters` writer, because Ronin's menu body diverged from upstream's.
+
+**`ff93aba61` (settings search by detail).** The valuable half is per-item `searchTerms`, so "dark
+mode" finds Color scheme instead of every Appearance row. Ported with upstream's terms for the 36
+catalog entries Ronin shares, a `macOnly` flag for the macOS-only font-smoothing row, and a
+`filterAvailableSettingsSearchItems` seam plus a `useAvailableSettingsSearchItems` hook that both
+the settings sidebar and the command palette now read. Upstream's other availability dimensions
+(`cloudOnly`, `primaryOnly`, `providerSettingsOnly`, `localBackendManagementOnly`,
+`wslAvailableOnly`) gate rows Ronin does not have — T3 Connect, publish agent activity, WSL backend,
+network access, Tailscale HTTPS — so the seam ships with only the dimension Ronin uses. Settings are
+now searchable from the command palette too; Ronin's scoring (title exact/prefix/contains, then item
+terms, then page terms) was kept and extended rather than replaced with upstream's flat rank.
+
+**`8f1ef8b9e` (incremental transcript scans).** A grown transcript now re-parses only its appended
+bytes: the reader streams buffers rather than `readline` so it can report a byte-exact resume
+position, guards the resume with an FNV-1a fingerprint of the 64 bytes before it, and carries the
+Codex reducer state across the boundary. Cache entries gained `tailRecords` and `position`, so the
+version bumped **3 → 4** (Ronin was already on 3 for its tokenless-Claude change; upstream went
+2 → 3). Antigravity reads a SQLite conversation store whole rather than an append-only log, so it
+returns `WHOLE_FILE_POSITION` and always cold-parses. `UsageService` also gained upstream's
+in-flight scan dedupe and concurrent rate fetch. The new `UsageService` suite asserts **deltas**
+rather than absolute token totals: Grok and Antigravity read fixed homes the suite cannot redirect,
+so a developer's own transcripts can land in the window.
+
+**`7e4ce3bbb` (tool-update coalescing).** Only the newest in-flight update per stable tool-call id
+is sent, cutting the frames a live tool run puts on the wire by ~90%. Ronin does **not** take
+upstream's `makeThreadLiveEventCoalescer`, which replaces the live buffer with an unbounded queue:
+Ronin's thread stream uses a bounded dropping buffer that fails the stream on overflow so the client
+reconnects and resynchronizes, and that protection is deliberate. Instead the pure reducer
+(`coalesceLiveToolUpdatedEvents`) moved into `ThreadLiveEventCoalescer.ts` and `ws.ts` runs it
+through `Stream.groupedWithin` after the bounded buffer — exactly the shape Ronin already uses for
+the shell stream, marker splitting included. All three of upstream's server-level coalescing tests
+pass against this implementation; the module's own tests keep the four pure cases and drop the two
+that exercised the discarded runtime.
+
+**`f32f9a2f4` (server-side settlement).** The biggest behavior change in the batch. Merge and
+inactivity settlement now run in a `ThreadSettlementReactor` on the server against a
+`ThreadSettlementPolicy`, so a thread settles with no client attached; `sidebarAutoSettleAfterDays`
+and `sidebarAutoSettleOnMerge` moved from client settings to **server** settings, the decider gained
+a `thread.auto-settle` command and an `OrchestrationThreadSettleBlockedError`, and the environment
+descriptor advertises `threadAutoSettlement`. Adaptations: Ronin's engine keeps its
+`SESSION_STOP_SKIPPED_DETAIL` guard, so the rejection check widened to
+`isOrchestrationCommandRejection(error) && !isOrchestrationCommandSkippedError(error)` rather than
+replacing it; Ronin's **board** (`components/board/`, which upstream has no equivalent of) derived
+its Done lane from the deleted client-side `effectiveSettled`, so it now reads
+`thread.settledOverride` exactly as the sidebar does; and `canSettle` was **kept** in
+`client-runtime`, against upstream deleting it, because the board uses it to grey out a Settle the
+server would reject — everything else upstream removed (`effectiveSettled`,
+`changeRequestAutoSettles`, `ChangeRequestSettleSource`) went. The auto-settle settings rows are now
+gated on the capability, and the `days-before-auto-settle` catalog entry was added so the row that
+was previously anchor-less is reachable from search.
+
+**`ef7014d85` (Electron 43 recording).** The commit this batch most needed. Batch 22's uncommitted
+recording rewrite runs on `getMediaSourceId` + `chromeMediaSource: "tab"`, which Electron removed in
+43 (electron#44618) and which now always rejects with `NotAllowedError` — and Ronin is on Electron
+43.4.1, so that work was broken as landed. Recording now arms a tab through
+`setDisplayMediaRequestHandler` and the renderer redeems it with `getDisplayMedia()` behind an
+`executeJavaScript(..., true)` user gesture, with a 10s arm grace, an exclusive arm slot, and a
+`BrowserRecordingStartCancelledError` for a contended start the user stopped. The macOS half came
+too: a backgrounded guest keeps its own throttle and hands the capture stream frozen frames, so
+`FrameCaptureSession` now tracks `unthrottledWebContentsIds` and un-throttles each guest, restoring
+it when capture stops — adapted to Ronin's simpler session shape, which has no picture-in-picture.
+`DesktopPreviewRecordingSource` is gone from the contract and `startScreencast` returns `void`.
+
+**`2d156a83b` (copy thread reference).** `mod+shift+c` copies the active thread's PR link, or its
+thread id when there is none. Ronin routes it through `runWorkspaceCommand`, which the command
+palette also dispatches through, so the action is reachable from the keyboard _and_ the palette
+without a second implementation — upstream wires the keydown handler and the palette separately.
+
+**`04efa7907` (`t3 app`).** Opens a directory in the already-running desktop app over a local
+socket, adding the project and starting a thread. Two adaptations: `packages/shared` has no
+`@noble/hashes` dependency here and adding one would mean a lockfile change, so `shortHash` uses
+`node:crypto` (byte-identical output — the first 12 bytes of the same SHA-256); and the CLI test
+fixture points at Ronin's default home `~/.ronin`, not `~/.t3`. All user-facing strings say Ronin.
+
+**`035428368` (remote model manifest) — maintainer-decided.** The Claude catalog (names,
+capabilities, minimum CLI versions, aliases) moves out of `ClaudeProvider.ts` and into
+`model-manifest.json`, fetched at runtime from this fork's `main`. The bundled manifest upstream
+ships defaults Fable 5, Fable 5.1 and Opus 5 to the **1M** context window, which reverses Ronin's
+deliberate 200k default and its written rationale that 1M requests are usage-weighted at long-context
+premium past 200k. The maintainer chose **port, keep Ronin's 200k defaults**: the bundled manifest's
+`fable-5`, `opus-5` and `opus-4-6` profiles were edited to make `200k` the default, so all five
+context-window profiles now agree with Ronin's existing Sonnet entries. Ronin's manifest therefore
+diverges from upstream's permanently, and the remote fetch only serves it once this file reaches the
+fork's `main`; until then the bundled copy is the fallback, which is the designed behavior. Claude
+slug aliases moved from `MODEL_SLUG_ALIASES_BY_PROVIDER` into per-model `aliases`, so the shared
+alias test keeps only its custom-slug and Grok cases. The two Claude transport tests that asserted
+against real slugs were replaced with upstream's synthetic-catalog versions, with `argsMustContain`
+trimmed to match Ronin's CLI argument order (Ronin inserts `--system-prompt`, `--setting-sources=`,
+`--strict-mcp-config` and `--no-session-persistence` before `--dangerously-skip-permissions`).
+
+**`ce71c04f0` (viewed images in work logs).** An image the agent read renders inline in its work-log
+row. Upstream builds this on `client-runtime`'s `work-log/presentation.ts` and `markdownImages.ts`,
+neither of which exists here — Ronin has no `toolGroupAction`, `summarizeToolGroup`,
+`classifyMarkdownImageSource` or `markdownImageSourceFragment`. Rather than import that layer (which
+batches 21 and 22 both declined), the feature was rebuilt on Ronin's own plumbing: a new
+`workLogViewedImage.ts` detects a read whose detail is a previewable image path and resolves it to
+an asset resource using Ronin's `isLocalImageSource` / `localImagePathFromSource` /
+`resolvePathLinkTarget`, and Ronin's `WorkspaceMarkdownImage` was generalized into an exported
+`ChatMarkdownAssetImage` that takes an `AssetResource`. That generalization is what makes the
+attachment case work: an image the user attached and the agent then read back off disk lives under
+the T3 home, not the project, so signing it as a workspace file would fail. `PlainWorkEntryRow` now
+expands for an image even when it has no text body. `0947c30e6`, the follow-up that fixes upstream's
+import path for those helpers, is moot here for the same reason.
+
+### Skipped (15)
+
+| Upstream    | Title                                                              | Reason                                                            |
+| ----------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `f8e4accf2` | feat(mobile): add native image and PDF previews (#8959)            | `apps/mobile` only; its two doc hunks are mobile share-sheet copy |
+| `9bc7a5684` | feat(mobile): upload attachments while composing (#8978)           | `apps/mobile` only                                                |
+| `261380f91` | fix(mobile): keep thread scroll bounds current after animations    | `apps/mobile`, a Legend List patch, and the lockfile              |
+| `0df043fd4` | Add auto_review configuration to coderabbit.yaml                   | upstream review-bot config; Ronin has no `.coderabbit.yaml`       |
+| `85b656ff3` | style: format CodeRabbit configuration                             | same file                                                         |
+| `b21d87243` | chore: vouch six repeat contributors (#9131)                       | upstream contributor governance (`.github/VOUCHED.td`)            |
+| `60cef47ec` | chore(release): prepare v0.0.38                                    | Ronin versions independently (0.6.9)                              |
+| `c50b0b4ef` | fix(web): make WSL settings searchable (#8881)                     | WSL is a cut surface; see below                                   |
+| `9ecfc07a8` | fix(chat): keep agent activity visible between actions (#8984)     | live-activity timeline rows are a cut surface; see below          |
+| `a924fbe08` | fix(chat): reuse one row for live activity (#9062)                 | same surface, and reverted upstream by `163d50846`                |
+| `163d50846` | Revert "fix(chat): reuse one row for live activity" (#9096)        | the revert of a commit Ronin never took                           |
+| `590a579f2` | fix(chat): keep latest command live between messages (#9098)       | same cut surface as `9ecfc07a8`                                   |
+| `9dbdcece5` | fix(web): align un-settle banner action (#9033)                    | composer-banner visual layer; see below                           |
+| `0947c30e6` | fix(client): use package import for markdown image helpers (#9010) | fixes an import path in a module Ronin does not have; moot here   |
+| `beae2147a` | fix(media): preview host files and stream videos (#9023)           | maintainer-decided; see below                                     |
+
+- **`c50b0b4ef`.** Every hunk serves the WSL backend settings row, which Ronin does not render:
+  there is no `wslOnly` in `apps/web`, no `desktopWslStateAtom`, no `applyWslEnableSelection`. The
+  one generally-useful piece — an effect clamping `activeResultIndex` when the result list shrinks —
+  is only needed because upstream's item list changes independently of the query. Ronin resets the
+  index to 0 on every keystroke and its results depend on the query alone, so there is no stale-index
+  path to fix.
+
+- **`9ecfc07a8` / `a924fbe08` / `163d50846` / `590a579f2`.** All four operate on the `work-live`
+  row model — `LiveActivityRow`, `LiveActivityContent`, `LiveWorkEntryTimelineRow` — which Ronin has
+  never had (batches 21 and 22 both recorded the absence). Ronin's `MessagesTimeline.logic.ts` has
+  no `work-live` row kind at all, and its `working` row already carries no `showThinking`, which is
+  the shape `9ecfc07a8` is moving toward. `a924fbe08` was reverted upstream three commits later, so
+  the net upstream state is `9ecfc07a8` + `590a579f2`, and neither has a surface here.
+
+- **`9dbdcece5`.** Fixes the alignment of a description rendered as a second `ComposerBanner.Row`
+  under the title. Ronin keeps `Alert`/`AlertTitle`/`AlertDescription`/`AlertAction` (batch 22
+  recorded the choice), where the description already sits in the same grid as the title with the
+  action aligned to the first row — the misalignment being fixed does not exist here.
+
+- **`beae2147a` — maintainer-decided.** Adds HTTP Range streaming for video plus host-file previews
+  across clients. Batch 22 skipped upstream's Range support and wrote that streaming rather than
+  buffering a whole video "would be a real improvement for remote and Tailscale environments. That
+  is a Ronin feature on top of the server change, not a port of it." The maintainer chose **skip**,
+  keeping that position: the 33 files present here include `ChatMarkdown`, `ChatView` and
+  `MessagesTimeline`, all of which batch 22 also edits, and a straight apply produces 34 reject
+  hunks. The server half (`assetByteRange`, `assetFileResponse`, `MediaFile.ts`) remains the natural
+  starting point whenever Ronin designs its own streaming.
+
+### Verification
+
+- Whole repository, twice: `vp test run apps/server/src apps/server/integration apps/web/src
+apps/desktop/src packages` — **754 files, 8301 pass, 9 skipped, 0 failures.**
+- Typecheck: `tsgo --noEmit` in `apps/server`, `apps/web`, `apps/desktop`, `packages/contracts`,
+  `packages/shared`, `packages/client-runtime` — 0 errors each.
+- `vp lint` over all 259 changed `.ts`/`.tsx` files — clean. `vp fmt --check` over all 263 changed
+  files — clean. `git diff --check` — clean.
+- One non-reproducing flake was observed: a single unnamed failure in one full-suite run, whose
+  stack bottomed out in Effect's `Scheduler.afterScheduled`. Three subsequent full runs of the same
+  set passed. It is recorded here rather than attributed, because it was not reproduced and so was
+  not tied to a specific test.
+
+**Hit every surface (for this batch):**
+
+- **Entry points** — settlement is reachable from the sidebar row, the thread menu, the chat
+  banner and `mod+shift+s`, and all four now read the same server-projected `settledOverride`.
+  Copy-thread-reference is reachable from `mod+shift+c` and the command palette because Ronin
+  routes both through `runWorkspaceCommand`. Project settings is reachable from the sidebar project
+  row and now from the thread action menu. Settings search is reachable from the settings sidebar
+  and the command palette.
+- **Clients** — the recording rewrite spans desktop (Manager, IPC, preload) and web (renderer);
+  `t3 app` spans the CLI, the Electron main process, the preload bridge and the renderer
+  coordinator; auto-settle moved from client settings to server settings, so desktop and web both
+  read it from the server rather than from their own store.
+- **Providers** — only the Claude adapter changed. Its catalog now comes from the manifest, which
+  keeps Ronin's 200k context default; every other adapter's models are untouched, and
+  `applyModelManifest` still classifies legacy models for all of them.
+- **Contracts** — `threadAutoSettlement` capability added; `sidebarAutoSettleAfterDays` /
+  `sidebarAutoSettleOnMerge` moved from `ClientSettings` to `ServerSettings`;
+  `DesktopPreviewRecordingSource` removed and `startScreencast` returns `void`;
+  `QuitConfirmationMode` replaces the boolean `confirmQuit` with a lenient legacy decode;
+  `DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER`, `desktopAppActivation.ts` and the `appActivation`
+  bridge added. Server, web and desktop all follow.
+- **Reverse states** — a settled thread still un-settles, and the server's
+  `OrchestrationThreadSettleBlockedError` carries a user-facing message for the case the board's
+  `canSettle` pre-check cannot anticipate; a contended recording start cancels cleanly instead of
+  toasting; the legacy session cookie is re-issued rather than dropped, so a remote session is not
+  logged out by the rename; `t3 app` fails with a named error rather than launching anything.
+- **Connection modes** — the cookie change is specifically about remote-reachable hosts, and
+  desktop/loopback naming is unchanged; `t3 app` refuses SSH sessions because a remote shell cannot
+  focus a local window; the settlement reactor runs server-side, which is the point — a thread on a
+  remote environment settles with no client attached.
+- **Docs** — `docs/user/thread-sidebar.md` gained the server-settlement section,
+  `docs/user/install.md` the `t3 app` section, `docs/user/source-control.md` the PR filter/sort
+  line, `docs/user/composer.md` the project-change note, `docs/user/keybindings.md` the
+  `thread.copyReference` entry, `docs/user/providers-opencode.md` the Stop-a-turn section,
+  `docs/internals/remote.md` the atomic environment-id paragraph, and
+  `docs/internals/resource-telemetry.md` the revised sampling cadence.
+
+### Not tested
+
+- **A running client.** No dev server or browser was started, per `AGENTS.md`. Two areas are
+  verified by tests and typecheck only and are worth watching first:
+  - **Recording on Electron 43.** `setDisplayMediaRequestHandler`, the `getDisplayMedia()` redemption
+    and the per-guest throttling are all mocked in the suite. This path replaces work batch 22 has
+    not shipped, and it is the batch's highest-value change, so a real capture is the thing to try.
+  - **The remote model manifest.** The bundled copy is exercised; the fetch from the fork's `main`
+    cannot resolve until this manifest is committed and pushed there. Until then the documented
+    fallback order (remote → last on-disk copy → bundle) serves the bundle, which is correct but
+    means the remote path itself is unverified.
+- **`native/resource-monitor/src/main.rs`.** `0bfb6df34` patches it and it applied clean, but no
+  Rust build was run.

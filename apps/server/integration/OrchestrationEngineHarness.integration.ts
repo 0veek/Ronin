@@ -66,6 +66,7 @@ import {
 import { QuotaResumeReactor } from "../src/orchestration/Services/QuotaResumeReactor.ts";
 import { BuildSystemRunReactor } from "../src/orchestration/Services/BuildSystemRunReactor.ts";
 import { ThreadDeletionReactor } from "../src/orchestration/Services/ThreadDeletionReactor.ts";
+import * as ThreadSettlementReactor from "../src/orchestration/ThreadSettlementReactor.ts";
 import { OrchestrationReactor } from "../src/orchestration/Services/OrchestrationReactor.ts";
 import { ProjectionSnapshotQuery } from "../src/orchestration/Services/ProjectionSnapshotQuery.ts";
 import {
@@ -373,6 +374,12 @@ export const makeOrchestrationIntegrationHarness = (
         Layer.succeed(ThreadDeletionReactor, {
           start: () => Effect.void,
           drainThrough: () => Effect.void,
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.succeed(ThreadSettlementReactor.ThreadSettlementReactor, {
+          start: () => Effect.void,
+          drain: Effect.void,
         }),
       ),
       Layer.provideMerge(

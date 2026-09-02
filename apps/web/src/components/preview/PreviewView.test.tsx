@@ -149,6 +149,7 @@ vi.mock("~/state/use-atom-command", () => ({
 
 vi.mock("~/browser/browserRecording", () => ({
   findActiveBrowserRecordingRuntimeTabId: vi.fn(() => null),
+  isBrowserRecordingStartCancelledError: vi.fn(() => false),
   startBrowserRecording: vi.fn(),
   stopBrowserRecording: vi.fn(),
   // Ronin-only: PreviewView subscribes to auto-stop on mount, and the rerender

@@ -139,6 +139,10 @@
       "types": "./src/composerSlashCommands.ts",
       "import": "./src/composerSlashCommands.ts"
     },
+    "./threadReference": {
+      "types": "./src/threadReference.ts",
+      "import": "./src/threadReference.ts"
+    },
     "./composerTrigger": {
       "types": "./src/composerTrigger.ts",
       "import": "./src/composerTrigger.ts"
@@ -202,6 +206,10 @@
     "./providerVocabulary": {
       "types": "./src/providerVocabulary.ts",
       "import": "./src/providerVocabulary.ts"
+    },
+    "./desktopAppControl": {
+      "types": "./src/desktopAppControl.ts",
+      "import": "./src/desktopAppControl.ts"
     },
     "./claudeCompaction": {
       "types": "./src/claudeCompaction.ts",

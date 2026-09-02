@@ -2,11 +2,7 @@
 // matrix are the two things that must never disagree with the sidebar, so they
 // live here where they can be tested against it directly.
 
-import {
-  effectiveSettled,
-  effectiveSnoozed,
-  type ChangeRequestSettleSource,
-} from "@t3tools/client-runtime/state/thread-settled";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
@@ -103,10 +99,7 @@ export interface BoardClassifyContext {
   readonly now: string;
   /** Second-precise "now" for snooze wake times, which are not minute-aligned. */
   readonly preciseNow: string;
-  readonly autoSettleAfterDays: number | null;
-  readonly autoSettleOnMerge: boolean;
   readonly capabilitiesByEnvironmentId: ReadonlyMap<string, BoardEnvironmentCapabilities>;
-  readonly changeRequestByThreadKey: ReadonlyMap<string, ChangeRequestSettleSource | null>;
 }
 
 export function boardCapabilitiesFor(
@@ -124,7 +117,6 @@ export function boardCapabilitiesFor(
 export function deriveBoardLane(
   thread: SidebarThreadSummary,
   context: BoardClassifyContext,
-  threadKey: string,
 ): BoardLaneKey {
   const capabilities = boardCapabilitiesFor(context, thread.environmentId);
 
@@ -148,15 +140,7 @@ export function deriveBoardLane(
   // classifies into the settled shelf before the pinned block. A pinned
   // thread that finished belongs in Done in both views, or the same thread
   // reads as two different states depending on which one you are looking at.
-  if (
-    capabilities.settlement &&
-    effectiveSettled(thread, {
-      now: context.now,
-      autoSettleAfterDays: context.autoSettleAfterDays,
-      autoSettleOnMerge: context.autoSettleOnMerge,
-      changeRequest: context.changeRequestByThreadKey.get(threadKey) ?? null,
-    })
-  ) {
+  if (capabilities.settlement && thread.settledOverride === "settled") {
     return "done";
   }
   // Never ran a turn and never held a session: the thread exists, but no work
@@ -277,7 +261,7 @@ export function buildBoard(input: BuildBoardInput): Board {
     if (input.includeThread && !input.includeThread(thread)) continue;
 
     const threadKey = input.threadKeyOf(thread);
-    const lane = deriveBoardLane(thread, input.context, threadKey);
+    const lane = deriveBoardLane(thread, input.context);
     lanes[lane].push({
       cardId: threadKey,
       threadId: thread.id,

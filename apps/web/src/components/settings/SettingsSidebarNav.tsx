@@ -23,6 +23,7 @@ import { scrollToSettingsTarget } from "./settingsLayout";
 // this file is unchanged by the port.
 import { SETTINGS_NAV_GROUPS, SETTINGS_PAGE_META } from "./settingsNavigation";
 import { searchSettings, type SettingsPath, type SettingsSearchItem } from "./settingsSearch";
+import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_PAGE_META[to].icon;
@@ -41,7 +42,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [activeResultIndex, setActiveResultIndex] = useState(0);
-  const results = useMemo(() => searchSettings(query), [query]);
+  const searchableItems = useAvailableSettingsSearchItems();
+  const results = useMemo(() => searchSettings(query, searchableItems), [query, searchableItems]);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
 

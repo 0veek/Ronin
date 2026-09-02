@@ -17,6 +17,26 @@ npx t3@latest
 This starts the Ronin server on your machine and opens the local web app. Use
 `npx t3@latest --help` for the full CLI reference.
 
+## Open a project in the desktop app
+
+When the Ronin desktop app is running on the same machine, open the current directory with:
+
+```bash
+npx t3 app
+```
+
+Pass a path to open another directory:
+
+```bash
+npx t3 app ../my-project
+```
+
+The command adds the directory as a project when needed, focuses the desktop app, and opens a new
+thread. It does not launch the desktop app, open a browser, or start a Ronin server. A background
+server does not count as the desktop app. The command also rejects SSH sessions because a remote
+shell cannot focus a local desktop window. The CLI package and the running desktop app must both
+include `t3 app` support.
+
 ## Desktop App
 
 Download the latest release from

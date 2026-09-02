@@ -335,6 +335,7 @@
   --color-surface-raised: var(--surface-raised);
   --color-message: var(--message-surface);
   --color-message-foreground: var(--contrast-message-foreground);
+  --color-message-border: var(--message-border);
   --color-message-action: var(--message-action);
   --color-message-action-foreground: var(--message-action-foreground);
   --color-message-action-hover: var(--message-action-hover);
@@ -376,7 +377,10 @@
   --card-foreground: var(--color-zinc-800);
   --popover: var(--color-white);
   --popover-foreground: var(--color-zinc-800);
-  --primary: oklch(0.488 0.217 264);
+  /* Blueprint ink. Sits a few degrees toward cyan of the stock indigo and a
+     step lower in chroma, so it reads as drafting ink on paper rather than as
+     a component-library default. The sidebar stage art bridges to it. */
+  --primary: oklch(0.47 0.185 256);
   --primary-foreground: var(--color-white);
   --secondary: var(--color-zinc-50);
   --secondary-foreground: var(--color-zinc-800);
@@ -385,11 +389,19 @@
   --placeholder: var(--muted-foreground);
   --secondary-label: var(--muted-foreground);
   --icon-muted: var(--muted-foreground);
-  --message-surface: var(--accent);
+  /* The user's instruction carries a wash of the ink and a hairline of it,
+     so it reads as the thing the agent is answering rather than as one more
+     gray card in the stream. */
+  --message-surface: color-mix(in srgb, var(--primary) 6%, var(--card));
+  --message-border: color-mix(in srgb, var(--primary) 16%, transparent);
   --message-foreground: var(--foreground);
   --message-action: var(--primary);
   --message-action-foreground: var(--primary-foreground);
   --message-action-hover: color-mix(in srgb, var(--primary) 90%, var(--background));
+  /* Composer focus bloom and the ledger rail: both derive from the ink so a
+     theme that recolors --primary recolors them for free. */
+  --composer-glow: color-mix(in srgb, var(--primary) 14%, transparent);
+  --ledger-rail: color-mix(in srgb, var(--primary) 38%, var(--border));
   --accent: var(--color-zinc-100);
   --accent-foreground: var(--color-zinc-900);
   --error: var(--color-red-500);
@@ -448,7 +460,7 @@
     --card-foreground: var(--color-neutral-100);
     --popover: color-mix(in srgb, var(--background) 94%, var(--color-white));
     --popover-foreground: var(--color-neutral-100);
-    --primary: oklch(0.571 0.21 264);
+    --primary: oklch(0.64 0.17 254);
     --primary-foreground: var(--color-white);
     --secondary: --alpha(var(--color-white) / 4%);
     --secondary-foreground: var(--color-neutral-100);
@@ -457,11 +469,14 @@
     --placeholder: var(--muted-foreground);
     --secondary-label: var(--muted-foreground);
     --icon-muted: var(--muted-foreground);
-    --message-surface: var(--accent);
+    --message-surface: color-mix(in srgb, var(--primary) 13%, var(--card));
+    --message-border: color-mix(in srgb, var(--primary) 26%, transparent);
     --message-foreground: var(--foreground);
     --message-action: var(--primary);
     --message-action-foreground: var(--primary-foreground);
     --message-action-hover: color-mix(in srgb, var(--primary) 90%, var(--background));
+    --composer-glow: color-mix(in srgb, var(--primary) 20%, transparent);
+    --ledger-rail: color-mix(in srgb, var(--primary) 42%, var(--border));
     --accent: --alpha(var(--color-white) / 4%);
     --accent-foreground: var(--color-neutral-100);
     --error: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));

@@ -35,7 +35,20 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["rename", "mark-unread", "copy", "export", "archive", "delete"]);
+    ).toEqual(["rename", "mark-unread", "copy", "project-settings", "export", "archive", "delete"]);
+  });
+
+  it("groups project settings with utility actions before archive", () => {
+    const items = buildThreadActionMenuItems(baseState);
+    const copyIndex = items.findIndex((item) => item.id === "copy");
+    expect(items[copyIndex + 1]).toMatchObject({
+      id: "project-settings",
+      label: "Project settings",
+      icon: "settings",
+    });
+    // Ronin keeps its own Export submenu between the utility actions and archive.
+    expect(items[copyIndex + 2]?.id).toBe("export");
+    expect(items[copyIndex + 3]?.id).toBe("archive");
   });
 
   it("includes branch items only for threads with a branch", () => {

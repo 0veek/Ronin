@@ -1,5 +1,5 @@
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId, TurnId } from "@t3tools/contracts";
-import { effectiveSettled, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { describe, expect, it } from "vite-plus/test";
 
 import { threadNeedsYou } from "../Sidebar.logic";
@@ -28,10 +28,7 @@ function context(overrides: Partial<BoardClassifyContext> = {}): BoardClassifyCo
   return {
     now: NOW,
     preciseNow: NOW,
-    autoSettleAfterDays: null,
-    autoSettleOnMerge: true,
     capabilitiesByEnvironmentId: new Map([[ENV, FULL]]),
-    changeRequestByThreadKey: new Map(),
     ...overrides,
   };
 }
@@ -89,7 +86,7 @@ function session(status: "starting" | "running" | "error" | "stopped", updatedAt
 }
 
 function laneOf(thread: SidebarThreadSummary, ctx = context()): BoardLaneKey {
-  return deriveBoardLane(thread, ctx, threadKeyOf(thread));
+  return deriveBoardLane(thread, ctx);
 }
 
 describe("deriveBoardLane", () => {
@@ -150,16 +147,18 @@ describe("deriveBoardLane", () => {
   });
 
   it("settles a pinned thread into Done, matching the sidebar's settle-beats-pin rule", () => {
-    const pinnedAndStale = makeThread({
+    const pinnedAndSettled = makeThread({
       latestTurn: completedTurn("2026-04-01T00:00:00.000Z"),
       pinnedAt: NOW,
       pinOrderKey: "a",
+      settledOverride: "settled",
+      settledAt: NOW,
     });
-    expect(laneOf(pinnedAndStale, context({ autoSettleAfterDays: 1 }))).toBe("done");
+    expect(laneOf(pinnedAndSettled)).toBe("done");
     // Settlement is the only thing the pin yields to: a pinned never-run
     // thread is still a Draft, and a pinned live one still floats in its lane.
     expect(laneOf(makeThread({ pinnedAt: NOW, pinOrderKey: "a" }))).toBe("draft");
-    expect(laneOf(pinnedAndStale, context({ autoSettleAfterDays: 30 }))).toBe("upNext");
+    expect(laneOf({ ...pinnedAndSettled, settledOverride: null, settledAt: null })).toBe("upNext");
   });
 
   it("never uses a lane whose exit command the environment cannot run", () => {
@@ -233,14 +232,7 @@ describe("deriveBoardLane parity with the sidebar's own predicates", () => {
         expect(threadNeedsYou(thread)).toBe(true);
       }
       if (lane === "done") {
-        expect(
-          effectiveSettled(thread, {
-            now: ctx.now,
-            autoSettleAfterDays: ctx.autoSettleAfterDays,
-            autoSettleOnMerge: ctx.autoSettleOnMerge,
-            changeRequest: null,
-          }),
-        ).toBe(true);
+        expect(thread.settledOverride).toBe("settled");
       }
       // Snooze and blocked work both outrank settlement, so a thread either
       // predicate claims must never be filed as Done.

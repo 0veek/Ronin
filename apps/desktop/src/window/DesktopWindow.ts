@@ -29,7 +29,7 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import { parseDesktopAppUrl } from "../app/DesktopDeepLinks.ts";
-import { makeQuitHoldHandler } from "./QuitHold.ts";
+import { makeQuitShortcutHandler } from "./QuitHold.ts";
 import { getWindowVibrancyOptions, resolveWindowBackgroundColor } from "./WindowVibrancy.ts";
 
 // Matches --workspace-topbar-height in apps/web/src/styles/tokens.css. The
@@ -608,12 +608,11 @@ export const make = Effect.gen(function* () {
     // close-terminal shortcut can outlive the terminal that handled its first
     // press, so reject repeats before they reach the native window accelerator.
     // Deliberate presses still flow through the renderer or native menu.
-    // Chrome-style hold-to-quit: intercept the quit accelerator before the
-    // native menu sees it and only quit after the shortcut is held. The
-    // renderer shows the "Hold to Quit" hint via QUIT_SHORTCUT_CHANNEL.
-    const quitHoldHandler = makeQuitHoldHandler({
+    // Intercept the quit accelerator before the native menu sees it and apply
+    // the configured direct, hold, or double-press behavior.
+    const quitShortcutHandler = makeQuitShortcutHandler({
       platform: environment.platform,
-      isEnabled: () =>
+      getMode: () =>
         runPromise(
           Effect.map(
             clientSettings.get,
@@ -623,9 +622,9 @@ export const make = Effect.gen(function* () {
             }),
           ),
         ),
-      notify: (state) => {
+      notify: (hint) => {
         if (!window.isDestroyed()) {
-          window.webContents.send(QUIT_SHORTCUT_CHANNEL, state);
+          window.webContents.send(QUIT_SHORTCUT_CHANNEL, hint);
         }
       },
       quit: () => {
@@ -633,7 +632,7 @@ export const make = Effect.gen(function* () {
       },
     });
     window.webContents.on("before-input-event", (event, input) => {
-      quitHoldHandler(event, input);
+      quitShortcutHandler(event, input);
       if (input.type !== "keyDown" || !input.isAutoRepeat) return;
       const modifier = environment.platform === "darwin" ? input.meta : input.control;
       if (modifier && !input.alt && !input.shift && input.key.toLowerCase() === "w") {
