@@ -30,6 +30,47 @@ again** next to it. Attach the file again or remove it, then send.
 HEIC and HEIF photos are converted to JPEG automatically when you drag them into the composer or
 paste them into a message.
 
+## Model defaults
+
+T3 Code remembers the last provider, model, and model options you selected and reuses that
+selection for new threads. A model configured in a project's settings overrides the remembered
+selection for that project; resetting the project setting returns it to the remembered selection.
+
+Model options shown as provider defaults remain display values until you choose them in T3 Code.
+T3 Code only sends options you selected explicitly, so an unset reasoning level or service tier can
+still come from the provider's own configuration.
+
+## Model defaults
+
+Ronin remembers the last provider, model, and model options you selected and reuses that selection
+for new threads. A model configured in a project's settings overrides the remembered selection for
+that project; resetting the project setting returns it to the remembered selection.
+
+Model options shown as provider defaults remain display values until you choose them in Ronin.
+Ronin only sends options you selected explicitly, so an unset reasoning level or service tier can
+still come from the provider's own configuration.
+
+## Quote an assistant response
+
+Select text in an assistant response, then choose **Cite in composer** from the menu that appears
+when you release the selection. This inserts an inline quote chip at your cursor and opens an
+optional comment bubble beside the selected text; press `Enter` or choose **Save** to attach the
+comment, or leave it blank to keep just the quote. You can type before and after the chip, such as a
+quote followed by "what do you mean?". A selection must stay within one response and fit in 8,000
+characters.
+
+The chip shows your comment when it has one, or a short quote preview otherwise. Use the pencil
+button to add or change the comment, and the remove button to delete the quote and its comment from
+the draft. Copying, reloading, and restoring a stashed prompt keep each comment with its quote, and
+sending tells the agent which words were quoted and which comment you wrote. The quoted text and
+comment count toward the message limit.
+
+Select a chip in the composer or a sent message to open the source thread, scroll to the response,
+and highlight the quoted passage — including in older history. The highlight pulses, holds for a
+moment, then fades on its own; press `Escape` to stop the navigation or clear it early. If the
+source is unavailable or its text has changed, the saved quote stays readable and Ronin shows a
+warning.
+
 ## Changing projects
 
 On web and desktop, changing the project from a new thread keeps the current environment when that
@@ -52,6 +93,15 @@ uploaded on the server for 24 hours. If you restore an entry after that, the fil
 
 ## Commands and skills
 
+Type `/` for commands and `$` for skills. A skill token runs the skill wherever it sits in your
+message: Ronin sends it to each provider in the form that provider runs, so the text before and
+after the token is kept. Skills that only you may start, and never the agent on its own, work the
+same way. A skill you switched off in the provider's settings does not appear in either menu.
+
+Provider commands such as `/compact` only run when they open the message, so the `/` menu offers
+them only there. Ronin's own commands, such as `/model` and `/plan`, and skills stay available on
+any line.
+
 ## Reading width
 
 **Settings → Appearance → Chat width** sets how wide the transcript and composer grow:
@@ -68,3 +118,11 @@ paste the text somewhere else. Press it again to go back.
 
 The choice is per message and lasts as long as the app is open. Streaming answers do not offer it:
 the source of half an answer is a moving target.
+
+## HTML and PDF files in the file viewer
+
+The file viewer shows HTML and PDF files in your workspace as a rendered page. Use the source
+toggle in the viewer's header to switch an HTML file between the page and its markup; the choice
+persists like the rendered-Markdown toggle. A link to a line always opens the source. HTML runs in
+an isolated frame with no access to your Ronin session. On desktop, the integrated browser remains
+available from the same header for a full browser view.

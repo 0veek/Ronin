@@ -99,6 +99,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "panel-animations",
+    title: "Panel animations",
+    to: "/settings/appearance",
+  },
+  {
     id: "environment-identification",
     title: "Environment identification",
     searchTerms: ["dev nightly artwork pill label hide none"],
@@ -200,10 +205,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "proactive-panels",
+    title: "Proactive panels",
+    searchTerms: ["automatically open diff pull request pr right panel agent completion"],
+    to: "/settings/general",
+  },
+  {
     id: "provider-update-checks",
     title: "Provider update checks",
     searchTerms: ["installed cli versions newer available codex claude cursor grok opencode"],
     to: "/settings/general",
+  },
+  {
+    id: "continue-threads-after-server-update",
+    title: "Continue threads after server updates",
+    to: "/settings/general",
+    searchTerms: ["resume running active work restart desktop update automatically"],
   },
   {
     id: "resume-after-limit",
@@ -273,6 +290,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "legacy-context-window-indicator",
+    title: "Context window indicator (legacy)",
+    searchTerms: ["composer meter usage tokens circle old"],
+    to: "/settings/general",
+  },
+  {
     id: "keybindings",
     title: "Keybindings",
     searchTerms: ["keyboard shortcuts hotkeys commands bindings json"],
@@ -311,6 +334,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "agent-browser-access",
     title: "Agent browser access",
     searchTerms: ["allow open drive preview tools sessions"],
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-profiles",
+    title: "Browser profiles",
+    to: "/settings/integrations",
+    targetId: "browser",
+  },
+  {
+    id: "browser-default-profile",
+    title: "Default browser profile",
     to: "/settings/integrations",
     targetId: "browser",
   },

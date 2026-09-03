@@ -31,6 +31,9 @@ export interface ProviderAdapterCapabilities {
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /** Starts a resumed turn with no synthetic user prompt. Omitted means the
+      adapter needs an explicit continuation instruction. */
+  readonly promptlessTurnContinuation?: boolean;
   /**
    * Declares whether a live session can adopt new model *options* — Claude's
    * thinking effort, Grok's reasoning effort. Providers that bind them on the

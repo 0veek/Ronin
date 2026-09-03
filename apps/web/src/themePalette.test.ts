@@ -10,6 +10,7 @@ import {
   getThemePreferenceMode,
   isKnownThemePreference,
   getCustomThemes,
+  getStandardThemeColors,
   getStoredCustomThemeCollection,
   invalidateCustomThemes,
   installCustomTheme,
@@ -71,6 +72,15 @@ function withCanonicalColors<T extends { colors: Record<string, string> }>(theme
   };
 }
 
+function expectThemeColors(
+  colors: Readonly<Record<string, string>>,
+  expected: Readonly<Record<string, string>>,
+): void {
+  for (const [role, value] of Object.entries(expected)) {
+    expect(asHex(colors[role]!)).toBe(value);
+  }
+}
+
 function contrastRatio(first: string, second: string): number {
   const toRgb = (value: string) => {
     const hex = asHex(value).slice(1);
@@ -130,6 +140,19 @@ describe("theme files", () => {
       expect(warnGreen).toBeGreaterThan(warnBlue);
     }
     expect(asHex(dark.error)).not.toBe(asHex(darkDefaults.error));
+  });
+
+  it("keeps stock dark controls in the neutral-black surface hierarchy", () => {
+    expectThemeColors(getStandardThemeColors("dark"), {
+      canvas: "#0a0a0a",
+      surface: "#111111",
+      surfaceRaised: "#111111",
+      surfaceOverlay: "#111111",
+      toolbarControl: "#111111",
+      secondary: "#111111",
+      muted: "#111111",
+      accentSurface: "#141414",
+    });
   });
 
   it("derives readable, distinctive vivid palettes from exact seeds", () => {

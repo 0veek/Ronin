@@ -6,6 +6,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useClientSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand } from "~/versionSkew";
@@ -75,15 +76,21 @@ export function ServerUpdateAction({
   environmentId,
   serverLabel,
   selfUpdate,
+  threadContinuation = false,
   targetVersion,
   label = "Update",
 }: {
   readonly environmentId: EnvironmentId;
   readonly serverLabel: string;
   readonly selfUpdate: ServerSelfUpdateCapability | null;
+  /** The server can durably continue running provider turns after updating. */
+  readonly threadContinuation?: boolean;
   readonly targetVersion: string;
   readonly label?: string;
 }) {
+  const continueThreadsAfterServerUpdate = useClientSettings(
+    (settings) => settings.continueThreadsAfterServerUpdate,
+  );
   const updateServer = useAtomCommand(serverEnvironment.updateServer, {
     reportFailure: false,
   });
@@ -113,7 +120,12 @@ export function ServerUpdateAction({
     try {
       const result = await updateServer({
         environmentId,
-        input: { targetVersion },
+        input: {
+          targetVersion,
+          ...(threadContinuation && continueThreadsAfterServerUpdate
+            ? { continueRunningThreads: true }
+            : {}),
+        },
       });
       if (result._tag === "Failure") {
         if (isAtomCommandInterrupted(result)) {
@@ -154,7 +166,7 @@ export function ServerUpdateAction({
   }
 
   return (
-    <Button size="xs" onClick={() => void handleUpdate()}>
+    <Button size="xs" variant="outline" onClick={() => void handleUpdate()}>
       {label}
     </Button>
   );

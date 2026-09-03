@@ -4,8 +4,10 @@ import {
   type ServerSelfUpdateInput,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { HostProcessExecutablePath } from "@t3tools/shared/hostProcess";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -40,10 +42,84 @@ export class ServerSelfUpdate extends Context.Service<
   {
     readonly update: (
       input: ServerSelfUpdateInput,
-      reportProgress?: (stage: ServerSelfUpdateProgressStage) => Effect.Effect<void>,
+      reportProgress?: (
+        stage: ServerSelfUpdateProgressStage,
+      ) => Effect.Effect<void, ServerSelfUpdateError>,
+      onHandoffAccepted?: () => Effect.Effect<void>,
     ) => Effect.Effect<ServerSelfUpdateResult, ServerSelfUpdateError>;
   }
 >()("t3/cloud/selfUpdate/ServerSelfUpdate") {}
+
+/**
+ * Wrap the self-update service so a requested update marks the running
+ * provider turns for continuation just before the replacement process takes
+ * over, and clears those markers again when the update fails.
+ *
+ * The markers are written at the `installing` stage rather than up front: an
+ * update that never reaches the handoff must leave the running threads exactly
+ * as it found them. An interruption *after* the launcher accepted the handoff
+ * is the process going away, so the markers stay.
+ */
+export function withRunningThreadContinuation(input: {
+  readonly mode: ServerConfig.RuntimeMode;
+  readonly selfUpdate: ServerSelfUpdate["Service"];
+  readonly prepare: Effect.Effect<ReadonlyArray<ThreadId>, ServerSelfUpdateError>;
+  readonly clear: (
+    threadIds: ReadonlyArray<ThreadId>,
+  ) => Effect.Effect<void, ServerSelfUpdateError>;
+}): Effect.Effect<ServerSelfUpdate["Service"]> {
+  const clearOnError = <A>(
+    effect: Effect.Effect<A, ServerSelfUpdateError>,
+    threadIds: () => ReadonlyArray<ThreadId>,
+    handoffAccepted: () => boolean,
+  ): Effect.Effect<A, ServerSelfUpdateError> =>
+    effect.pipe(
+      Effect.catchCause((cause) =>
+        (handoffAccepted() && Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : input.clear(threadIds())
+        ).pipe(Effect.andThen(Effect.failCause(cause))),
+      ),
+    );
+
+  const update: ServerSelfUpdate["Service"]["update"] = (
+    request,
+    reportProgress = () => Effect.void,
+  ) => {
+    let prepared = false;
+    let handoffAccepted = false;
+    let continuationThreadIds: ReadonlyArray<ThreadId> = [];
+    return clearOnError(
+      input.selfUpdate.update(
+        request,
+        (stage) =>
+          (request.continueRunningThreads === true &&
+          input.mode !== "desktop" &&
+          stage === "installing" &&
+          !prepared
+            ? input.prepare.pipe(
+                Effect.tap((threadIds) =>
+                  Effect.sync(() => {
+                    prepared = true;
+                    continuationThreadIds = threadIds;
+                  }),
+                ),
+                Effect.asVoid,
+              )
+            : Effect.void
+          ).pipe(Effect.andThen(reportProgress(stage))),
+        () =>
+          Effect.sync(() => {
+            handoffAccepted = true;
+          }),
+      ),
+      () => continuationThreadIds,
+      () => handoffAccepted,
+    );
+  };
+
+  return Effect.succeed(ServerSelfUpdate.of({ update }));
+}
 
 export const make = Effect.fn("cloud.server_self_update.make")(function* () {
   const serverConfig = yield* ServerConfig.ServerConfig;
@@ -63,7 +139,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
 
   const update: ServerSelfUpdate["Service"]["update"] = Effect.fn(
     "cloud.server_self_update.update",
-  )(function* (input, reportProgress = () => Effect.void) {
+  )(function* (input, reportProgress = () => Effect.void, onHandoffAccepted = () => Effect.void) {
     if (capability === "desktop-managed") {
       return yield* failWith(
         "This server is managed by the Ronin desktop app on its machine; update the desktop app to update it.",
@@ -169,9 +245,8 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
       );
 
       yield* reportProgress("installing");
-      const updateId = yield* launcher
-        .requestUpdate({ targetVersion, dbPath: serverConfig.dbPath })
-        .pipe(
+      const updateId = yield* Effect.uninterruptible(
+        launcher.requestUpdate({ targetVersion, dbPath: serverConfig.dbPath }).pipe(
           Effect.mapError((error) =>
             failWith(
               error._tag === "ServiceLauncherRejectedError"
@@ -180,7 +255,9 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
               error,
             ),
           ),
-        );
+          Effect.tap(() => onHandoffAccepted()),
+        ),
+      );
 
       yield* Effect.logInfo("Server update prepared; handing off to the service launcher.", {
         updateId,

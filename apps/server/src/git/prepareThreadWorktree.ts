@@ -23,8 +23,9 @@ export interface PreparedThreadWorktree {
  * Create a worktree for `branch`, based on `baseBranch`.
  *
  * `startFromOrigin` is a preference, not a promise: a repository with no
- * origin remote falls back to the local base branch rather than failing the
- * whole thread on `git fetch origin`.
+ * origin remote, or whose base branch has never been pushed, falls back to the
+ * local base branch rather than failing the whole thread on `git fetch origin`
+ * or on an unresolvable remote-tracking ref.
  */
 export const prepareThreadWorktree = ({
   gitWorkflow,
@@ -47,12 +48,19 @@ export const prepareThreadWorktree = ({
       (yield* gitWorkflow.remoteExists({ cwd: projectCwd, remoteName: "origin" }));
     if (useOrigin) {
       yield* gitWorkflow.fetchRemote({ cwd: projectCwd, remoteName: "origin" });
-      const resolvedRemoteBase = yield* gitWorkflow.resolveRemoteTrackingCommit({
+      const remoteBaseExists = yield* gitWorkflow.remoteBranchExists({
         cwd: projectCwd,
         refName: baseBranch,
-        fallbackRemoteName: "origin",
+        remoteName: "origin",
       });
-      worktreeBaseRef = resolvedRemoteBase.commitSha;
+      if (remoteBaseExists) {
+        const resolvedRemoteBase = yield* gitWorkflow.resolveRemoteTrackingCommit({
+          cwd: projectCwd,
+          refName: baseBranch,
+          fallbackRemoteName: "origin",
+        });
+        worktreeBaseRef = resolvedRemoteBase.commitSha;
+      }
     }
     const created = yield* gitWorkflow.createWorktree({
       cwd: projectCwd,

@@ -225,6 +225,125 @@ export class BuildCommandFailedError extends Schema.TaggedErrorClass<BuildComman
   }
 }
 
+export const LINUX_DESKTOP_BUILD_PREREQUISITES = [
+  { id: "cargo", description: "Rust compiler and Cargo", packages: ["cargo", "rustc"] },
+  { id: "rust-target", description: "Requested Rust standard library", packages: [] },
+  { id: "cc", description: "C/C++ build toolchain", packages: ["build-essential"] },
+  { id: "make", description: "Make", packages: ["build-essential"] },
+  { id: "imagemagick", description: "ImageMagick", packages: ["imagemagick"] },
+] as const;
+
+export class LinuxDesktopBuildPrerequisitesMissingError extends Schema.TaggedErrorClass<LinuxDesktopBuildPrerequisitesMissingError>()(
+  "LinuxDesktopBuildPrerequisitesMissingError",
+  {
+    missing: Schema.Array(Schema.String),
+    rustTarget: Schema.String,
+  },
+) {
+  override get message(): string {
+    const missingRequirements = LINUX_DESKTOP_BUILD_PREREQUISITES.filter((requirement) =>
+      this.missing.includes(requirement.id),
+    );
+    const details = missingRequirements
+      .map((requirement) =>
+        requirement.packages.length > 0
+          ? `  - ${requirement.description} (${requirement.packages.join(", ")})`
+          : `  - ${requirement.description}`,
+      )
+      .join("\n");
+    const packages = [
+      ...new Set(missingRequirements.flatMap((requirement) => requirement.packages)),
+    ];
+    return [
+      "Linux desktop build prerequisites are missing:",
+      details,
+      "",
+      ...(packages.length > 0
+        ? ["On Ubuntu/Debian, install them with:", `  sudo apt-get install ${packages.join(" ")}`]
+        : []),
+      ...(this.missing.includes("rust-target")
+        ? ["Add the requested Rust target with:", `  rustup target add ${this.rustTarget}`]
+        : []),
+      "",
+      "For other distributions, see docs/internals/scripts.md#linux-appimage-prerequisites.",
+      "Then rerun `vp run dist:desktop:linux`.",
+    ].join("\n");
+  }
+}
+
+const MAC_DESKTOP_BUILD_PREREQUISITES = [
+  { id: "rust", description: "Rust/Cargo and the requested Rust target" },
+  { id: "clang", description: "Xcode Command Line Tools (clang)" },
+  { id: "make", description: "Xcode Command Line Tools (make)" },
+  { id: "sips", description: "macOS image tool (sips)" },
+  { id: "iconutil", description: "macOS icon tool (iconutil)" },
+  { id: "lipo", description: "Xcode universal-binary tool (lipo)" },
+] as const;
+
+export class MacDesktopBuildPrerequisitesMissingError extends Schema.TaggedErrorClass<MacDesktopBuildPrerequisitesMissingError>()(
+  "MacDesktopBuildPrerequisitesMissingError",
+  {
+    missing: Schema.Array(Schema.String),
+    rustTargets: Schema.Array(Schema.String),
+  },
+) {
+  override get message(): string {
+    const details = MAC_DESKTOP_BUILD_PREREQUISITES.filter((requirement) =>
+      this.missing.includes(requirement.id),
+    )
+      .map((requirement) => `  - ${requirement.description}`)
+      .join("\n");
+    return [
+      "macOS desktop build prerequisites are missing:",
+      details,
+      "",
+      "Install Apple's build tools with:",
+      "  xcode-select --install",
+      "Install Rust from https://rustup.rs, then add the requested target(s):",
+      `  rustup target add ${this.rustTargets.join(" ")}`,
+      "",
+      "Then rerun the desktop artifact command.",
+    ].join("\n");
+  }
+}
+
+const WINDOWS_DESKTOP_BUILD_PREREQUISITES = [
+  { id: "rust", description: "Rust/Cargo and the requested MSVC Rust target" },
+  { id: "python", description: "Python 3 for node-gyp" },
+  {
+    id: "msvc",
+    description: "Visual Studio Build Tools with C++, Windows SDK, and Spectre libraries",
+  },
+  { id: "tar", description: "tar for the bundled WSL runtime" },
+] as const;
+
+export class WindowsDesktopBuildPrerequisitesMissingError extends Schema.TaggedErrorClass<WindowsDesktopBuildPrerequisitesMissingError>()(
+  "WindowsDesktopBuildPrerequisitesMissingError",
+  {
+    missing: Schema.Array(Schema.String),
+    rustTarget: Schema.String,
+  },
+) {
+  override get message(): string {
+    const details = WINDOWS_DESKTOP_BUILD_PREREQUISITES.filter((requirement) =>
+      this.missing.includes(requirement.id),
+    )
+      .map((requirement) => `  - ${requirement.description}`)
+      .join("\n");
+    return [
+      "Windows desktop build prerequisites are missing:",
+      details,
+      "",
+      "Install Rust from https://rustup.rs and add the requested target:",
+      `  rustup target add ${this.rustTarget}`,
+      "Install Python 3 and the Visual Studio Build Tools components listed in",
+      "docs/internals/scripts.md#windows-installer-prerequisites.",
+      "",
+      "Then rerun the desktop artifact command.",
+    ].join("\n");
+  }
+}
+
 export class ResourceMonitorBuildOutputMissingError extends Schema.TaggedErrorClass<ResourceMonitorBuildOutputMissingError>()(
   "ResourceMonitorBuildOutputMissingError",
   {
@@ -478,8 +597,18 @@ const resolvePythonForNodeGyp = Effect.fn("resolvePythonForNodeGyp")(function* (
     ),
     localAppData: Config.string("LOCALAPPDATA").pipe(Config.option),
   });
+  const isPython3 = (candidate: string) =>
+    spawnAndCollectOutput(
+      ChildProcess.make(candidate, [
+        "-c",
+        "import sys; raise SystemExit(0 if sys.version_info.major == 3 else 1)",
+      ]),
+    ).pipe(
+      Effect.map((result) => result.exitCode === 0),
+      Effect.orElseSucceed(() => false),
+    );
   const configured = Option.getOrUndefined(env.configuredPython);
-  if (configured && (yield* fs.exists(configured))) {
+  if (configured && (yield* fs.exists(configured)) && (yield* isPython3(configured))) {
     return configured;
   }
 
@@ -488,7 +617,7 @@ const resolvePythonForNodeGyp = Effect.fn("resolvePythonForNodeGyp")(function* (
     if (localAppData) {
       for (const version of ["Python313", "Python312", "Python311", "Python310"]) {
         const candidate = path.join(localAppData, "Programs", "Python", version, "python.exe");
-        if (yield* fs.exists(candidate)) {
+        if ((yield* fs.exists(candidate)) && (yield* isPython3(candidate))) {
           return candidate;
         }
       }
@@ -510,7 +639,7 @@ const resolvePythonForNodeGyp = Effect.fn("resolvePythonForNodeGyp")(function* (
   }
 
   const executable = probe.stdout.trim();
-  if (!executable || !(yield* fs.exists(executable))) {
+  if (!executable || !(yield* fs.exists(executable)) || !(yield* isPython3(executable))) {
     return undefined;
   }
 
@@ -561,6 +690,19 @@ export const MAC_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
   "!**/node_modules/node-pty/third_party/conpty/**/*",
 ] as const;
+
+// node-pty publishes both Darwin prebuilds in one package. Single-architecture
+// apps only need the native target; universal apps need both. An omitted arch
+// preserves the existing common exclusions for callers that only inspect the
+// generic platform config.
+export function resolveMacFileExclusions(arch?: typeof BuildArch.Type) {
+  if (arch === undefined || arch === "universal") {
+    return [...MAC_FILE_EXCLUSIONS];
+  }
+
+  const unusedArch = arch === "arm64" ? "x64" : "arm64";
+  return [...MAC_FILE_EXCLUSIONS, `!**/node_modules/node-pty/prebuilds/darwin-${unusedArch}/**/*`];
+}
 export const DESKTOP_EXTRA_RESOURCES = [
   {
     from: "apps/desktop/prod-resources/resource-monitor",
@@ -804,6 +946,221 @@ const runCommand = Effect.fn("runCommand")(function* (
     });
   }
 });
+
+const desktopBuildProbeSucceeds = Effect.fn("desktopBuildProbeSucceeds")(function* (
+  command: ChildProcess.Command,
+  label: string,
+) {
+  return yield* runCommand(command, { label, verbose: false }).pipe(
+    Effect.as(true),
+    Effect.orElseSucceed(() => false),
+  );
+});
+
+const rustTargetIsInstalled = Effect.fn("rustTargetIsInstalled")(function* (target: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const result = yield* spawnAndCollectOutput(
+    ChildProcess.make("rustc", ["--print", "target-libdir", "--target", target]),
+  ).pipe(Effect.orElseSucceed(() => null));
+  if (result === null || result.exitCode !== 0) return false;
+
+  const targetLibDir = result.stdout.trim();
+  if (targetLibDir === "") return false;
+  const entries = yield* fs.readDirectory(targetLibDir).pipe(Effect.orElseSucceed(() => []));
+  return entries.some((entry) => entry.startsWith("libstd-") && entry.endsWith(".rlib"));
+});
+
+export const preflightLinuxDesktopBuild = Effect.fn("preflightLinuxDesktopBuild")(function* (
+  arch: typeof BuildArch.Type = "x64",
+) {
+  const reuseResourceMonitor = yield* Config.boolean("T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR").pipe(
+    Config.withDefault(false),
+  );
+  const rustTarget = resolveResourceMonitorRustTargets("linux", arch)[0]!;
+
+  const checks = yield* Effect.all(
+    {
+      cargo: reuseResourceMonitor
+        ? Effect.succeed(true)
+        : desktopBuildProbeSucceeds(ChildProcess.make("cargo", ["--version"]), "cargo"),
+      "rust-target": reuseResourceMonitor
+        ? Effect.succeed(true)
+        : rustTargetIsInstalled(rustTarget),
+      cc: desktopBuildProbeSucceeds(ChildProcess.make("cc", ["--version"]), "cc"),
+      make: desktopBuildProbeSucceeds(ChildProcess.make("make", ["--version"]), "make"),
+      imagemagick: Effect.all([
+        desktopBuildProbeSucceeds(ChildProcess.make("magick", ["-version"]), "magick"),
+        desktopBuildProbeSucceeds(ChildProcess.make("convert", ["-version"]), "convert"),
+      ]).pipe(Effect.map(([magick, convert]) => magick || convert)),
+    },
+    { concurrency: "unbounded" },
+  );
+  const missing = LINUX_DESKTOP_BUILD_PREREQUISITES.filter(
+    (requirement) => !checks[requirement.id],
+  ).map((requirement) => requirement.id);
+
+  if (missing.length > 0) {
+    return yield* new LinuxDesktopBuildPrerequisitesMissingError({ missing, rustTarget });
+  }
+});
+
+export const preflightMacDesktopBuild = Effect.fn("preflightMacDesktopBuild")(function* (
+  arch: typeof BuildArch.Type,
+) {
+  const rustTargets = resolveResourceMonitorRustTargets("mac", arch);
+  const reuseResourceMonitor = yield* Config.boolean("T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR").pipe(
+    Config.withDefault(false),
+  );
+  const checks = yield* Effect.all(
+    {
+      rust: reuseResourceMonitor
+        ? Effect.succeed(true)
+        : Effect.all([
+            desktopBuildProbeSucceeds(ChildProcess.make("cargo", ["--version"]), "cargo"),
+            Effect.forEach(rustTargets, rustTargetIsInstalled).pipe(
+              Effect.map((results) => results.every(Boolean)),
+            ),
+          ]).pipe(Effect.map(([cargo, targets]) => cargo && targets)),
+      clang: desktopBuildProbeSucceeds(ChildProcess.make("clang", ["--version"]), "clang"),
+      make: desktopBuildProbeSucceeds(ChildProcess.make("make", ["--version"]), "make"),
+      sips: desktopBuildProbeSucceeds(ChildProcess.make("sips", ["--help"]), "sips"),
+      iconutil: desktopBuildProbeSucceeds(
+        ChildProcess.make("xcrun", ["--find", "iconutil"]),
+        "iconutil",
+      ),
+      lipo:
+        arch === "universal"
+          ? desktopBuildProbeSucceeds(ChildProcess.make("lipo", ["-version"]), "lipo")
+          : Effect.succeed(true),
+    },
+    { concurrency: "unbounded" },
+  );
+  const missing = MAC_DESKTOP_BUILD_PREREQUISITES.filter(
+    (requirement) => !checks[requirement.id],
+  ).map((requirement) => requirement.id);
+  if (missing.length > 0) {
+    return yield* new MacDesktopBuildPrerequisitesMissingError({ missing, rustTargets });
+  }
+});
+
+function windowsVswherePrerequisiteScript(arch: typeof BuildArch.Type): string {
+  const toolComponents =
+    arch === "arm64"
+      ? ["Microsoft.VisualStudio.Component.VC.Tools.ARM64"]
+      : ["Microsoft.VisualStudio.Component.VC.Tools.x86.x64"];
+  const spectreArch = arch === "arm64" ? "arm64" : "x64";
+  return [
+    "$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'",
+    "if (!(Test-Path $vswhere)) { exit 1 }",
+    `$install = & $vswhere -latest -products * -requires ${toolComponents.join(" ")} -property installationPath`,
+    "if (!$install) { exit 1 }",
+    "$kitsRoot = Get-ItemPropertyValue 'HKLM:\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue",
+    "if (!$kitsRoot -or !(Test-Path (Join-Path $kitsRoot 'Lib'))) { exit 1 }",
+    "$msvcToolset = Get-ChildItem (Join-Path $install 'VC\\Tools\\MSVC') -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1",
+    "if (!$msvcToolset) { exit 1 }",
+    `if (!(Test-Path (Join-Path $msvcToolset.FullName 'lib\\spectre\\${spectreArch}'))) { exit 1 }`,
+  ].join("; ");
+}
+
+export const preflightWindowsDesktopBuild = Effect.fn("preflightWindowsDesktopBuild")(
+  function* (input: { readonly arch: typeof BuildArch.Type; readonly bundlesWslRuntime: boolean }) {
+    const rustTarget = resolveResourceMonitorRustTargets("win", input.arch)[0]!;
+    const reuseResourceMonitor = yield* Config.boolean(
+      "T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR",
+    ).pipe(Config.withDefault(false));
+    const python = yield* resolvePythonForNodeGyp();
+    const checks = yield* Effect.all(
+      {
+        rust: reuseResourceMonitor
+          ? Effect.succeed(true)
+          : Effect.all([
+              desktopBuildProbeSucceeds(ChildProcess.make("cargo", ["--version"]), "cargo"),
+              rustTargetIsInstalled(rustTarget),
+            ]).pipe(Effect.map(([cargo, target]) => cargo && target)),
+        python: Effect.succeed(python !== undefined),
+        msvc: reuseResourceMonitor
+          ? Effect.succeed(true)
+          : desktopBuildProbeSucceeds(
+              ChildProcess.make("powershell.exe", [
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                windowsVswherePrerequisiteScript(input.arch),
+              ]),
+              "Visual Studio Build Tools",
+            ),
+        tar: input.bundlesWslRuntime
+          ? desktopBuildProbeSucceeds(ChildProcess.make("tar.exe", ["--version"]), "tar")
+          : Effect.succeed(true),
+      },
+      { concurrency: "unbounded" },
+    );
+    const missing = WINDOWS_DESKTOP_BUILD_PREREQUISITES.filter(
+      (requirement) => !checks[requirement.id],
+    ).map((requirement) => requirement.id);
+    if (missing.length > 0) {
+      return yield* new WindowsDesktopBuildPrerequisitesMissingError({ missing, rustTarget });
+    }
+  },
+);
+
+/**
+ * Every `node_modules` directory that would be visible from `startDir`.
+ *
+ * The self-containment check is only meaningful in a directory with none of
+ * these: Node walks parents when resolving a bare import, so a stray
+ * node_modules above the probe would satisfy imports that are missing from the
+ * packaged tree and turn the check into a silent pass.
+ */
+function trimTrailingSeparators(value: string): string {
+  let end = value.length;
+  while (end > 1 && (value[end - 1] === "/" || value[end - 1] === "\\")) end -= 1;
+  return value.slice(0, end);
+}
+
+/**
+ * Length of the `\\server\share` prefix, or 0 when the path is not UNC.
+ *
+ * The share is the highest real directory on a UNC path: `\\server` on its own
+ * is not one, so the ancestor walk must stop there.
+ */
+function uncShareRootLength(value: string): number {
+  const isUnc = value.startsWith("\\\\") || value.startsWith("//");
+  if (!isUnc) return 0;
+  const separator = /[\\/]/;
+  const serverEnd = value.slice(2).search(separator);
+  if (serverEnd < 0) return value.length;
+  const shareStart = 2 + serverEnd + 1;
+  const shareEnd = value.slice(shareStart).search(separator);
+  return shareEnd < 0 ? value.length : shareStart + shareEnd;
+}
+
+export function ancestorNodeModulesPaths(
+  startDir: string,
+  separator: string,
+): ReadonlyArray<string> {
+  // Walks with lastIndexOf rather than splitting into segments so UNC roots
+  // (\\server\share) and drive roots keep their prefix instead of being
+  // rebuilt into a relative path that silently resolves against the build cwd.
+  const paths: string[] = [];
+  let current = trimTrailingSeparators(startDir);
+  // On a UNC path the share itself is the root: \\server is not a directory, so
+  // walking past \\server\share would emit paths that cannot exist.
+  const uncRootLength = uncShareRootLength(current);
+  for (;;) {
+    const cut = Math.max(current.lastIndexOf("/"), current.lastIndexOf("\\"));
+    if (cut < 0 || (uncRootLength > 0 && cut < uncRootLength)) break;
+    const parent = cut === 0 ? current.slice(0, 1) : current.slice(0, cut);
+    if (parent === current) break;
+    paths.push(
+      parent.endsWith(separator) ? `${parent}node_modules` : `${parent}${separator}node_modules`,
+    );
+    if (cut === 0) break;
+    current = parent;
+  }
+  return paths;
+}
 
 export const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
   readonly repoRoot: string;
@@ -1167,6 +1524,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   signed: boolean,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
+  arch?: typeof BuildArch.Type,
 ) {
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
@@ -1175,7 +1533,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     // placeholders, not JS interpolation.
     artifactName: "Ronin-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
-    files: [...DESKTOP_FILE_EXCLUSIONS, ...(platform === "mac" ? MAC_FILE_EXCLUSIONS : [])],
+    files: [
+      ...DESKTOP_FILE_EXCLUSIONS,
+      ...(platform === "mac" ? resolveMacFileExclusions(arch) : []),
+    ],
     directories: {
       buildResources: "apps/desktop/resources",
     },
@@ -1292,6 +1653,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   const path = yield* Path.Path;
   const fs = yield* FileSystem.FileSystem;
   const hostPlatform = yield* HostProcessPlatform;
+  if (hostPlatform === "linux" && options.platform === "linux") {
+    yield* preflightLinuxDesktopBuild(options.arch);
+  }
+  if (hostPlatform === "darwin" && options.platform === "mac") {
+    yield* preflightMacDesktopBuild(options.arch);
+  }
+  if (hostPlatform === "win32" && options.platform === "win") {
+    // Ronin does not bundle a WSL runtime, so the archive's `tar` requirement
+    // never applies.
+    yield* preflightWindowsDesktopBuild({ arch: options.arch, bundlesWslRuntime: false });
+  }
   const workspaceConfig = yield* readWorkspaceConfig();
   const workspaceCatalog = workspaceConfig.catalog ?? {};
   const workspaceOverrides = workspaceConfig.overrides ?? {};
@@ -1467,6 +1839,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
+      options.arch,
     ),
     dependencies: stageDependencies,
     devDependencies: {

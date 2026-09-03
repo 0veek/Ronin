@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import {
   defaultInstanceIdForDriver,
   EnvironmentId,
+  MessageId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -17,6 +18,10 @@ import {
   type ProviderOptionSelection,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
+import {
+  collectAssistantCitations,
+  serializeAssistantCitation,
+} from "@t3tools/shared/assistantCitations";
 
 // The composer draft's `modelSelectionByProvider` and
 // `stickyModelSelectionByProvider` maps are keyed by `ProviderInstanceId`
@@ -185,6 +190,44 @@ function draftFor(threadId: ThreadId, environmentId: EnvironmentId = LEGACY_TEST
 function draftByKey(key: string) {
   return useComposerDraftStore.getState().draftsByThreadKey[key] ?? undefined;
 }
+
+describe("composerDraftStore assistant citations", () => {
+  beforeEach(resetComposerDraftStore);
+  afterEach(resetComposerDraftStore);
+
+  it("keeps quotes, comments, and remote source IDs through persistence and removes them on clear", () => {
+    const threadId = ThreadId.make("citation-draft");
+    const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+    const citation = {
+      version: 1 as const,
+      environmentId: EnvironmentId.make("remote-source"),
+      threadId: ThreadId.make("source-thread"),
+      messageId: MessageId.make("source-message"),
+      text: "Preserve the selected text after reload.",
+      comment: "Why is this important?\nPlease show an example.",
+      start: 12,
+      end: 52,
+      prefix: "Before. ",
+      suffix: " After.",
+    };
+    const prompt = `Explain ${serializeAssistantCitation(citation)} further.`;
+    useComposerDraftStore.getState().setPrompt(threadRef, prompt);
+    const options = useComposerDraftStore.persist.getOptions();
+    const saved = JSON.parse(
+      JSON.stringify(options.partialize!(useComposerDraftStore.getState())),
+    ) as unknown;
+    resetComposerDraftStore();
+    const hydrated = options.merge!(saved, useComposerDraftStore.getState());
+    useComposerDraftStore.setState(hydrated);
+    const restored = draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt ?? "";
+    expect(restored).toBe(prompt);
+    expect(collectAssistantCitations(restored).map((entry) => entry.citation)).toEqual([citation]);
+    useComposerDraftStore.getState().clearComposerContent(threadRef);
+    expect(
+      collectAssistantCitations(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt ?? ""),
+    ).toEqual([]);
+  });
+});
 
 describe("composerDraftStore addImages", () => {
   const threadId = ThreadId.make("thread-dedupe");
@@ -1415,17 +1458,18 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("keep me");
   });
 
-  it("finalizes a promoted draft after the canonical thread route is active", () => {
+  it("moves composer edits made during promotion to the canonical thread", () => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
-    store.setPrompt(draftId, "promote me");
     markPromotedDraftThread(threadId);
+    store.setPrompt(draftId, "typed during setup");
 
     finalizePromotedDraftThreadByRef(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId));
 
     expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
     expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
     expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("typed during setup");
   });
 
   it("finalizes a matching materialized draft even when promotion was not pre-marked", () => {
@@ -1438,6 +1482,7 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(useComposerDraftStore.getState().getDraftThreadByProjectRef(projectRef)).toBeNull();
     expect(useComposerDraftStore.getState().getDraftThread(draftId)).toBeNull();
     expect(draftByKey(draftId)).toBeUndefined();
+    expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("promote me");
   });
 
   it("updates branch context on an existing draft thread", () => {

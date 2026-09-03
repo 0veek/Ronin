@@ -217,6 +217,7 @@ export function projectEvent(
             workspaceRoot: payload.workspaceRoot,
             defaultModelSelection: payload.defaultModelSelection,
             defaultThreadEnvMode: null,
+            autoPull: false,
             faviconPath: payload.faviconPath ?? null,
             scripts: payload.scripts,
             createdAt: payload.createdAt,
@@ -253,6 +254,7 @@ export function projectEvent(
                   ...(payload.defaultThreadEnvMode !== undefined
                     ? { defaultThreadEnvMode: payload.defaultThreadEnvMode }
                     : {}),
+                  ...(payload.autoPull !== undefined ? { autoPull: payload.autoPull } : {}),
                   ...(payload.faviconPath !== undefined
                     ? { faviconPath: payload.faviconPath }
                     : {}),

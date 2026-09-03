@@ -4,12 +4,12 @@ import { CSS } from "@dnd-kit/utilities";
 import { AlarmClockIcon, ListPlusIcon, MessageSquareIcon, PinIcon } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
 
+import { resolveSettledThreadTimestamp } from "../../lib/threadSort";
 import { cn } from "../../lib/utils";
 import { formatRelativeTimeLabel, formatRelativeTimeUntilLabel } from "../../timestampFormat";
 import { useUiStateStore } from "../../uiStateStore";
 import {
   formatWorkingDurationLabel,
-  resolveSettledTimestamp,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
 } from "../Sidebar.logic";
@@ -87,7 +87,7 @@ export const BoardCard = memo(function BoardCard({
   // sort key; everything else reads from its last user message.
   const timeLabel =
     card.lane === "done"
-      ? formatRelativeTimeLabel(resolveSettledTimestamp(thread) ?? thread.updatedAt)
+      ? formatRelativeTimeLabel(resolveSettledThreadTimestamp(thread) ?? thread.updatedAt)
       : formatRelativeTimeLabel(thread.latestUserMessageAt ?? thread.updatedAt);
 
   return (

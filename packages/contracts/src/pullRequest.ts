@@ -93,6 +93,10 @@ export const PullRequestAction = Schema.Literals([
   "enable-auto-merge",
   /** Take the standing instruction back, which leaves the change request where it was. */
   "disable-auto-merge",
+  /** Open a new change request that reverses a merged one. */
+  "revert",
+  /** Allow Actions workflows from a fork pull request to begin running. */
+  "approve-workflows",
 ]);
 export type PullRequestAction = typeof PullRequestAction.Type;
 
@@ -131,6 +135,7 @@ export type PullRequestLabel = typeof PullRequestLabel.Type;
 
 export const PullRequestCheckStatus = Schema.Literals([
   "pending",
+  "action-required",
   "success",
   "failure",
   "skipped",
@@ -591,6 +596,24 @@ export const PullRequestRef = Schema.Struct({
 export type PullRequestRef = typeof PullRequestRef.Type;
 
 /**
+ * The small live shape a linked thread needs. Keeping it separate from detail means a sidebar
+ * status check never loads permissions, repository settings, checks, or base comparison data.
+ */
+export const PullRequestSummary = Schema.Struct({
+  provider: SourceControlProviderKind,
+  projectId: ProjectId,
+  repository: TrimmedNonEmptyString,
+  number: PositiveInt,
+  title: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  state: PullRequestState,
+  headBranch: TrimmedNonEmptyString,
+  baseBranch: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+export type PullRequestSummary = typeof PullRequestSummary.Type;
+
+/**
  * One row's line counts, read after the listing rather than inside it. On GitHub the pair is
  * 40-60% of the wall clock of the search that answers the whole page — measured over twelve
  * repositories, 7.1s with it and 4.0s without — for two small numbers at the end of a row.
@@ -660,6 +683,7 @@ export const PullRequestDetail = Schema.Struct({
   deletions: NonNegativeInt,
   changedFiles: NonNegativeInt,
   headBranch: TrimmedNonEmptyString,
+  headRepositoryNameWithOwner: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   baseBranch: TrimmedNonEmptyString,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -690,6 +714,10 @@ export const PullRequestDetail = Schema.Struct({
    * arm something that is already armed, and a second arming is a write nobody asked for.
    */
   autoMergeEnabled: Schema.optional(Schema.Boolean),
+  /** The strategy the host will use for an armed auto-merge, where it reports one. */
+  autoMergeMethod: Schema.optional(PullRequestMergeMethod),
+  /** GitHub Actions runs on this head commit that are waiting for a maintainer's approval. */
+  workflowApprovalsRequired: Schema.optional(NonNegativeInt),
 });
 export type PullRequestDetail = typeof PullRequestDetail.Type;
 

@@ -1,5 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import { ServerSelfUpdateError, ThreadId } from "@t3tools/contracts";
 import { HostProcessExecutablePath } from "@t3tools/shared/hostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -95,6 +96,91 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
 });
 
 it.layer(NodeServices.layer)("server self update", (it) => {
+  it.effect("marks running threads at the boot-service handoff", () =>
+    Effect.gen(function* () {
+      const events: string[] = [];
+      const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
+        mode: "web",
+        selfUpdate: {
+          update: (_input, reportProgress = () => Effect.void) =>
+            reportProgress("downloading").pipe(
+              Effect.andThen(reportProgress("installing")),
+              Effect.as({
+                targetVersion: "1.1.0",
+                method: "boot-service" as const,
+                updateId: "update-id",
+              }),
+            ),
+        },
+        prepare: Effect.sync(() => {
+          events.push("prepare");
+          return [ThreadId.make("thread-running")];
+        }),
+        clear: () => Effect.sync(() => void events.push("clear")),
+      });
+
+      yield* selfUpdate.update({ targetVersion: "1.1.0", continueRunningThreads: true }, (stage) =>
+        Effect.sync(() => void events.push(stage)),
+      );
+
+      expect(events).toEqual(["downloading", "prepare", "installing"]);
+    }),
+  );
+
+  it.effect("reports a failed continuation-marker cleanup", () =>
+    Effect.gen(function* () {
+      const updateError = new ServerSelfUpdateError({ reason: "update failed" });
+      const clearError = new ServerSelfUpdateError({ reason: "marker cleanup failed" });
+      const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
+        mode: "web",
+        selfUpdate: {
+          update: (_input, reportProgress = () => Effect.void) =>
+            reportProgress("installing").pipe(Effect.andThen(Effect.fail(updateError))),
+        },
+        prepare: Effect.succeed([ThreadId.make("thread-cleanup-failure")]),
+        clear: () => Effect.fail(clearError),
+      });
+
+      expect(
+        yield* selfUpdate
+          .update({ targetVersion: "1.1.0", continueRunningThreads: true })
+          .pipe(Effect.flip),
+      ).toBe(clearError);
+    }),
+  );
+
+  it.effect("keeps continuation markers after the boot-service handoff is accepted", () =>
+    Effect.gen(function* () {
+      const events: string[] = [];
+      const selfUpdate = yield* ServerSelfUpdate.withRunningThreadContinuation({
+        mode: "web",
+        selfUpdate: {
+          update: (
+            _input,
+            reportProgress = () => Effect.void,
+            onHandoffAccepted = () => Effect.void,
+          ) =>
+            reportProgress("installing").pipe(
+              Effect.andThen(onHandoffAccepted()),
+              Effect.andThen(Effect.interrupt),
+            ),
+        },
+        prepare: Effect.sync(() => {
+          events.push("prepare");
+          return [ThreadId.make("thread-accepted-boot-handoff")];
+        }),
+        clear: () => Effect.sync(() => void events.push("clear")),
+      });
+
+      const exit = yield* selfUpdate
+        .update({ targetVersion: "1.1.0", continueRunningThreads: true })
+        .pipe(Effect.exit);
+
+      expect(exit._tag).toBe("Failure");
+      expect(events).toEqual(["prepare"]);
+    }),
+  );
+
   it.effect("stages and preflights before asking the launcher for an update ID", () =>
     Effect.gen(function* () {
       const { selfUpdate, order } = yield* makeHarness();

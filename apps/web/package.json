@@ -64,7 +64,6 @@
     "@vitejs/plugin-react": "^6.0.5",
     "babel-plugin-react-compiler": "1.0.0",
     "compression": "^1.8.1",
-    "msw": "2.15.0",
     "tailwindcss": "^4.3.3",
     "vite": "catalog:",
     "vite-plus": "catalog:"

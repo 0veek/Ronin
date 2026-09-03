@@ -73,6 +73,7 @@ export function SourceControlWritingSettingsSection() {
   return (
     <SettingsSection title="Text generation">
       <SettingsRow
+        serverScoped
         title="Source control writing style"
         description={MODE_OPTIONS[style.mode].description}
         resetAction={
@@ -137,6 +138,7 @@ export function SourceControlWritingSettingsSection() {
       </SettingsRow>
 
       <SettingsRow
+        serverScoped
         title="Follow change request templates"
         description="Structures change request descriptions using the current repository's template when one is available."
         resetAction={
@@ -169,6 +171,7 @@ export function SourceControlWritingSettingsSection() {
       />
 
       <SettingsRow
+        serverScoped
         title="Source control writer model"
         description="Optional model override for change descriptions, change request titles and descriptions, and branch or bookmark names. Off uses the global text generation model."
         control={

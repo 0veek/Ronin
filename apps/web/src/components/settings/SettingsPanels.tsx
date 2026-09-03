@@ -34,12 +34,14 @@ import {
   MAX_APPEARANCE_CONTRAST,
   MAX_CODE_FONT_SIZE,
   MAX_INTERFACE_FONT_SIZE,
+  MAX_PANEL_ANIMATION_DURATION_MS,
   MAX_PROMPT_FONT_SIZE,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MAX_TERMINAL_FONT_SIZE,
   MIN_CODE_FONT_SIZE,
   MIN_APPEARANCE_CONTRAST,
   MIN_INTERFACE_FONT_SIZE,
+  MIN_PANEL_ANIMATION_DURATION_MS,
   MIN_PROMPT_FONT_SIZE,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_TERMINAL_FONT_SIZE,
@@ -122,6 +124,7 @@ import {
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../../appearanceFonts";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
+import { SharedSettingsMismatchAlert } from "./SharedSettingsMismatchAlert";
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
 import {
   NumberField,
@@ -164,6 +167,7 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -386,6 +390,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.appearanceContrast !== DEFAULT_UNIFIED_SETTINGS.appearanceContrast
         ? ["Contrast"]
         : []),
+      ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
+        ? ["Panel animations"]
+        : []),
       ...(settings.environmentIdentificationMode !==
       DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
         ? ["Environment identification"]
@@ -407,15 +414,25 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
         ? ["Auto-settle merged threads"]
         : []),
+      ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
+        ? ["Context window indicator"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
       ...getChangedTypographySettingLabels(settings),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
         : []),
+      ...(settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled
+        ? ["Proactive panels"]
+        : []),
       ...(settings.enableProviderUpdateChecks !==
       DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks
         ? ["Provider update checks"]
+        : []),
+      ...(settings.continueThreadsAfterServerUpdate !==
+      DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
+        ? ["Continue threads after server updates"]
         : []),
       ...(settings.quotaResume.maximumWait !== DEFAULT_UNIFIED_SETTINGS.quotaResume.maximumWait
         ? ["Resume after limit resets"]
@@ -466,6 +483,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
       settings.diffIgnoreWhitespace,
+      settings.proactivePanelsEnabled,
+      settings.contextWindowMeterEnabled,
       settings.environmentIdentificationMode,
       settings.fontFamilyCode,
       settings.fontFamilyComposer,
@@ -475,7 +494,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizeInterface,
       settings.fontSizePrompt,
       settings.fontSizeTerminal,
+      settings.panelAnimationDurationMs,
       settings.enableProviderUpdateChecks,
+      settings.continueThreadsAfterServerUpdate,
       settings.quotaResume.maximumWait,
       settings.sidebarAutoSettleAfterDays,
       settings.sidebarAutoSettleOnMerge,
@@ -556,15 +577,19 @@ export function useSettingsRestore(onRestored?: () => void) {
     updateSettings({
       appearanceContrast: DEFAULT_UNIFIED_SETTINGS.appearanceContrast,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
+      contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
+      proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
       environmentIdentificationMode: DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
+      panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarThreadPreviewCount: DEFAULT_UNIFIED_SETTINGS.sidebarThreadPreviewCount,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
+      continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
       backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
@@ -906,6 +931,13 @@ export function AppearanceSettingsPanel() {
     "--settings-slider-progress": `${appearanceContrastRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - appearanceContrastRatio}rem`,
   } as CSSProperties;
+  const panelAnimationDurationRatio =
+    (settings.panelAnimationDurationMs - MIN_PANEL_ANIMATION_DURATION_MS) /
+    (MAX_PANEL_ANIMATION_DURATION_MS - MIN_PANEL_ANIMATION_DURATION_MS);
+  const panelAnimationDurationSliderStyle = {
+    "--settings-slider-progress": `${panelAnimationDurationRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - panelAnimationDurationRatio}rem`,
+  } as CSSProperties;
 
   return (
     <SettingsPageContainer>
@@ -1017,6 +1049,60 @@ export function AppearanceSettingsPanel() {
         ) : null}
 
         <ChatWidthRow />
+      </SettingsSection>
+
+      <SettingsSection id="motion" title="Motion">
+        <SettingsRow
+          {...searchableSetting("panel-animations")}
+          description="Set how fast panels open and close."
+          control={
+            <div className="grid w-full grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 sm:w-auto sm:grid-cols-[7rem_13rem] sm:gap-4">
+              <PanelAnimationsPreview durationMs={settings.panelAnimationDurationMs} />
+              <div className="flex w-full items-center gap-3">
+                <output
+                  className="min-w-16 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                  htmlFor="panel-animation-duration"
+                >
+                  {settings.panelAnimationDurationMs} ms
+                </output>
+                <input
+                  aria-label="Panel animation duration"
+                  className="settings-slider min-w-0 flex-1"
+                  id="panel-animation-duration"
+                  max={MAX_PANEL_ANIMATION_DURATION_MS}
+                  min={MIN_PANEL_ANIMATION_DURATION_MS}
+                  onChange={(event) => {
+                    const panelAnimationDurationMs = Number(event.currentTarget.value);
+                    if (
+                      Number.isInteger(panelAnimationDurationMs) &&
+                      panelAnimationDurationMs >= MIN_PANEL_ANIMATION_DURATION_MS &&
+                      panelAnimationDurationMs <= MAX_PANEL_ANIMATION_DURATION_MS
+                    ) {
+                      updateSettings({ panelAnimationDurationMs });
+                    }
+                  }}
+                  step={25}
+                  style={panelAnimationDurationSliderStyle}
+                  type="range"
+                  value={settings.panelAnimationDurationMs}
+                />
+              </div>
+            </div>
+          }
+          resetAction={
+            settings.panelAnimationDurationMs !==
+            DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs ? (
+              <SettingResetButton
+                label="panel animations"
+                onClick={() =>
+                  updateSettings({
+                    panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
+                  })
+                }
+              />
+            ) : null
+          }
+        />
       </SettingsSection>
 
       <TypographySection />
@@ -1642,7 +1728,10 @@ function AutoSettleDaysInput({
 
 // The legacy rows sit behind the fold, so a settings-search jump has to
 // expand the section before its target can mount and scroll.
-const LEGACY_FEATURE_TARGET_IDS: ReadonlySet<string> = new Set(["legacy-plan-mode"]);
+const LEGACY_FEATURE_TARGET_IDS: ReadonlySet<string> = new Set([
+  "legacy-plan-mode",
+  "legacy-context-window-indicator",
+]);
 
 /**
  * Retired features kept only for users who still depend on them. Collapsed by
@@ -1713,6 +1802,19 @@ function LegacyFeaturesSection() {
                     });
                   }}
                   aria-label="Plan mode (legacy)"
+                />
+              }
+            />
+            <SettingsRow
+              {...searchableSetting("legacy-context-window-indicator")}
+              description="Shows context window usage as a circular indicator in the composer."
+              control={
+                <Switch
+                  checked={settings.contextWindowMeterEnabled}
+                  onCheckedChange={(checked) =>
+                    updateSettings({ contextWindowMeterEnabled: Boolean(checked) })
+                  }
+                  aria-label="Context window indicator (legacy)"
                 />
               }
             />
@@ -1874,6 +1976,7 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer className="max-w-3xl">
+      <SharedSettingsMismatchAlert />
       <SettingsSection title="General">
         <SettingsRow
           {...searchableSetting("project-grouping")}
@@ -1914,6 +2017,7 @@ export function GeneralSettingsPanel() {
         {supportsAutoSettlement ? (
           <>
             <SettingsRow
+              serverScoped
               {...searchableSetting("auto-settle-merged-threads")}
               description="Settle a thread when its pull request merges. Closed pull requests still settle automatically."
               resetAction={
@@ -1941,6 +2045,7 @@ export function GeneralSettingsPanel() {
             />
 
             <SettingsRow
+              serverScoped
               {...searchableSetting("auto-settle-inactive-threads")}
               description="Sidebar threads with no activity for this long settle automatically."
               resetAction={
@@ -1979,6 +2084,7 @@ export function GeneralSettingsPanel() {
         <AgentSoundsRow enabled={agentSoundsEnabled} onEnabledChange={setAgentSoundsEnabled} />
         {supportsAutoSettlement && settings.sidebarAutoSettleAfterDays !== null ? (
           <SettingsRow
+            serverScoped
             title={searchableSetting("days-before-auto-settle").title}
             description="Any new activity un-settles a thread automatically."
             control={
@@ -2059,6 +2165,33 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          {...searchableSetting("proactive-panels")}
+          description="Automatically open the linked pull request when it appears and the turn diff when agent work finishes."
+          resetAction={
+            settings.proactivePanelsEnabled !== DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled ? (
+              <SettingResetButton
+                label="proactive panels"
+                onClick={() =>
+                  updateSettings({
+                    proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.proactivePanelsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ proactivePanelsEnabled: Boolean(checked) })
+              }
+              aria-label="Proactive panels"
+            />
+          }
+        />
+
+        <SettingsRow
+          serverScoped
           {...searchableSetting("provider-update-checks")}
           description="Check installed provider CLIs for newer available versions."
           resetAction={
@@ -2081,6 +2214,34 @@ export function GeneralSettingsPanel() {
                 updateSettings({ enableProviderUpdateChecks: Boolean(checked) })
               }
               aria-label="Check provider versions"
+            />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("continue-threads-after-server-update")}
+          description="Automatically resume active threads after a server update restarts the environment."
+          resetAction={
+            settings.continueThreadsAfterServerUpdate !==
+            DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate ? (
+              <SettingResetButton
+                label="continue threads after server updates"
+                onClick={() =>
+                  updateSettings({
+                    continueThreadsAfterServerUpdate:
+                      DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.continueThreadsAfterServerUpdate}
+              onCheckedChange={(checked) =>
+                updateSettings({ continueThreadsAfterServerUpdate: Boolean(checked) })
+              }
+              aria-label="Continue threads after server updates"
             />
           }
         />
@@ -2218,6 +2379,7 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          serverScoped
           {...searchableSetting("new-threads")}
           description="Pick the default workspace mode for newly created draft threads."
           resetAction={
@@ -2264,6 +2426,7 @@ export function GeneralSettingsPanel() {
 
         {settings.defaultThreadEnvMode === "worktree" ? (
           <SettingsRow
+            serverScoped
             className="bg-muted/20 sm:pl-9"
             title={searchableSetting("start-from-origin").title}
             description="Creates the worktree from the latest matching branch on origin instead of your local branch."
@@ -2294,6 +2457,7 @@ export function GeneralSettingsPanel() {
         ) : null}
 
         <SettingsRow
+          serverScoped
           {...searchableSetting("add-project-starts-in")}
           description='Leave empty to use "~/" when the Add Project browser opens.'
           resetAction={
@@ -2438,6 +2602,7 @@ export function GeneralSettingsPanel() {
         ) : null}
 
         <SettingsRow
+          serverScoped
           {...searchableSetting("text-generation-model")}
           description="Default model for generated text like thread titles and source control content. Source control settings can override it with a dedicated source control writer model."
           resetAction={

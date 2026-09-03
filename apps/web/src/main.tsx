@@ -12,6 +12,7 @@ import {
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
 import { AppRoot } from "./AppRoot";
+import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 
 // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
 const history = isElectron ? createHashHistory() : createBrowserHistory();
@@ -26,8 +27,43 @@ if (isElectron) {
 // Lives for the life of the document, like the platform classes above.
 syncDocumentVisibilityClass();
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <AppRoot router={router} />
-  </React.StrictMode>,
-);
+// A failed split-chunk fetch usually means the hashed assets went stale under
+// a deploy or a desktop server swap; one guarded reload picks up the fresh
+// index.html.
+let chunkLoadFailed = false;
+let reloadScheduled = false;
+window.addEventListener("vite:preloadError", (event) => {
+  chunkLoadFailed = true;
+  if (reloadOnceForChunkLoadError()) {
+    reloadScheduled = true;
+    event.preventDefault();
+  }
+});
+
+// The index.html boot splash lives inside #root, and React's first commit
+// clears it. Resolve the initial route's split chunks before rendering, so the
+// splash holds until real UI paints instead of dropping to a blank window
+// while chunks download.
+void router
+  .load()
+  .then(() => {
+    // A route chunk failure still resolves router.load(): the error is parked in
+    // the lazy component and surfaces through the route error boundary. Skip the
+    // paint when a reload is on its way, and only re-arm the guard after a boot
+    // that fetched every chunk it asked for.
+    if (reloadScheduled) return;
+    if (!chunkLoadFailed) clearChunkReloadGuard();
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+      <React.StrictMode>
+        <AppRoot router={router} />
+      </React.StrictMode>,
+    );
+  })
+  .catch((error: unknown) => {
+    // A startup chunk failed and the guarded reload is spent. Say so instead of
+    // leaving the splash up forever.
+    if (reloadScheduled) return;
+    console.error("Ronin failed to load its startup chunks.", error);
+    const bootShell = document.getElementById("boot-shell");
+    if (bootShell) bootShell.textContent = "Ronin could not load. Reload to try again.";
+  });

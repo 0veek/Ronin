@@ -22,6 +22,7 @@ import {
   effectiveSnoozed,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
+import { resolveSettledThreadTimestamp } from "@t3tools/client-runtime/state/thread-sort";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
   scopeProjectRef,
@@ -135,7 +136,6 @@ import {
   planPinnedReorder,
   reduceSidebarProjectScopeMenuState,
   resolveAdjacentThreadId,
-  resolveSettledTimestamp,
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
   shouldCreateNewThreadInCurrentProject,
@@ -148,6 +148,8 @@ import {
   sortThreadsByBlockedDuration,
   sortThreadsForSidebar,
   threadNeedsYou,
+  useRetainedValue,
+  useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
 } from "./Sidebar.logic";
 import {
@@ -230,10 +232,10 @@ function threadTimeLabel(thread: SidebarThreadSummary): string {
 }
 
 // Settled rows read "how long ago did this wrap up", matching their sort
-// key: both go through resolveSettledTimestamp so label and order can't
+// key: both go through resolveSettledThreadTimestamp so label and order can't
 // disagree.
 function settledTimeLabel(thread: SidebarThreadSummary): string {
-  const timestamp = resolveSettledTimestamp(thread);
+  const timestamp = resolveSettledThreadTimestamp(thread);
   return timestamp === null ? "" : compactSidebarTimeLabel(formatRelativeTimeLabel(timestamp));
 }
 
@@ -803,6 +805,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [thread.environmentId, thread.id],
   );
   const threadKey = scopedThreadKey(threadRef);
+  const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(props.isActive);
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
@@ -816,21 +819,25 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
-    thread.environmentId,
-    thread.linkedPullRequest,
+    leaseLiveStatus ? thread.environmentId : null,
+    leaseLiveStatus ? thread.linkedPullRequest : null,
   );
   const gitStatus = useEnvironmentQuery(
-    (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
+    leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
           input: { cwd: gitCwd },
         })
       : null,
   );
+  const visibleGitStatus = useRetainedValue(
+    JSON.stringify([thread.environmentId, gitCwd]),
+    gitStatus.data,
+  );
   const retainTerminalOnBranchMismatch = thread.worktreePath === null;
   const pr = resolveDisplayedThreadPr({
     threadBranch: thread.branch,
-    gitStatus: gitStatus.data,
+    gitStatus: visibleGitStatus,
     snapshot: changeRequestSnapshot,
     retainTerminalOnBranchMismatch,
     linkedPullRequest: thread.linkedPullRequest,
@@ -925,11 +932,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
     activeWorktreePath: thread.worktreePath,
     activeThreadBranch: thread.branch,
-    currentGitBranch: gitStatus.data?.refName ?? null,
+    currentGitBranch: visibleGitStatus?.refName ?? null,
   });
   const prProvider = resolveDisplayedThreadPrProvider({
     threadBranch: thread.branch,
-    gitStatus: gitStatus.data,
+    gitStatus: visibleGitStatus,
     snapshot: changeRequestSnapshot,
     retainTerminalOnBranchMismatch,
     linkedPullRequest: thread.linkedPullRequest,
@@ -940,7 +947,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   useEffect(() => {
     const nextSnapshot = nextThreadChangeRequestSnapshot({
       threadBranch: thread.branch,
-      gitStatus: gitStatus.data,
+      gitStatus: visibleGitStatus,
       snapshot: changeRequestSnapshot,
       retainTerminalOnBranchMismatch,
       linkedPullRequest: thread.linkedPullRequest,
@@ -950,7 +957,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     onChangeRequestSnapshot(threadKey, nextSnapshot);
   }, [
     changeRequestSnapshot,
-    gitStatus.data,
+    visibleGitStatus,
     linkedPullRequestStatus,
     onChangeRequestSnapshot,
     retainTerminalOnBranchMismatch,
@@ -1267,6 +1274,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           <TooltipTrigger
             render={
               <div
+                ref={rowRef}
                 role="button"
                 tabIndex={0}
                 data-testid="sidebar-row-slim"
@@ -1433,6 +1441,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         <TooltipTrigger
           render={
             <div
+              ref={rowRef}
               role="button"
               tabIndex={0}
               data-testid="sidebar-row-card"
@@ -1668,22 +1677,29 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   onSelect: () => void;
 }) {
   const { thread } = props;
+  const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
+    props.isHighlighted || props.isRouteActive,
+  );
   // Same details tooltip as the regular rows: a search hit is still a thread,
   // and the hover card is how you disambiguate identically-titled results.
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const gitStatus = useEnvironmentQuery(
-    (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
+    leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
           input: { cwd: gitCwd },
         })
       : null,
   );
+  const visibleGitStatus = useRetainedValue(
+    JSON.stringify([thread.environmentId, gitCwd]),
+    gitStatus.data,
+  );
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
     activeWorktreePath: thread.worktreePath,
     activeThreadBranch: thread.branch,
-    currentGitBranch: gitStatus.data?.refName ?? null,
+    currentGitBranch: visibleGitStatus?.refName ?? null,
   });
   const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
@@ -1707,6 +1723,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
         <TooltipTrigger
           render={
             <button
+              ref={rowRef}
               id={props.resultId}
               type="button"
               role="option"

@@ -1,4 +1,5 @@
 export * from "./baseSchemas.ts";
+export * from "./assistantCitations.ts";
 export * from "./background.ts";
 export * from "./auth.ts";
 export * from "./environment.ts";
@@ -26,6 +27,7 @@ export * from "./project.ts";
 export * from "./filesystem.ts";
 export * from "./assets.ts";
 export * from "./review.ts";
+export * from "./browserProfile.ts";
 export * from "./preview.ts";
 export * from "./previewAutomation.ts";
 export * from "./resourceTelemetry.ts";

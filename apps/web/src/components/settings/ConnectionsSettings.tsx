@@ -94,6 +94,7 @@ import { useUiStateStore } from "~/uiStateStore";
 import {
   resolveServerConfigVersionMismatch,
   resolveServerSelfUpdateCapability,
+  supportsServerUpdateThreadContinuation,
 } from "~/versionSkew";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
@@ -1400,10 +1401,12 @@ function SavedBackendListRow({
                   : null
               }
             />
-            <h3 className="text-sm font-medium text-foreground">{environment.label}</h3>
+            <h3 className="min-w-0 truncate text-sm font-medium text-foreground">
+              {environment.label}
+            </h3>
           </div>
           {metadataBits.length > 0 ? (
-            <p className="text-xs text-muted-foreground">{metadataBits.join(" · ")}</p>
+            <p className="truncate text-xs text-muted-foreground">{metadataBits.join(" · ")}</p>
           ) : null}
           {serverUpdateState.status !== "idle" ? (
             <div className="max-w-md">
@@ -1449,6 +1452,7 @@ function SavedBackendListRow({
               environmentId={environmentId}
               serverLabel={`${environment.label} server`}
               selfUpdate={resolveServerSelfUpdateCapability(environment.serverConfig)}
+              threadContinuation={supportsServerUpdateThreadContinuation(environment.serverConfig)}
               targetVersion={versionMismatch.clientVersion}
               label={serverUpdateState.status === "failed" ? "Retry" : "Update"}
             />
@@ -2556,6 +2560,9 @@ export function ConnectionsSettings() {
                       environmentId={primaryEnvironmentId}
                       serverLabel={primaryEnvironment?.label ?? "this server"}
                       selfUpdate={resolveServerSelfUpdateCapability(primaryServerConfig)}
+                      threadContinuation={supportsServerUpdateThreadContinuation(
+                        primaryServerConfig,
+                      )}
                       targetVersion={primaryVersionMismatch.clientVersion}
                       label={primaryServerUpdateState.status === "failed" ? "Retry" : "Update"}
                     />

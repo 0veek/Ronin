@@ -179,9 +179,21 @@ describe("projectActivityPayload", () => {
     });
   });
 
-  it("keeps current web derived output identical for every tool item type", () => {
+  it("keeps current web derived fields for every tool item type", () => {
     for (const activity of fixtures) {
       const projected = projectActivityPayload(activity);
+      if (activity === fixtures[0]) {
+        // The command row's detail is now the command's real output rather
+        // than the fenced echo the source payload carried.
+        expect(deriveWorkLogEntries([projected])).toMatchObject([
+          {
+            command: "pnpm test",
+            rawCommand: 'bash -lc "pnpm test"',
+            detail: "first useful line",
+          },
+        ]);
+        continue;
+      }
       if (activity === fixtures[4]) {
         // MCP is the one deliberate difference: the expanded row's toolData
         // loses result bulk but keeps the rendered identity fields.

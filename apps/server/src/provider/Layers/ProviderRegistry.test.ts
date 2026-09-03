@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -648,6 +649,44 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           mergeProviderSnapshot(previousProvider, refreshedProvider).skills,
           [],
         );
+      });
+
+      it("drops custom models the refreshed snapshot no longer carries", () => {
+        const previousProvider = {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          driver: ProviderDriverKind.make("claudeAgent"),
+          status: "ready",
+          enabled: true,
+          installed: true,
+          auth: { status: "authenticated" },
+          checkedAt: "2026-04-14T00:00:00.000Z",
+          version: "2.1.0",
+          models: [
+            {
+              slug: "claude-sonnet-4-6",
+              name: "Sonnet 4.6",
+              isCustom: false,
+              capabilities: null,
+            },
+            {
+              slug: "removed-custom",
+              name: "removed-custom",
+              isCustom: true,
+              capabilities: null,
+            },
+          ],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const refreshedProvider = {
+          ...previousProvider,
+          checkedAt: "2026-04-14T00:01:00.000Z",
+          models: [previousProvider.models[0]],
+        } satisfies ServerProvider;
+
+        assert.deepStrictEqual(mergeProviderSnapshot(previousProvider, refreshedProvider).models, [
+          ...refreshedProvider.models,
+        ]);
       });
 
       it("drops stale OpenCode models missing from a successful refresh", () => {
@@ -1801,7 +1840,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           const firstMissing = `t3code_codex_first_`;
           const secondMissing = `t3code_codex_second_`;
           const spawnedCommands: Array<string> = [];
-          const serverSettings = yield* makeMutableServerSettingsService(
+          const allowLazySettingsStream = yield* Deferred.make<void>();
+          const mutableServerSettings = yield* makeMutableServerSettingsService(
             decodeServerSettings(
               deepMerge(encodedDefaultServerSettings, {
                 providers: {
@@ -1814,6 +1854,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
               }),
             ),
           );
+          const serverSettings = {
+            ...mutableServerSettings,
+            streamChanges: Stream.unwrap(
+              Deferred.await(allowLazySettingsStream).pipe(
+                Effect.as(mutableServerSettings.streamChanges),
+              ),
+            ),
+          } satisfies ServerSettingsModule.ServerSettingsService["Service"];
           const scope = yield* Scope.make();
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const providerRegistryLayer = ProviderRegistryLive.pipe(
@@ -1867,7 +1915,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             assert.deepStrictEqual(spawnedCommands, [firstMissing]);
 
             // Drive a settings change. The Hydration layer's
-            // `SettingsWatcherLive` consumes this via `streamChanges`,
+            // `SettingsWatcherLive` consumes this via `subscribeChanges`,
             // calls `reconcile`, which rebuilds the codex instance (the
             // envelope changed because `binaryPath` differs → `entryEqual`
             // is false). The registry's `Stream.runForEach(
@@ -1879,6 +1927,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 codex: { enabled: true, binaryPath: secondMissing },
               },
             });
+            // Start the lazy stream only after publishing. A watcher that did
+            // not subscribe before forking has already lost this update.
+            yield* Deferred.succeed(allowLazySettingsStream, undefined);
 
             // Wait until the injected process boundary observes the new
             // executable. This verifies the public settings-to-probe behavior

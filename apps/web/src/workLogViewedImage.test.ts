@@ -15,6 +15,16 @@ describe("workEntryViewedImagePath", () => {
     );
   });
 
+  it("takes the projected image path over a summary that is not one", () => {
+    expect(
+      workEntryViewedImagePath({
+        itemType: "dynamic_tool_call",
+        detail: 'Read: {"file_path":"truncated..."}',
+        viewedImagePath: " /workspace/reference image.webp ",
+      }),
+    ).toBe("/workspace/reference image.webp");
+  });
+
   it("ignores non-reads, prose details, and unsupported files", () => {
     expect(
       workEntryViewedImagePath({ requestKind: "command", detail: "docs/hero.png" }),

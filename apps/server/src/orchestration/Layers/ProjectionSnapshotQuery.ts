@@ -64,6 +64,7 @@ import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityRes
 import { ORCHESTRATION_PROJECTOR_NAMES } from "./ProjectionPipeline.ts";
 import {
   ProjectionSnapshotQuery,
+  type ProjectionEventReplayStats,
   type ProjectionFullThreadDiffContext,
   type ProjectionSnapshotCounts,
   type ProjectionThreadCheckpointContext,
@@ -84,6 +85,7 @@ const THREAD_DETAIL_ACTIVITY_PAYLOAD_BATCH_SIZE = 25;
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
+    autoPull: Schema.Number,
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
 );
@@ -132,6 +134,14 @@ const ProjectionStateDbRowSchema = ProjectionState;
 const ProjectionCountsRowSchema = Schema.Struct({
   projectCount: Schema.Number,
   threadCount: Schema.Number,
+});
+const EventReplayStatsInput = Schema.Struct({
+  fromSequenceExclusive: NonNegativeInt,
+  toSequenceInclusive: NonNegativeInt,
+});
+const EventReplayStatsRowSchema = Schema.Struct({
+  eventCount: Schema.Number,
+  payloadBytes: Schema.Number,
 });
 const ProjectionThreadSearchRequest = Schema.Struct({
   pattern: Schema.String,
@@ -359,6 +369,7 @@ function mapProjectShellRow(
     repositoryIdentity,
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
+    autoPull: row.autoPull === 1,
     faviconPath: row.faviconPath ?? null,
     scripts: row.scripts,
     createdAt: row.createdAt,
@@ -451,6 +462,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
+          auto_pull AS "autoPull",
           favicon_path AS "faviconPath",
           scripts_json AS "scripts",
           created_at AS "createdAt",
@@ -847,6 +859,20 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const readEventReplayStats = SqlSchema.findOne({
+    Request: EventReplayStatsInput,
+    Result: EventReplayStatsRowSchema,
+    execute: ({ fromSequenceExclusive, toSequenceInclusive }) =>
+      sql`
+        SELECT
+          COUNT(*) AS "eventCount",
+          COALESCE(SUM(octet_length(payload_json)), 0) AS "payloadBytes"
+        FROM orchestration_events
+        WHERE sequence > ${fromSequenceExclusive}
+          AND sequence <= ${toSequenceInclusive}
+      `,
+  });
+
   const searchActiveThreadRows = SqlSchema.findAll({
     Request: ProjectionThreadSearchRequest,
     Result: ProjectionThreadSearchRow,
@@ -928,6 +954,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
+          auto_pull AS "autoPull",
           favicon_path AS "faviconPath",
           scripts_json AS "scripts",
           created_at AS "createdAt",
@@ -952,6 +979,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           workspace_root AS "workspaceRoot",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
+          auto_pull AS "autoPull",
           favicon_path AS "faviconPath",
           scripts_json AS "scripts",
           created_at AS "createdAt",
@@ -1904,6 +1932,7 @@ pending_approval_requests AS (
                 repositoryIdentity: repositoryIdentities.get(row.projectId) ?? null,
                 defaultModelSelection: row.defaultModelSelection,
                 defaultThreadEnvMode: row.defaultThreadEnvMode,
+                autoPull: row.autoPull === 1,
                 faviconPath: row.faviconPath ?? null,
                 scripts: row.scripts,
                 createdAt: row.createdAt,
@@ -2042,6 +2071,7 @@ pending_approval_requests AS (
                   workspaceRoot: row.workspaceRoot,
                   defaultModelSelection: row.defaultModelSelection,
                   defaultThreadEnvMode: row.defaultThreadEnvMode,
+                  autoPull: row.autoPull === 1,
                   faviconPath: row.faviconPath ?? null,
                   scripts: row.scripts,
                   createdAt: row.createdAt,
@@ -2509,6 +2539,22 @@ pending_approval_requests AS (
       ),
     );
 
+  const getEventReplayStats: ProjectionSnapshotQueryShape["getEventReplayStats"] = (input) =>
+    readEventReplayStats(input).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getEventReplayStats:query",
+          "ProjectionSnapshotQuery.getEventReplayStats:decodeRow",
+        ),
+      ),
+      Effect.map(
+        (row): ProjectionEventReplayStats => ({
+          eventCount: row.eventCount,
+          payloadBytes: row.payloadBytes,
+        }),
+      ),
+    );
+
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
     "ProjectionSnapshotQuery.searchThreads",
   )(function* (input) {
@@ -2557,6 +2603,7 @@ pending_approval_requests AS (
                     repositoryIdentity,
                     defaultModelSelection: option.value.defaultModelSelection,
                     defaultThreadEnvMode: option.value.defaultThreadEnvMode,
+                    autoPull: option.value.autoPull === 1,
                     faviconPath: option.value.faviconPath ?? null,
                     scripts: option.value.scripts,
                     createdAt: option.value.createdAt,
@@ -3181,6 +3228,7 @@ pending_approval_requests AS (
     searchThreads,
     getSnapshotSequence,
     getCounts,
+    getEventReplayStats,
     getActiveProjectByWorkspaceRoot,
     getProjectShellById,
     getFirstActiveThreadIdByProjectId,

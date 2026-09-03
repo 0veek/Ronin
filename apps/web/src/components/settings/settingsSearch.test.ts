@@ -49,6 +49,7 @@ describe("searchSettings", () => {
     expect(searchSettings("identification").map((item) => item.id)).toEqual([
       "environment-identification",
     ]);
+    expect(searchSettings("panel animations").map((item) => item.id)).toEqual(["panel-animations"]);
     expect(searchSettings("xyzzy")).toEqual([]);
   });
 

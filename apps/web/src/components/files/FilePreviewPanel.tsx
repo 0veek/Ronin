@@ -12,7 +12,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronRight, Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
+import { Code2, Eye, FolderTree, Globe2, LoaderCircle } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -25,6 +25,7 @@ import { useTheme } from "~/hooks/useTheme";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
+import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { resolvePathLinkTarget } from "~/terminal-links";
@@ -42,6 +43,7 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 import FileBrowserPanel from "./FileBrowserPanel";
+import { FileBreadcrumbs } from "./FileBreadcrumbs";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
   type FileCommentAnnotationEntry,
@@ -56,7 +58,6 @@ import { installFileEditorDismissal } from "./fileEditorDismissal";
 import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
 import { projectFileCacheKey, projectFileEditorCacheKey } from "./fileContentRevision";
-import { fileBreadcrumbs } from "./filePath";
 import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import {
@@ -86,6 +87,7 @@ interface FilePreviewPanelProps {
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
+const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
 const FILE_SAVE_DEBOUNCE_MS = 500;
 const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
 const FILE_LINK_REVEAL_UNSAFE_CSS = `
@@ -169,6 +171,71 @@ function WorkspaceImagePreview(props: {
       <LoaderCircle className="size-5 animate-spin" />
     </div>
   );
+}
+
+const isPdfPreviewFile = (path: string): boolean => /\.pdf$/i.test(path.split(/[?#]/, 1)[0] ?? "");
+
+/**
+ * Renders a workspace HTML or PDF file in place from its signed asset URL.
+ * HTML runs in a sandboxed frame served under an opaque origin, so a page
+ * cannot reach the app's session or storage; sibling assets still load through
+ * their own signed URLs.
+ */
+function WorkspaceBrowserPreview(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef;
+  readonly absolutePath: string;
+  readonly title: string;
+  readonly workspaceMutationId: string | null;
+}) {
+  const resource = useMemo(
+    () => ({
+      _tag: "workspace-file" as const,
+      threadId: props.threadRef.threadId,
+      path: props.absolutePath,
+    }),
+    [props.threadRef.threadId, props.absolutePath],
+  );
+  const assetUrl = useAssetUrlState(props.environmentId, resource);
+
+  if (assetUrl._tag === "Failure") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
+        Unable to load file preview.
+      </div>
+    );
+  }
+  if (assetUrl._tag !== "Success") {
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
+        <LoaderCircle className="size-5 animate-spin" />
+      </div>
+    );
+  }
+  const revisionSuffix =
+    props.workspaceMutationId === null
+      ? ""
+      : `${assetUrl.url.includes("?") ? "&" : "?"}workspace-revision=${encodeURIComponent(props.workspaceMutationId)}`;
+  const src = `${assetUrl.url}${revisionSuffix}`;
+  const className = "min-h-0 flex-1 border-0 bg-white";
+  // The built-in PDF viewer needs an unsandboxed frame; a PDF runs no scripts.
+  return isPdfPreviewFile(props.absolutePath) ? (
+    // oxlint-disable-next-line react/iframe-missing-sandbox
+    <iframe key={src} src={src} title={props.title} className={className} />
+  ) : (
+    <iframe
+      key={src}
+      src={src}
+      title={props.title}
+      className={className}
+      sandbox="allow-scripts allow-forms allow-popups allow-modals"
+    />
+  );
+}
+
+function renderedToggleLabel(isMarkdown: boolean, rendered: boolean): string {
+  if (isMarkdown) return rendered ? "Show markdown source" : "Show rendered markdown";
+  return rendered ? "Show HTML source" : "Show rendered page";
 }
 
 function clampFileLine(contents: string, requestedLine: number): number {
@@ -676,6 +743,7 @@ function EditableFileSurface({
               onLineSelectionEnd: handleLineSelectionEnd,
               overflow: wordWrap ? "wrap" : "scroll",
               theme: resolveDiffThemeName(resolvedTheme),
+              preferredHighlighter: PREFERRED_HIGHLIGHTER,
               themeType: resolvedTheme,
               unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
               onPostRender: handlePostRender,
@@ -789,13 +857,21 @@ export default function FilePreviewPanel({
     reportFailure: false,
   });
   const isImage = relativePath !== null && isWorkspaceImagePreviewPath(relativePath);
-  const file = useProjectFileQuery(environmentId, cwd, relativePath, !isImage);
+  // PDFs have no text to show; HTML has, and can toggle between page and source.
+  const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
+  const isHtml = relativePath !== null && !isPdf && isBrowserPreviewFile(relativePath);
+  const file = useProjectFileQuery(environmentId, cwd, relativePath, !isImage && !isPdf);
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
   // Reading markdown rendered is a preference, not a property of one file. Keeping
   // it on the panel meant a thread switch dropped it and forced source back.
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
     false,
+    Schema.Boolean,
+  );
+  const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
+    RENDER_BROWSER_FILE_STORAGE_KEY,
+    true,
     Schema.Boolean,
   );
   // Paired with the path on purpose: each file surface counts its reveals from
@@ -807,21 +883,22 @@ export default function FilePreviewPanel({
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const isMarkdown = relativePath ? isMarkdownPreviewFile(relativePath) : false;
   // A reveal still wins over the preference: the line only exists in the source.
-  const renderMarkdown =
-    isMarkdown &&
-    renderMarkdownPreferred &&
-    (revealLine === null ||
-      (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId));
+  const revealHandled =
+    revealLine === null ||
+    (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
+  const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
+  const renderBrowserFile = isPdf || (isHtml && renderBrowserFilePreferred && revealHandled);
+  const canToggleRendered = isMarkdown || isHtml;
+  const rendered = isMarkdown ? renderMarkdown : renderBrowserFile;
+  const setRenderedPreferred = isMarkdown
+    ? setRenderMarkdownPreferred
+    : setRenderBrowserFilePreferred;
   const canOpenInBrowser =
     relativePath !== null && isPreviewSupportedInRuntime() && isBrowserPreviewFile(relativePath);
   const absolutePath = relativePath ? resolvePathLinkTarget(relativePath, cwd) : null;
-  const breadcrumbs = useMemo(
-    () => (relativePath ? fileBreadcrumbs(projectName, relativePath) : []),
-    [projectName, relativePath],
-  );
   const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
   useWorkspaceMutationRefresh({
-    enabled: relativePath !== null && !isImage && !selectedFilePending,
+    enabled: relativePath !== null && !isImage && !isPdf && !selectedFilePending,
     mutationId: workspaceMutationId,
     refresh: file.refresh,
     resourceKey: `file:${environmentId}:${cwd}:${relativePath ?? ""}`,
@@ -882,36 +959,14 @@ export default function FilePreviewPanel({
             data-file-breadcrumbs
           >
             <div className="flex h-full w-max min-w-full items-center text-xs">
-              {breadcrumbs.map((crumb, index) => (
-                <div
-                  key={crumb.path || "project"}
-                  className="flex min-w-0 shrink-0 items-center"
-                  data-current-file-crumb={crumb.kind === "file"}
-                >
-                  {index > 0 ? (
-                    <ChevronRight className="mx-1 size-3.5 shrink-0 text-muted-foreground/60" />
-                  ) : null}
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span
-                          className={cn(
-                            "max-w-40 truncate",
-                            crumb.kind === "file"
-                              ? "font-medium text-foreground"
-                              : "text-muted-foreground",
-                          )}
-                        />
-                      }
-                    >
-                      {crumb.label}
-                    </TooltipTrigger>
-                    <TooltipPopup side="top" className="max-w-80">
-                      {crumb.path || projectName}
-                    </TooltipPopup>
-                  </Tooltip>
-                </div>
-              ))}
+              <FileBreadcrumbs
+                cwd={cwd}
+                environmentId={environmentId}
+                onOpenFile={onOpenFile}
+                projectName={projectName}
+                relativePath={relativePath}
+                workspaceMutationId={workspaceMutationId}
+              />
             </div>
           </ScrollArea>
           {absolutePath &&
@@ -925,32 +980,30 @@ export default function FilePreviewPanel({
               enableShortcut={false}
             />
           ) : null}
-          {isMarkdown ? (
+          {canToggleRendered ? (
             <Tooltip>
               <TooltipTrigger
                 render={
                   <Toggle
                     className="shrink-0"
-                    pressed={renderMarkdown}
+                    pressed={rendered}
                     onPressedChange={(pressed) => {
-                      setRenderMarkdownPreferred(pressed);
+                      setRenderedPreferred(pressed);
                       setHandledReveal(
                         pressed && relativePath !== null
                           ? { path: relativePath, requestId: revealRequestId }
                           : null,
                       );
                     }}
-                    aria-label={renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
+                    aria-label={renderedToggleLabel(isMarkdown, rendered)}
                     variant="ghost"
                     size="sm"
                   >
-                    {renderMarkdown ? <Code2 className="size-3.5" /> : <Eye className="size-3.5" />}
+                    {rendered ? <Code2 className="size-3.5" /> : <Eye className="size-3.5" />}
                   </Toggle>
                 }
               />
-              <TooltipPopup>
-                {renderMarkdown ? "Show markdown source" : "Show rendered markdown"}
-              </TooltipPopup>
+              <TooltipPopup>{renderedToggleLabel(isMarkdown, rendered)}</TooltipPopup>
             </Tooltip>
           ) : null}
           {canOpenInBrowser ? (
@@ -1005,7 +1058,16 @@ export default function FilePreviewPanel({
             relativePath ? "flex" : "hidden",
           )}
         >
-          {relativePath && isImage && absolutePath ? (
+          {relativePath && renderBrowserFile && absolutePath ? (
+            <WorkspaceBrowserPreview
+              key={absolutePath}
+              environmentId={environmentId}
+              threadRef={threadRef}
+              absolutePath={absolutePath}
+              title={relativePath}
+              workspaceMutationId={workspaceMutationId}
+            />
+          ) : relativePath && isImage && absolutePath ? (
             <WorkspaceImagePreview
               key={absolutePath}
               environmentId={environmentId}
@@ -1051,6 +1113,7 @@ export default function FilePreviewPanel({
                     disableFileHeader: true,
                     overflow: wordWrap ? "wrap" : "scroll",
                     theme: resolveDiffThemeName(resolvedTheme),
+                    preferredHighlighter: PREFERRED_HIGHLIGHTER,
                     themeType: resolvedTheme,
                     unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
                     onPostRender: onFilePostRender,

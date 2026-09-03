@@ -15,6 +15,7 @@ import {
 import { Badge } from "../ui/badge";
 import { SidebarFooter, SidebarHeader, SidebarTrigger, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUsageMeter } from "./SidebarUsageMeter";
 
@@ -71,7 +72,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         <SidebarBrand onBackdrop={backdropVariant !== null} />
         {pillLabel ? (
           <Badge
-            className="relative z-10 rounded-full px-1.5 text-muted-foreground"
+            className="relative z-10 hidden rounded-full px-1.5 text-muted-foreground @[15rem]/sidebar-header:inline-flex"
             data-environment-identification="pill"
             size="sm"
             variant="secondary"
@@ -204,7 +205,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   }, [leaveOrOpen, navigate]);
   const handlePullRequestsClick = useCallback(() => {
     leaveOrOpen("pull-requests", () => {
-      void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
+      void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
     });
   }, [leaveOrOpen, navigate]);
   const handleSettingsClick = useCallback(() => {

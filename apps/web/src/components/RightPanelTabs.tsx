@@ -2,6 +2,7 @@ import type { ContextMenuItem, PreviewSessionSnapshot, PullRequestState } from "
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import {
   Bot,
+  ChevronDown,
   FileDiff,
   Files,
   GitPullRequest,
@@ -30,8 +31,19 @@ import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { Button } from "~/components/ui/button";
 import { Kbd } from "~/components/ui/kbd";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "~/components/ui/menu";
+import {
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuShortcut,
+  MenuSub,
+  MenuSubPopup,
+  MenuSubTrigger,
+  MenuTrigger,
+} from "~/components/ui/menu";
+import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "~/lib/favicon";
@@ -46,6 +58,7 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 interface RightPanelTabsProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
+  open?: boolean;
   /** Forwarded to PreviewPanelShell so this surface persists its own width. */
   widthStorageKey?: string;
   /** Forwarded to PreviewPanelShell as the initial width before a user resize. */
@@ -70,6 +83,12 @@ interface RightPanelTabsProps {
   onCloseAllSurfaces: () => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddBrowser: () => void;
+  /**
+   * Separate from `onAddBrowser` on purpose: that one is passed directly as a
+   * DOM click handler, and a `(profileId?: string)` signature would silently
+   * accept the MouseEvent as a profile id.
+   */
+  onAddBrowserInProfile: (profileId: string) => void;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
@@ -93,6 +112,12 @@ export interface PullRequestTabStatus {
   number: number;
   state: PullRequestState;
   isDraft: boolean;
+}
+
+export function shouldOpenDefaultBrowserProfileFromMenuClick(
+  pointerType: string | undefined,
+): boolean {
+  return pointerType !== "touch";
 }
 
 const SURFACE_DISABLED_REASONS = {
@@ -248,6 +273,8 @@ function SurfaceMenuItem(props: {
  */
 function RightPanelEmptyState(props: {
   onAddBrowser: () => void;
+  onAddBrowserInProfile: (profileId: string) => void;
+  browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
@@ -438,31 +465,78 @@ function RightPanelEmptyState(props: {
         <div className="grid grid-cols-2 gap-2">
           {actions.map((action) =>
             action.available ? (
-              <button
+              // The card is itself a button, so the profile chooser sits beside
+              // it in a wrapper rather than inside it. Hover lives on the
+              // wrapper: the chooser overlays the card, and a pointer moving
+              // onto it must not read as leaving the card.
+              <div
                 key={action.label}
-                type="button"
-                onClick={action.onClick}
+                className="group relative"
                 onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
                 onMouseLeave={() =>
                   setHighlight((current) =>
                     current === availableActions.indexOf(action) ? -1 : current,
                   )
                 }
-                className={cn(
-                  "relative flex w-full cursor-pointer flex-col items-start p-4 text-left transition hover:border-border hover:bg-accent/60",
-                  cardShellClass,
-                  isHighlighted(action) && highlightedCardClass,
-                )}
               >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.description}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  onClick={action.onClick}
+                  className={cn(
+                    // Full height: the wrapper is the grid item that stretches
+                    // to the row, so the button must fill it to stay level with
+                    // its neighbour and keep the chooser anchored inside.
+                    "relative flex h-full w-full cursor-pointer flex-col items-start p-4 text-left transition group-hover:border-border group-hover:bg-accent/60",
+                    cardShellClass,
+                    isHighlighted(action) && highlightedCardClass,
+                  )}
+                >
+                  <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
+                  <span className="flex items-center gap-2 pe-8">
+                    {actionIcon(action)}
+                    <span className="font-medium text-sm">{action.label}</span>
+                  </span>
+                  <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
+                    {action.description}
+                  </span>
+                </button>
+                {/*
+                  Same choice the tab bar's "+" menu offers: the card opens the
+                  default profile, the chevron picks another. Only worth showing
+                  once there is something to choose between.
+                */}
+                {action.label === "Browser" && props.browserProfiles.length > 1 ? (
+                  <Menu>
+                    <MenuTrigger
+                      render={
+                        <Button
+                          aria-label="Open browser in a profile"
+                          className="absolute right-3 bottom-3 [--control-icon-color:currentColor]"
+                          size="icon-xs"
+                          variant="ghost"
+                        />
+                      }
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </MenuTrigger>
+                    <MenuPopup
+                      align="end"
+                      side="bottom"
+                      sideOffset={6}
+                      className="min-w-40 max-w-56"
+                    >
+                      {props.browserProfiles.map((profile) => (
+                        <MenuItem
+                          key={profile.id}
+                          onClick={() => props.onAddBrowserInProfile(profile.id)}
+                        >
+                          <span className="min-w-0 truncate">{profile.name}</span>
+                        </MenuItem>
+                      ))}
+                    </MenuPopup>
+                  </Menu>
+                ) : null}
+              </div>
             ) : (
               <div
                 key={action.label}
@@ -599,6 +673,7 @@ function SurfaceIcon({
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
+  const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
@@ -774,6 +849,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     <PreviewPanelShell
       mode={props.mode}
       {...(props.maximized !== undefined ? { maximized: props.maximized } : {})}
+      {...(props.open !== undefined ? { open: props.open } : {})}
       {...(props.widthStorageKey !== undefined ? { widthStorageKey: props.widthStorageKey } : {})}
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
     >
@@ -908,6 +984,55 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 >
                   {addSurfaceActions.map((action) => {
                     const Icon = action.icon;
+                    // Browser collapses into one row: clicking the trigger opens
+                    // the default profile (the common case stays one click),
+                    // while hover or arrow reveals the profiles. The choice
+                    // lives at open time because a tab's profile is fixed then —
+                    // Electron only honours a partition before attach.
+                    if (action.label === "Browser" && action.available) {
+                      return (
+                        <MenuSub key={action.label}>
+                          <MenuSubTrigger
+                            className="[&>svg:last-child]:ms-0"
+                            aria-keyshortcuts={action.shortcut}
+                            onClick={(event) => {
+                              const pointerType =
+                                "pointerType" in event.nativeEvent &&
+                                typeof event.nativeEvent.pointerType === "string"
+                                  ? event.nativeEvent.pointerType
+                                  : undefined;
+                              // Touch has no hover path to the profile choices:
+                              // its first tap opens the submenu, then a profile
+                              // is selected there. Mouse click keeps the common
+                              // default-profile action at one click.
+                              if (!shouldOpenDefaultBrowserProfileFromMenuClick(pointerType))
+                                return;
+                              setAddSurfaceMenuOpen(false);
+                              action.onClick();
+                            }}
+                          >
+                            <Icon />
+                            {action.label}
+                            <MenuShortcut>{action.shortcut}</MenuShortcut>
+                          </MenuSubTrigger>
+                          {/*
+                            Capped and truncated: profile names are user-supplied
+                            and run to 48 characters, which would otherwise widen
+                            the popup to fit-content and wrap.
+                          */}
+                          <MenuSubPopup className="min-w-40 max-w-56">
+                            {browserProfiles.map((profile) => (
+                              <MenuItem
+                                key={profile.id}
+                                onClick={() => props.onAddBrowserInProfile(profile.id)}
+                              >
+                                <span className="min-w-0 truncate">{profile.name}</span>
+                              </MenuItem>
+                            ))}
+                          </MenuSubPopup>
+                        </MenuSub>
+                      );
+                    }
                     return (
                       <SurfaceMenuItem
                         key={action.label}
@@ -932,6 +1057,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         {props.activeSurfaceId === null ? (
           <RightPanelEmptyState
             onAddBrowser={props.onAddBrowser}
+            onAddBrowserInProfile={props.onAddBrowserInProfile}
+            browserProfiles={browserProfiles}
             onAddTerminal={props.onAddTerminal}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}

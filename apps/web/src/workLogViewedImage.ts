@@ -13,8 +13,21 @@ import { resolvePathLinkTarget } from "./terminal-links";
  * about the read, not a path.
  */
 export function workEntryViewedImagePath(
-  entry: Pick<WorkLogEntry, "detail" | "itemType" | "requestKind" | "toolTitle">,
+  entry: Pick<
+    WorkLogEntry,
+    "detail" | "itemType" | "requestKind" | "toolTitle" | "viewedImagePath"
+  >,
 ): string | null {
+  // The projected path is authoritative when the server recognised the read:
+  // a summary line that is prose rather than a path still resolves here.
+  const viewedImagePath = entry.viewedImagePath?.trim();
+  if (
+    viewedImagePath !== undefined &&
+    !/[\r\n]/.test(viewedImagePath) &&
+    isWorkspaceImagePreviewPath(viewedImagePath)
+  ) {
+    return viewedImagePath;
+  }
   const isRead =
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||

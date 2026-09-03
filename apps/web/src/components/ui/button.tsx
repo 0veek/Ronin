@@ -60,6 +60,8 @@ const buttonVariants = cva(
           "[--control-icon-color:var(--contrast-muted-foreground)] border-input bg-transparent text-foreground [:hover,[data-pressed]]:bg-accent",
         secondary:
           "border-transparent bg-secondary text-secondary-foreground [:hover,[data-pressed]]:bg-secondary/80",
+        "warning-outline":
+          "border-warning/32 bg-warning-surface text-warning-foreground shadow-xs/5 [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:border-warning/40 [:hover,[data-pressed]]:bg-warning/16 dark:[:hover,[data-pressed]]:bg-warning/24",
       },
     },
   },

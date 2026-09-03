@@ -80,6 +80,11 @@ export function downloadContentDisposition(fileName?: string): string {
   }`;
 }
 
+// HTML previews are agent output, not the app. The sandbox gives the document an
+// opaque origin: scripts run, but same-origin cookies, storage, and API calls are
+// out of reach. Relative sibling assets still load through their signed URLs.
+const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals";
+
 export function assetResponseHeaders(
   filePath: string,
   options?: {
@@ -105,8 +110,15 @@ export function assetResponseHeaders(
       : inlineVideoMimeType !== undefined && isSafeInlineVideoMimeType(inlineVideoMimeType)
         ? { "Content-Type": inlineVideoMimeType }
         : lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
-          ? { "Content-Type": "text/html; charset=utf-8" }
-          : {}),
+          ? {
+              "Content-Type": "text/html; charset=utf-8",
+              "Content-Security-Policy": HTML_CONTENT_SECURITY_POLICY,
+            }
+          : // nosniff is set above, so a PDF the viewer frames needs its type
+            // named or the browser refuses to render it.
+            lowerPath.endsWith(".pdf")
+            ? { "Content-Type": "application/pdf" }
+            : {}),
     ...(!options?.download && lowerPath.endsWith(".svg")
       ? { "Content-Security-Policy": SVG_CONTENT_SECURITY_POLICY }
       : {}),

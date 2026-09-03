@@ -91,6 +91,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server can stream self-update progress before acknowledging the
       restart. Clients fall back to server.updateServer when absent. */
   serverSelfUpdateProgress: Schema.optionalKey(Schema.Boolean),
+  /** Server can durably mark running provider turns before a self-update and
+      continue them after the replacement process starts. */
+  serverUpdateThreadContinuation: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

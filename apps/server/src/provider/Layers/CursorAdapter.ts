@@ -537,6 +537,7 @@ export function makeCursorAdapter(
             ...(options?.environment ? { environment: options.environment } : {}),
             childProcessSpawner,
             cwd,
+            runtimeMode: input.runtimeMode,
             ...(resumeSessionId ? { resumeSessionId } : {}),
             clientInfo: { name: McpProviderSession.MCP_SERVER_NAME, version: "0.0.0" },
             ...(mcpSession

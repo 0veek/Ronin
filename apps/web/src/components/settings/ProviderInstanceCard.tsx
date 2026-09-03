@@ -748,7 +748,7 @@ export function ProviderInstanceCard({
                         <Button
                           type="button"
                           size="xs"
-                          variant="default"
+                          variant="outline"
                           className="w-full"
                           disabled={isUpdating}
                           onClick={onRunUpdate}

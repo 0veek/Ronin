@@ -125,6 +125,11 @@ const CHECK_STATUS_PRESENTATION = {
     Icon: LoaderIcon,
     toneClassName: "animate-spin text-status-attention",
   },
+  "action-required": {
+    label: "Awaiting action",
+    Icon: CircleDotIcon,
+    toneClassName: "text-status-attention",
+  },
   success: {
     label: "Passed",
     Icon: CircleCheckIcon,
@@ -139,8 +144,20 @@ const CHECK_STATUS_PRESENTATION = {
   { label: string; Icon: typeof CircleCheckIcon; toneClassName: string }
 >;
 
-export function pullRequestCheckStatusLabel(status: PullRequestCheckStatus): string {
-  return CHECK_STATUS_PRESENTATION[status].label;
+function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">): boolean {
+  return (
+    check.status === "action-required" &&
+    check.url !== null &&
+    /\/actions\/runs\/\d+(?:\/|$)/u.test(check.url)
+  );
+}
+
+export function pullRequestCheckStatusLabel(
+  check: Pick<PullRequestCheck, "status" | "url">,
+): string {
+  return isWorkflowApprovalCheck(check)
+    ? "Awaiting approval"
+    : CHECK_STATUS_PRESENTATION[check.status].label;
 }
 
 export function PullRequestCheckStatusIcon({ status }: { status: PullRequestCheckStatus }) {
@@ -194,7 +211,7 @@ export function pullRequestChecksState(
   if (checks.length === 0) return null;
   const statuses = new Set(checks.map((check) => check.status));
   if (statuses.has("failure") || statuses.has("cancelled")) return "failing";
-  if (statuses.has("pending")) return "pending";
+  if (statuses.has("pending") || statuses.has("action-required")) return "pending";
   return statuses.has("success") ? "passing" : null;
 }
 
@@ -449,12 +466,24 @@ export function PullRequestMetaLine({
 
 export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
   if (checks.length === 0) return "No checks reported";
+  const actionRequired = checks.filter((check) => check.status === "action-required");
+  const workflowApprovalRequired = actionRequired.filter(isWorkflowApprovalCheck).length;
+  const otherActionRequired = actionRequired.length - workflowApprovalRequired;
   const failed = checks.filter(
     (check) => check.status === "failure" || check.status === "cancelled",
   ).length;
   const pending = checks.filter((check) => check.status === "pending").length;
   const passed = checks.filter((check) => check.status === "success").length;
   if (failed > 0) return `${failed} of ${checks.length} failing`;
+  if (workflowApprovalRequired > 0 && otherActionRequired > 0) {
+    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} and ${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+  }
+  if (workflowApprovalRequired > 0) {
+    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} awaiting approval`;
+  }
+  if (otherActionRequired > 0) {
+    return `${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+  }
   if (pending > 0) return `${pending} of ${checks.length} running`;
   return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
 }

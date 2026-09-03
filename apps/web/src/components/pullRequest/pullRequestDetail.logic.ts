@@ -3,6 +3,7 @@ import type {
   PullRequestActor,
   PullRequestBaseComparison,
   PullRequestCheck,
+  PullRequestChecksState,
   PullRequestComment,
   PullRequestCommit,
   PullRequestDetailView,
@@ -11,9 +12,80 @@ import type {
   PullRequestReviewThread,
   PullRequestState,
   PullRequestUpdateMethod,
+  SourceControlProviderKind,
 } from "@t3tools/contracts";
 
 import { inferReviewCommentFenceLanguage, type ReviewCommentContext } from "~/reviewCommentContext";
+
+const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
+const bitbucketRepositoryName = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
+
+export type PullRequestPrimaryControl =
+  | "resolve"
+  | "ready"
+  | "merge"
+  | "enable-auto-merge"
+  | "auto-merge-armed"
+  | "merged"
+  | "closed"
+  | null;
+
+/** The one merge-area state shown in the header, including terminal and deferred states. */
+export function resolvePullRequestPrimaryControl(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly mergeability: PullRequestMergeability;
+  readonly checksState: PullRequestChecksState | null;
+  readonly autoMergeEnabled: boolean | undefined;
+  readonly hasMergeMethod: boolean;
+  readonly canMerge: boolean;
+  readonly canMarkReady: boolean;
+  readonly canEnableAutoMerge: boolean;
+}): PullRequestPrimaryControl {
+  if (input.state === "merged") return "merged";
+  if (input.state === "closed") return "closed";
+  if (input.mergeability === "conflicting") return "resolve";
+  if (input.isDraft) return input.canMarkReady ? "ready" : null;
+  if (input.autoMergeEnabled) return "auto-merge-armed";
+  if (!input.hasMergeMethod) return null;
+  if (
+    input.autoMergeEnabled === false &&
+    input.checksState !== null &&
+    input.checksState !== "passing" &&
+    input.canEnableAutoMerge
+  ) {
+    return "enable-auto-merge";
+  }
+  return input.canMerge ? "merge" : null;
+}
+
+export function pullRequestCheckoutCommand(
+  provider: SourceControlProviderKind,
+  number: number,
+  headBranch: string,
+  headRepositoryNameWithOwner?: string | null,
+): string | null {
+  switch (provider) {
+    case "github":
+      return `gh pr checkout ${number}`;
+    case "gitlab":
+      return `glab mr checkout ${number}`;
+    case "azure-devops":
+      return `az repos pr checkout --id ${number}`;
+    case "bitbucket": {
+      if (
+        !headRepositoryNameWithOwner ||
+        !bitbucketRepositoryName.test(headRepositoryNameWithOwner) ||
+        !safeShellArgument.test(headBranch)
+      ) {
+        return null;
+      }
+      return `git clone --single-branch --branch ${headBranch} https://bitbucket.org/${headRepositoryNameWithOwner}.git t3code-pr-${number}`;
+    }
+    case "unknown":
+      return null;
+  }
+}
 
 /** Activity changes only when the same host resource reports a newer revision. */
 export function shouldRefreshPullRequestActivity(
@@ -906,11 +978,9 @@ export function resolveBaseFreshness(detail: {
 }
 
 /**
- * Whether a completed action leaves the diff atom pointed at a comparison that no longer exists,
- * the same staleness the manual refresh button fixes. Only `update-branch` moves the head commit;
- * a merge moves the branch too, but it also closes the pull request, where the diff is no longer
- * what anyone is looking at. Written as a `Record` so a new `PullRequestAction` fails to compile
- * here until somebody decides which side of the diff it belongs on.
+ * Whether a completed action needs the uncached host read rather than the cheaper detail refresh.
+ * Updating a branch moves the diff's head. Approving workflows changes data GitHub omits from the
+ * normal pull-request detail. Written as a `Record` so every new action makes that choice here.
  */
 const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   "update-branch": true,
@@ -921,6 +991,8 @@ const ACTION_NEEDS_HOST_REFRESH: Record<PullRequestAction, boolean> = {
   reopen: false,
   "enable-auto-merge": false,
   "disable-auto-merge": false,
+  revert: false,
+  "approve-workflows": true,
 };
 
 export function pullRequestActionNeedsHostRefresh(action: PullRequestAction): boolean {
