@@ -105,6 +105,7 @@ function createProviderServiceHarness() {
   const service: ProviderServiceShape = {
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
+    compactThread: () => unsupported(),
     interruptTurn: () => unsupported(),
     stopAgent: () => unsupported(),
     respondToRequest: () => unsupported(),
@@ -2110,6 +2111,66 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
+  // An async question arrives mid-turn without pausing it: the assistant text
+  // buffered on either side of the request still completes as one message, and
+  // the request is recorded with its message response mode.
+  it("keeps the turn running while an async question is pending", async () => {
+    const harness = await createHarness();
+    const base = {
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-async"),
+    };
+    harness.emit({ ...base, type: "turn.started", eventId: asEventId("async-start") });
+    harness.emit({
+      ...base,
+      type: "content.delta",
+      eventId: asEventId("async-before"),
+      itemId: asItemId("message-1"),
+      payload: { streamKind: "assistant_text", delta: "Before. " },
+    });
+    harness.emit({
+      ...base,
+      type: "user-input.requested",
+      eventId: asEventId("async-request"),
+      requestId: ApprovalRequestId.make("codex-async:question-1"),
+      payload: {
+        responseMode: "message",
+        questions: [
+          {
+            id: "0",
+            header: "Question",
+            question: "Which name?",
+            options: [],
+            allowCustomAnswer: true,
+          },
+        ],
+      },
+    });
+    harness.emit({
+      ...base,
+      type: "content.delta",
+      eventId: asEventId("async-after"),
+      itemId: asItemId("message-1"),
+      payload: { streamKind: "assistant_text", delta: "After." },
+    });
+    harness.emit({
+      ...base,
+      type: "item.completed",
+      eventId: asEventId("async-complete"),
+      itemId: asItemId("message-1"),
+      payload: { itemType: "assistant_message", status: "completed" },
+    });
+    await harness.drain();
+    const thread = (await harness.readModel()).threads[0];
+    expect(thread?.session?.status).toBe("running");
+    expect(thread?.messages).toMatchObject([{ text: "Before. After." }]);
+    expect(
+      thread?.activities.find((activity) => activity.kind === "user-input.requested")?.payload,
+    ).toMatchObject({ responseMode: "message", requestId: "codex-async:question-1" });
+  });
+
   it("does not create assistant segments for whitespace-only buffered text at approval boundaries", async () => {
     const harness = await createHarness();
     const startedAt = "2026-03-28T06:28:00.000Z";
@@ -3016,10 +3077,55 @@ describe("ProviderRuntimeIngestion", () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
+    const compactCommand = {
+      type: "thread.turn.start",
+      commandId: CommandId.make("cmd-thread-compact"),
+      threadId: asThreadId("thread-1"),
+      message: {
+        messageId: asMessageId("message-compact"),
+        role: "user",
+        text: "/compact",
+        attachments: [],
+      },
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      runtimeMode: "approval-required",
+      createdAt: now,
+    } satisfies OrchestrationCommand;
+    await harness.dispatch(compactCommand);
+    harness.emit({
+      type: "session.state.changed",
+      eventId: asEventId("evt-session-starting-compact"),
+      provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      payload: { state: "starting" },
+    });
+    await waitForThread(harness.readModel, (entry) => entry.session?.status === "starting");
+
+    for (const [index, usedTokens] of [899_000, 0].entries()) {
+      harness.emit({
+        type: "thread.token-usage.updated",
+        eventId: asEventId(`evt-thread-token-usage-${index}`),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: now,
+        threadId: asThreadId("thread-1"),
+        payload: { usage: { usedTokens } },
+      });
+    }
+    await waitForThread(
+      harness.readModel,
+      (entry) =>
+        entry.activities.filter(
+          (activity: ProviderRuntimeTestActivity) => activity.kind === "context-window.updated",
+        ).length === 2,
+    );
+
     harness.emit({
       type: "thread.state.changed",
       eventId: asEventId("evt-thread-compacted"),
       provider: ProviderDriverKind.make("codex"),
+      providerInstanceId: ProviderInstanceId.make("codex"),
       createdAt: now,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-1"),
@@ -3031,15 +3137,16 @@ describe("ProviderRuntimeIngestion", () => {
 
     const thread = await waitForThread(harness.readModel, (entry) =>
       entry.activities.some(
-        (activity: ProviderRuntimeTestActivity) => activity.kind === "context-compaction",
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-thread-compacted",
       ),
     );
 
     const activity = thread.activities.find(
-      (candidate: ProviderRuntimeTestActivity) => candidate.kind === "context-compaction",
+      (candidate: ProviderRuntimeTestActivity) => candidate.id === "evt-thread-compacted",
     );
-    expect(activity?.summary).toBe("Context compacted");
+    expect(activity?.summary).toBe("Compacted context 899K → 0 tokens");
     expect(activity?.tone).toBe("info");
+    expect(activity?.payload).toMatchObject({ requestId: "message-compact" });
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

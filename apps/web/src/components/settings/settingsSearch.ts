@@ -205,6 +205,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "diff-layout",
+    title: "Diff layout",
+    to: "/settings/general",
+    searchTerms: ["stacked split side by side unified inline view"],
+  },
+  {
     id: "proactive-panels",
     title: "Proactive panels",
     searchTerms: ["automatically open diff pull request pr right panel agent completion"],
@@ -377,6 +383,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "browser",
   },
   {
+    id: "browser-link-target",
+    title: "Open links in",
+    to: "/settings/integrations",
+    searchTerms: ["links default browser in-app browser external open"],
+  },
+  {
     id: "browser-auto-show-floating-preview",
     title: "Auto-show floating preview",
     searchTerms: ["agent opens browser pop into view hide"],
@@ -390,6 +402,12 @@ export const SETTINGS_SEARCH_ITEMS = [
       "version control git github gitlab bitbucket azure devops hosting integrations credentials scan server environment",
     ],
     to: "/settings/source-control",
+  },
+  {
+    id: "environment-icon",
+    title: "Environment icon",
+    to: "/settings/connections",
+    searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
   },
   {
     id: "remote-environments",

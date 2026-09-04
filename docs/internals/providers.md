@@ -27,6 +27,27 @@ adapter in a child scope. Adapter implementations live beside them in
 [`ProviderAdapter.ts`][adapter]. Read the driver plus its adapter to see how a specific agent's
 transport, config, and event shapes are mapped.
 
+## Codex async questions
+
+Codex 0.153 exposes `request_user_input_async` through `item/started` and `item/completed`
+notifications. The item has `type: "agentMessage"`, `delivery: "async"`, and a `questions` array.
+Each question has a `title` and an optional `options` array of strings. The tool returns `{"accepted":true}`
+without waiting. This is separate from the `item/tool/requestUserInput` server request.
+See the [Codex tool handler](https://github.com/openai/codex/blob/d979df154cf60e13eafb5453e75b6d84f21c67bf/codex-rs/core/src/tools/handlers/request_user_input_async.rs).
+
+The Codex adapter maps completed question items to `user-input.requested` with
+`responseMode: "message"` and stable request and event IDs. Questions use the existing web,
+desktop, and mobile panels. They stay pending while the turn runs and after it finishes.
+
+The engine reads the request's latest stored activity before deciding a reply. This works after
+startup, when the command snapshot has no activities, and after a resolution leaves the recent
+activity window. The query returns one activity, not the full thread history.
+
+For these requests, the decider saves the resolution and a user message in one transaction.
+The standard turn path delivers the message, including session resume and active-turn input.
+It does not send a JSON-RPC response to Codex. Other providers and blocking Codex questions
+keep their existing response paths.
+
 ## Registry and routing
 
 Two registries separate configuration from live processes:
@@ -69,6 +90,12 @@ Chat adapters keep their own server per thread. They register a thread-specific 
 connection, while OpenCode stores MCP connections by directory. Sharing these chat servers
 without changing MCP routing would let two threads in one directory replace each other's
 connection.
+
+Chat adapters send the runtime mode as a session ruleset, but upstream OpenCode evaluates
+doom-loop and subagent asks against the agent ruleset only. In full access the adapter answers
+those asks itself so the user never sees an approval they already granted. It replies `once`
+rather than `always` because OpenCode stores `always` grants per directory, and on a shared
+external server that would widen what a supervised thread in the same directory may do.
 
 OpenCode loads its catalog through the HTTP API when an enabled provider instance starts. The
 provider registry keeps the snapshot in memory and persists it in the existing per-instance cache.

@@ -75,6 +75,7 @@ import {
   HammerIcon,
   MessageCircleIcon,
   MessagesSquareIcon,
+  Minimize2Icon,
   MousePointerClickIcon,
   PaintbrushIcon,
   MinusIcon,
@@ -198,6 +199,7 @@ interface TimelineRowSharedState {
 
 interface TimelineRowActivityState {
   isWorking: boolean;
+  isCompacting: boolean;
   isRevertingCheckpoint: boolean;
   activeTurnInProgress: boolean;
   latestTurnId: TurnId | null;
@@ -265,6 +267,7 @@ interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
   isWorking: boolean;
+  isCompacting?: boolean;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
@@ -317,6 +320,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   citationHistoryLoading = false,
   onCiteAssistantText,
   isWorking,
+  isCompacting = false,
   workingStepLabel = null,
   activeTurnInProgress,
   activeTurnStartedAt,
@@ -614,7 +618,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       listRef,
       timestampFormat,
       routeThreadKey,
-      threadRef: parseScopedThreadKey(routeThreadKey),
+      // Must be referentially stable: ChatMarkdown keys its react-markdown
+      // component map on threadRef, and a fresh object here remounts every
+      // rendered markdown node whenever this memo recomputes (e.g. on each
+      // activity delta while the thread is working).
+      threadRef: citationThreadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
@@ -638,6 +646,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       listRef,
       timestampFormat,
       routeThreadKey,
+      citationThreadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
@@ -664,6 +673,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const activityState = useMemo<TimelineRowActivityState>(
     () => ({
       isWorking,
+      isCompacting,
       isRevertingCheckpoint,
       activeTurnInProgress,
       latestTurnId: latestTurn?.turnId ?? null,
@@ -1096,6 +1106,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "work" ? <WorkGroupSection groupedEntries={row.groupedEntries} /> : null}
       {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+      {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
@@ -1634,14 +1645,41 @@ const TurnPlanTimelineRow = memo(function TurnPlanTimelineRow({
   );
 });
 
+/** Separator marking where the provider compacted the thread's context. */
+function ContextCompactionTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "context-compaction" }>;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-label={row.label}
+      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
+    >
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Minimize2Icon aria-hidden="true" className="size-3" />
+        {row.label}
+      </span>
+      <span className="h-px flex-1 bg-border/70" />
+    </div>
+  );
+}
+
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
-  const { workingStepLabel } = use(TimelineRowActivityCtx);
+  const { workingStepLabel, isCompacting } = use(TimelineRowActivityCtx);
   return (
     <div className="py-0.5 pl-1.5">
       <div className="ledger-head pt-1">
         <WorkingGlyph />
         <span className="shrink-0 text-foreground/80">
-          {row.createdAt ? (
+          {isCompacting ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Minimize2Icon aria-hidden="true" className="size-3" />
+              Compacting…
+            </span>
+          ) : row.createdAt ? (
             <>
               Working <WorkingTimer createdAt={row.createdAt} />
             </>
@@ -2400,30 +2438,55 @@ function workEntryRawCommand(
   return rawCommand === workEntry.command.trim() ? null : rawCommand;
 }
 
+/**
+ * The expanded body says what the collapsed row does not. A block equal to the
+ * row's own label, to the image already drawn above it, or to a block already
+ * added is dropped rather than repeated.
+ */
 function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
+  visibleLabel: string,
+  viewedImagePath: string | null,
 ): string | null {
   const blocks: string[] = [];
+  const seen = new Set<string>();
+  const addBlock = (value: string | null | undefined) => {
+    const text = value?.trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    blocks.push(text);
+  };
   if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
-    blocks.push(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
+    addBlock(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
   }
+  const command = workEntry.command?.trim();
   const raw = workEntryRawCommand(workEntry);
-  if (raw?.trim()) {
-    blocks.push(raw.trim());
-  } else if (workEntry.command?.trim()) {
-    blocks.push(workEntry.command.trim());
+  if (command === visibleLabel.trim()) {
+    seen.add(command);
+  } else {
+    addBlock(raw ?? command);
   }
-  if (workEntry.detail?.trim()) {
-    blocks.push(workEntry.detail.trim());
+  const detail = workEntry.detail?.trim();
+  if (detail !== viewedImagePath?.trim()) {
+    addBlock(detail);
   }
-  const changedFiles = workEntry.changedFiles ?? [];
+  const viewedImagePaths = new Set(
+    viewedImagePath
+      ? [viewedImagePath.trim(), formatWorkspaceRelativePath(viewedImagePath, workspaceRoot)]
+      : [],
+  );
+  const changedFiles = (workEntry.changedFiles ?? []).flatMap((filePath) => {
+    const formattedPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
+    return viewedImagePaths.has(filePath) ||
+      viewedImagePaths.has(formattedPath) ||
+      filePath.trim() === detail ||
+      formattedPath === detail
+      ? []
+      : [formattedPath];
+  });
   if (changedFiles.length > 0) {
-    blocks.push(
-      changedFiles
-        .map((filePath) => formatWorkspaceRelativePath(filePath, workspaceRoot))
-        .join("\n"),
-    );
+    addBlock([...new Set(changedFiles)].join("\n"));
   }
   return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
@@ -2688,7 +2751,6 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   // The expanded body already opens with the full command, so repeating it in
   // the row above it says the same thing twice.
   const displayText = expanded && workEntry.command?.trim() ? "Command" : collapsedText;
-  const expandedBody = buildToolCallExpandedBody(workEntry, workspaceRoot);
   // An image the agent looked at is the point of the row, so the expanded body
   // shows the picture above whatever text the tool reported.
   const viewedImagePath = workEntryViewedImagePath(workEntry);
@@ -2699,6 +2761,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           workspaceRoot,
         })
       : null;
+  const expandedBody = buildToolCallExpandedBody(
+    workEntry,
+    workspaceRoot,
+    collapsedText,
+    viewedImage ? viewedImagePath : null,
+  );
   const canExpand = expandedBody !== null || viewedImage !== null;
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const showDestructiveRowStyle =

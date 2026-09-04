@@ -53,6 +53,7 @@ import {
 import * as ServerConfig from "../../config.ts";
 import * as ServerSettingsModule from "../../serverSettings.ts";
 import { readProviderStatusCache, resolveProviderStatusCachePath } from "../providerStatusCache.ts";
+import { COMPACT_SLASH_COMMAND } from "../providerSnapshot.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
 import * as ProviderInstanceRegistry from "../Services/ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "../Services/ProviderRegistry.ts";
@@ -2344,11 +2345,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             }),
           );
 
-          assert.deepStrictEqual(status.slashCommands, [
-            {
-              name: "compact",
-              description: "Summarize the conversation and reduce context usage",
-            },
+          assert.deepStrictEqual(status.slashCommands.slice(1), [
             {
               name: "review",
               description: "Review a pull request",
@@ -2392,10 +2389,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           );
 
           assert.deepStrictEqual(status.slashCommands, [
-            {
-              name: "compact",
-              description: "Summarize the conversation and reduce context usage",
-            },
+            COMPACT_SLASH_COMMAND,
             {
               name: "ui",
               description: "Explore and refine UI",

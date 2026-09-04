@@ -609,7 +609,9 @@ export const TraitsPicker = memo(function TraitsPicker({
         }
       >
         {isCodexStyle ? (
-          <span className="flex min-w-0 w-full items-center gap-1.5 overflow-hidden">
+          // The label truncates itself; clipping the wrapper too would cut off
+          // the chevron, whose negative end margin overhangs the wrapper edge.
+          <span className="flex min-w-0 w-full items-center gap-1.5">
             {fastModeIcon}
             <span className="min-w-0 truncate">{triggerLabel}</span>
             <ComposerControlChevron />

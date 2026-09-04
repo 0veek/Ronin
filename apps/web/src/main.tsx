@@ -44,7 +44,7 @@ window.addEventListener("vite:preloadError", (event) => {
 // clears it. Resolve the initial route's split chunks before rendering, so the
 // splash holds until real UI paints instead of dropping to a blank window
 // while chunks download.
-void router
+export const startup = router
   .load()
   .then(() => {
     // A route chunk failure still resolves router.load(): the error is parked in
@@ -60,10 +60,7 @@ void router
     );
   })
   .catch((error: unknown) => {
-    // A startup chunk failed and the guarded reload is spent. Say so instead of
-    // leaving the splash up forever.
+    // Let the bootstrap entry show the error unless a reload is already scheduled.
     if (reloadScheduled) return;
-    console.error("Ronin failed to load its startup chunks.", error);
-    const bootShell = document.getElementById("boot-shell");
-    if (bootShell) bootShell.textContent = "Ronin could not load. Reload to try again.";
+    throw error;
   });

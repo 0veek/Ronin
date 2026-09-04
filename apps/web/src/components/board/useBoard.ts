@@ -1,4 +1,5 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { ProjectIconOverride } from "@t3tools/contracts";
 import { useEffect, useMemo, useState } from "react";
 
 import { boardDraftOrderScopeKey, useBoardUiStore } from "../../boardUiStore";
@@ -27,6 +28,7 @@ export interface BoardData {
   /** Workspace root per `environmentId:projectId`, for card favicons. */
   readonly projectCwdByKey: ReadonlyMap<string, string>;
   readonly projectFaviconPathByKey: ReadonlyMap<string, string | null | undefined>;
+  readonly projectIconByKey: ReadonlyMap<string, ProjectIconOverride | null | undefined>;
   readonly projectDisplayNameByKey: ReadonlyMap<string, string>;
   readonly draftOrderScopeKey: string;
 }
@@ -205,6 +207,14 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
     [projects],
   );
 
+  const projectIconByKey = useMemo(
+    () =>
+      new Map(
+        projects.map((project) => [`${project.environmentId}:${project.id}`, project.projectIcon]),
+      ),
+    [projects],
+  );
+
   const projectDisplayNameByKey = useMemo(
     () =>
       new Map(
@@ -223,6 +233,7 @@ export function useBoard(scopeKey: string | null, onScopeUnavailable: () => void
     projectGroups,
     scopedProjectGroup,
     projectCwdByKey,
+    projectIconByKey,
     projectFaviconPathByKey,
     projectDisplayNameByKey,
     draftOrderScopeKey,

@@ -41,9 +41,10 @@ Ronin works with the platforms your team already uses:
 
 - See if your current branch already has an open PR/MR
 - Open several reviews from the **Pull requests** page as tabs in the right panel
-- By default, see passing and approved reviews first, passing reviews awaiting approval next, and
-  conflicting reviews last. Smaller changes come first within each readiness group, and finished
-  reviews follow open work when all states are visible.
+- Your authored reviews stay at the top and use the selected sort within their group. By default,
+  see passing and approved reviews first, passing reviews awaiting approval next, and conflicting
+  reviews last. Smaller changes come first within each readiness group, and finished reviews follow
+  open work when all states are visible.
 - Filter the list by author or labels, rank authors by merges in the loaded results, see label and
   change-size context on each row, and sort the results currently shown by readiness, update time,
   creation time, or change size. Your filters, search, scope, and sort are restored when you return.
@@ -56,6 +57,9 @@ Ronin works with the platforms your team already uses:
   brought in from the base branch
 - While working in a thread, open linked reviews in the same compact right-panel tabs without
   leaving the conversation
+- Show a file tree next to a review's **Code** tab, or a thread's **Diff** panel, to browse the
+  changed files as folders and jump straight to any of them. The toolbar toggle remembers your
+  choice.
 - Enable **Settings → General → Proactive panels** to open a newly linked review automatically and
   switch to the completed turn's diff when agent work finishes
 - Open the review directly in your browser with one click
@@ -74,6 +78,8 @@ Ronin works with the platforms your team already uses:
 - Rewrite your own comments the same way, wherever they are shown
 - Works on GitHub, GitLab, and Bitbucket. Azure DevOps takes a new title and description; its
   comments stay read-only here, as they already were
+- On GitHub, put a label on a pull request or take one off from the **Labels** row of the review.
+  Changing labels needs triage access or better on the repository
 
 ### Know Your Setup at a Glance
 

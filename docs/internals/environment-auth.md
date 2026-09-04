@@ -14,6 +14,11 @@ OAuth-style scope strings:
 | `access:read`           | Inspect pairing links and client sessions.                               |
 | `access:write`          | Create or revoke pairing links and client sessions.                      |
 
+Pairing-link lists and access-stream snapshots and updates contain metadata only.
+The raw credential is returned only by the creation request, after the server checks
+`access:write` and the delegated scopes. Web and desktop clients keep that response
+in memory for sharing. They do not recover credentials from access read models.
+
 Ordinary pairing links grant the four client-operation scopes:
 `orchestration:read orchestration:operate terminal:operate review:write`.
 The desktop bootstrap credential and command-line administrative bootstrap

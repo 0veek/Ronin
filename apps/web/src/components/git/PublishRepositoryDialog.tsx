@@ -10,7 +10,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
-import { CheckIcon, ChevronDownIcon, ExternalLinkIcon, GlobeIcon, LockIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, GlobeIcon, LockIcon } from "lucide-react";
 import { Radio as RadioPrimitive } from "@base-ui/react/radio";
 import { useCallback, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
@@ -31,7 +31,7 @@ import { Spinner } from "~/components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { useSourceControlPublishRepositoryAction } from "~/lib/sourceControlActions";
-import { readLocalApi } from "~/localApi";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { useEnvironmentQuery } from "~/state/query";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 
@@ -48,10 +48,13 @@ interface PublishRepositoryDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly environmentId: ScopedThreadRef["environmentId"] | null;
+  /** Thread the dialog was opened from, so the new repository can open beside it. */
+  readonly threadRef: ScopedThreadRef | null;
   readonly gitCwd: string;
 }
 
 export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
+  const openLink = useOpenLink(props.threadRef);
   const navigate = useNavigate();
   const sourceControlDiscovery = useEnvironmentQuery(
     props.environmentId === null
@@ -578,12 +581,9 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                       size="sm"
                       className="w-full"
                       onClick={() => {
-                        const api = readLocalApi();
-                        if (!api) return;
-                        void api.shell.openExternal(publishResult.repository.url);
+                        void openLink(publishResult.repository.url).catch(() => undefined);
                       }}
                     >
-                      <ExternalLinkIcon className="size-3.5" aria-hidden />
                       Open on {publishProviderLabel}
                     </Button>
                   </>

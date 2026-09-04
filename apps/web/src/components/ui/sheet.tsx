@@ -65,6 +65,8 @@ function SheetPopup({
   showCloseButton = true,
   keepMounted = false,
   transitionDurationMs,
+  backdropClassName,
+  viewportClassName,
   side = "right",
   variant = "default",
   style,
@@ -73,6 +75,8 @@ function SheetPopup({
   showCloseButton?: boolean;
   keepMounted?: boolean;
   transitionDurationMs?: number;
+  backdropClassName?: string;
+  viewportClassName?: string;
   side?: "right" | "left" | "top" | "bottom";
   variant?: "default" | "inset";
 }) {
@@ -85,14 +89,14 @@ function SheetPopup({
   return (
     <SheetPortal keepMounted={keepMounted}>
       <SheetBackdrop
-        className={
-          instant
-            ? "transition-none! data-ending-style:opacity-100! data-starting-style:opacity-100!"
-            : undefined
-        }
+        className={cn(
+          instant &&
+            "transition-none! data-ending-style:opacity-100! data-starting-style:opacity-100!",
+          backdropClassName,
+        )}
         style={transitionStyle}
       />
-      <SheetViewport side={side} variant={variant}>
+      <SheetViewport className={viewportClassName} side={side} variant={variant}>
         <SheetPrimitive.Popup
           className={cn(
             // The edge border below is the whole separation: the sheet is

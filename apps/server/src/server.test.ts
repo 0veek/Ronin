@@ -5,6 +5,7 @@ import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hos
 
 import {
   AuthAccessTokenType,
+  AuthStandardClientScopes,
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
   CommandId,
@@ -47,11 +48,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -132,6 +133,7 @@ import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
+import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -390,7 +392,9 @@ const makeBrowserOtlpPayload = (spanName: string) =>
       ({ close }) => Effect.promise(close),
     );
 
-    const runtime = ManagedRuntime.make(
+    // The exporter's batch fiber is forked while the layer builds and ticks on
+    // a wall-clock interval, so the whole tracer runs on the live clock.
+    yield* Layer.build(
       OtlpTracer.layer({
         url: collector.url,
         exportInterval: "10 millis",
@@ -403,13 +407,12 @@ const makeBrowserOtlpPayload = (spanName: string) =>
           },
         },
       }).pipe(Layer.provide(browserOtlpTracingLayer)),
+    ).pipe(
+      Effect.flatMap((tracing) =>
+        Effect.void.pipe(Effect.withSpan(spanName), Effect.provideContext(tracing)),
+      ),
+      TestClock.withLive,
     );
-
-    try {
-      yield* Effect.promise(() => runtime.runPromise(Effect.void.pipe(Effect.withSpan(spanName))));
-    } finally {
-      yield* Effect.promise(() => runtime.dispose());
-    }
 
     const request = yield* Effect.raceFirst(
       Effect.promise(() => collector.firstRequest).pipe(Effect.orDie),
@@ -422,6 +425,7 @@ const makeBrowserOtlpPayload = (spanName: string) =>
   });
 
 const buildAppUnderTest = (options?: {
+  onPairingChangesSubscribed?: Effect.Effect<void>;
   config?: Partial<ServerConfig.ServerConfig["Service"]>;
   layers?: {
     keybindings?: Partial<Keybindings.Keybindings["Service"]>;
@@ -833,6 +837,7 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+          getUserInputActivity: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
           getSnapshot: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
           getShellSnapshot: () =>
@@ -985,6 +990,24 @@ const buildAppUnderTest = (options?: {
           ...options?.layers?.repositoryIdentityResolver,
         }),
       ),
+      Layer.updateService(PairingGrantStore.PairingGrantStore, (grants) => {
+        const subscribed = options?.onPairingChangesSubscribed;
+        if (!subscribed) return grants;
+        return {
+          ...grants,
+          streamChanges: Stream.unwrap(
+            Effect.gen(function* () {
+              const changes = yield* Queue.unbounded<PairingGrantStore.BootstrapCredentialChange>();
+              yield* grants.streamChanges.pipe(
+                Stream.runForEach((change) => Queue.offer(changes, change)),
+                Effect.forkScoped({ startImmediately: true }),
+              );
+              yield* subscribed;
+              return Stream.fromQueue(changes);
+            }),
+          ),
+        };
+      }),
       Layer.provideMerge(makeAuthTestLayer()),
       Layer.provideMerge(ServerSecretStore.layer),
       Layer.provide(workspaceAndProjectServicesLayer),
@@ -1011,16 +1034,19 @@ const parseSessionCookieFromWsUrl = (
   };
 };
 
-const wsRpcProtocolLayer = (wsUrl: string) => {
+const wsRpcProtocolLayer = (wsUrl: string, onMessage?: (message: string) => void) => {
   const { cookie, url } = parseSessionCookieFromWsUrl(wsUrl);
   const webSocketConstructorLayer = Layer.succeed(
     Socket.WebSocketConstructor,
-    (socketUrl, protocols) =>
-      new NodeSocket.NodeWS.WebSocket(
+    (socketUrl, protocols) => {
+      const socket = new NodeSocket.NodeWS.WebSocket(
         socketUrl,
         protocols,
         cookie ? { headers: { cookie } } : undefined,
-      ) as unknown as globalThis.WebSocket,
+      );
+      if (onMessage) socket.on("message", (data) => onMessage(data.toString()));
+      return socket as unknown as globalThis.WebSocket;
+    },
   );
 
   return RpcClient.layerProtocolSocket().pipe(
@@ -1036,7 +1062,8 @@ type WsRpcClient =
 const withWsRpcClient = <A, E, R>(
   wsUrl: string,
   f: (client: WsRpcClient) => Effect.Effect<A, E, R>,
-) => makeWsRpcClient.pipe(Effect.flatMap(f), Effect.provide(wsRpcProtocolLayer(wsUrl)));
+  onMessage?: (message: string) => void,
+) => makeWsRpcClient.pipe(Effect.flatMap(f), Effect.provide(wsRpcProtocolLayer(wsUrl, onMessage)));
 
 const appendSessionCookieToWsUrl = (url: string, sessionCookieHeader: string) => {
   const isAbsoluteUrl = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(url);
@@ -2099,6 +2126,128 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("returns only pairing metadata to access-read HTTP sessions", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest();
+      const reader = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "access:read",
+      });
+      assert.equal(reader.response.status, 200);
+      assert.equal(reader.body.scope, "access:read");
+      const createdResponse = yield* HttpClient.post("/api/auth/pairing-token", {
+        headers: { cookie: yield* getAuthenticatedSessionCookieHeader() },
+        body: yield* HttpBody.json({ label: "Synthetic phone" }),
+      });
+      const created = (yield* createdResponse.json) as { id: string; credential: string };
+      assert.equal(createdResponse.status, 200);
+      const response = yield* HttpClient.get("/api/auth/pairing-links", {
+        headers: { authorization: `Bearer ${reader.body.access_token ?? ""}` },
+      });
+      assert.equal(response.status, 200);
+      const responseText = yield* response.text;
+      assert.notInclude(responseText, '"credential"');
+      assert.notInclude(responseText, created.credential);
+      const links = yield* responseJsonEffect<
+        ReadonlyArray<{
+          readonly id: string;
+          readonly label?: string;
+          readonly scopes: ReadonlyArray<string>;
+        }>
+      >(response);
+      const listed = links.find((link) => link.id === created.id);
+      assert.isDefined(listed);
+      assert.deepInclude(listed, {
+        label: "Synthetic phone",
+        scopes: [...AuthStandardClientScopes],
+      });
+
+      const unauthorizedCreate = yield* HttpClient.post("/api/auth/pairing-token", {
+        headers: { authorization: `Bearer ${reader.body.access_token ?? ""}` },
+        body: yield* HttpBody.json({}),
+      });
+      assert.equal(unauthorizedCreate.status, 403);
+      const idExchange = yield* exchangeAccessToken(created.id, { scope: "terminal:operate" });
+      assert.equal(idExchange.response.status, 401);
+      const authorized = yield* exchangeAccessToken(created.credential, {
+        scope: AuthStandardClientScopes.join(" "),
+      });
+      assert.equal(authorized.response.status, 200);
+      assert.equal(authorized.body.scope, AuthStandardClientScopes.join(" "));
+      const reused = yield* exchangeAccessToken(created.credential, { scope: "terminal:operate" });
+      assert.equal(reused.response.status, 401);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("returns only pairing metadata in access-read WebSocket snapshots and updates", () =>
+    Effect.gen(function* () {
+      const changesSubscribed = yield* Deferred.make<void>();
+      yield* buildAppUnderTest({
+        onPairingChangesSubscribed: Deferred.succeed(changesSubscribed, undefined).pipe(
+          Effect.asVoid,
+        ),
+      });
+      const ownerCookie = yield* getAuthenticatedSessionCookieHeader();
+      const createLink = Effect.gen(function* () {
+        const response = yield* HttpClient.post("/api/auth/pairing-token", {
+          headers: { cookie: ownerCookie },
+          body: yield* HttpBody.json({}),
+        });
+        assert.equal(response.status, 200);
+        return (yield* response.json) as { id: string; credential: string };
+      });
+      const initialLink = yield* createLink;
+      const reader = yield* exchangeAccessToken(defaultDesktopBootstrapToken, {
+        scope: "access:read",
+      });
+      assert.equal(reader.body.scope, "access:read");
+      const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+        headers: { authorization: `Bearer ${reader.body.access_token ?? ""}` },
+      });
+      assert.equal(ticketResponse.status, 200);
+      const { ticket } = (yield* ticketResponse.json) as { ticket: string };
+      const wsUrl = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket)}`;
+      const frames: string[] = [];
+      yield* withWsRpcClient(
+        wsUrl,
+        (client) =>
+          Effect.gen(function* () {
+            const snapshotReceived = yield* Deferred.make<void>();
+            const eventsFiber = yield* client.subscribeAuthAccess({}).pipe(
+              Stream.tap((event) =>
+                event.type === "snapshot"
+                  ? Deferred.succeed(snapshotReceived, undefined)
+                  : Effect.void,
+              ),
+              Stream.takeUntil((event) => event.type === "pairingLinkUpserted"),
+              Stream.runCollect,
+              Effect.forkChild,
+            );
+            yield* Deferred.await(snapshotReceived);
+            yield* Deferred.await(changesSubscribed);
+            const liveLink = yield* createLink;
+            const events = yield* Fiber.join(eventsFiber);
+            const snapshot = events.find((event) => event.type === "snapshot");
+            const update = events.find((event) => event.type === "pairingLinkUpserted");
+            assert.isDefined(snapshot);
+            assert.isDefined(update);
+            assert.isTrue(
+              snapshot?.payload.pairingLinks.some((link) => link.id === initialLink.id),
+            );
+            assert.equal(update?.payload.id, liveLink.id);
+            // Inspect the wire frames so client schema decoding cannot hide a leak.
+            assert.notInclude(frames.join(""), '"credential"');
+            assert.notInclude(frames.join(""), initialLink.credential);
+            assert.notInclude(frames.join(""), liveLink.credential);
+            const paired = yield* exchangeAccessToken(liveLink.credential, {
+              scope: AuthStandardClientScopes.join(" "),
+            });
+            assert.equal(paired.response.status, 200);
+          }),
+        (frame) => frames.push(frame),
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("lists and revokes pairing links for access management sessions", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
@@ -2126,7 +2275,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       });
       const listedLinks = (yield* listResponse.json) as ReadonlyArray<{
         readonly id: string;
-        readonly credential: string;
       }>;
 
       const revokeResponse = yield* HttpClient.post("/api/auth/pairing-links/revoke", {
@@ -5022,7 +5170,6 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           projectionSnapshotQuery: {
             getThreadDetailSnapshot: () =>
               Effect.gen(function* () {
-                yield* Effect.sleep("25 millis");
                 yield* PubSub.publish(liveEvents, messageEvent);
                 return Option.some({ snapshotSequence: 1, thread });
               }),
@@ -5035,14 +5182,19 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         withWsRpcClient(wsUrl, (client) =>
           client[ORCHESTRATION_WS_METHODS.subscribeThread]({
             threadId: defaultThreadId,
-          }).pipe(Stream.take(2), Stream.runCollect),
+            requestCompletionMarker: true,
+          }).pipe(
+            Stream.takeUntil((item) => item.kind === "synchronized"),
+            Stream.runCollect,
+          ),
         ),
-      ).pipe(Effect.timeout("2 seconds"));
+      );
 
       assert.equal(items[0]?.kind, "snapshot");
       assert.equal(items[1]?.kind, "event");
       assert.equal(items[1]?.kind === "event" ? items[1].event.sequence : null, 2);
-    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+      assert.equal(items[2]?.kind, "synchronized");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("fails a thread subscription that exceeds its live catch-up buffer", () =>

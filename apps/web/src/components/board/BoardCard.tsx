@@ -1,4 +1,5 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { ProjectIconOverride } from "@t3tools/contracts";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AlarmClockIcon, ListPlusIcon, MessageSquareIcon, PinIcon } from "lucide-react";
@@ -45,6 +46,7 @@ export interface BoardCardProps {
   readonly projectTitle: string | null;
   readonly projectCwd: string | null;
   readonly projectFaviconPath: string | null | undefined;
+  readonly projectIcon: ProjectIconOverride | null | undefined;
   /** Hidden when the board is already scoped to a single project. */
   readonly showProject: boolean;
   readonly onOpen: (card: BoardCardModel) => void;
@@ -56,6 +58,7 @@ export const BoardCard = memo(function BoardCard({
   projectTitle,
   projectCwd,
   projectFaviconPath,
+  projectIcon,
   showProject,
   onOpen,
   onContextMenu,
@@ -131,7 +134,9 @@ export const BoardCard = memo(function BoardCard({
               <ProjectFavicon
                 environmentId={thread.environmentId}
                 cwd={projectCwd ?? ""}
+                projectName={projectTitle ?? ""}
                 faviconPath={projectFaviconPath}
+                projectIcon={projectIcon}
                 className="size-4 shrink-0"
                 fallbackIcon={MessageSquareIcon}
               />

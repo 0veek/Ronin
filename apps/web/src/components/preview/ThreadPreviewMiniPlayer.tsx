@@ -17,6 +17,7 @@ import {
   clampPreviewMiniPlayerSize,
   PREVIEW_MINI_PLAYER_DEFAULT_SIZE,
   PREVIEW_MINI_PLAYER_EDGE_GAP,
+  PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX,
 } from "./previewMiniPlayerLayout";
 
 interface DragState {
@@ -227,7 +228,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
             }
       }
     >
-      <div className="group pointer-events-auto absolute right-2 top-2 z-[34] size-3">
+      <div className="group pointer-events-auto absolute right-2 top-2 z-[49] size-3">
         <div
           aria-hidden="true"
           className="absolute right-0 top-0 size-2 rounded-full bg-foreground/25 ring-1 ring-background/70 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
@@ -275,7 +276,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
       </div>
 
       <div className="relative h-full min-h-0">
-        <div className="absolute inset-0 z-[29] rounded-xl bg-muted shadow-popover" />
+        <div className="absolute inset-0 z-[47] rounded-xl bg-muted shadow-popover" />
         <BrowserSurfaceSlot
           tabId={runtimeTabId}
           visible={Boolean(desktopOverlay?.hasWebContents)}
@@ -284,6 +285,7 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           // now 4px. They have to be changed together or the webview's corners
           // cut outside the ring drawn over them.
           cornerRadius={8}
+          zIndex={PREVIEW_MINI_PLAYER_WEBVIEW_Z_INDEX}
           fitSourceContent
           layoutVersion={
             position
@@ -292,16 +294,16 @@ export function ThreadPreviewMiniPlayer({ threadRef, tabId, bottomInset }: Props
           }
           className="absolute inset-0"
         />
-        <div className="pointer-events-none absolute inset-0 z-[31] rounded-xl ring-1 ring-inset ring-border/80" />
+        <div className="pointer-events-none absolute inset-0 z-[49] rounded-xl ring-1 ring-inset ring-border/80" />
         {!desktopOverlay?.hasWebContents ? (
-          <div className="pointer-events-none absolute inset-0 z-[32] flex items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
+          <div className="pointer-events-none absolute inset-0 z-[49] flex items-center justify-center rounded-xl bg-muted text-xs text-muted-foreground">
             Reconnecting preview…
           </div>
         ) : null}
         <button
           type="button"
           aria-label="Resize floating preview"
-          className="pointer-events-auto absolute bottom-0 right-0 z-[33] size-5 cursor-nwse-resize rounded-br-xl after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b after:border-r after:border-foreground/45"
+          className="pointer-events-auto absolute bottom-0 right-0 z-[49] size-5 cursor-nwse-resize rounded-br-xl after:absolute after:bottom-1 after:right-1 after:size-2 after:border-b after:border-r after:border-foreground/45"
           onPointerDown={handleResizePointerDown}
           onPointerMove={handleResizePointerMove}
           onPointerUp={endResize}

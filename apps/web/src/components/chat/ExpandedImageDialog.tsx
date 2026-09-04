@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, XIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -37,6 +37,20 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       setDownloadingVideoSrc((current) => (current === src ? null : current));
     }
   };
+
+  // The element that opened the preview gets focus back on close. Without
+  // this a close button click leaves focus on the unmounted dialog, and the
+  // composer that owned the opener reads that as a blur and rests.
+  const openerRef = useRef<Element | null>(null);
+  useEffect(() => {
+    openerRef.current = document.activeElement;
+    return () => {
+      const opener = openerRef.current;
+      if (opener instanceof HTMLElement && opener.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {

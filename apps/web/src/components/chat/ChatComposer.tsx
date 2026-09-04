@@ -155,7 +155,10 @@ import {
   renderProviderTraitsPicker,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
-import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
+import {
+  providerSupportsManualCompaction,
+  resolveContextWindowModelDisplayName,
+} from "./ContextWindowMeter.logic";
 import {
   attachVideoThumbnail,
   buildExpandedImagePreview,
@@ -695,6 +698,7 @@ export interface ChatComposerProps {
 
   // Context window
   activeContextWindow: ContextWindowSnapshot | null;
+  compactThreadUnavailable: boolean;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
 
@@ -712,6 +716,9 @@ export interface ChatComposerProps {
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
   composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
+  onPageScrollKeyDown: (key: "PageUp" | "PageDown") => void;
+  onPageScrollKeyUp: (key: string) => void;
+  onPageScrollRelease: () => void;
 
   // Callbacks
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
@@ -796,6 +803,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeContextWindow,
+    compactThreadUnavailable,
     compactDisabled,
     compactDisabledReason,
     resolvedTheme,
@@ -809,6 +817,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerFilesRef,
     composerTerminalContextsRef,
     composerElementContextsRef,
+    onPageScrollKeyDown,
+    onPageScrollKeyUp,
+    onPageScrollRelease,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -1131,6 +1142,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => selectedProviderEntry?.snapshot ?? null,
     [selectedProviderEntry],
   );
+  const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
   const selectedProviderSkills = useMemo(
     () =>
       mergeProviderSkillCatalogs(
@@ -1314,7 +1326,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       prompt,
     ],
   );
-
   // ------------------------------------------------------------------
   // Derived: composer trigger / menu
   // ------------------------------------------------------------------
@@ -1326,6 +1337,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     cwd: isPathTrigger ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
+  const compactSlashCommandAvailable =
+    composerTrigger?.kind === "slash-command" &&
+    prompt.slice(0, composerTrigger.rangeStart).trim() === "" &&
+    !compactThreadUnavailable &&
+    prompt.slice(composerTrigger.rangeEnd).trim() === "" &&
+    composerImages.length + composerFiles.length === 0 &&
+    composerDraft.persistedAttachments.length === 0 &&
+    composerTerminalContexts.length === 0 &&
+    composerElementContexts.length === 0 &&
+    composerPreviewAnnotations.length === 0 &&
+    composerReviewComments.length === 0;
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
@@ -1392,6 +1414,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           label: `/${command.name}`,
           description: command.description ?? command.input?.hint ?? "Run provider command",
         }));
+      // A provider that cannot compact on demand should not offer the command.
+      const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
+        (item) => item.command.name !== "compact" || compactCommandAvailable,
+      );
       const skillItems = searchProviderSkills(visibleSkills, composerTrigger.query).map(
         (skill) => ({
           id: `skill:${selectedProvider}:${skill.name}`,
@@ -1406,7 +1432,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }),
       );
       const query = composerTrigger.query.trim().toLowerCase();
-      const slashCommandItems = [...builtInSlashCommandItems, ...providerSlashCommandItems];
+      const slashCommandItems = [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems];
       const rankedSlashItems = query
         ? searchSlashCommandItems(slashCommandItems, query)
         : slashCommandItems;
@@ -1433,6 +1459,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    compactSlashCommandAvailable,
     composerTrigger,
     planModeUiEnabled,
     selectedProvider,
@@ -2306,7 +2333,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (
       compactDisabled ||
       noProviderAvailable ||
-      composerSendState.hasSendableContent ||
       activePendingApproval !== null ||
       pendingUserInputs.length > 0 ||
       phase === "running" ||
@@ -2344,7 +2370,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activeThreadId,
     compactDisabled,
     composerDraftTarget,
-    composerSendState.hasSendableContent,
     isConnecting,
     isSendBusy,
     noProviderAvailable,
@@ -4140,6 +4165,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                   onChange={onPromptChange}
                   onCommandKeyDown={onComposerCommandKey}
+                  onPageScrollKeyDown={onPageScrollKeyDown}
+                  onPageScrollKeyUp={onPageScrollKeyUp}
+                  onPageScrollRelease={onPageScrollRelease}
                   onPaste={onComposerPaste}
                   placeholder={
                     isComposerApprovalState
@@ -4359,9 +4387,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       compactDisabled || noProviderAvailable || isSendBusy || isConnecting
                     }
                     compactDisabledReason={resolvedCompactDisabledReason}
-                    {...(selectedProvider === "claudeAgent"
-                      ? { onCompactContext: compactThreadContext }
-                      : {})}
+                    {...(compactCommandAvailable ? { onCompactContext: compactThreadContext } : {})}
                   />
                 </div>
               </div>

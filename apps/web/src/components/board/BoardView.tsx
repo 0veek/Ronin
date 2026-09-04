@@ -98,6 +98,7 @@ export function BoardView() {
     scopedProjectGroup,
     projectCwdByKey,
     projectFaviconPathByKey,
+    projectIconByKey,
     projectDisplayNameByKey,
     draftOrderScopeKey,
   } = useBoard(scopeKey, resetScope);
@@ -401,7 +402,9 @@ export function BoardView() {
               <ProjectFavicon
                 environmentId={scopedProjectGroup.environmentId}
                 cwd={scopedProjectGroup.workspaceRoot}
+                projectName={scopedProjectGroup.displayName}
                 faviconPath={scopedProjectGroup.faviconPath}
+                projectIcon={scopedProjectGroup.projectIcon}
                 className="size-4 shrink-0"
               />
             ) : (
@@ -433,7 +436,9 @@ export function BoardView() {
                     <ProjectFavicon
                       environmentId={group.environmentId}
                       cwd={group.workspaceRoot}
+                      projectName={group.displayName}
                       faviconPath={group.faviconPath}
+                      projectIcon={group.projectIcon}
                       className="size-4 shrink-0"
                     />
                     <span className="min-w-0 truncate">{group.displayName}</span>
@@ -475,6 +480,7 @@ export function BoardView() {
                       projectTitle={projectDisplayNameByKey.get(projectKey) ?? null}
                       projectCwd={projectCwdByKey.get(projectKey) ?? null}
                       projectFaviconPath={projectFaviconPathByKey.get(projectKey)}
+                      projectIcon={projectIconByKey.get(projectKey) ?? null}
                       showProject={showProject}
                       onOpen={onCardOpen}
                       onContextMenu={onCardContextMenu}

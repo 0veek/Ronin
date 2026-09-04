@@ -1769,6 +1769,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverGetUsageSummary, usage.readSummary(input), {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverRefreshUsageRates]: (_input) =>
+          observeRpcEffect(WS_METHODS.serverRefreshUsageRates, usage.refreshRates, {
+            "rpc.aggregate": "server",
+          }),
         [WS_METHODS.serverGetProviderRateLimits]: (_input) =>
           observeRpcEffect(WS_METHODS.serverGetProviderRateLimits, rateLimits.readSnapshot, {
             "rpc.aggregate": "server",
@@ -2074,6 +2078,16 @@ const makeWsRpcLayer = (
             pullRequests.requestReviewers(input),
             { "rpc.aggregate": "pull-requests" },
           ),
+        [WS_METHODS.pullRequestsLabelCandidates]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.pullRequestsLabelCandidates,
+            pullRequests.labelCandidates(input),
+            { "rpc.aggregate": "pull-requests" },
+          ),
+        [WS_METHODS.pullRequestsSetLabels]: (input) =>
+          observeRpcEffect(WS_METHODS.pullRequestsSetLabels, pullRequests.setLabels(input), {
+            "rpc.aggregate": "pull-requests",
+          }),
         [WS_METHODS.sourceControlLookupRepository]: (input) =>
           observeRpcEffect(
             WS_METHODS.sourceControlLookupRepository,

@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   ProjectId,
   PullRequestInvolvement,
+  ProjectIconOverride,
   PullRequestListFilters,
   PullRequestListState,
   SourceControlProviderKind,
@@ -59,6 +60,8 @@ export interface PullRequestFilterOption<Value extends string> {
   readonly favicon?: {
     readonly environmentId: EnvironmentId;
     readonly cwd: string;
+    readonly faviconPath?: string | null;
+    readonly projectIcon?: ProjectIconOverride | null;
   };
   /** Why it cannot be chosen, carried onto the item as its title. */
   readonly unavailable?: string | undefined;
@@ -73,6 +76,9 @@ export function PullRequestFilterOptionIcon<Value extends string>({
     <ProjectFavicon
       environmentId={option.favicon.environmentId}
       cwd={option.favicon.cwd}
+      projectName={option.label}
+      faviconPath={option.favicon.faviconPath}
+      projectIcon={option.favicon.projectIcon}
       fallbackIcon={FolderGit2Icon}
       className="size-3.5"
     />
@@ -456,6 +462,8 @@ export function PullRequestFiltersMenu({
     readonly environmentId: EnvironmentId;
     readonly title: string;
     readonly workspaceRoot: string;
+    readonly faviconPath?: string | null;
+    readonly projectIcon?: ProjectIconOverride | null;
   }>;
   projectId: ProjectId | undefined;
   /**
@@ -641,6 +649,9 @@ export function PullRequestFiltersMenu({
                     <ProjectFavicon
                       environmentId={project.environmentId}
                       cwd={project.workspaceRoot}
+                      projectName={project.title}
+                      faviconPath={project.faviconPath}
+                      projectIcon={project.projectIcon}
                       fallbackIcon={FolderGit2Icon}
                       className="size-3.5 shrink-0"
                     />

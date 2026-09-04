@@ -17,6 +17,9 @@ npx t3@latest
 This starts the Ronin server on your machine and opens the local web app. Use
 `npx t3@latest --help` for the full CLI reference.
 
+If the web or desktop app shows "Ronin could not load", check your connection and select
+**Reload** to try again.
+
 ## Open a project in the desktop app
 
 When the Ronin desktop app is running on the same machine, open the current directory with:

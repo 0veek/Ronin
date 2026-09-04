@@ -28,6 +28,15 @@ Log in with Codex normally:
 codex login
 ```
 
+## Answer questions while Codex works
+
+Codex can ask questions without stopping its work. Choose a suggested answer or enter your own
+in the question panel. Questions without suggested answers accept text.
+
+Your answers are sent as a new message. They reach the current turn while Codex is working, or
+start a new turn if it has finished. Unanswered questions stay available after you reconnect.
+Codex must support async questions.
+
 ## Sub-agent models
 
 The Agents panel shows each sub-agent's model and reasoning effort when Codex reports them. If

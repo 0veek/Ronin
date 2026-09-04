@@ -98,6 +98,8 @@ import {
   PullRequestSummary,
   PullRequestReviewerCandidateList,
   PullRequestReviewerRequestInput,
+  PullRequestLabelCandidateList,
+  PullRequestLabelChangeInput,
   PullRequestSubmitReviewInput,
   PullRequestThreadCommentsInput,
   PullRequestThreadCommentsResult,
@@ -238,7 +240,7 @@ import {
   SpeechToTextTranscribeInput,
   SpeechToTextTranscript,
 } from "./speechToText.ts";
-import { UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
+import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   SourceControlCloneRepositoryInput,
@@ -362,6 +364,7 @@ export const WS_METHODS = {
   buildSystemsRunReply: "buildSystems.runs.reply",
   buildSystemsRuns: "buildSystems.runs.list",
   buildSystemsRunGet: "buildSystems.runs.get",
+  serverRefreshUsageRates: "server.refreshUsageRates",
 
   // Pull request methods
   pullRequestsList: "pullRequests.list",
@@ -382,6 +385,8 @@ export const WS_METHODS = {
   pullRequestsInvalidate: "pullRequests.invalidate",
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
+  pullRequestsLabelCandidates: "pullRequests.labelCandidates",
+  pullRequestsSetLabels: "pullRequests.setLabels",
 
   // Source control methods
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -525,6 +530,16 @@ export const WsServerGetProviderRateLimitsRpc = Rpc.make(WS_METHODS.serverGetPro
   payload: Schema.Struct({}),
   success: ProviderRateLimitsSnapshot,
   error: Schema.Union([EnvironmentAuthorizationError, RateLimitReadError]),
+});
+
+/**
+ * Refetches the model rate table ahead of its daily TTL, so a model released
+ * since the last fetch gets priced. The next usage summary uses the new table.
+ */
+export const WsServerRefreshUsageRatesRpc = Rpc.make(WS_METHODS.serverRefreshUsageRates, {
+  payload: Schema.Struct({}),
+  success: UsagePricing,
+  error: EnvironmentAuthorizationError,
 });
 
 export const WsServerGetQuotaResumesRpc = Rpc.make(WS_METHODS.serverGetQuotaResumes, {
@@ -816,6 +831,19 @@ export const WsPullRequestsReviewerCandidatesRpc = Rpc.make(
 
 export const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsRequestReviewers, {
   payload: PullRequestReviewerRequestInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+
+/** Read when the label menu opens, for the same reason the reviewer candidates are. */
+export const WsPullRequestsLabelCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsLabelCandidates, {
+  payload: PullRequestRef,
+  success: PullRequestLabelCandidateList,
+  error: PullRequestRpcError,
+});
+
+export const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
+  payload: PullRequestLabelChangeInput,
   success: Schema.Void,
   error: PullRequestRpcError,
 });
@@ -1258,6 +1286,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetResourceTelemetryHistoryRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
+  WsServerRefreshUsageRatesRpc,
   WsServerGetProviderRateLimitsRpc,
   WsServerGetQuotaResumesRpc,
   WsServerCancelQuotaResumeRpc,
@@ -1304,6 +1333,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsInvalidateRpc,
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
+  WsPullRequestsLabelCandidatesRpc,
+  WsPullRequestsSetLabelsRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
