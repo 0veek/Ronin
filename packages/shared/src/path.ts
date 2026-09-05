@@ -10,6 +10,13 @@ export function isWindowsAbsolutePath(value: string): boolean {
   return isUncPath(value) || isWindowsDrivePath(value);
 }
 
+const SLASH_PREFIXED_WINDOWS_DRIVE_PATTERN = /^\/[A-Za-z]:[\\/]/;
+
+/** `/C:/x` is how a file URI carries a Windows drive; drop the leading slash. */
+export function stripSlashPrefixedWindowsDrive(path: string): string {
+  return SLASH_PREFIXED_WINDOWS_DRIVE_PATTERN.test(path) ? path.slice(1) : path;
+}
+
 export function isExplicitRelativePath(value: string): boolean {
   return (
     value === "." ||

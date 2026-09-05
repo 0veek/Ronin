@@ -6,9 +6,20 @@ import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
-  return !status || status.status === "ready" || status.status === "disabled"
-    ? null
-    : [status.instanceId, status.status, status.auth.status, status.message ?? ""].join("\u0000");
+  if (!status || status.status === "ready" || status.status === "disabled") return null;
+  // Antigravity checks saved credentials when a session starts. Its local
+  // health check leaves auth unknown after a restart, which is not a failure.
+  if (
+    status.driver === "antigravity" &&
+    status.installed &&
+    status.status === "warning" &&
+    status.auth.status === "unknown"
+  ) {
+    return null;
+  }
+  return [status.instanceId, status.status, status.auth.status, status.message ?? ""].join(
+    "\u0000",
+  );
 }
 
 export function shouldShowProviderStatusBanner(
@@ -26,7 +37,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss: () => void;
   status: ServerProvider | null;
 }) {
-  if (!status || status.status === "ready" || status.status === "disabled") {
+  if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }
 

@@ -41,6 +41,7 @@ import {
   ProviderAdapterSessionNotFoundError,
   ProviderAdapterValidationError,
 } from "../Errors.ts";
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import { type OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
   buildOpenCodePermissionRules,
@@ -339,7 +340,6 @@ interface OpenCodeSessionContext {
   readonly partById: Map<string, Part>;
   readonly emittedTextByPartId: Map<string, string>;
   readonly completedAssistantPartIds: Set<string>;
-  readonly turns: Array<OpenCodeTurnSnapshot>;
   activeTurnId: TurnId | undefined;
   activeAgent: string | undefined;
   activeVariant: string | undefined;
@@ -482,31 +482,6 @@ function mapPermissionDecision(reply: "once" | "always" | "reject"): string {
     default:
       return "decline";
   }
-}
-
-function resolveTurnSnapshot(
-  context: OpenCodeSessionContext,
-  turnId: TurnId,
-): OpenCodeTurnSnapshot {
-  const existing = context.turns.find((turn) => turn.id === turnId);
-  if (existing) {
-    return existing;
-  }
-
-  const created: OpenCodeTurnSnapshot = { id: turnId, items: [] };
-  context.turns.push(created);
-  return created;
-}
-
-function appendTurnItem(
-  context: OpenCodeSessionContext,
-  turnId: TurnId | undefined,
-  item: unknown,
-): void {
-  if (!turnId) {
-    return;
-  }
-  resolveTurnSnapshot(context, turnId).items.push(item);
 }
 
 const ensureSessionContext = Effect.fn("ensureSessionContext")(function* (
@@ -2182,7 +2157,10 @@ export function makeOpenCodeAdapter(
 
         case "message.part.updated": {
           const part = event.properties.part;
-          context.partById.set(part.id, part);
+          // Tool events use the incoming part and do not need a cached copy.
+          if (part.type !== "tool") {
+            context.partById.set(part.id, part);
+          }
           const messageRole = messageRoleForPart(context, part);
 
           if (messageRole === "assistant") {
@@ -2224,7 +2202,6 @@ export function makeOpenCodeAdapter(
                     : "item.updated",
               payload,
             };
-            appendTurnItem(context, turnId, part);
             yield* emit(runtimeEvent);
           }
           break;
@@ -2649,7 +2626,6 @@ export function makeOpenCodeAdapter(
           emittedTextByPartId: new Map(),
           messageRoleById: new Map(),
           completedAssistantPartIds: new Set(),
-          turns: [],
           activeTurnId: undefined,
           activeAgent: undefined,
           activeVariant: undefined,
@@ -2871,6 +2847,11 @@ export function makeOpenCodeAdapter(
                 model: parsedModel,
                 ...(context.activeAgent ? { agent: context.activeAgent } : {}),
                 ...(context.activeVariant ? { variant: context.activeVariant } : {}),
+                // OpenCode appends this after its own agent/provider prompts.
+                system: buildRuntimeInstructions({
+                  harness: "OpenCode",
+                  model: `${parsedModel.providerID}/${parsedModel.modelID}`,
+                }),
                 parts: [...(text ? [{ type: "text" as const, text }] : []), ...fileParts],
               },
               { signal },

@@ -1,4 +1,5 @@
 import {
+  type CustomModelSetting,
   type AntigravitySettings,
   DEFAULT_MODEL_BY_PROVIDER,
   type ModelCapabilities,
@@ -63,7 +64,7 @@ const ANTIGRAVITY_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [
 ];
 
 function antigravityModelsFromSettings(
-  customModels: ReadonlyArray<string> | undefined,
+  customModels: ReadonlyArray<CustomModelSetting> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = ANTIGRAVITY_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(builtInModels, customModels ?? [], EMPTY_CAPABILITIES);

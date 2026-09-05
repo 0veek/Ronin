@@ -38,6 +38,7 @@ import type { ComposerSubmissionIntent } from "../composer-logic";
 import type { TimelineEntry } from "../session-logic";
 import type { DesktopPreviewOverlay } from "../previewStateStore";
 import type { RightPanelSurface } from "../rightPanelStore";
+import type { TurnDiffSummary } from "../types";
 
 export const LAST_INVOKED_SCRIPT_BY_PROJECT_KEY = "t3code:last-invoked-script-by-project";
 export const MAX_HIDDEN_MOUNTED_TERMINAL_THREADS = 10;
@@ -102,6 +103,24 @@ export function shouldOpenProactiveTurnDiff(input: {
     input.turnCompleted &&
     input.settledTurnId === input.previousRunningTurnId
   );
+}
+
+export function resolveProactiveTurnDiffAction(input: {
+  checkpoint: Pick<TurnDiffSummary, "status" | "files"> | undefined;
+  isGitRepo: boolean | undefined;
+  activeSurfaceKind: RightPanelSurface["kind"] | null;
+}): "defer" | "ignore" | "open" {
+  if (input.activeSurfaceKind === "pull-request") return "ignore";
+  if (input.checkpoint === undefined || input.checkpoint.status === "missing") return "defer";
+  if (input.isGitRepo === undefined) return "defer";
+  if (
+    !input.isGitRepo ||
+    input.checkpoint.status !== "ready" ||
+    input.checkpoint.files.length === 0
+  ) {
+    return "ignore";
+  }
+  return "open";
 }
 
 export function codexArtifactTemplatePromptToAppend(

@@ -79,16 +79,24 @@ const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean 
   (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
 
 const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
-  if (provider.driver !== ProviderDriverKind.make("opencode")) {
+  const isCodex = provider.driver === ProviderDriverKind.make("codex");
+  if (!isCodex && provider.driver !== ProviderDriverKind.make("opencode")) {
     return true;
   }
 
-  // OpenCode's initial snapshot is deliberately non-authoritative while its
-  // first probe is still running. A probe error from an installed CLI/server
-  // is likewise partial: it could not establish the current inventory.
-  // Conversely, disabled and missing-CLI snapshots are authoritative removals,
-  // as are successful ready/warning inventories (including an empty one after
-  // logout or plugin removal).
+  // A disabled or signed-out Codex snapshot is an authoritative removal: there
+  // is no session left whose cached inventory could still be current.
+  if (isCodex && (!provider.enabled || provider.auth.status === "unauthenticated")) {
+    return false;
+  }
+
+  // Successful discovery replaces these inventories, so cached retired models
+  // disappear. OpenCode's initial snapshot is deliberately non-authoritative
+  // while its first probe is still running. A probe error from an installed
+  // CLI/server is likewise partial: it could not establish the current
+  // inventory. Conversely, disabled and missing-CLI snapshots are
+  // authoritative removals, as are successful ready/warning inventories
+  // (including an empty one after logout or plugin removal).
   const isPendingInitialProbe =
     provider.enabled && !provider.installed && provider.status === "warning";
   const didInstalledProviderProbeFail = provider.installed && provider.status === "error";

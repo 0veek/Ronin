@@ -9,6 +9,7 @@
  * @module provider/Layers/GrokProvider
  */
 import {
+  type CustomModelSetting,
   DEFAULT_MODEL_BY_PROVIDER,
   type GrokSettings,
   type ModelCapabilities,
@@ -233,7 +234,7 @@ export function buildInitialGrokProviderSnapshot(
 }
 
 function grokModelsFromSettings(
-  customModels: ReadonlyArray<string> | undefined,
+  customModels: ReadonlyArray<CustomModelSetting> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = GROK_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(

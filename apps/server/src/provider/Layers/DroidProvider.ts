@@ -2,6 +2,7 @@
 import * as NodeOS from "node:os";
 
 import {
+  type CustomModelSetting,
   type DroidSettings,
   type ModelCapabilities,
   type ServerProvider,
@@ -97,7 +98,7 @@ export function buildInitialDroidProviderSnapshot(
 }
 
 function droidModelsFromSettings(
-  customModels: ReadonlyArray<string> | undefined,
+  customModels: ReadonlyArray<CustomModelSetting> | undefined,
   builtInModels: ReadonlyArray<ServerProviderModel> = DROID_BUILT_IN_MODELS,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(builtInModels, customModels ?? [], EMPTY_CAPABILITIES);

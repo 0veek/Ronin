@@ -5,6 +5,7 @@
 - [Install and first run](./user/install.md)
 - [Permission modes](./user/permission-modes.md)
 - [Keyboard shortcuts](./user/keybindings.md)
+- [Keyboard focus](./user/keyboard-focus.md)
 - [Slash commands](./user/slash-commands.md)
 - [Debug mode](./user/debug-mode.md)
 - [Agent skills](./user/agent-skills.md)
@@ -28,6 +29,7 @@
 - [Remote access](./user/remote-access.md)
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
+- [Terminal history](./user/terminal.md)
 - [Background service (Linux)](./user/background-service.md)
 - Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Cursor](./user/providers-cursor.md) · [Grok](./user/providers-grok.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Droid](./user/providers-droid.md) · [Kilo](./user/providers-kilo.md) · [Pi](./user/providers-pi.md)
 
@@ -43,6 +45,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Glossary](./internals/glossary.md)
 - [Scripts](./internals/scripts.md)
 - [Connection runtime](./internals/connection-runtime.md)
+- [Terminal runtime](./internals/terminal-runtime.md)
 - [Providers](./internals/providers.md)
 - [Assistant citations](./internals/assistant-citations.md)
 - [Remote environments](./internals/remote.md)

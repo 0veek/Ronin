@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `ef6cc0b36` — `chore(ci): only run check-run agents on vouched contributors (#9298)` (2026-09-02) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                   |
-| **Ported on**                 | 2026-09-03                                                                                        |
+|                               |                                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `761d4bac1` — `fix(web): preserve original mention text in the composer (#10100)` (2026-09-05) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                |
+| **Ported on**                 | 2026-09-05                                                                                     |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -4549,3 +4549,257 @@ preferences.
 - **A packaged desktop build.** `scripts/build-desktop-artifact.ts` gained ~380 lines of preflight
   and the macOS prebuild exclusion, all covered by unit tests against a mocked spawner. No real
   `dist:desktop:*` run was made, so the preflight has never actually gated a build.
+
+## Batch 25 — reviewed through `c5ba51d62` (110 commits) — reconstructed
+
+**This entry was written after the fact.** Commit `47efad150` ("sync upstream batch 25 through
+c5ba51d62", 266 files, +12 628/-1 829) shipped the work but never touched this log, so the
+watermark still read `ef6cc0b36` when batch 26 started. The verdicts below were derived from that
+commit's contents plus a presence check against the tree — they are coarser than a live triage and
+should be read as a record, not as a fresh review.
+
+### Ported
+
+The bulk of the range landed: SSH host resolve/suggest dropdown, preview CDP debugger pinning,
+pairing credentials scrubbed from access read models, the desktop second-press quit fallback,
+environment machine-kind detection and icons, project icons (migration `055 ProjectionProjectIcon`),
+pull request label management, diff layout/whitespace and `a/`+`b/` prefix fixes, Google Antigravity
+via the official ACP agent, Codex async questions, the settings-page reorganisation, PageUp/PageDown
+chat navigation, and the provider context-compaction command (`c5ba51d62`).
+
+### Skipped — cut surfaces
+
+`apps/mobile`, `apps/marketing`, `apps/relay` and `.macroscope` commits, as always.
+
+### Not ported, and not previously recorded
+
+These three were silently absent from the tree. Batch 26 depends on all of them, so they are
+written down here rather than left to be rediscovered. Each was confirmed by sampling the commit's
+own added lines against the tree (2/57, 9/101 and 1/35 present respectively — the residue is
+shared context, not the change):
+
+| Upstream    | Title                                                          | Consequence                                                        |
+| ----------- | -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `5b8445b7a` | fix(web): collapse the resting composer (#7855)                | Ronin has no resting/collapse-on-blur composer                     |
+| `19d8ab2ae` | feat(usage): show Codex and Claude subscription limits (#9507) | Ronin shows rate limits only in the sidebar usage meter            |
+| `39449e53e` | feat(desktop): import browser cookies into a profile (#7255)   | no cookie import at all; `ff5843410`, `498ab9c39`, `3653cb22f` too |
+
+### Verification
+
+Not re-run. `47efad150` is the implementation record; the batch-26 verification below covers the
+tree as it stands with both batches applied.
+
+## Batch 26 — reviewed through `761d4bac1` (306 commits)
+
+Upstream's `#9539`–`#10100` window. Four decisions were put to the maintainer before any code was
+written, because each gates a cluster and none has an obvious default; all four came back "skip and
+record". They are the first four entries under **Skipped** below.
+
+### Ported
+
+Roughly 140 commits landed, most of them adapted rather than replayed. The ones worth naming:
+
+**Server.** File Explorer reveals normalized paths (`617edab65`); newly opened pull requests are
+found after an agent turn (`4e547318b`) and PR data refreshes after thread turns (`5cc369b7e`,
+which adds a `pullRequests.subscribeRefreshes` streaming RPC — written by hand into Ronin's
+`rpc.ts`, which has no `baseSchemas` import upstream relies on); inactive threads with open PRs
+settle (`d536b0580`);
+checkpoints detect nested Git workspaces (`0dd5c64bc`) and resume after `git init` (`c843c1929`);
+turn checkpoints are captured after all edits finish (`7a089b2b2`); duplicate desktop clients are
+replaced in one transaction after a restart (`eb77683e5`); copied
+native update commands are shell-quoted (`d28077e58`); native provider executable paths survive
+updates (`2d5464afb`); the integrated terminal advertises truecolor (`89ee69e44`); Claude safety
+model fallback notices are surfaced instead of dropped (`a5bbad910`); retired Codex models are
+dropped after a refresh (`bfef973d9`) and GPT-6-Astra is marked current (`bc03c3640`).
+
+**Server performance.** Thread summaries no longer load message bodies (`8ac546292`); projector
+cursor writes are batched (`2263e13fd`); OpenCode tool history and tool parts are no longer
+retained (`f2e3764c2`, `c8f77e0d4`) and repeated progress logs are omitted (`ec8b2119c`); terminal
+history stops being rebuilt per chunk (`3bbbc1d9f`) and is bounded by bytes (`cf9729d5e`);
+buffered provider events use one query (`dffb4cd3b`); checkpoint summaries avoid full patches
+(`c163d502d`); Linux process detail reads are
+skipped when unused (`163d86a78`); static web assets are cached and streamed (`27e6cc27f`).
+
+**Web.** The thread error banner no longer shifts the chat (`3e2c1a66f`); the snooze menu stops
+overlapping thread details (`93c3ab4ff`); draft pull requests render in gray (`caab2fdba`); PR
+authors link to their profiles (`a76b898b3`); the PR Code tab's worker chunk is deferred until a
+reader approaches it (`110bbe6b5`); reselected diff files are revealed (`6b87ce3a0`); changed files
+became a persistent folder tree (`dd7bc147f`); PR project filter choices are deduplicated
+(`e5a87e8b9`); saved colors reload when the theme editor reopens (`caf4981e3`); text copies over
+plain HTTP (`03c6cd8ba`); file comment focus is restored in editable preview (`13427ecd8`);
+markdown widgets reset when the previewed file changes (`3e1333319`); retained runtime diagnostics
+show in the work log (`1246146f5`); sidebar tooltip titles stop clipping (`485782b2a`); the
+composer preserves original mention text (`761d4bac1`); automatic pull resets to its default
+(`f6db42062`); threads can be unpinned from the sidebar multi-select menu (`c7bf3115f`).
+
+**Cross-cutting.** Custom model names and option descriptors (`5a433244d`); POSIX file links respect
+case (`8faf031c2`); the Windows test-portability series (`cc60753aa`, `4701041ee`, `30f128fab`,
+`5c6c1d67d`, `c251e41b5`, `f083f520f`, `12b6d026b`, `1108be0fc`, `9af5139f5`, `9fa54eeb4`,
+`b123cbb31`) plus the Windows fixes it guards (`5f4c7161f` media path
+canonicalisation, `781f41ef1` symlinked theme files); SSH managed servers exec without npm wrappers
+(`f33fdc992`) and remote install failures are reported accurately (`39802c061`); the CLI resolves
+projects with missing workspace directories (`9cb40178a`); `tool.denied` is in the runtime event
+types (`b7d6e6502`); PATH probing skips duplicate entries (`c3caceade`); preview automation waits
+and screenshot captures are bounded (`de1b798c6`); warm thread resumes stay live instead of
+flashing sync (`f87ecf0cc`).
+
+#### Adaptations worth knowing about
+
+- **`5a433244d` (custom model names).** Upstream changed six `customModels` schemas; Ronin has nine
+  (Droid, Kilo and Pi as well), and all nine moved to `CustomModelSetting` in both the settings and
+  the patch schemas. The inline `CustomModelEditor` was wired into Ronin's existing model row
+  rather than upstream's rebuilt one, and its controls were remapped from upstream's
+  `compact`/`icon-micro`/`ghost-muted` scale — which batch 24 deliberately declined — onto Ronin's
+  `sm`/`icon-xs`/`ghost`.
+- **`5a2f3ebf6` (segmented controls).** Ronin's `toggle.tsx` had no `segmented` variant, so one was
+  written in Ronin's flattened idiom (no `before:` highlight, no shadow, colour-only transition,
+  `--control-radius`) instead of copying upstream's. The `ProviderSettingsPanel` device-tab hunk was
+  dropped: it belongs to the skipped Limits-tab layout work. `GitActionsControl` has no publish
+  dialog here, so that hunk had nothing to land on.
+- **`caab2fdba` (draft PRs in gray).** Upstream hard-codes `text-zinc-500 dark:text-zinc-400/80`.
+  Ronin already had a `--vcs-draft-foreground` token, so the draft state uses
+  `text-vcs-draft-foreground` and the tests assert that instead.
+- **`dd7bc147f` (persistent folder tree).** Ronin's card carries a `durationLabel` upstream does not
+  have; the collapse control went away as upstream intends, but the duration stayed and now renders
+  in the new sticky header.
+- **`0dd5c64bc` (nested Git workspaces).** Taken in `CheckpointReactor`, which now asks
+  `checkpointStore.isGitRepository` instead of the synchronous `apps/server/src/git/Utils.ts` helper.
+  The `ProviderRuntimeIngestion` call site kept the synchronous helper — routing it through the
+  store made `consumes P1 runtime events into thread metadata, diff checkpoints, and activities`
+  time out waiting for thread state — so `git/Utils.ts` stays rather than being deleted as upstream
+  does.
+- **`27e6cc27f` (static asset caching).** Upstream's `openStaticFile` streaming path was merged
+  _around_ Ronin's `realPath` canonicalisation, so a symlink pointing out of the static root is
+  still rejected rather than served with a year-long cache header.
+- **`61a91b6ef` (grouped image views).** Its Grok hunk calls `normalizeGrokReasoningEffort` and a
+  `requestedTurnReasoningEffort` that predate this range and do not exist here; the turn's reasoning
+  effort is read the same way the session-start path already reads it.
+- **`d7cf8aaa8` / `f87ecf0cc` (thread streams).** Applied together — the first landed only its
+  supporting files on the first pass and left `threads.ts` behind, which is what made the warm
+  resume flash sync.
+- **`887ece307`'s test dependency.** `react-test-renderer@19.2.8` and its types were added to
+  `apps/web` devDependencies. Ronin had dropped the package with batch 25's markup-only test
+  removal, but three commits in this batch use it for real mount/unmount behaviour (Lexical
+  serialisation, diff worker lifecycle, file-save coordination) rather than static-markup
+  assertions, so the dependency is back and the tests came with it.
+
+### Already in the tree
+
+- **`d76b24dd1` (Codex async questions).** Listed as a batch-25 gap during triage and then
+  disproved: every sampled line of the commit is present. Recorded here so it is not re-checked.
+- **`108f295cc` (bound slow-client event buffers)** — in substance. Ronin already bounds live
+  buffers with its own `makeBoundedLiveBuffer` and per-stream coalescers from batch 24. See
+  **Skipped** for why upstream's rewrite was not taken on top.
+
+### Skipped
+
+**Asked, and decided by the maintainer.**
+
+| Cluster                     | Commits                                                                                         | Reason                                                                     |
+| --------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Resting composer follow-ups | `54aef6fbe` `3c3e05ccf` `f239b77df` `9e1bc36a0` `f559fe0ba` `720e126b7` `c1d27e593`             | Ronin has no resting composer (batch 25's `5b8445b7a`)                     |
+| Usage / Limits tab          | `1641b4aba` `394e8470c` `84b99f3fb` `7ee52b077` `f1e90e388` `98a29cbaa` `8357eef14` `764946502` | Ronin has no Limits tab (batch 25's `19d8ab2ae`)                           |
+| First-run welcome wizard    | `09aac7156`                                                                                     | 122 files, +15 526; a new onboarding surface, deferred as its own decision |
+| Safari cookie import        | `ed2bdbb27`                                                                                     | builds on the cookie-import stack Ronin never took                         |
+
+**Cut surfaces (40 commits).** `apps/mobile`, `apps/marketing`, `apps/relay`, `.macroscope` and
+`.github`-only changes, as every batch.
+
+**T3 Connect (4 commits).** `39abb9d1d`, `99e3b721c`, `2dca7a1ed`, `363cde411`. DPoP credential
+refresh, relay authorization and headless-setup diagnostics for a surface this fork removed. Their
+test files applied on the first pass and were reverted along with the rest.
+
+**Upstream's Knip sweep (71 commits).** `126ea5c3b` configures Knip, `d2c3e2e5d` and
+`4631000f5`/`cd92a7e7a` gate CI on it, and the rest are the dead-code removals and
+`export`-narrowings it found. Ronin has no Knip config and a different usage graph, so these are
+upstream hygiene against upstream's own graph — and `AGENTS.md` asks a sync not to fold in
+opportunistic cleanup. `4a42fc62e` ("prune unused UI and provider code") is in the same class.
+
+**Structural conflicts with Ronin's own design.**
+
+| Upstream                            | Title                                                                    | Why not                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `887ece307`                         | perf(web): keep Markdown mounted during streaming (#9677)                | Rewrites a 433-line block of `ChatMarkdown` into 507 lines around a new renderer context. Ronin's copy is 274 lines diverged; the merge was not something to land unverified in the hottest render path.                                                                                                                                                                                                        |
+| `95103905f` `eced382b4`             | PR link previews; stable chat media size                                 | Both wire into `887ece307`'s structure. `PullRequestLinkPreview.tsx` and `ui/preview-card.tsx` were removed rather than left orphaned.                                                                                                                                                                                                                                                                          |
+| `108f295cc` `50bfca43d` `ce4712d5b` | slow-client buffers; per-thread replay; restore UX                       | Replace Ronin's `makeBoundedLiveBuffer` + coalescer backpressure design wholesale. Applying `50bfca43d` alone deadlocked two `server.test.ts` overflow tests at the 120 s timeout.                                                                                                                                                                                                                              |
+| `b906ce2d7`                         | fix(server): recover opted-in threads after machine restarts             | Ported, then reverted. The source landed and moves `continueThreadsAfterServerUpdate` from client to server settings, but its 641-line `serverRuntimeStartup.reconcile.test.ts` rewrite does not merge onto Ronin's, and minimal fixture edits left two tests hanging on a deferred at the 120 s timeout. Worth redoing with the test rewrite done deliberately.                                                |
+| `fce850845`                         | fix(server): surface a missing workspace folder instead of a spawn error | Ported, then reverted. `startSession` now stats the workspace before dispatching, which is right, but it fails 18 existing tests that start sessions in synthetic cwds. Upstream's test rewrite creates real temp directories; Ronin's fixtures need the same treatment before this can land.                                                                                                                   |
+| `d7fe47fd0`                         | fix(server): dismiss native questions when their turn ends               | Its `ProviderRuntimeIngestion` hunk reads a `ServerSettingsService` this file does not acquire here, and it arrived through the same conflicted merge as `fce850845`.                                                                                                                                                                                                                                           |
+| `6365919f2`                         | perf(server): skip history reads for metadata commands                   | Swaps the metadata path's full-thread read for a shell read. Ronin's `ProviderCommandReactor` uses the full thread in 18 places downstream, so the swap does not stand alone here.                                                                                                                                                                                                                              |
+| `0a590fa01`                         | test(scripts): keep Windows packaging checks host-portable               | Half of it targets `scripts/lib/cli-external-packages.test.ts`, which this fork does not have; the remainder did not merge onto Ronin's `build-desktop-artifact.test.ts`.                                                                                                                                                                                                                                       |
+| `01f3e50ec`                         | fix(server): unblock OpenCode approvals and stop                         | Its `opencodeRuntime`/`OpenCodeAdapter` hunks do not merge onto Ronin's, which passes a `cliSpec.serverReadyPrefix` the upstream parser no longer takes; the approval option it adds needs a `warning` field this fork's contract lacks; and two of its ingestion tests assert an `enableLegacyTokenStreaming` server setting Ronin does not have. Its `ProjectionPipeline` and `session-logic` hunks did land. |
+| `2fb99a7a6` `c7dc3cbd0` `2271a27da` | installer-owned provider updates; mise/Homebrew follow-ups               | Ronin already resolves maintenance per installer via `resolveProviderMaintenanceCapabilitiesEffect`; the rest is a restructure across an installer set (vite-plus, mise) the fork has diverged on.                                                                                                                                                                                                              |
+| `560afffde`                         | fix(server): update Claude Agent SDK to 0.3.260 (#9135)                  | Needs the dependency bumped from 0.3.227 for `terminal_reason` / `api_error_status` to exist. Worth doing as its own change, with the SDK upgrade verified on its own.                                                                                                                                                                                                                                          |
+| `940e8233c`                         | fix(claude): surface usage-limit pauses in the thread (#7165)            | Imports `claudeUsageLimits.ts`, a module from before this range that Ronin never took.                                                                                                                                                                                                                                                                                                                          |
+| `1587f248d`                         | feat(server): measure provider turn token usage (#9132)                  | Reports into an `AnalyticsService` / `apps/server/src/telemetry` that does not exist here.                                                                                                                                                                                                                                                                                                                      |
+| `2e688a53c` `9e1fb459a`             | docs: restructure internal and user guides                               | Rewrites 30 and 23 doc files against upstream's own doc set, including files for cut surfaces. Ronin's `docs/` split already follows the audience rule these commits introduce.                                                                                                                                                                                                                                 |
+
+**Landed as a logic module with no wiring, so backed out.** `4d3907f63` (highlight visible settings
+sections), `fd773172e` (recall sent prompts with the up arrow) and `ce4712d5b`'s `visibleAnimation`
+helper each brought their pure module and tests but not the component edits that use them — those
+hunks target `SettingsSidebarNav`/`routes/settings.tsx`, `ChatComposer`, and the panel-animation
+callers, all of which Ronin has diverged on. An unimported module is worse than an absent feature,
+so the modules were removed with the rest of each commit.
+
+**Small UI commits that did not survive contact.** `d7884ce90` `2b10398cc` `2e61301b1`
+(settings-sidebar chrome), `bf40fa786` (wordmark baseline), `c3b8825bf` (tool icons on failed
+calls), `4cc800c75` `120fab18d` `8e056a0e5` (composer/palette layering), `14bf3f6d1` (Cmd+S stash
+toggle), `c7c1dfe4d` (stop continuous chat status animations), `7d5dc66c1` (composer helper text),
+`935917f50` (running tool label shine), `389bbcc8d` (toggle thumb inset), `7f8cf30ca` (sidebar
+project action a11y), `bc8584bf8` (keybinding notice spacing), `be7796d86` (agent spawn row
+scaling), `45bd3b631` (mute background working threads), `cfc9bf341` (fold single trailing
+activity), `19c1710a8` (timeline row reuse), `15eda897d` (defer image URL requests), `b34ff8f56`
+(dedupe CLI proxy accounts), `5f878d2a8` (fold context compaction), `087cfb8ae` (Cursor symlinked
+skills), `2152d44de` (OpenCode workspace skills via SDK).
+Each targets a component Ronin has rewritten, and each is small enough to be redone directly rather
+than merged. `c7c1dfe4d` is the one to revisit first: `AGENTS.md` is explicit about continuously
+repainting animations, and it is worth confirming by hand whether Ronin's chat status still has any.
+
+### Verification
+
+Run per workspace, because the repo-root vitest project does not carry `apps/web`'s
+`assetsInclude: ["**/*.wasm"]` and the Ghostty terminal tests cannot resolve their wasm there.
+
+| Scope                     | Result                                        |
+| ------------------------- | --------------------------------------------- |
+| `packages/contracts`      | 351 tests, 0 failures                         |
+| `packages/shared`         | 442 tests, 0 failures                         |
+| `packages/client-runtime` | 521 tests, 0 failures                         |
+| `packages/ssh`            | 42 tests, 0 failures                          |
+| `apps/desktop`            | 494 tests, 0 failures                         |
+| `apps/web`                | 3 836 tests, 328 files, 0 failures            |
+| `apps/server`             | 3 499 tests, 276 files, 8 skipped, 0 failures |
+| `scripts` (packaging)     | 33 tests, 0 failures                          |
+
+- Typecheck: `tsgo --noEmit` in `packages/contracts`, `packages/shared`, `packages/client-runtime`,
+  `packages/ssh`, `apps/web`, `apps/desktop`, `apps/server` — 0 errors each.
+- `vp lint` over every changed `.ts`/`.tsx` — clean. `vp fmt --check` over every changed source and
+  doc — clean. `git diff --check` — clean outside `patches/`, whose vendored pnpm patch is
+  byte-identical to upstream's (its `space before tab` warnings are upstream content, and the
+  lockfile's `patch_hash` matches upstream's).
+
+**Pre-existing, unrelated.** `apps/server/integration/orphanedProviderSessionStartup.integration.test.ts`
+fails to typecheck at HEAD too (`GitVcsDriver` missing from the expected Effect context, TS2375 +
+TS377004). Batch 25 introduced it; this batch neither fixed nor worsened it. Everything else in
+`apps/server` typechecks.
+
+**How the server suite was verified.** It takes ~35 minutes and was re-run after every
+correction; three rounds of it caught defects the per-file runs had missed — a receipts queue wired
+to `RuntimeReceiptBusLive` (a deliberate no-op) instead of `RuntimeReceiptBusTest`, `01f3e50ec`'s
+tests landing without its `opencodeRuntime` source, and `61a91b6ef`'s Codex hunk not routing
+`CodexDeveloperInstructions` through the shared `buildRuntimeInstructions`. Running it once at the
+end would not have been enough.
+
+**Not tested.** No client was started, per `AGENTS.md`. Worth a look first:
+
+- The **segmented toggle** written for this fork — the variant is new here, so its rest, hover and
+  pressed states have only ever been read, not seen. It is now the `ToggleGroup` default, which
+  reaches the diff layout switch, the PR code tab, the PR markdown editor, the theme editor and both
+  diagnostics windows.
+- The **custom model editor** in Settings → Providers, including the new pencil affordance on custom
+  rows and the inline editor beneath them.
+- **Changed files as a persistent tree** — the collapse control is gone and the duration label moved
+  into the sticky header.
+- **Draft pull requests** rendering through `--vcs-draft-foreground` in the sidebar and PR list.
+- The **PR Code tab's deferred chunk**: it now loads on hover or focus of the tab rather than on
+  panel mount, so a slow first open is the thing to watch for.

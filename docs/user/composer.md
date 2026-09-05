@@ -30,6 +30,12 @@ again** next to it. Attach the file again or remove it, then send.
 HEIC and HEIF photos are converted to JPEG automatically when you drag them into the composer or
 paste them into a message.
 
+## Custom models
+
+On web and desktop, use Settings → Providers → **Models** to add an unlisted model with a custom
+name and options. Only options supported by the provider integration affect turns. Antigravity
+uses its account catalog and does not support custom models.
+
 ## Model defaults
 
 T3 Code remembers the last provider, model, and model options you selected and reuses that

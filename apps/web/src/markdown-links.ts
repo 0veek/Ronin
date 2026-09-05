@@ -1,3 +1,4 @@
+import { isWindowsAbsolutePath, stripSlashPrefixedWindowsDrive } from "@t3tools/shared/path";
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import {
   isTerminalLinkActivation,
@@ -405,8 +406,11 @@ function workspaceRelativePath(path: string, workspaceRoot: string | undefined):
     /\/+$/,
     "",
   );
-  const pathForCompare = normalizedPath.toLowerCase();
-  const rootForCompare = normalizedRoot.toLowerCase();
+  // Only Windows roots compare case-insensitively; a POSIX sibling that
+  // differs only in case is a different file.
+  const caseInsensitive = isWindowsAbsolutePath(stripSlashPrefixedWindowsDrive(workspaceRoot));
+  const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
+  const rootForCompare = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
   if (!pathForCompare.startsWith(`${rootForCompare}/`)) return null;
   return normalizedPath.slice(normalizedRoot.length + 1);
 }

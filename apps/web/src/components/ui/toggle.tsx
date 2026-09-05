@@ -26,6 +26,7 @@ const toggleVariants = cva(
       size: {
         default: "h-9 min-w-9 px-[calc(--spacing(2)-1px)] sm:h-8 sm:min-w-8",
         lg: "h-10 min-w-10 px-[calc(--spacing(2.5)-1px)] sm:h-9 sm:min-w-9",
+        segmented: "h-6 min-w-0 px-2.5 text-xs",
         sm: "h-8 min-w-8 px-[calc(--spacing(1.5)-1px)] sm:h-7 sm:min-w-7",
         xs: "h-7 min-w-7 px-[calc(--spacing(1)-1px)] sm:h-6 sm:min-w-6",
       },
@@ -34,6 +35,10 @@ const toggleVariants = cva(
         ghost:
           "border-transparent text-foreground data-pressed:bg-accent data-pressed:text-accent-foreground disabled:opacity-100 disabled:text-muted-foreground disabled:[&_svg]:opacity-100",
         outline: "border-input bg-transparent dark:data-pressed:bg-input dark:hover:bg-input/64",
+        // A pressed segment reads as a raised chip on the group's recessed
+        // track. Flat like the rest: the fill carries the state, not a shadow.
+        segmented:
+          "border-transparent text-muted-foreground hover:bg-background/55 hover:text-foreground data-pressed:bg-background data-pressed:text-foreground dark:hover:bg-input/32 dark:data-pressed:bg-input/72",
       },
     },
   },

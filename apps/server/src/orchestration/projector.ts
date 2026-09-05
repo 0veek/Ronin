@@ -792,7 +792,13 @@ export function projectEvent(
               ? thread.latestTurn
               : {
                   turnId: payload.turnId,
-                  state: checkpointStatusToLatestTurnState(payload.status),
+                  // A checkpoint capture reports on the turn; it does not end
+                  // it. An interrupted turn stays interrupted.
+                  state:
+                    thread.latestTurn?.turnId === payload.turnId &&
+                    thread.latestTurn.state === "interrupted"
+                      ? "interrupted"
+                      : checkpointStatusToLatestTurnState(payload.status),
                   requestedAt:
                     thread.latestTurn?.turnId === payload.turnId
                       ? thread.latestTurn.requestedAt

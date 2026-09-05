@@ -27,6 +27,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
 import type { OpenCodeAdapterShape } from "../Services/OpenCodeAdapter.ts";
 import {
@@ -41,6 +42,7 @@ import {
   makeOpenCodeAdapter,
   mergeOpenCodeAssistantText,
 } from "./OpenCodeAdapter.ts";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 // Test-local service tag so the rest of the file can keep using `yield* OpenCodeAdapter`.
 class OpenCodeAdapter extends Context.Service<OpenCodeAdapter, OpenCodeAdapterShape>()(
@@ -4960,6 +4962,10 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
         },
         agent: "github-copilot",
         variant: "high",
+        system: buildRuntimeInstructions({
+          harness: "OpenCode",
+          model: "anthropic/claude-sonnet-4-5",
+        }),
         parts: [{ type: "text", text: "Fix it" }],
       });
     }).pipe(Effect.provide(adapterLayer));
@@ -5007,6 +5013,10 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
           providerID: "anthropic",
           modelID: "claude-sonnet-4-5",
         },
+        system: buildRuntimeInstructions({
+          harness: "OpenCode",
+          model: "anthropic/claude-sonnet-4-5",
+        }),
         parts: [{ type: "text", text: "Fix it" }],
       });
     }).pipe(Effect.provide(adapterLayer));
@@ -5143,30 +5153,32 @@ it.layer(OpenCodeAdapterTestLayer)("OpenCodeAdapterLive", (it) => {
     }),
   );
 
-  it.effect("treats lexically or physically identical directories as the same", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const sameDirectory = (left: string, right: string) =>
-        isSameOpenCodeDirectory(fileSystem, path, left, right);
+  it.effect.skipIf(!symlinksSupported)(
+    "treats lexically or physically identical directories as the same",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sameDirectory = (left: string, right: string) =>
+          isSameOpenCodeDirectory(fileSystem, path, left, right);
 
-      // Lexical-only differences (trailing slash, dot segments) short-circuit
-      // without touching the filesystem — the paths need not exist.
-      NodeAssert.equal(yield* sameDirectory("/repo/project/", "/repo/project"), true);
-      NodeAssert.equal(yield* sameDirectory("/repo/nested/../project", "/repo/project"), true);
-      // Nonexistent paths degrade to the lexical comparison instead of failing.
-      NodeAssert.equal(yield* sameDirectory("/repo/project", "/repo/other"), false);
+        // Lexical-only differences (trailing slash, dot segments) short-circuit
+        // without touching the filesystem — the paths need not exist.
+        NodeAssert.equal(yield* sameDirectory("/repo/project/", "/repo/project"), true);
+        NodeAssert.equal(yield* sameDirectory("/repo/nested/../project", "/repo/project"), true);
+        // Nonexistent paths degrade to the lexical comparison instead of failing.
+        NodeAssert.equal(yield* sameDirectory("/repo/project", "/repo/other"), false);
 
-      // A symlinked cwd (the macOS `/tmp` → `/private/tmp` shape) resolves to
-      // the directory it points at, so the two spellings compare equal.
-      const base = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-opencode-dir-" });
-      const real = path.join(base, "real");
-      const link = path.join(base, "link");
-      yield* fileSystem.makeDirectory(real);
-      yield* fileSystem.symlink(real, link);
-      NodeAssert.equal(yield* sameDirectory(link, real), true);
-      NodeAssert.equal(yield* sameDirectory(link, path.join(base, "other")), false);
-    }).pipe(Effect.scoped),
+        // A symlinked cwd (the macOS `/tmp` → `/private/tmp` shape) resolves to
+        // the directory it points at, so the two spellings compare equal.
+        const base = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-opencode-dir-" });
+        const real = path.join(base, "real");
+        const link = path.join(base, "link");
+        yield* fileSystem.makeDirectory(real);
+        yield* fileSystem.symlink(real, link);
+        NodeAssert.equal(yield* sameDirectory(link, real), true);
+        NodeAssert.equal(yield* sameDirectory(link, path.join(base, "other")), false);
+      }).pipe(Effect.scoped),
   );
 
   it.effect("appends raw assistant text deltas and reconciles part update snapshots", () =>

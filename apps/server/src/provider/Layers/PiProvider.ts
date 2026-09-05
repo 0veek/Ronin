@@ -3,6 +3,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import {
+  type CustomModelSetting,
   type ModelCapabilities,
   type PiSettings,
   type ServerProviderModel,
@@ -49,7 +50,7 @@ const RUNTIME_PROBE_TIMEOUT_MS = 4_000;
 const PI_BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = [];
 
 function piModelsFromSettings(
-  customModels: ReadonlyArray<string> | undefined,
+  customModels: ReadonlyArray<CustomModelSetting> | undefined,
 ): ReadonlyArray<ServerProviderModel> {
   return providerModelsFromSettings(PI_BUILT_IN_MODELS, customModels ?? [], EMPTY_CAPABILITIES);
 }

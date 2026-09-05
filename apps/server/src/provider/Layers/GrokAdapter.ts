@@ -39,6 +39,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
@@ -1527,6 +1528,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               const requestedTurnModelId = turnModelSelection?.model
                 ? resolveGrokAcpBaseModelId(turnModelSelection.model)
                 : undefined;
+              const requestedTurnReasoningEffort = getModelSelectionStringOptionValue(
+                turnModelSelection,
+                "reasoningEffort",
+              );
 
               const text = input.input?.trim();
               // Grok ingests images only. Generic files reach the agent
@@ -1588,6 +1593,13 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               const displayModel = currentModelId
                 ? resolveGrokAcpBaseModelId(currentModelId)
                 : undefined;
+              const runtimeInstructions = buildRuntimeInstructions({
+                harness: "Grok",
+                model: displayModel,
+                ...(requestedTurnReasoningEffort
+                  ? { reasoningEffort: requestedTurnReasoningEffort }
+                  : {}),
+              });
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
                 yield* Effect.yieldNow;
               }
@@ -1643,6 +1655,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 acpSessionId: ctx.acpSessionId,
                 displayModel,
                 promptParts,
+                runtimeInstructions,
                 turnId,
                 promptEpoch,
                 promptLifecycle: ctx.promptLifecycle,
@@ -1699,7 +1712,15 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               }
               const dispatched = yield* Deferred.make<void>();
               const fiber = yield* liveCtx.acp
-                .prompt({ prompt: prepared.promptParts }, { dispatched })
+                .prompt(
+                  {
+                    prompt: [
+                      ...prepared.promptParts,
+                      { type: "text", text: prepared.runtimeInstructions },
+                    ],
+                  },
+                  { dispatched },
+                )
                 .pipe(Effect.forkChild({ startImmediately: true }));
               // Hold the lifecycle permit until the runtime has registered this
               // prompt's RPC fiber, so a later steer's session/cancel targets

@@ -102,18 +102,34 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
 
+function quoteUpdateExecutable(executable: string, platform: NodeJS.Platform): string {
+  const safePath = platform === "win32" ? /^[\w./:\\-]+$/ : /^[\w./:-]+$/;
+  if (safePath.test(executable)) return executable;
+  // Windows terminals default to PowerShell, where a quoted executable needs &.
+  return platform === "win32"
+    ? `& '${executable.replace(/['\u2018\u2019]/g, "$&$&")}'`
+    : `'${executable.replaceAll("'", "'\\''")}'`;
+}
+
 export function makeProviderMaintenanceCapabilities(input: {
   readonly provider: ProviderDriverKind;
   readonly packageName: string | null;
   readonly updateExecutable: string | null;
   readonly updateArgs: ReadonlyArray<string>;
   readonly updateLockKey: string | null;
+  readonly platform?: NodeJS.Platform;
 }): ProviderMaintenanceCapabilities {
   const update =
     input.updateExecutable === null || input.updateLockKey === null
       ? null
       : {
-          command: [input.updateExecutable, ...input.updateArgs].join(" "),
+          command: [
+            quoteUpdateExecutable(
+              input.updateExecutable,
+              input.platform ?? HostProcessPlatform.defaultValue(),
+            ),
+            ...input.updateArgs,
+          ].join(" "),
           executable: input.updateExecutable,
           args: input.updateArgs,
           lockKey: input.updateLockKey,
@@ -217,6 +233,8 @@ function makeHomebrewProviderMaintenanceCapabilities(
 
 function makeNativeProviderMaintenanceCapabilities(
   definition: PackageManagedProviderMaintenanceDefinition,
+  commandPath: string,
+  platform: NodeJS.Platform,
 ): ProviderMaintenanceCapabilities | null {
   if (!definition.nativeUpdate) {
     return null;
@@ -225,9 +243,10 @@ function makeNativeProviderMaintenanceCapabilities(
   return makeProviderMaintenanceCapabilities({
     provider: definition.provider,
     packageName: definition.npmPackageName,
-    updateExecutable: definition.nativeUpdate.executable,
+    updateExecutable: commandPath,
     updateArgs: definition.nativeUpdate.args,
     updateLockKey: definition.nativeUpdate.lockKey,
+    platform,
   });
 }
 
@@ -312,8 +331,11 @@ export function resolvePackageManagedProviderMaintenance(
       commandPaths.some((commandPath) => nativeUpdate.isCommandPath(commandPath))
     ) {
       return (
-        makeNativeProviderMaintenanceCapabilities(definition) ??
-        makeNpmGlobalProviderMaintenanceCapabilities(definition)
+        makeNativeProviderMaintenanceCapabilities(
+          definition,
+          resolvedCommandPath,
+          options?.platform ?? HostProcessPlatform.defaultValue(),
+        ) ?? makeNpmGlobalProviderMaintenanceCapabilities(definition)
       );
     }
     if (commandPaths.some(isVitePlusGlobalCommandPath)) {
@@ -376,14 +398,11 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
   options?: Omit<ProviderMaintenanceCapabilityResolutionOptions, "realCommandPath">,
 ) {
   const binaryPath = nonEmptyString(options?.binaryPath);
+  const platform = options?.platform ?? (yield* HostProcessPlatform);
   if (!binaryPath) {
-    // No path to classify, so the platform never gets consulted. Reading it
-    // here anyway would add a fiber step to the one branch every default-
-    // configured provider takes while being created.
-    return resolver.resolve(options);
+    return resolver.resolve({ ...options, platform });
   }
 
-  const platform = yield* HostProcessPlatform;
   const env = options?.env ?? (yield* readCommandLookupEnv);
   const resolvedCommandPath =
     (yield* resolveCommandPath(binaryPath, { env }).pipe(

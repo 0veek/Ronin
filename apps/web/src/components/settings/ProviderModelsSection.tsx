@@ -6,6 +6,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   InfoIcon,
+  PencilIcon,
   PlusIcon,
   StarIcon,
   XIcon,
@@ -16,7 +17,7 @@ import {
   type ProviderInstanceId,
   type ServerProviderModel,
 } from "@t3tools/contracts";
-import { normalizeCustomModelSlug } from "@t3tools/shared/model";
+import { type CustomModelDefinition, normalizeCustomModelSlug } from "@t3tools/shared/model";
 
 import { cn } from "../../lib/utils";
 import { sortModelsForProviderInstance } from "../../modelOrdering";
@@ -25,6 +26,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { CustomModelEditor } from "./CustomModelEditor";
 
 /**
  * Placeholder text for the "add a custom model" input, keyed by driver
@@ -56,11 +58,11 @@ interface ProviderModelsSectionProps {
    */
   readonly models: ReadonlyArray<ServerProviderModel>;
   /**
-   * The persisted custom-model slug list for this instance. Drives dedup,
-   * and is the array we hand back verbatim (with the new slug appended /
+   * The persisted custom-model list for this instance, resolved. Drives
+   * dedup, and is the list we hand back (with an entry appended / replaced /
    * removed) via `onChange`.
    */
-  readonly customModels: ReadonlyArray<string>;
+  readonly customModels: ReadonlyArray<CustomModelDefinition>;
   /** Server-returned model slugs hidden from the model picker. */
   readonly hiddenModels: ReadonlyArray<string>;
   /** Model slugs favorited for this provider instance. */
@@ -72,7 +74,7 @@ interface ProviderModelsSectionProps {
    * write to the correct storage (legacy `settings.providers[kind]` vs.
    * `providerInstances[id].config`).
    */
-  readonly onChange: (next: ReadonlyArray<string>) => void;
+  readonly onChange: (next: ReadonlyArray<CustomModelDefinition>) => void;
   readonly onHiddenModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
@@ -105,8 +107,11 @@ export function ProviderModelsSection({
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  // Slug of the custom model whose inline editor is open, if any.
+  const [editingSlug, setEditingSlug] = useState<string | null>(null);
   const hiddenModelSet = useMemo(() => new Set(hiddenModels), [hiddenModels]);
   const favoriteModelSet = useMemo(() => new Set(favoriteModels), [favoriteModels]);
+  const builtInModels = useMemo(() => models.filter((model) => !model.isCustom), [models]);
   const orderedModels = useMemo(() => {
     return sortModelsForProviderInstance(models, {
       favoriteModels: favoriteModelSet,
@@ -129,12 +134,12 @@ export function ProviderModelsSection({
       setError(`Model slugs must be ${MAX_CUSTOM_MODEL_LENGTH} characters or less.`);
       return;
     }
-    if (customModels.includes(normalized)) {
+    if (customModels.some((entry) => entry.slug === normalized)) {
       setError("That custom model is already saved.");
       return;
     }
 
-    onChange([...customModels, normalized]);
+    onChange([...customModels, { slug: normalized, name: normalized, capabilities: null }]);
     setInput("");
     setError(null);
 
@@ -155,10 +160,16 @@ export function ProviderModelsSection({
   };
 
   const handleRemove = (slug: string) => {
-    onChange(customModels.filter((model) => model !== slug));
+    if (editingSlug === slug) setEditingSlug(null);
+    onChange(customModels.filter((entry) => entry.slug !== slug));
     onModelOrderChange(modelOrder.filter((model) => model !== slug));
     onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
     setError(null);
+  };
+
+  const handleSaveEdit = (next: CustomModelDefinition) => {
+    onChange(customModels.map((entry) => (entry.slug === next.slug ? next : entry)));
+    setEditingSlug(null);
   };
 
   const handleToggleHidden = (slug: string) => {
@@ -231,144 +242,90 @@ export function ProviderModelsSection({
           }
           const hasDetails = capLabels.length > 0 || model.name !== model.slug;
 
+          const editingEntry =
+            model.isCustom && editingSlug === model.slug
+              ? customModels.find((entry) => entry.slug === model.slug)
+              : undefined;
+
           return (
-            <div
-              key={`${instanceId}:${model.slug}`}
-              className={cn(
-                "grid min-h-7 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-1",
-                isHidden && "text-muted-foreground",
-              )}
-            >
-              <div className="flex min-w-0 items-center gap-1">
-                <span
-                  className={cn(
-                    "min-w-0 truncate text-xs",
-                    isHidden ? "text-muted-foreground line-through" : "text-foreground/90",
-                  )}
-                >
-                  {model.name}
-                </span>
-                {hasDetails ? (
-                  <Popover>
-                    <PopoverTrigger
-                      openOnHover
-                      delay={250}
-                      closeDelay={100}
-                      render={
-                        <Button
-                          size="icon-xs"
-                          variant="ghost"
-                          className="size-5 rounded-sm p-0 text-muted-foreground/60 hover:text-muted-foreground"
-                          aria-label={`Details for ${model.name}`}
-                        />
-                      }
-                    >
-                      <InfoIcon className="size-3" />
-                    </PopoverTrigger>
-                    <PopoverPopup side="top" tooltipStyle className="max-w-56">
-                      <div className="space-y-1">
-                        <code className="block text-2xs text-foreground">{model.slug}</code>
-                        {capLabels.length > 0 ? (
-                          <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                            {capLabels.map((label) => (
-                              <span key={label} className="text-3xs text-muted-foreground">
-                                {label}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    </PopoverPopup>
-                  </Popover>
-                ) : null}
-                {isHidden ? <span className="text-3xs text-muted-foreground">hidden</span> : null}
-                {model.isCustom ? (
-                  <span className="text-3xs text-muted-foreground">custom</span>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-0.5">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className={cn(
-                          "size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground",
-                          isFavorite && "text-favorite hover:text-favorite/80",
-                        )}
-                        onClick={() => handleToggleFavorite(model.slug)}
-                        aria-label={`${isFavorite ? "Remove" : "Add"} ${model.name} ${
-                          isFavorite ? "from" : "to"
-                        } favorites`}
-                      />
-                    }
+            <div key={`${instanceId}:${model.slug}`}>
+              <div
+                className={cn(
+                  "grid min-h-7 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 py-1",
+                  isHidden && "text-muted-foreground",
+                )}
+              >
+                <div className="flex min-w-0 items-center gap-1">
+                  <span
+                    className={cn(
+                      "min-w-0 truncate text-xs",
+                      isHidden ? "text-muted-foreground line-through" : "text-foreground/90",
+                    )}
                   >
-                    <StarIcon className={cn("size-3", isFavorite && "fill-current")} />
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">
-                    {isFavorite ? "Remove from favorites" : "Add to favorites"}
-                  </TooltipPopup>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                        disabled={!canMoveUp}
-                        onClick={() => handleMove(model.slug, -1)}
-                        aria-label={`Move ${model.name} up`}
-                      />
-                    }
-                  >
-                    <ArrowUpIcon className="size-3" />
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">Move up</TooltipPopup>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                        disabled={!canMoveDown}
-                        onClick={() => handleMove(model.slug, 1)}
-                        aria-label={`Move ${model.name} down`}
-                      />
-                    }
-                  >
-                    <ArrowDownIcon className="size-3" />
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">Move down</TooltipPopup>
-                </Tooltip>
-                {!model.isCustom ? (
+                    {model.name}
+                  </span>
+                  {hasDetails ? (
+                    <Popover>
+                      <PopoverTrigger
+                        openOnHover
+                        delay={250}
+                        closeDelay={100}
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            className="size-5 rounded-sm p-0 text-muted-foreground/60 hover:text-muted-foreground"
+                            aria-label={`Details for ${model.name}`}
+                          />
+                        }
+                      >
+                        <InfoIcon className="size-3" />
+                      </PopoverTrigger>
+                      <PopoverPopup side="top" tooltipStyle className="max-w-56">
+                        <div className="space-y-1">
+                          <code className="block text-2xs text-foreground">{model.slug}</code>
+                          {capLabels.length > 0 ? (
+                            <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                              {capLabels.map((label) => (
+                                <span key={label} className="text-3xs text-muted-foreground">
+                                  {label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </PopoverPopup>
+                    </Popover>
+                  ) : null}
+                  {isHidden ? <span className="text-3xs text-muted-foreground">hidden</span> : null}
+                  {model.isCustom ? (
+                    <span className="text-3xs text-muted-foreground">custom</span>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-0.5">
                   <Tooltip>
                     <TooltipTrigger
                       render={
                         <Button
                           size="icon-xs"
                           variant="ghost"
-                          className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                          onClick={() => handleToggleHidden(model.slug)}
-                          aria-label={`${isHidden ? "Show" : "Hide"} ${model.name}`}
+                          className={cn(
+                            "size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground",
+                            isFavorite && "text-favorite hover:text-favorite/80",
+                          )}
+                          onClick={() => handleToggleFavorite(model.slug)}
+                          aria-label={`${isFavorite ? "Remove" : "Add"} ${model.name} ${
+                            isFavorite ? "from" : "to"
+                          } favorites`}
                         />
                       }
                     >
-                      {isHidden ? (
-                        <EyeIcon className="size-3" />
-                      ) : (
-                        <EyeOffIcon className="size-3" />
-                      )}
+                      <StarIcon className={cn("size-3", isFavorite && "fill-current")} />
                     </TooltipTrigger>
                     <TooltipPopup side="top">
-                      {isHidden ? "Show in picker" : "Hide from picker"}
+                      {isFavorite ? "Remove from favorites" : "Add to favorites"}
                     </TooltipPopup>
                   </Tooltip>
-                ) : null}
-                {model.isCustom ? (
                   <Tooltip>
                     <TooltipTrigger
                       render={
@@ -376,17 +333,110 @@ export function ProviderModelsSection({
                           size="icon-xs"
                           variant="ghost"
                           className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                          aria-label={`Remove ${model.slug}`}
-                          onClick={() => handleRemove(model.slug)}
+                          disabled={!canMoveUp}
+                          onClick={() => handleMove(model.slug, -1)}
+                          aria-label={`Move ${model.name} up`}
                         />
                       }
                     >
-                      <XIcon className="size-3" />
+                      <ArrowUpIcon className="size-3" />
                     </TooltipTrigger>
-                    <TooltipPopup side="top">Remove custom model</TooltipPopup>
+                    <TooltipPopup side="top">Move up</TooltipPopup>
                   </Tooltip>
-                ) : null}
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+                          disabled={!canMoveDown}
+                          onClick={() => handleMove(model.slug, 1)}
+                          aria-label={`Move ${model.name} down`}
+                        />
+                      }
+                    >
+                      <ArrowDownIcon className="size-3" />
+                    </TooltipTrigger>
+                    <TooltipPopup side="top">Move down</TooltipPopup>
+                  </Tooltip>
+                  {!model.isCustom ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleToggleHidden(model.slug)}
+                            aria-label={`${isHidden ? "Show" : "Hide"} ${model.name}`}
+                          />
+                        }
+                      >
+                        {isHidden ? (
+                          <EyeIcon className="size-3" />
+                        ) : (
+                          <EyeOffIcon className="size-3" />
+                        )}
+                      </TooltipTrigger>
+                      <TooltipPopup side="top">
+                        {isHidden ? "Show in picker" : "Hide from picker"}
+                      </TooltipPopup>
+                    </Tooltip>
+                  ) : null}
+                  {model.isCustom ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+                            aria-label={`Edit ${model.slug}`}
+                            onClick={() =>
+                              setEditingSlug((current) =>
+                                current === model.slug ? null : model.slug,
+                              )
+                            }
+                          />
+                        }
+                      >
+                        <PencilIcon className="size-3" />
+                      </TooltipTrigger>
+                      <TooltipPopup side="top">Edit name and options</TooltipPopup>
+                    </Tooltip>
+                  ) : null}
+                  {model.isCustom ? (
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost"
+                            className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+                            aria-label={`Remove ${model.slug}`}
+                            onClick={() => handleRemove(model.slug)}
+                          />
+                        }
+                      >
+                        <XIcon className="size-3" />
+                      </TooltipTrigger>
+                      <TooltipPopup side="top">Remove custom model</TooltipPopup>
+                    </Tooltip>
+                  ) : null}
+                </div>
               </div>
+              {editingEntry ? (
+                <CustomModelEditor
+                  key={`${instanceId}:${model.slug}:editor`}
+                  instanceId={instanceId}
+                  driverKind={driverKind}
+                  entry={editingEntry}
+                  builtInModels={builtInModels}
+                  onSave={handleSaveEdit}
+                  onCancel={() => setEditingSlug(null)}
+                />
+              ) : null}
             </div>
           );
         })}
