@@ -645,6 +645,7 @@ export function makeAntigravityAdapter(
       // line and rejoins the thread through `--conversation`, so switching
       // model costs nothing and keeps the conversation.
       capabilities: { sessionModelSwitch: "in-session" },
+      compaction: { type: "slash-command", command: "/compact" },
       startSession,
       sendTurn,
       interruptTurn,

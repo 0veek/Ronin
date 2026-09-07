@@ -412,6 +412,15 @@ export const reconcileProviderSessions = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngine.OrchestrationEngineService;
   const providerService = yield* ProviderService.ProviderService;
   const query = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+  const settings = yield* ServerSettings.ServerSettingsService;
+  const continueAfterRestart = yield* settings.getSettings.pipe(
+    Effect.map((value) => value.continueThreadsAfterServerUpdate),
+    Effect.catch((cause) =>
+      Effect.logWarning("could not read restart continuation preference", { cause }).pipe(
+        Effect.as(false),
+      ),
+    ),
+  );
 
   const liveThreadIds = new Set(
     (yield* providerService.listSessions()).map((session) => session.threadId),
@@ -448,7 +457,20 @@ export const reconcileProviderSessions = Effect.gen(function* () {
       : null;
     const continuationMarked =
       continuationTurnId !== null &&
-      (session.activeTurnId === null || continuationTurnId === session.activeTurnId);
+      (session.activeTurnId === null || continuationTurnId === session.activeTurnId) &&
+      Option.isSome(binding) &&
+      (session.activeTurnId !== null ||
+        readRuntimePayload(binding.value.runtimePayload).activeTurnId == null ||
+        readRuntimePayload(binding.value.runtimePayload).activeTurnId === continuationTurnId);
+    // Runtime events advance the projection's turn, but not the directory's
+    // last admitted turn. Use the projection to identify interrupted work.
+    const interruptedByRestart =
+      continueAfterRestart &&
+      session.status === "running" &&
+      session.activeTurnId !== null &&
+      Option.isSome(binding) &&
+      binding.value.status === "running" &&
+      binding.value.resumeCursor != null;
     const settleAsError = (lastError: string) =>
       Effect.gen(function* () {
         yield* Effect.gen(function* () {
@@ -459,7 +481,9 @@ export const reconcileProviderSessions = Effect.gen(function* () {
               runtimePayload: {
                 ...readRuntimePayload(binding.value.runtimePayload),
                 activeTurnId: null,
-                ...(continuationMarkerPresent ? { [SERVER_UPDATE_CONTINUATION_KEY]: null } : {}),
+                ...(continuationMarkerPresent || interruptedByRestart
+                  ? { [SERVER_UPDATE_CONTINUATION_KEY]: null }
+                  : {}),
               },
             });
           }
@@ -504,7 +528,7 @@ export const reconcileProviderSessions = Effect.gen(function* () {
 
     if (
       Option.isSome(binding) &&
-      continuationMarked &&
+      (continuationMarked || interruptedByRestart) &&
       thread.archivedAt === null &&
       thread.deletedAt === null
     ) {
@@ -514,6 +538,8 @@ export const reconcileProviderSessions = Effect.gen(function* () {
           status: "starting",
           runtimePayload: {
             ...readRuntimePayload(binding.value.runtimePayload),
+            // Keep recovery durable if this process also exits before sending.
+            [SERVER_UPDATE_CONTINUATION_KEY]: session.activeTurnId ?? continuationTurnId,
             activeTurnId: null,
           },
         });
@@ -577,12 +603,12 @@ export const reconcileProviderSessions = Effect.gen(function* () {
             }
             return;
           }
-          yield* Effect.logWarning("failed to continue provider session after server update", {
+          yield* Effect.logWarning("failed to continue provider session after server restart", {
             threadId: thread.id,
             cause: continuationExit.cause,
           });
           yield* settleAsError(
-            "Could not continue this thread after the server update. Send a new message to continue.",
+            "Could not continue this thread after the server restart. Send a new message to continue.",
           ).pipe(Effect.ignoreCause);
         }),
       );

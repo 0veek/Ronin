@@ -35,7 +35,8 @@ in the question panel. Questions without suggested answers accept text.
 
 Your answers are sent as a new message. They reach the current turn while Codex is working, or
 start a new turn if it has finished. Unanswered questions stay available after you reconnect.
-Codex must support async questions.
+If you do not want to answer, dismiss the question from its panel. Dismissing closes it without
+sending anything to Codex. Codex must support async questions.
 
 ## Sub-agent models
 

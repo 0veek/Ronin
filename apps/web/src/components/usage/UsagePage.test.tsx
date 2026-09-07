@@ -9,33 +9,40 @@ const testState = vi.hoisted(() => ({
   breakdown: "time" as "model" | "time",
 }));
 
-// The window comes from the one lazy `useState` initializer and the breakdown
-// mode from the literal `"model"`, so pinning those two is enough to place the
-// page on its 24h period table without a router, a store, or a live clock.
+// The metric and range come from stored preferences and the breakdown mode
+// from the literal `"model"`, so pinning those is enough to place the page on
+// its 24h period table without a router, a store, or a live clock.
+vi.mock("./usagePagePreferences", () => ({
+  readUsagePagePreferences: () => ({ metric: testState.metric, windowDays: 1 }),
+  saveUsagePagePreferences: vi.fn(),
+}));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   return {
     ...actual,
-    useState: vi.fn((initial: unknown) => [
-      typeof initial === "function"
-        ? {
-            days: 1,
-            window: {
-              sinceDay: "2026-08-10",
-              untilDay: "2026-08-11",
-              timeZone: "UTC",
-              resolution: "hour",
-              sinceTime: "2026-08-10T12:37:00.000Z",
-              untilTime: "2026-08-11T12:37:00.000Z",
-            },
-          }
-        : initial === "cost"
-          ? testState.metric
-          : initial === "model"
+    useState: vi.fn((initial: unknown) => {
+      const value = typeof initial === "function" ? (initial as () => unknown)() : initial;
+      const isWindowSelection =
+        typeof value === "object" && value !== null && "window" in value && "days" in value;
+      return [
+        isWindowSelection
+          ? {
+              days: 1,
+              window: {
+                sinceDay: "2026-08-10",
+                untilDay: "2026-08-11",
+                timeZone: "UTC",
+                resolution: "hour",
+                sinceTime: "2026-08-10T12:37:00.000Z",
+                untilTime: "2026-08-11T12:37:00.000Z",
+              },
+            }
+          : value === "model"
             ? testState.breakdown
-            : initial,
-      vi.fn(),
-    ]),
+            : value,
+        vi.fn(),
+      ];
+    }),
   };
 });
 

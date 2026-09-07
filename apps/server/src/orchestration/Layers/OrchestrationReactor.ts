@@ -12,12 +12,14 @@ import { BuildSystemRunReactor } from "../Services/BuildSystemRunReactor.ts";
 import { QuotaResumeReactor } from "../Services/QuotaResumeReactor.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
+import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
   const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
   const providerCommandReactor = yield* ProviderCommandReactor;
   const checkpointReactor = yield* CheckpointReactor;
   const threadDeletionReactor = yield* ThreadDeletionReactor;
+  const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
   const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
   const quotaResumeReactor = yield* QuotaResumeReactor;
   const buildSystemRunReactor = yield* BuildSystemRunReactor;
@@ -27,6 +29,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* providerCommandReactor.start();
     yield* checkpointReactor.start();
     yield* threadDeletionReactor.start();
+    yield* threadPullRequestReactor.start();
     yield* threadSettlementReactor.start();
     yield* quotaResumeReactor.start();
     yield* buildSystemRunReactor.start();

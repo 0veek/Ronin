@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                |
-| ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `761d4bac1` — `fix(web): preserve original mention text in the composer (#10100)` (2026-09-05) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                |
-| **Ported on**                 | 2026-09-05                                                                                     |
+|                               |                                                                                               |
+| ----------------------------- | --------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `e1230d603` — `fix(mobile): keep pending messages in the chat timeline (#10449)` (2026-09-06) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                               |
+| **Ported on**                 | 2026-09-07                                                                                    |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -4803,3 +4803,360 @@ end would not have been enough.
 - **Draft pull requests** rendering through `--vcs-draft-foreground` in the sidebar and PR list.
 - The **PR Code tab's deferred chunk**: it now loads on hover or focus of the tab rather than on
   panel mount, so a slow first open is the thing to watch for.
+
+## Batch 27 — reviewed through `b155c2199` (82 commits)
+
+A small range by count, but a lopsided one: half of it is upstream's Knip/test-hygiene sweep and
+its mobile work, and the four commits that would have been the most user-visible turned out to rest
+on a subsystem this fork never took.
+
+### Ported (23)
+
+**Provider and server correctness.**
+
+| Upstream    | Title                                                                     | Notes                                                                              |
+| ----------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `311f05c8e` | fix(server): install pinned runtime when pnpm node lacks npm (#9923)      | clean                                                                              |
+| `0d8a91a25` | fix(cursor): cache successful model discovery between refreshes (#9918)   | **adapted** — kept `getCursorFallbackModels` exported; upstream made it private    |
+| `4ca71463a` | fix(opencode): revert from the first removed assistant message (#9924)    | clean                                                                              |
+| `050690d1b` | fix(server): settle threads using actual pull request terminal timestamps | **adapted** — one hunk re-indented onto Ronin's formatting of `PullRequestService` |
+| `e2e6ce6a2` | feat(server): report image dimensions with signed asset URLs (#10198)     | **adapted** — see below                                                            |
+
+**Desktop and connections.**
+
+| Upstream    | Title                                                                    | Notes                                                      |
+| ----------- | ------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| `60e1b7394` | fix(desktop): separate LAN and Tailscale pairing endpoints (#9882)       | clean — a Tailscale-only host now stays network-accessible |
+| `420fd76f6` | feat(connections): balance new threads across connected machines (#9895) | **adapted** — see below                                    |
+
+**Client runtime.**
+
+| Upstream    | Title                                               | Notes                   |
+| ----------- | --------------------------------------------------- | ----------------------- |
+| `bd16b86d5` | fix(client-runtime): report terminated thread loads | **adapted** — see below |
+| `eee05575e` | fix(clients): persist project icons across reloads  | **adapted** — see below |
+
+**Web.**
+
+| Upstream    | Title                                                              | Notes                                                                           |
+| ----------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `89bd6376d` | fix(web): align tool disclosure chevrons with expanded state       | clean — only `PlainWorkEntryRow`, as upstream scoped it                         |
+| `d92dca74e` | fix(web): resume imported custom-provider threads (#10184)         | **adapted** — source clean; tests rewritten, see below                          |
+| `f8b4c464b` | test(web): cancel pending highlight fixture frames during cleanup  | clean — a real fixture leak, not a styling-assertion removal                    |
+| `d0f855bfa` | fix(web): size the chat image slot from server-reported dimensions | **adapted** — see below                                                         |
+| `54441e63d` | fix(web): copy provider update commands from compact rows (#9888)  | **adapted** — Ronin's `icon-xs`/`ghost` scale and `--vcs`-style update token    |
+| `f12d39359` | fix(ui): unify loading and refresh feedback across clients (#9561) | **adapted** — see below                                                         |
+| `2c3353578` | fix(web): keep timestamp tooltip dates in English (#10256)         | clean                                                                           |
+| `3da9399b1` | fix(web): let authorized clients scrolling reach settings (#10080) | clean — Ronin's `ScrollArea` already had `chainVerticalScroll`                  |
+| `add8c3a55` | fix(web): remember usage page selection (#10189)                   | **adapted** — `cost`/`tokens` only; no `limits` metric here                     |
+| `84aebb72f` | fix(web): respect reduced motion in shared disclosures (#10258)    | clean                                                                           |
+| `4f782beda` | fix(web): prevent file tree search focus ring clipping (#10175)    | **adapted** — Ronin centralises the rule in `chrome.css`, see below             |
+| `272d6d747` | feat(markdown): show the GitHub mark for github.com links (#10324) | **adapted** — web hunk only; the mobile native module is not a surface here     |
+| `127efae44` | fix(web): expose error disclosure state (#10125)                   | **adapted** — `ExpandableText` is private to `DiagnosticsSettings` in this fork |
+| `55333833e` | fix(web): name combobox chip removal targets (#10127)              | clean                                                                           |
+
+#### Adaptations worth knowing about
+
+- **`e2e6ce6a2` (image dimensions).** Upstream reads the header through `assets/MediaFile.ts` and a
+  `media-file` asset resource, neither of which exists here. `packages/shared/src/imageDimensions.ts`
+  and the `AssetImageDimensions` contract were taken verbatim; the read itself was rewritten against
+  Ronin's `FileSystem` (`stat` → `open` → `readAlloc`) and hung off the two resources this fork does
+  have, `workspace-file` and `attachment`. The `stat` guard replaces upstream's non-blocking open:
+  a path swapped for a FIFO is rejected rather than blocking the request.
+- **`d0f855bfa` (chat image slot).** Ronin's `ChatMarkdownAssetImage` has none of upstream's
+  `standalone`/`MediaActionSource` structure and no `authoredImageSizeStyle`, so a private
+  `knownImageSizeStyle` was written with upstream's height-cap-folded-into-`max-width` trick. The
+  one caller that passed `style={{ maxHeight: "16rem" }}` now passes `maxHeightRem={16}`.
+- **`bd16b86d5` (terminated thread loads).** The `onDefect` hook and the error-preserving guards
+  landed as upstream wrote them. `markSynchronizing` did not: upstream clears the diagnostic at the
+  start of every retry, which is invisible behind its fixed 250 ms retry but not behind Ronin's
+  `threadSubscriptionRetryDelay` backoff — `threads-sync.test.ts` asserts the opposite, and a reader
+  would sit in front of an unexplained spinner for seconds. Split the two cases instead: an
+  automatic retry of an already-reported failure keeps its diagnostic, and retires it only once that
+  retry delivers a value; a defect or a new session still starts clean. Two refs carry this,
+  `retryingExpectedFailure` (set by `onExpectedFailure`) and `retryRetiresError` (set at the next
+  attempt's start, so values still draining from the failed attempt cannot consume it). All of
+  upstream's new tests and all of Ronin's pass unchanged.
+- **`eee05575e` (project icons).** `projectFaviconCache.ts` came over whole, minus its dependency on
+  `mediaMimeType` from upstream's much larger `filePreview.ts`; a private `faviconMimeType` maps the
+  eight workspace image extensions instead. `createProjectFaviconUrlAtomFamily` was rewritten
+  against `resolveAssetUrl`, since the `AssetUrlState`/`assetUrlStateFromResult` abstraction lives
+  in `apps/web/src/assets/assetUrls.ts` here, not in `client-runtime`.
+- **`d92dca74e` (imported custom-provider threads).** The `deriveLockedProvider` change applied
+  clean. Its tests did not: they sit inside a `resolveComposerProviderSelection` suite for a
+  function this fork does not have. Two focused tests were written against Ronin's existing
+  `deriveLockedProvider` suite instead — one for catalog resolution, one asserting a started thread
+  with a missing instance does not fall back to the picker's driver.
+- **`420fd76f6` (load balancing).** The scoring module, the `hostResources` RPC and the settings
+  panel are upstream's. Three things differ: `ws.ts` took only the `HostResources` import (upstream
+  also pulls in `AnalyticsService` and `UsageLimitSources`, neither of which exists here);
+  `LoadBalancingSettings` uses Ronin's `SettingsSection`, which takes a `title` and no
+  `description`, so the section copy moved onto the first row; and `BranchToolbar` kept Ronin's
+  `isMobile` branch rather than upstream's `@3xl/composer-surface` container queries, taking only
+  the `autoEnvironmentLabel`/`onAutoEnvironment` props. The doc section became its own
+  `## Balancing New Threads Across Machines` in `docs/user/remote-access.md` rather than landing
+  mid-sentence inside the headless-server walkthrough, and its mobile paragraph was dropped.
+- **`f12d39359` (loading and refresh feedback).** Upstream backs its new `Spinner`/`RefreshIcon` on
+  `lib/visibleAnimation.ts`, an IntersectionObserver that also parks off-screen animations — the
+  module batch 26 backed out of `ce4712d5b` for having no callers. It was not reintroduced. Ronin
+  already owns this concern in `styles/motion.css`, whose header is explicit that anything looping
+  forever carries `.loops-forever` and that the fix is "the class rather than a rule"; adding a
+  second mechanism would contradict it. `Spinner` and the new `RefreshIcon` are built on
+  `loops-forever` instead, and all 24 ad-hoc `animate-spin` call sites were converted. This gets
+  upstream's unification and its window-hidden parking, but **not** its off-screen parking — worth
+  revisiting as its own change, with the `visibleAnimation` question decided on purpose.
+- **`4f782beda` (focus ring clipping).** Upstream raises the inline preview subheader from `h-7` to
+  `h-9` on `FileBrowserPanel` itself. Ronin hoisted that rule into `chrome.css` for every
+  `[data-surface-subheader]` in the inline right panel, so the fix went there. It is a wider blast
+  radius by construction — the file browser search, the preview chrome row and the file preview
+  header all share it — and all three have focusable controls the 28 px row was clipping.
+
+### Already in the tree
+
+- **`bc028738a` (name the editor picker accurately).** `OpenInPicker` already carries the
+  unconditional `aria-label="Choose editor"` this commit introduces.
+
+### Skipped
+
+**Cut surfaces (17 commits).** `apps/mobile` and `apps/marketing` only: `6a8f4d3b8`, `7451d17a6`,
+`3fb8942a4`, `1cb49c3df`, `7eda989d3`, `579a77588`, `89cc7434f`, `b438447f6`, `bfba77816`,
+`b2e15185a`, `b7465a3bc`, `a49538558`, `d924fe266`, `e5d086c26`, `b155c2199`. `fc7ad2eda` targets
+`LegacySidebar.tsx` and `8d3c56b48` its mobile shortcut label; neither file exists here.
+
+**Upstream's Knip sweep, continued (14 commits).** `29c3a54a4` `3fbc497b7` `62ed748ac` `cb9a69423`
+`0671e3427` `dbfd51731` `5716dec97` `50bc62a83` `2ae3b712b` `5fe5c6fe9` `fdcc491e0` `226abe5f9`
+`1200f530b` `da2ba5b81`. Same reasoning as batch 26: upstream hygiene against upstream's usage
+graph, and `AGENTS.md` asks a sync not to fold in opportunistic cleanup.
+
+**Upstream's test-hygiene sweep (14 commits).** `47e250a84` `a324cabc0` `88fc41c1b` `748fe0f8b`
+`585ce2c2a` `f93aafcc2` `a9fc4dc2b` `b972f1c1d` `f1e84c28f` delete styling assertions and narrow the
+exports they reached through — the same class of change, and Ronin already removed its markup-only
+tests in batch 25. `76f686d03` (Clerk), `cabac780f` `0c200c5f8` `b4040d9bf` (WSL) and `181e45110`
+target cut surfaces. `f8b4c464b` was taken instead, because it fixes a real fixture leak.
+
+**Antigravity's ACP auth architecture (3 commits).** `6349a0e68`, `c8872fd22`, `ab67795dd`. Ronin's
+Antigravity driver probes `agy --version` / `agy models` and never reports an authenticated account;
+it has no `AntigravityAuth.ts`, no `antigravityAuthSupport.ts`, no ACP session files and no profile
+directory. `carrySavedAntigravityAccount` would never fire, the `session/new` error message has no
+producer, and the `~/.gemini` skill-linking commit targets a `profileDirectory` indirection this
+fork does not use — `skillsCatalog.ts` already reads `~/.gemini/config/skills` directly.
+
+**Other absent surfaces.**
+
+| Upstream    | Title                                                         | Why not                                                                                                   |
+| ----------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `2c301fd0c` | fix(shared): validate cloudflared with the version subcommand | `packages/shared/src/relayClient.ts` is part of the hosted relay this fork removed.                       |
+| `c2cfe59ac` | fix(web): defer browser discovery in integrations             | Ronin's `BrowserProfilesSetting` has no cookie-import wizard, so there is no eager scan to defer.         |
+| `aea9ecbc4` | fix(web): make task row states readable                       | No `ComposerTasksBadge` here.                                                                             |
+| `3be90ced4` | fix(web): align provider header action sizes and spacing      | Targets `editorHeaderAction` and the `icon-micro`/`ghost-muted` scale, neither of which exists here.      |
+| `82689782e` | fix(web): explain hosted connection prerequisites             | Rewrites the empty state around `cloudEnabled` / T3 Connect sign-in copy for a surface this fork removed. |
+
+**The usage-limits stack (4 commits) — asked, and decided by the maintainer.** `183c34330`
+(`/usage-limits`), `be53bbd85` (remaining quota), `b273d1cfe` (pooled limits), `00d6109cb` (fixture
+cleanup). The first triage read these as ~3 200 lines of self-contained feature. They are not: Ronin
+has none of the foundation they extend, and none of it is in this range. Missing here are
+`contracts/providerUsageLimits.ts`, `contracts/usageLimitSourceId.ts`, `shared/usageLimits.ts`,
+`server/usage/UsageLimitSources.ts`, `server/usage/cliproxyUsageLimits.ts`,
+`server/provider/providerUsageLimits.ts`, `server/provider/Layers/claudeUsageLimits.ts` (already
+declined in batch 26), `server/provider/Layers/codexUsageLimits.ts`, `web/usage/UsageLimits.tsx` and
+`web/settings/AddUsageLimitSourceDialog.tsx` — about 1 800 lines before the wiring into
+`providerSnapshot.ts`, `contracts/server.ts`, `contracts/settings.ts` and `shared/serverSettings.ts`.
+Taking it would mean importing a whole subsystem no commit in this range reviews. Deferred as a
+scoped follow-up: the foundation first, then these four, verified on their own. `add8c3a55` was
+taken, since it needs none of it.
+
+**Deferred as its own change.** `9f40b2f56` (feat(settings): add shared project defaults and scoped
+overrides). 38 files, +2 237: a new Settings → Projects route, a `ProjectDefaultsSettings` panel,
+per-project scoped overrides in server settings, and a 1 060-line rewrite of `ProjectSettingsPanel`,
+which this fork has diverged on. Its `WelcomeWizard` hunk has nothing to land on. Worth doing
+deliberately rather than inside an 82-commit sync.
+
+### Verification
+
+Run per workspace, for the same reason as batch 26.
+
+| Scope                     | Result                                       |
+| ------------------------- | -------------------------------------------- |
+| `packages/contracts`      | 354 tests, 0 failures                        |
+| `packages/shared`         | 450 tests, 0 failures                        |
+| `packages/client-runtime` | 557 tests, 50 files, 0 failures              |
+| `apps/desktop`            | 498 tests, 54 files, 0 failures              |
+| `apps/web`                | 3 854 tests, 329 files, 0 failures           |
+| `apps/server`             | 3 550 tests, 282 files, 9 skipped, 1 failure |
+
+- Typecheck: `tsgo --noEmit` in `packages/contracts`, `packages/shared`, `packages/client-runtime`,
+  `packages/ssh`, `apps/web`, `apps/desktop` — 0 errors each. `apps/server` reports 2, both the
+  pre-existing ones below.
+- `vp lint` over every changed `.ts`/`.tsx` — clean. `vp fmt --check` over every changed source and
+  doc — clean. `git diff --check` — clean outside `patches/`, unchanged from batch 26.
+
+**Pre-existing, unrelated.** `apps/server/integration/orphanedProviderSessionStartup.integration.test.ts`
+both fails and fails to typecheck at HEAD (`GitVcsDriver` missing from the expected Effect context,
+TS2375 + TS377004). Confirmed by stashing this batch and re-running the file at HEAD. Batch 25
+introduced it; batch 26 recorded the typecheck half. This batch neither fixed nor worsened it.
+
+**Not tested.** No client was started, per `AGENTS.md`. Worth a look first:
+
+- The **spinner and refresh unification** — 24 call sites moved onto two shared components, and
+  `Spinner` changed glyph (`Loader2Icon` → `LoaderCircleIcon`). The refresh affordances now spin in
+  place instead of being swapped out, which is the visible change; check the toast loading state,
+  the PR check "Running" glyph and the diff/file-tree refresh buttons.
+- **Load balancing** end to end: Settings → Connections → Load balancing, then a new draft in a
+  project grouped across two environments, including the composer's "Auto balance" menu entry.
+- **Chat images** reserving their box from server-reported dimensions — the win is the absence of a
+  layout shift, so it only shows on a slow first load.
+- **Project icons** surviving a reload and a reconnect, which is the whole point of `eee05575e`.
+- The **provider row's update affordance**: the compact row's select target is now an overlay
+  button behind the content, so tabbing and clicking around the new copy control is worth a check.
+
+## Batch 28 — reviewed through `e1230d603` (84 commits)
+
+Reviewed `b155c2199..e1230d603`, snapshotted at `e1230d6031bc55a21668818d0b585d8887b88579` for the whole run. The worktree already carried uncommitted batch-27 ports (load balancing, host resources, favicon cache, settlement policy). Those were preserved and later ports layered on top.
+
+No commit needed a product Ask. Usage-limits follow-ups stay skipped on the same deferred foundation as batch 27. Onboarding wizard commits skip because this fork has no `WelcomeWizard`.
+
+### Ported (51)
+
+**Release / CI**
+
+| Upstream    | Title                                                                     | Notes                                                             |
+| ----------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `7544d3d2c` | fix(release): space automatic nightlies at least six hours apart (#10272) | new `check-nightly-release.cjs`; cron `8,38 * * * *`              |
+| `001f06d54` | feat(ci): ship stable releases from the latest nightly commit (#10410)    | **adapted** — `resolve_commit` job; dropped Connect/WSL job hunks |
+
+**Server correctness and perf**
+
+| Upstream    | Title                                                                                      | Notes                                                              |
+| ----------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `4c7cd17a8` | refactor(server): share Claude result status and error mapping (#10296)                    | `resultOutcome`; unknown `terminal_reason` follows subtype         |
+| `f66cfe221` | fix(server): settle inactive threads without a PR lookup (#10103)                          | inactivity settles before any host lookup                          |
+| `60e6fa30c` | fix(ssh): report remote stop failures without losing ownership (#10105)                    | **adapted** — “Remote Ronin server”; `.ronin/ssh-launch`           |
+| `281b92b48` | perf(server): stop scanning old OpenCode parts (#10116)                                    | **adapted** — no turn token-usage accumulators here                |
+| `17490c0a0` | perf(server): avoid full thread reads on turn start (#10108)                               | `getTurnStartMessage`; collapsed a duplicate first-turn block      |
+| `eb8ed8030` | perf(server): skip plan bodies in thread summaries (#10341)                                | metadata-only `hasActionableByThreadId`                            |
+| `62f568b88` | fix(server): skip disabled provider instances for text generation fallback (#10346)        | kept Ronin’s known-model filter                                    |
+| `e0adcc8a2` | fix(server): capture checkpoints before refreshing PR status (#10347)                      | separate drainable PR worker                                       |
+| `e4e9fa9a0` | perf(server): finish runtime messages without full thread reads (#10120)                   | targeted message/plan/activity queries                             |
+| `5fa35d211` | refactor(server): let adapters declare context compaction (#10112)                         | native vs slash vs omit; Kilo rides OpenCode                       |
+| `223ff4490` | fix(server): link thread PRs without an open client (#10101)                               | **adapted** — migration **056**; mobile/LegacySidebar dropped      |
+| `7ac93e300` | fix(server): allow settling threads with unanswered async questions (#10400)               | manual settle dismisses `responseMode: "message"`                  |
+| `ac4f1a2b6` | fix(server): preserve inline provider secrets on redacted saves (#10054)                   | folded into Ronin’s secret plan/commit                             |
+| `86070cbc7` | fix(server): skip git status scans while the index is locked (#9845)                       | `index.lock` before porcelain                                      |
+| `29c5ecd0e` | fix(mcp): allow text-only preview snapshots (#10232)                                       | `includeImage?: boolean`                                           |
+| `3d00cfd5a` | fix(claude): name the expired login or usage limit instead of a generic API error (#10321) | **adapted** — no `announcedUsageLimits` here                       |
+| `95139254b` | fix(codex): accept misalignment policy errors on thread resume (#10373)                    | generator + schema.gen + tests                                     |
+| `d3d4ea42e` | fix(server): skip disabled settlement lookups (#10424)                                     | after `f66cfe221`                                                  |
+| `9ab0635db` | fix(server): run OpenCode CLI commands sequentially (#10427)                               | SQLite lock; Kilo shares the path                                  |
+| `1abc717f0` | fix(server): keep interrupted threads resumable after restarts (#10421)                    | **adapted** — `continueThreadsAfterServerUpdate` on ServerSettings |
+| `1e740e48a` | fix(server): follow placeholder branches after checkout updates (#10441)                   | saved `t3code/<hex>` can adopt a real checkout                     |
+| `52b2bf77a` | fix(server): handle JSON-wrapped titles and verbose Claude output (#10446)                 | docs re-homed into Ronin’s Claude settings section                 |
+| `6134b90ff` | fix(server): mark Cursor transport error answers as failed (#10337)                        | **adapted** — skip drain when the session is already stopped       |
+| `ea646c083` | fix(server): stop Windows terminal polling from spiking CPU (#9476)                        | protocol v3 `processTable`; backoff cap 60s                        |
+| `c2c4185e1` | fix(web): onboarding installs agents without needing Node or npm (#10402)                  | **subset** — Windows junction test only; wizard skipped            |
+
+**Client / web**
+
+| Upstream    | Title                                                                          | Notes                                                               |
+| ----------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| `dd6407291` | refactor(web): share bulk thread deletion between sidebars (#10106)            | skip LegacySidebar; Ronin’s loop returned on first failure          |
+| `ac11bd29b` | refactor(client): share tool outcome rules (#10122)                            | `./work-log/presentation`; skip mobile                              |
+| `076d753ae` | perf(web): skip checkpoint map rebuilds while streaming (#10118)               | **adapted** — work-entry rows, not work-toggle summaries            |
+| `bccad2704` | fix(web): keep manual panel choices during a turn (#10113)                     | `userActionRevision` + `openProactive`                              |
+| `e63ddb48e` | fix(threads): keep completed requests closed across clients (#10123)           | `./pending-requests`; skip mobile                                   |
+| `64fafbdfc` | perf(web): speed up folder menu sorting (#10190)                               | one `Intl.Collator` per sort                                        |
+| `29d03ec55` | style(web): fix inconsistencies in new settings layouts (#10177)               | `first:rounded-t-xl last:rounded-b-xl`                              |
+| `2d645df47` | feat(threads): persist manual active thread order (#9729)                      | migration **057**                                                   |
+| `4023d93bc` | feat(web): drag threads across sections with consistent motion (#9731)         | **adapted** — Needs you stays non-droppable                         |
+| `9a47c7bd4` | feat(web): simplify sidebar drag destination cues (#9750)                      | taken as later verb badge                                           |
+| `9c96ac258` | fix(web): keep settings inputs focused during IME composition (#10262)         | `isComposing` / keyCode 229                                         |
+| `2d6a37999` | fix(web): only show auto balance errors after failed checks (#10407)           | `idleTtlMs: 0` on hostResources                                     |
+| `3941c2a1d` | fix(web): improve preview recording frame delivery (#10403)                    | prefer `avc1`; stop stream before save                              |
+| `210899643` | fix(web, mobile): replace Apple desktop machine labels (#10396)                | skip mobile; Mini PC / Workstation                                  |
+| `7e8ae6b8d` | fix(web): hide browser when the right panel starts closing (#10385)            | `visible={rightPanelOpen}`                                          |
+| `79394154d` | fix(web): deduplicate expanded tool labels and keep errors expandable (#10420) | seed `seen` with the visible label                                  |
+| `5b0c923ea` | feat(web): name the drop action while dragging sidebar threads (#10378)        | Pin/Unpin/Settle/Un-settle/Wake                                     |
+| `252df7742` | perf(web): keep the sidebar responsive during bulk thread updates (#10413)     | **adapted** — shell `applyItems`; fromQueue tests cannot pin chunks |
+| `7112697e8` | feat(threads): dismiss async questions without replying (#10431)               | **adapted** — sibling `X` button, no `ComposerBanner.Dismiss`       |
+| `efeac1442` | fix(web): show load balancing note for a single machine (#10433)               | `< 2` environments                                                  |
+| `ecf3716fd` | fix(web): composer regains focus when you tab back into T3 Code (#10463)       | window-focus refocus                                                |
+| `4e969f373` | fix(web): keep sidebar drag dividers clear and gestures smooth (#10453)        | CSS in `chrome.css`, not `index.css`                                |
+| `f5fb056d2` | fix(web): clear stuck panel resize cursor (#10461)                             | blur / lost capture / cancel / unmount                              |
+| `490eb17d3` | fix(web): clarify sidebar drag dividers and empty targets (#10464)             | always-mounted placeholders                                         |
+
+Fork-specific decisions worth recording:
+
+- **`001f06d54` (stable from latest nightly).** Ronin already maintains the same `release.yml`. Manual `channel=stable` now builds the latest published nightly’s commit. `relay_public_config` and `build_wsl_node_pty` hunks dropped — those jobs are not in this fork. Version example in the docs uses `0.6.9-nightly.*`, not upstream’s `0.0.39`.
+- **`223ff4490` (PR without a client).** Migration remapped 048 → **056**. `PullRequestDetailPanel.tsx` hunk dropped: Ronin still uses `onStateChange` for right-panel tab icons. Engine still starts QuotaResume + BuildSystem.
+- **`2d645df47` + drag stack.** Migration remapped 049 → **057**. Needs you stays a leading non-droppable shelf. `Sidebar.tsx` was not replaced wholesale.
+- **`1abc717f0` (interrupted resume).** Added `continueThreadsAfterServerUpdate` on **ServerSettings** so reconcile can read the opt-in. Did not take `preparedWhileReady` / `listBindings`.
+- **`252df7742` (shell batches).** `applyItems` + `Stream.runForEachArray` landed. This fork’s `subscribeDynamic` taps per event, so a `fromQueue` fake cannot pin RpcClient’s 16-event buffer sizes; the test asserts the end state instead.
+- **`7112697e8` (dismiss).** No `ComposerBanner.Dismiss`. Dismiss is a sibling `X` on the collapsible header (`t3code/no-native-title-tooltip`).
+- **`c2c4185e1`.** WelcomeWizard / `providerReadiness` / `docs/user/welcome-wizard.md` skipped. Server already followed `realCommandPath`; only the junction test was added.
+
+### Already in the tree (1, mixed)
+
+| Upstream    | Title                                                              | Where it lives                                            |
+| ----------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| `45387700b` | fix(web): keep settings section headings description-free (#10415) | `SettingsSection` already has no `description`. See below |
+
+`UsageProviderSettings.tsx` does not exist here. `ProviderInstanceCard` is a custom tabbed editor, not a `SettingsSection`. The LoadBalancingSettings copy shortening was taken with `efeac1442`.
+
+### Skipped (32)
+
+**Mobile (11).** `6766e682a` `36c48a6b7` `c0bf35466` `8e129a0df` `98469159d` `66a24d6c1` `d6aa179ad` `8c9a49afb` `e1230d603`. No `apps/mobile`.
+
+**Marketing (6).** `075a86e3b` `da976cf29` `bd280de80` `b22646c31` `7e03dcfe5` `0860cea0c`. No `apps/marketing`. The last also adds a Vercel `deploy_marketing` job this fork does not have.
+
+**Usage-limits stack (4) — same deferred follow-up as batch 27.** `f1a08116f` `0a89364f1` `1c1d38fcd` `6abdf37a5`. Foundation files still absent (`providerUsageLimits.ts`, `usageLimits.ts`, `UsageLimitSources.ts`, `cliproxyApi.ts`, `codexUsageLimits.ts`, `UsageLimits.tsx`). Uncommitted batch-27 work did not add them.
+
+**Onboarding wizard (3).** `ec36176e4` `f729e8fd8` and the wizard half of `c2c4185e1`. No `WelcomeWizard`, no `apps/web/src/onboarding/`, no `docs/user/welcome-wizard.md`.
+
+**Composer rest-on-blur (2).** `a12589dc0` `a07715c09`. Ronin has no `composerCollapseOnBlur` / resting-composer layout. Desktop collapse is not a thing here.
+
+**Cut product / governance (6).**
+
+| Upstream                | Title                                                                | Why                                                                |
+| ----------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `72cb638a8`             | fix(web): show Tux icon for WSL environments (#8511)                 | WSL is cut; detection is Microsoft `osrelease` only                |
+| `95d99373b`             | fix(clients): show feedback results in composer banners (#10398)     | `/feedback` was declined in batch 11 (`3db38b881`)                 |
+| `e15ffb9c0`             | docs: link the repository security reporting policy (#10303)         | `security@ping.gg` / t3.codes; Ronin has a root stub `SECURITY.md` |
+| `3cd2cbbc1` `003289265` | Macroscope `ui-consistency.md`                                       | file does not exist here                                           |
+| `f5a1ec5e2` `d57bdf384` | Macroscope `effect-service-conventions.md`                           | unwired inherited governance                                       |
+| `de28fa1ff`             | chore: enable CodeRabbit automatic reviews (#10457)                  | no `.coderabbit.yaml`                                              |
+| `95f9b14f8`             | fix(server): import transcripts with oversized tool records (#10430) | no `AgentSessionScanner`                                           |
+
+### Verification
+
+- `git diff --check` — clean. No `.rej` files left.
+- Typecheck: `@t3tools/contracts`, `@t3tools/client-runtime`, `@t3tools/web`, `@t3tools/desktop`, `@t3tools/ssh` — 0 errors. `t3` (server) reports the same **pre-existing** `orphanedProviderSessionStartup.integration.test.ts` `GitVcsDriver` missing-context pair (TS2375 + TS377004) recorded in batches 25–27. Confirmed this batch did not introduce it. Two Effect _suggestions_ in uncommitted `HostResources.ts` (batch 27) and two `multipleEffectProvide` warnings in `serverRuntimeStartup.reconcile.test.ts` are not errors.
+- One type error **was** introduced by the drag-stack port and fixed: `Sidebar.logic.test.ts` used `SidebarThreadSummary` without importing it.
+- Focused tests, all pass unless noted:
+  - nightly script: `node --test .github/scripts/check-nightly-release.test.cjs` — 13 pass
+  - settlement + settle-async: `ThreadSettlementReactor.test.ts` 15, `decider.settled.test.ts` 20
+  - web: `filePath.test.ts` 9, `Sidebar.logic.test.ts` 124 then 168 after drag, `ChatView.logic` 95, `rightPanelStore` 51, `MessagesTimeline.logic` 35, `MessagesTimeline.test.tsx` 29
+  - client-runtime: `pendingRequests` 21, `work-log/presentation` 21, `shell-sync` 4 (batching assertion adapted)
+  - server: `serverSettings` 39, `GitVcsDriverCore` 74, `McpHttpServer` 10, `ClaudeAdapter` 109, `ClaudeHome` 5, `ClaudeTextGeneration`+prompts 44, `OpenCodeAdapter` 90, `CursorAdapter`+transport 39, `CheckpointReactor` 27, `ProviderService` 47, `CodexSessionRuntime` 40, `terminal/Manager` 67, projection/ingestion 189, GitManager + ThreadPullRequestReactor + projector suites
+  - ssh: `tunnel` + `runnerProcess` 35
+  - drag: `threadSort` 22, `threadReducer` 39, `decider.active-order` 8, migration 057 1, `Sidebar.drag` 45, `Sidebar.motion` 14, `Sidebar.pointer` 22
+- `vp lint` on files touched by each port agent — 0 findings in those reports.
+- Index left unstaged, as found.
+
+**Pre-existing, unrelated.** `apps/server/integration/orphanedProviderSessionStartup.integration.test.ts` still fails to typecheck (`GitVcsDriver` missing from the expected Effect context). Batch 25 introduced it; batches 26–27 recorded it. This batch neither fixed nor worsened it.
+
+**Hit every surface (for this batch):**
+
+- **Contracts** — `thread.pull-request.sync`, `branchPullRequest`, `thread.active.reorder` / `activeOrderKey` / `threadActiveReorder`, `thread.user-input.dismiss`, `continueThreadsAfterServerUpdate`, resource-telemetry protocol v3 `processTable`, compaction declaration on adapters.
+- **Server** — settlement (inactivity without PR lookup, skip when disabled, dismiss on manual settle), projection perf, PR reactor, checkpoint/PR timing, placeholder branch follow, secrets, git index lock, MCP snapshots, OpenCode sequential CLI + per-message text maps, Claude result/auth/title, Codex resume + misalignment, Cursor transport, compaction, Windows terminal polling, interrupted-session continuation.
+- **Desktop (Electron/IPC)** — no new IPC. Typechecked. Preview recording and resize-cursor are renderer-side; resource-monitor is the native sidecar.
+- **Web renderer** — sidebar (bulk delete, cross-section drag, Needs you preserved), chat (pending-request closed sets, dismiss, panel choices, streaming timeline, composer window focus, tool-label dedupe), settings (IME, rounding, load-balancing follow-ups), preview (hide on close, recording), file tree sort, machine labels.
+- **Providers** — Claude, Codex, OpenCode/Kilo, Cursor, Grok/Antigravity (compaction slash), Droid/Pi (unsupported). No decision needed for a new adapter beyond the compaction table.
+- **Reverse states** — dismiss has no-op on already-answered and native-callback questions; drag pin/unpin/settle/unsettle/wake are all reversible; load-balancing error label only after a failed check; mute of auto-balance for a single machine has the multi-machine UI as the way back.
+- **Connection modes** — SSH stop ownership is remote-specific; PR linking and settlement run server-side so LAN/Tailscale/SSH agree; load-balancing follow-ups are multi-environment.
+- **Docs** — `docs/operations/release.md` (30-minute nightly, six-hour gap, promote-nightly stable), `docs/user/thread-sidebar.md` (dismiss on settle, server-side PR link, drag across sections), `docs/user/providers-codex.md` (dismiss), `docs/user/providers-claude.md` (verbose titles).
+
+### Not tested
+
+- A real cross-section sidebar drag in a live client (unit coverage only).
+- A real nightly→stable promotion on GitHub Actions.
+- `grok inspect` / live OpenCode CLI sequential lock (test doubles).
+- The Windows terminal sidecar `processTable` path on a real Windows host. Backoff is unit-tested.

@@ -20,6 +20,7 @@ import { ProviderSessionDirectoryPersistenceError } from "./provider/Errors.ts";
 import * as ProviderService from "./provider/Services/ProviderService.ts";
 import * as ProviderSessionDirectory from "./provider/Services/ProviderSessionDirectory.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
+import * as ServerSettings from "./serverSettings.ts";
 
 const providerInstanceId = ProviderInstanceId.make("codex");
 const updatedAt = "2026-08-20T12:00:00.000Z";
@@ -76,6 +77,7 @@ const queryWithThreads = (threads: ReadonlyArray<ReturnType<typeof makeThread>>)
 const runReconciliation = (input: {
   readonly threads: ReadonlyArray<ReturnType<typeof makeThread>>;
   readonly liveThreadIds?: ReadonlyArray<ThreadId>;
+  readonly continueAfterRestart?: boolean;
   readonly providerService?: ProviderService.ProviderService["Service"];
   readonly directory: ProviderSessionDirectory.ProviderSessionDirectory["Service"];
   readonly dispatch: OrchestrationEngine.OrchestrationEngineService["Service"]["dispatch"];
@@ -97,6 +99,11 @@ const runReconciliation = (input: {
       subscribeDomainEvents: Effect.succeed(Stream.empty),
       latestSequence: Effect.succeed(0),
     }),
+    Effect.provide(
+      ServerSettings.layerTest({
+        continueThreadsAfterServerUpdate: input.continueAfterRestart === true,
+      }),
+    ),
     Effect.provide(NodeServices.layer),
   );
 
@@ -157,167 +164,202 @@ it.effect("marks active running sessions that have persisted resume state", () =
   );
 });
 
-it.effect("continues marked sessions after activation with provider-specific input", () =>
-  Effect.gen(function* () {
-    const codex = makeThread(
-      "thread-continue-codex",
-      "running",
-      TurnId.make("turn-continue-codex"),
-    );
-    const fallback = makeThread("thread-continue-fallback", "starting");
-    const fallbackContinuationTurnId = TurnId.make("turn-continue-fallback");
-    const fallbackProviderInstanceId = ProviderInstanceId.make("claudeAgent");
-    const continuationSent = yield* Deferred.make<void>();
-    const continuationCleared = yield* Deferred.make<void>();
-    const sends: ProviderSendTurnInput[] = [];
-    const dispatched: OrchestrationCommand[] = [];
-    const upserts: ProviderSessionDirectory.ProviderRuntimeBinding[] = [];
-    const bindings = new Map<ThreadId, ProviderSessionDirectory.ProviderRuntimeBinding>(
-      [codex, fallback].map((thread) => [
-        thread.id,
-        {
-          threadId: thread.id,
-          provider:
-            thread.id === codex.id
-              ? ProviderDriverKind.make("codex")
-              : ProviderDriverKind.make("claudeAgent"),
-          providerInstanceId:
-            thread.id === codex.id ? providerInstanceId : fallbackProviderInstanceId,
-          status: "running" as const,
-          runtimePayload: {
-            continueAfterServerUpdate:
-              thread.id === codex.id ? codex.session.activeTurnId : fallbackContinuationTurnId,
-          },
-        },
-      ]),
-    );
-    const providerService: ProviderService.ProviderService["Service"] = {
-      ...makeProviderService(),
-      getCapabilities: (instanceId) =>
-        Effect.succeed({
-          sessionModelSwitch: "in-session",
-          ...(instanceId === providerInstanceId ? { promptlessTurnContinuation: true } : {}),
-        }),
-      sendTurn: (input) =>
-        Effect.gen(function* () {
-          sends.push(input);
-          if (sends.length === 2) {
-            yield* Deferred.succeed(continuationSent, undefined);
-          }
-          return {
-            threadId: input.threadId,
-            turnId: TurnId.make(`continued-${String(input.threadId)}`),
-          };
-        }),
-    };
-
-    yield* runReconciliation({
-      threads: [codex, fallback],
-      providerService,
-      directory: {
-        getBinding: (threadId) =>
-          Effect.sync(() => {
-            const binding = bindings.get(threadId);
-            return binding === undefined ? Option.none() : Option.some(binding);
-          }),
-        upsert: (binding) =>
-          Effect.sync(() => {
-            bindings.set(binding.threadId, binding);
-            upserts.push(binding);
-            const clearedCount = upserts.filter((candidate) => {
-              const payload = candidate.runtimePayload;
-              return (
-                payload !== null &&
-                typeof payload === "object" &&
-                !Array.isArray(payload) &&
-                "continueAfterServerUpdate" in payload &&
-                payload.continueAfterServerUpdate === null
-              );
-            }).length;
-            return clearedCount === 1;
-          }).pipe(
-            Effect.flatMap((firstMarkerCleared) =>
-              firstMarkerCleared ? Deferred.succeed(continuationCleared, undefined) : Effect.void,
-            ),
-          ),
-        getProvider: () => Effect.die("unused"),
-        listThreadIds: () => Effect.die("unused"),
-        listBindings: () => Effect.die("unused"),
-        getLedgerEntry: () => Effect.die("unused"),
-        recordLedgerDelivery: () => Effect.die("unused"),
-        listLedgerEntries: () => Effect.die("unused"),
-        clearLedger: () => Effect.die("unused"),
-      },
-      dispatch: (command) =>
-        Effect.sync(() => dispatched.push(command)).pipe(
-          Effect.as({ sequence: dispatched.length }),
-        ),
-    });
-    yield* Deferred.await(continuationSent);
-    yield* Deferred.await(continuationCleared);
-
-    assert.deepStrictEqual(
-      sends.toSorted((left, right) => String(left.threadId).localeCompare(String(right.threadId))),
-      [
-        { threadId: codex.id, continuation: true, interactionMode: "default" },
-        {
-          threadId: fallback.id,
-          input: "Continue where you left off.",
-          interactionMode: "default",
-        },
-      ],
-    );
-    assert.deepStrictEqual(
-      dispatched.map((command) =>
-        command.type === "thread.session.set"
-          ? {
-              threadId: command.threadId,
-              status: command.session.status,
-              activeTurnId: command.session.activeTurnId,
-            }
-          : null,
-      ),
-      [
-        {
-          threadId: codex.id,
-          status: "starting",
-          activeTurnId: null,
-        },
-        {
-          threadId: fallback.id,
-          status: "starting",
-          activeTurnId: fallback.session.activeTurnId,
-        },
-      ],
-    );
-    for (const [thread, continuationTurnId] of [
-      [codex, codex.session.activeTurnId],
-      [fallback, fallbackContinuationTurnId],
-    ] as const) {
-      assert.deepStrictEqual(
-        upserts
-          .filter((binding) => binding.threadId === thread.id)
-          .map((binding) => binding.runtimePayload)[0],
-        {
-          continueAfterServerUpdate: continuationTurnId,
-          activeTurnId: null,
-        },
+it.effect.each(
+  (["marked update", "opt-in restart"] as const).flatMap((recovery) =>
+    (["current", "previous", "missing"] as const).map((persistedTurn) => ({
+      recovery,
+      persistedTurn,
+    })),
+  ),
+)(
+  "continues $recovery sessions with a $persistedTurn directory turn",
+  ({ recovery, persistedTurn }) =>
+    Effect.gen(function* () {
+      const codex = makeThread(
+        "thread-continue-codex",
+        "running",
+        TurnId.make("turn-continue-codex"),
       );
-    }
-    assert.equal(
-      upserts.some((binding) => {
-        const payload = binding.runtimePayload;
-        return (
-          payload !== null &&
-          typeof payload === "object" &&
-          !Array.isArray(payload) &&
-          "continueAfterServerUpdate" in payload &&
-          payload.continueAfterServerUpdate === null
+      const fallbackContinuationTurnId = TurnId.make("turn-continue-fallback");
+      const fallback = makeThread(
+        "thread-continue-fallback",
+        recovery === "marked update" ? "starting" : "running",
+        recovery === "marked update" ? null : fallbackContinuationTurnId,
+      );
+      const fallbackProviderInstanceId = ProviderInstanceId.make("claudeAgent");
+      const continuationSent = yield* Deferred.make<void>();
+      const continuationCleared = yield* Deferred.make<void>();
+      const sends: ProviderSendTurnInput[] = [];
+      const dispatched: OrchestrationCommand[] = [];
+      const upserts: ProviderSessionDirectory.ProviderRuntimeBinding[] = [];
+      const bindings = new Map<ThreadId, ProviderSessionDirectory.ProviderRuntimeBinding>(
+        [codex, fallback].map((thread) => [
+          thread.id,
+          {
+            threadId: thread.id,
+            provider:
+              thread.id === codex.id
+                ? ProviderDriverKind.make("codex")
+                : ProviderDriverKind.make("claudeAgent"),
+            providerInstanceId:
+              thread.id === codex.id ? providerInstanceId : fallbackProviderInstanceId,
+            status: "running" as const,
+            resumeCursor: { threadId: thread.id },
+            runtimePayload: {
+              activeTurnId:
+                thread.id === codex.id && persistedTurn !== "current"
+                  ? persistedTurn === "previous"
+                    ? "previous-provider-turn"
+                    : null
+                  : thread.session.activeTurnId,
+              ...(recovery === "marked update"
+                ? {
+                    continueAfterServerUpdate:
+                      thread.id === codex.id
+                        ? codex.session.activeTurnId
+                        : fallbackContinuationTurnId,
+                  }
+                : {}),
+            },
+          },
+        ]),
+      );
+      const providerService: ProviderService.ProviderService["Service"] = {
+        ...makeProviderService(),
+        getCapabilities: (instanceId) =>
+          Effect.succeed({
+            sessionModelSwitch: "in-session",
+            ...(instanceId === providerInstanceId ? { promptlessTurnContinuation: true } : {}),
+          }),
+        sendTurn: (input) =>
+          Effect.gen(function* () {
+            sends.push(input);
+            if (sends.length === 2) {
+              yield* Deferred.succeed(continuationSent, undefined);
+            }
+            return {
+              threadId: input.threadId,
+              turnId: TurnId.make(`continued-${String(input.threadId)}`),
+            };
+          }),
+      };
+
+      yield* runReconciliation({
+        threads: [codex, fallback],
+        continueAfterRestart: recovery === "opt-in restart",
+        providerService,
+        directory: {
+          getBinding: (threadId) =>
+            Effect.sync(() => {
+              const binding = bindings.get(threadId);
+              return binding === undefined ? Option.none() : Option.some(binding);
+            }),
+          upsert: (binding) =>
+            Effect.sync(() => {
+              bindings.set(binding.threadId, binding);
+              upserts.push(binding);
+              const clearedCount = upserts.filter((candidate) => {
+                const payload = candidate.runtimePayload;
+                return (
+                  payload !== null &&
+                  typeof payload === "object" &&
+                  !Array.isArray(payload) &&
+                  "continueAfterServerUpdate" in payload &&
+                  payload.continueAfterServerUpdate === null
+                );
+              }).length;
+              return clearedCount === 1;
+            }).pipe(
+              Effect.flatMap((firstMarkerCleared) =>
+                firstMarkerCleared ? Deferred.succeed(continuationCleared, undefined) : Effect.void,
+              ),
+            ),
+          getProvider: () => Effect.die("unused"),
+          listThreadIds: () => Effect.die("unused"),
+          listBindings: () => Effect.die("unused"),
+          getLedgerEntry: () => Effect.die("unused"),
+          recordLedgerDelivery: () => Effect.die("unused"),
+          listLedgerEntries: () => Effect.die("unused"),
+          clearLedger: () => Effect.die("unused"),
+        },
+        dispatch: (command) =>
+          Effect.sync(() => dispatched.push(command)).pipe(
+            Effect.as({ sequence: dispatched.length }),
+          ),
+      });
+      assert.isTrue(
+        dispatched.every(
+          (command) =>
+            command.type === "thread.session.set" && command.session.status === "starting",
+        ),
+      );
+      yield* Deferred.await(continuationSent);
+      yield* Deferred.await(continuationCleared);
+
+      assert.deepStrictEqual(
+        sends.toSorted((left, right) =>
+          String(left.threadId).localeCompare(String(right.threadId)),
+        ),
+        [
+          { threadId: codex.id, continuation: true, interactionMode: "default" },
+          {
+            threadId: fallback.id,
+            input: "Continue where you left off.",
+            interactionMode: "default",
+          },
+        ],
+      );
+      assert.deepStrictEqual(
+        dispatched.map((command) =>
+          command.type === "thread.session.set"
+            ? {
+                threadId: command.threadId,
+                status: command.session.status,
+                activeTurnId: command.session.activeTurnId,
+              }
+            : null,
+        ),
+        [
+          {
+            threadId: codex.id,
+            status: "starting",
+            activeTurnId: null,
+          },
+          {
+            threadId: fallback.id,
+            status: "starting",
+            activeTurnId: null,
+          },
+        ],
+      );
+      for (const [thread, continuationTurnId] of [
+        [codex, codex.session.activeTurnId],
+        [fallback, fallbackContinuationTurnId],
+      ] as const) {
+        assert.deepStrictEqual(
+          upserts
+            .filter((binding) => binding.threadId === thread.id)
+            .map((binding) => binding.runtimePayload)[0],
+          {
+            continueAfterServerUpdate: continuationTurnId,
+            activeTurnId: null,
+          },
         );
-      }),
-      true,
-    );
-  }),
+      }
+      assert.equal(
+        upserts.some((binding) => {
+          const payload = binding.runtimePayload;
+          return (
+            payload !== null &&
+            typeof payload === "object" &&
+            !Array.isArray(payload) &&
+            "continueAfterServerUpdate" in payload &&
+            payload.continueAfterServerUpdate === null
+          );
+        }),
+        true,
+      );
+    }),
 );
 
 it.effect("does not continue archived or deleted marked sessions", () => {
@@ -692,6 +734,7 @@ it.effect("does not fail startup when the live provider session inventory cannot
       subscribeDomainEvents: Effect.succeed(Stream.empty),
       latestSequence: Effect.succeed(0),
     }),
+    Effect.provide(ServerSettings.layerTest()),
     Effect.provide(NodeServices.layer),
     Effect.tap(() => Effect.sync(() => assert.equal(queried, false))),
   );

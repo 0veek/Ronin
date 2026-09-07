@@ -1,5 +1,6 @@
+import { Spinner } from "~/components/ui/spinner";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { ArrowLeftIcon, ChevronRightIcon, LoaderCircleIcon, RotateCwIcon } from "lucide-react";
+import { ArrowLeftIcon, ChevronRightIcon, RotateCwIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
@@ -124,7 +125,7 @@ function BreadcrumbMenuContent(props: {
       <MenuGroup key={props.directoryPath}>
         {entriesQuery.isPending && entriesQuery.data === null ? (
           <MenuItem disabled>
-            <LoaderCircleIcon className="animate-spin" />
+            <Spinner />
             Loading folder…
           </MenuItem>
         ) : entriesQuery.error && entriesQuery.data === null ? (

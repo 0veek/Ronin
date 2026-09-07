@@ -28,6 +28,11 @@ import { WorkspaceTopbar } from "../shell/WorkspaceTopbar";
 import { ProviderMark } from "./ProviderMark";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import {
+  readUsagePagePreferences,
+  saveUsagePagePreferences,
+  type UsagePagePreferences,
+} from "./usagePagePreferences";
+import {
   PROVIDER_COLOR,
   PROVIDER_LABEL,
   PROVIDER_ORDER,
@@ -40,6 +45,10 @@ const WINDOW_OPTIONS = [
   { days: 30, label: "30 days" },
   { days: 90, label: "90 days" },
 ] as const;
+
+function isUsageWindowDays(value: number): value is UsagePagePreferences["windowDays"] {
+  return WINDOW_OPTIONS.some((option) => option.days === value);
+}
 
 /**
  * Leaving is the same action here as it is in Settings, so it is named and
@@ -137,11 +146,16 @@ function providerRows(providers: readonly ProviderTotals[]): readonly ProviderTo
 }
 
 export function UsagePage() {
+  const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const [windowSelection, setWindowSelection] = useState(() => ({
-    days: 30,
-    window: makeWindow(30),
+    days: preferences.windowDays,
+    window: makeWindow(
+      preferences.windowDays,
+      undefined,
+      preferences.windowDays === 1 ? "hour" : "day",
+    ),
   }));
-  const [metric, setMetric] = useState<UsageChartMetric>("cost");
+  const metric = preferences.metric;
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
@@ -218,10 +232,19 @@ export function UsagePage() {
   const observedInput = merged.uncachedInputTokens + merged.cachedInputTokens;
   const cachedShare = observedInput === 0 ? 0 : merged.cachedInputTokens / observedInput;
   const selectWindow = (days: number) => {
+    if (!isUsageWindowDays(days)) return;
+    const nextPreferences = { metric, windowDays: days };
+    setPreferences(nextPreferences);
+    saveUsagePagePreferences(nextPreferences);
     setWindowSelection({
       days,
       window: makeWindow(days, undefined, days === 1 ? "hour" : "day"),
     });
+  };
+  const selectMetric = (nextMetric: UsageChartMetric) => {
+    const nextPreferences = { metric: nextMetric, windowDays };
+    setPreferences(nextPreferences);
+    saveUsagePagePreferences(nextPreferences);
   };
   const refreshWindow = () => {
     const nextWindow = makeWindow(windowDays, undefined, isPast24Hours ? "hour" : "day");
@@ -323,7 +346,7 @@ export function UsagePage() {
                   <Segmented
                     ariaLabel="Metric"
                     value={metric}
-                    onChange={setMetric}
+                    onChange={selectMetric}
                     options={[
                       { value: "cost", label: "Cost" },
                       { value: "tokens", label: "Tokens" },

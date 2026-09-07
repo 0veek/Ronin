@@ -312,10 +312,11 @@
     @apply flex h-9 min-h-9 shrink-0 items-center border-b border-border bg-transparent;
   }
 
+  /* Tall enough that a focused control's ring is not clipped by the row. */
   [data-preview-panel-mode="inline"] [data-right-panel-surface-content] [data-surface-subheader] {
-    height: calc(var(--spacing) * 7);
-    min-height: calc(var(--spacing) * 7);
-    margin-bottom: calc(var(--spacing) * 3);
+    height: calc(var(--spacing) * 9);
+    min-height: calc(var(--spacing) * 9);
+    margin-bottom: calc(var(--spacing) * 1);
     border-bottom-color: transparent;
   }
 
@@ -955,4 +956,19 @@
   background-color: Highlight;
   opacity: 0.3;
   pointer-events: none;
+}
+
+/* Let the sortable rows open label clearance before painting the dividers.
+   This runs once per pickup; rows retain dnd-kit's normal 200ms transitions. */
+.sidebar-drag-boundary-label {
+  animation: sidebar-drag-label-reveal 200ms step-end;
+}
+
+@keyframes sidebar-drag-label-reveal {
+  from {
+    visibility: hidden;
+  }
+  to {
+    visibility: visible;
+  }
 }

@@ -416,6 +416,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/connections",
   },
   {
+    id: "load-balancing",
+    title: "Load balancing",
+    to: "/settings/connections",
+    searchTerms: [
+      "automatic machine environment resources cpu memory capacity preference weight shared projects",
+    ],
+  },
+  {
     id: "archive",
     title: "Archived threads",
     searchTerms: ["restore reopen deleted history projects"],

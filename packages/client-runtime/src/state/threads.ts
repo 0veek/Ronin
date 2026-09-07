@@ -324,8 +324,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Effect.forkScoped,
   );
 
-  const setSynchronizing = SubscriptionRef.update(state, (current) =>
-    current.status === "deleted"
+  const setConnecting = SubscriptionRef.update(state, (current) =>
+    current.status === "deleted" || Option.isSome(current.error)
       ? current
       : {
           ...current,
@@ -333,7 +333,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         },
   );
   const setReady = SubscriptionRef.update(state, (current) =>
-    current.status === "live" || current.status === "deleted"
+    current.status === "live" || current.status === "deleted" || Option.isSome(current.error)
       ? current
       : {
           ...current,
@@ -353,14 +353,14 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
     }));
   });
-  const setStreamError = (cause: Cause.Cause<unknown>) =>
+  const setStreamError = (message: string) =>
     Ref.set(awaitingCompletion, false).pipe(
       Effect.andThen(
         SubscriptionRef.update(state, (current) => ({
           ...current,
           status:
             current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
-          error: Option.some(formatThreadError(cause)),
+          error: Option.some(message),
         })),
       ),
     );
@@ -372,12 +372,22 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     page: Option.Option<EnvironmentThreadPageState> | "keep",
   ) {
     const waiting = yield* Ref.get(awaitingCompletion);
-    yield* SubscriptionRef.update(state, (current) => ({
-      data: Option.some(thread),
-      status: waiting ? ("synchronizing" as const) : ("live" as const),
-      error: Option.none(),
-      page: page === "keep" ? current.page : page,
-    }));
+    // Buffered values from the failed attempt can still arrive after its error;
+    // only a retry that got this far retires the diagnostic it was explaining.
+    const retiresError = yield* Ref.getAndSet(retryRetiresError, false);
+    yield* SubscriptionRef.update(state, (current) => {
+      const error = retiresError ? Option.none<string>() : current.error;
+      return {
+        data: Option.some(thread),
+        status: Option.isSome(error)
+          ? ("cached" as const)
+          : waiting
+            ? ("synchronizing" as const)
+            : ("live" as const),
+        error,
+        page: page === "keep" ? current.page : page,
+      };
+    });
     // Active threads can update many times per second and retain large tool
     // payloads. The server remains the source of truth while a turn is active;
     // persist once it settles so cache encoding stays off the streaming path.
@@ -434,8 +444,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   ) {
     if (item.kind === "synchronized") {
       yield* Ref.set(awaitingCompletion, false);
+      const retiresError = yield* Ref.getAndSet(retryRetiresError, false);
       yield* SubscriptionRef.update(state, (current) =>
-        Option.isSome(current.data) && current.status !== "deleted"
+        Option.isSome(current.data) &&
+        current.status !== "deleted" &&
+        (retiresError || Option.isNone(current.error))
           ? { ...current, status: "live" as const, error: Option.none() }
           : current,
       );
@@ -656,7 +669,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     Stream.runForEach((connectionState) => {
       switch (connectionProjectionPhase(connectionState)) {
         case "synchronizing":
-          return setSynchronizing;
+          return setConnecting;
         case "disconnected":
           return setDisconnected;
         case "ready":
@@ -676,9 +689,31 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // status. A replacement session or foreground resubscribe on the same scope
   // may have missed events, so those show sync progress until confirmed.
   const resumingLive = yield* Ref.make(initialState.status === "live");
+  // Set when a retry of an already-reported failure is scheduled, so the next
+  // attempt keeps that diagnostic on screen instead of blanking it.
+  const retryingExpectedFailure = yield* Ref.make(false);
+  // Set once that retry is under way, so its first delivered value retires the
+  // diagnostic. Values still draining from the failed attempt arrive before
+  // this is set, and so leave the error standing.
+  const retryRetiresError = yield* Ref.make(false);
   const markSynchronizing = Effect.gen(function* () {
     if (yield* Ref.get(resumingLive)) return;
-    yield* setSynchronizing;
+    // Connection notifications do not establish that a terminated load
+    // restarted, so a diagnostic is cleared only when this subscription
+    // actually tries again — except on an automatic retry of a failure we
+    // already explained. Ronin backs those off for seconds, and blanking the
+    // reason for the wait leaves an unexplained spinner behind.
+    const retryingKnownFailure = yield* Ref.getAndSet(retryingExpectedFailure, false);
+    yield* Ref.set(retryRetiresError, retryingKnownFailure);
+    yield* SubscriptionRef.update(state, (current) =>
+      current.status === "deleted"
+        ? current
+        : {
+            ...current,
+            status: "synchronizing" as const,
+            ...(retryingKnownFailure ? {} : { error: Option.none<string>() }),
+          },
+    );
   });
 
   yield* markSynchronizing;
@@ -778,7 +813,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         };
       }),
       {
-        onExpectedFailure: setStreamError,
+        onDefect: () => setStreamError("Could not synchronize the thread."),
+        onExpectedFailure: (cause) =>
+          setStreamError(formatThreadError(cause)).pipe(
+            Effect.andThen(Ref.set(retryingExpectedFailure, true)),
+          ),
         retryExpectedFailureAfter: threadSubscriptionRetryDelay,
         resubscribe: foregroundResubscriptions,
       },

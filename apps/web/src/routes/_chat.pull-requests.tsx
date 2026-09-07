@@ -1,3 +1,5 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { Spinner } from "~/components/ui/spinner";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { pullRequestHostOf, resolveEnvironmentMachineKind, ThreadId } from "@t3tools/contracts";
 import type {
@@ -26,10 +28,8 @@ import {
   LayersIcon,
   ListChecksIcon,
   PenLineIcon,
-  LoaderIcon,
   Maximize2Icon,
   Minimize2Icon,
-  RefreshCwIcon,
   SearchIcon,
 } from "lucide-react";
 import {
@@ -1679,7 +1679,7 @@ function PullRequestsRouteView() {
         <div ref={sentinelRef} className="flex justify-center py-2 text-xs text-muted-foreground">
           {loadingMore ? (
             <span className="flex items-center gap-2">
-              <LoaderIcon aria-hidden className="size-3.5 animate-spin" />
+              <Spinner aria-hidden className="size-3.5" />
               Loading more
             </span>
           ) : null}
@@ -2288,7 +2288,7 @@ function PullRequestsColumn({
           aria-label="Refresh pull requests"
           onClick={onRefresh}
         >
-          <RefreshCwIcon className={cn("size-4", refreshing && "animate-spin")} />
+          <RefreshIcon className="size-4" refreshing={refreshing} />
         </Button>
         {rightPanelControl}
       </header>

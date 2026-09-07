@@ -19,6 +19,11 @@ import {
   WORKSPACE_BROWSER_PREVIEW_EXTENSIONS,
   WORKSPACE_IMAGE_PREVIEW_EXTENSIONS,
 } from "@t3tools/shared/filePreview";
+import {
+  IMAGE_DIMENSIONS_HEADER_BYTES,
+  readImageDimensions,
+  type ImageDimensions,
+} from "@t3tools/shared/imageDimensions";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -197,6 +202,40 @@ const resolveCanonicalWorkspaceFileForRequest = (input: {
     Effect.orElseSucceed(() => null),
   );
 
+/**
+ * Formats whose pixel size the header parser understands. SVG and everything
+ * else are skipped rather than opened for nothing.
+ */
+const HEADER_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp"]);
+
+/**
+ * Reads pixel dimensions from an image's header so clients can reserve the
+ * exact box before the bytes arrive. Best effort: an unreadable or unsupported
+ * file just leaves the field out, and the client measures after decode.
+ *
+ * Opened non-blockingly so a path swapped for a FIFO cannot stall the request;
+ * a plain open would wait for a writer that never comes.
+ */
+const readImageDimensionsFromHeader = (filePath: string) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    if (!HEADER_IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase())) return null;
+    // A path swapped for a FIFO would block the open forever; only regular
+    // files are read here.
+    const info = yield* fileSystem.stat(filePath);
+    if (info.type !== "File") return null;
+    const file = yield* fileSystem.open(filePath, { flag: "r" });
+    const header = yield* file.readAlloc(FileSystem.Size(IMAGE_DIMENSIONS_HEADER_BYTES));
+    return Option.match(header, {
+      onNone: () => null,
+      onSome: (bytes) => readImageDimensions(bytes),
+    });
+  }).pipe(
+    Effect.scoped,
+    Effect.orElseSucceed((): ImageDimensions | null => null),
+  );
+
 export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (input: {
   readonly resource: AssetResource;
   readonly workspaceRoot?: string;
@@ -209,6 +248,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   let claims: AssetClaims;
   let fileName: string;
   let sourcePath: string | undefined;
+  let imageDimensions: ImageDimensions | null = null;
 
   switch (input.resource._tag) {
     case "workspace-file": {
@@ -271,6 +311,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
             }),
         ),
       );
+      imageDimensions = yield* readImageDimensionsFromHeader(canonicalFile);
       claims = isWorkspaceImagePreviewPath(resolved.relativePath)
         ? {
             version: 1,
@@ -306,6 +347,9 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       const isGenericFile = parseAttachmentFileExtension(input.resource.attachmentId) !== null;
       const videoMimeType = input.resource.mimeType?.split(";", 1)[0]?.trim() ?? "";
       const isVideo = INLINE_VIDEO_MIME_TYPE_PATTERN.test(videoMimeType);
+      if (!isGenericFile) {
+        imageDimensions = yield* readImageDimensionsFromHeader(attachmentPath);
+      }
       claims = {
         version: 1,
         kind: "attachment",
@@ -449,6 +493,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
     relativeUrl: `${ASSET_ROUTE_PREFIX}/${token}/${encodeURIComponent(fileName)}`,
     expiresAt,
     ...(sourcePath !== undefined ? { sourcePath } : {}),
+    ...(imageDimensions !== null ? { imageDimensions } : {}),
   };
 });
 

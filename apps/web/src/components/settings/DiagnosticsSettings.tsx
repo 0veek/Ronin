@@ -1,3 +1,4 @@
+import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   AlertTriangleIcon,
   ChevronDownIcon,
@@ -5,14 +6,13 @@ import {
   CopyIcon,
   FolderOpenIcon,
   InfoIcon,
-  RefreshCwIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type {
   ServerProcessDiagnosticsEntry,
   ServerProcessResourceHistorySummary,
@@ -173,12 +173,14 @@ function ExpandableText({
   collapsedClassName?: string;
   expandLabel?: string;
 }) {
+  const textId = useId();
   const [expanded, setExpanded] = useState(false);
   const canExpand = text.length > 180 || text.includes("\n");
 
   return (
     <div className={cn("min-w-0", className)}>
       <div
+        id={textId}
         className={cn(
           "whitespace-pre-wrap break-words",
           !expanded && canExpand ? collapsedClassName : null,
@@ -189,6 +191,8 @@ function ExpandableText({
       {canExpand ? (
         <button
           type="button"
+          aria-expanded={expanded}
+          aria-controls={textId}
           className="cursor-pointer mt-1 text-2xs font-medium text-foreground/70 underline-offset-2 hover:text-foreground hover:underline"
           onClick={() => setExpanded((value) => !value)}
         >
@@ -803,7 +807,7 @@ function DiagnosticsRefreshButton({
             onClick={onClick}
             aria-label={label}
           >
-            <RefreshCwIcon className={cn("size-3", isPending && "animate-spin")} />
+            <RefreshIcon className="size-3" refreshing={isPending} />
           </Button>
         }
       />

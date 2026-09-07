@@ -15944,6 +15944,8 @@ export type V2ThreadForkResponse__CodexErrorInfo =
   | "badRequest"
   | "threadRollbackFailed"
   | "sandboxError"
+  | "rateLimitExceeded"
+  | "misalignmentPolicyViolation"
   | "other"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
@@ -15967,6 +15969,8 @@ export const V2ThreadForkResponse__CodexErrorInfo = Schema.Union(
       "badRequest",
       "threadRollbackFailed",
       "sandboxError",
+      "rateLimitExceeded",
+      "misalignmentPolicyViolation",
       "other",
     ]),
     Schema.Struct({
@@ -16852,6 +16856,7 @@ export type V2ThreadReadResponse__CodexErrorInfo =
   | "threadRollbackFailed"
   | "sandboxError"
   | "rateLimitExceeded"
+  | "misalignmentPolicyViolation"
   | "other"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
@@ -16876,6 +16881,7 @@ export const V2ThreadReadResponse__CodexErrorInfo = Schema.Union(
       "threadRollbackFailed",
       "sandboxError",
       "rateLimitExceeded",
+      "misalignmentPolicyViolation",
       "other",
     ]),
     Schema.Struct({
@@ -17207,6 +17213,7 @@ export type V2ThreadResumeResponse__CodexErrorInfo =
   | "threadRollbackFailed"
   | "sandboxError"
   | "rateLimitExceeded"
+  | "misalignmentPolicyViolation"
   | "other"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
@@ -17231,6 +17238,7 @@ export const V2ThreadResumeResponse__CodexErrorInfo = Schema.Union(
       "threadRollbackFailed",
       "sandboxError",
       "rateLimitExceeded",
+      "misalignmentPolicyViolation",
       "other",
     ]),
     Schema.Struct({
@@ -17487,6 +17495,7 @@ export type V2ThreadRollbackResponse__CodexErrorInfo =
   | "threadRollbackFailed"
   | "sandboxError"
   | "rateLimitExceeded"
+  | "misalignmentPolicyViolation"
   | "other"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
@@ -17511,6 +17520,7 @@ export const V2ThreadRollbackResponse__CodexErrorInfo = Schema.Union(
       "threadRollbackFailed",
       "sandboxError",
       "rateLimitExceeded",
+      "misalignmentPolicyViolation",
       "other",
     ]),
     Schema.Struct({
@@ -18710,6 +18720,8 @@ export type V2TurnCompletedNotification__CodexErrorInfo =
   | "badRequest"
   | "threadRollbackFailed"
   | "sandboxError"
+  | "rateLimitExceeded"
+  | "misalignmentPolicyViolation"
   | "other"
   | { readonly httpConnectionFailed: { readonly httpStatusCode?: number | null } }
   | { readonly responseStreamConnectionFailed: { readonly httpStatusCode?: number | null } }
@@ -18733,6 +18745,8 @@ export const V2TurnCompletedNotification__CodexErrorInfo = Schema.Union(
       "badRequest",
       "threadRollbackFailed",
       "sandboxError",
+      "rateLimitExceeded",
+      "misalignmentPolicyViolation",
       "other",
     ]),
     Schema.Struct({

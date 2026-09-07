@@ -105,6 +105,7 @@ import { resolveDiffThemeName, type DiffThemeName } from "../lib/diffRendering";
 import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
+import { GitHubIcon } from "./Icons";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
@@ -1182,6 +1183,33 @@ function LoadableMarkdownImage({
   );
 }
 
+/** The widest a chat image is ever drawn, and the default cap on its height. */
+const MARKDOWN_IMAGE_MAX_REM = 30;
+
+/**
+ * The final box for an image whose pixel size is already known, so the slot is
+ * reserved before the bytes arrive instead of snapping open on decode.
+ *
+ * `maxHeightRem` folds the height cap into the width bound: `max-height` alone
+ * would not feed back through `aspect-ratio` once `width` is definite, so a
+ * tall image would keep a box wider than the picture it draws.
+ */
+function knownImageSizeStyle(
+  width: number,
+  height: number,
+  maxHeightRem: number,
+): CSSProperties | undefined {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return undefined;
+  }
+  return {
+    width,
+    height: "auto",
+    aspectRatio: `${width} / ${height}`,
+    maxWidth: `min(100%, ${MARKDOWN_IMAGE_MAX_REM}rem, ${(maxHeightRem * width) / height}rem)`,
+  };
+}
+
 /** An environment-hosted image, resolved through its signed asset URL. */
 export function ChatMarkdownAssetImage({
   environmentId,
@@ -1190,6 +1218,7 @@ export function ChatMarkdownAssetImage({
   title,
   source,
   style,
+  maxHeightRem = MARKDOWN_IMAGE_MAX_REM,
   onImageExpand,
 }: {
   readonly environmentId: EnvironmentId;
@@ -1198,6 +1227,8 @@ export function ChatMarkdownAssetImage({
   readonly title?: string | undefined;
   readonly source: string;
   readonly style?: CSSProperties | undefined;
+  /** Caps the box height in rem while keeping the image's ratio. */
+  readonly maxHeightRem?: number | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const assetUrl = useAssetUrlState(environmentId, resource);
@@ -1207,13 +1238,23 @@ export function ChatMarkdownAssetImage({
   if (assetUrl._tag !== "Success") {
     return <MissingMediaChip label={alt} title={source} className="animate-pulse" />;
   }
+  // The server reads the pixel size from the file header, so the slot can be
+  // the image's final box. A caller's own style still wins.
+  const knownSize = assetUrl.imageDimensions;
+  const resolvedStyle =
+    style ??
+    (knownSize
+      ? knownImageSizeStyle(knownSize.width, knownSize.height, maxHeightRem)
+      : maxHeightRem !== MARKDOWN_IMAGE_MAX_REM
+        ? { maxHeight: `${maxHeightRem}rem` }
+        : undefined);
   return (
     <LoadableMarkdownImage
       src={assetUrl.url}
       alt={alt}
       title={title}
       fallbackTitle={source}
-      style={style}
+      style={resolvedStyle}
       onImageExpand={onImageExpand}
     />
   );
@@ -1274,11 +1315,21 @@ const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
 /** Hosts whose favicon request already failed this session — skip straight to the globe. */
 const failedFaviconHosts = new Set<string>();
 
+/** Sites whose brand mark (drawn in `currentColor`) replaces the fetched favicon so it follows the theme. */
+function brandLinkIcon(host: string): typeof GitHubIcon | null {
+  const hostname = host.toLowerCase();
+  if (hostname === "github.com" || hostname.endsWith(".github.com")) return GitHubIcon;
+  return null;
+}
+
 const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
   const [failedHost, setFailedHost] = useState<string | null>(null);
+  const BrandIcon = brandLinkIcon(host);
   return (
     <span className="chat-markdown-link-favicon" aria-hidden>
-      {failedHost === host || failedFaviconHosts.has(host) ? (
+      {BrandIcon ? (
+        <BrandIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
+      ) : failedHost === host || failedFaviconHosts.has(host) ? (
         <GlobeIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
       ) : (
         <img

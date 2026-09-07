@@ -5,7 +5,7 @@ import {
   derivePendingUserInputProgress,
   type PendingUserInputDraftAnswer,
 } from "../../pendingUserInput";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { cn } from "~/lib/utils";
 
@@ -16,6 +16,7 @@ interface PendingUserInputPanelProps {
   questionIndex: number;
   onToggleOption: (questionId: string, optionLabel: string) => void;
   onAdvance: () => void;
+  onDismiss: (requestId: ApprovalRequestId) => void;
 }
 
 export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserInputPanel({
@@ -25,6 +26,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
   questionIndex,
   onToggleOption,
   onAdvance,
+  onDismiss,
 }: PendingUserInputPanelProps) {
   if (pendingUserInputs.length === 0) return null;
   const activePrompt = pendingUserInputs[0];
@@ -39,6 +41,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
       questionIndex={questionIndex}
       onToggleOption={onToggleOption}
       onAdvance={onAdvance}
+      onDismiss={onDismiss}
     />
   );
 });
@@ -50,6 +53,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   questionIndex,
   onToggleOption,
   onAdvance,
+  onDismiss,
 }: {
   prompt: PendingUserInput;
   isResponding: boolean;
@@ -57,6 +61,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   questionIndex: number;
   onToggleOption: (questionId: string, optionLabel: string) => void;
   onAdvance: () => void;
+  onDismiss: (requestId: ApprovalRequestId) => void;
 }) {
   const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
   const activeQuestion = progress.activeQuestion;
@@ -180,39 +185,60 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
           edges of the question text below. The negative block margin keeps the
           taller hit area from pushing the panel down. */}
       <div className="px-1.5 sm:px-2.5">
-        <CollapsibleTrigger
-          title={
-            isCollapsed ? "Show the question and its options" : "Hide the question and its options"
-          }
-          data-pending-user-input-toggle={isCollapsed ? "collapsed" : "expanded"}
-          className="group -my-1 flex w-full items-center gap-3 rounded-md px-2.5 py-1.5 text-left outline-none transition-colors duration-(--duration-fast) hover:bg-muted/40 focus-visible:ring-1 focus-visible:ring-primary/25"
-        >
-          <span className="text-secondary-label text-2xs font-semibold tracking-widest uppercase group-hover:text-foreground">
-            {activeQuestion.header}
-          </span>
-          {prompt.questions.length > 1 ? (
-            <span className="flex h-5 items-center rounded-md bg-muted/60 px-1.5 text-secondary-label text-3xs font-medium tabular-nums">
-              {questionIndex + 1}/{prompt.questions.length}
+        <div className="flex items-center gap-0.5">
+          <CollapsibleTrigger
+            title={
+              isCollapsed
+                ? "Show the question and its options"
+                : "Hide the question and its options"
+            }
+            data-pending-user-input-toggle={isCollapsed ? "collapsed" : "expanded"}
+            className="group -my-1 flex min-w-0 flex-1 items-center gap-3 rounded-md px-2.5 py-1.5 text-left outline-none transition-colors duration-(--duration-fast) hover:bg-muted/40 focus-visible:ring-1 focus-visible:ring-primary/25"
+          >
+            <span className="text-secondary-label text-2xs font-semibold tracking-widest uppercase group-hover:text-foreground">
+              {activeQuestion.header}
             </span>
+            {prompt.questions.length > 1 ? (
+              <span className="flex h-5 items-center rounded-md bg-muted/60 px-1.5 text-secondary-label text-3xs font-medium tabular-nums">
+                {questionIndex + 1}/{prompt.questions.length}
+              </span>
+            ) : null}
+            {/* Collapsed, the header is otherwise just a section label and a
+                counter, so the question itself is echoed here as a one-line
+                reminder of what is being asked. */}
+            {isCollapsed ? (
+              <span className="min-w-0 flex-1 truncate text-secondary-label text-xs">
+                {activeQuestion.question}
+              </span>
+            ) : null}
+            {/* The chevron points at the body: down while it is open below the
+                header, up while it is collapsed into it. */}
+            <ChevronDownIcon
+              aria-hidden="true"
+              className={cn(
+                "ml-auto size-3.5 shrink-0 text-secondary-label transition-transform duration-(--duration-fast) group-hover:text-foreground",
+                isCollapsed && "rotate-180",
+              )}
+            />
+          </CollapsibleTrigger>
+          {prompt.dismissible ? (
+            // Sibling of the disclosure trigger so this stays a real button
+            // instead of nesting interactive controls. Dismiss closes the
+            // question without a reply.
+            <button
+              type="button"
+              aria-label="Dismiss question without answering"
+              disabled={isResponding}
+              data-pending-user-input-dismiss
+              className="-my-1 flex size-7 shrink-0 items-center justify-center rounded-md text-secondary-label outline-none transition-colors duration-(--duration-fast) hover:bg-muted/40 hover:text-foreground focus-visible:ring-1 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => {
+                onDismiss(prompt.requestId);
+              }}
+            >
+              <XIcon className="size-3.5" aria-hidden="true" />
+            </button>
           ) : null}
-          {/* Collapsed, the header is otherwise just a section label and a
-              counter, so the question itself is echoed here as a one-line
-              reminder of what is being asked. */}
-          {isCollapsed ? (
-            <span className="min-w-0 flex-1 truncate text-secondary-label text-xs">
-              {activeQuestion.question}
-            </span>
-          ) : null}
-          {/* The chevron points at the body: down while it is open below the
-              header, up while it is collapsed into it. */}
-          <ChevronDownIcon
-            aria-hidden="true"
-            className={cn(
-              "ml-auto size-3.5 shrink-0 text-secondary-label transition-transform duration-(--duration-fast) group-hover:text-foreground",
-              isCollapsed && "rotate-180",
-            )}
-          />
-        </CollapsibleTrigger>
+        </div>
       </div>
       {/* The panel carries the horizontal padding itself: it clips its content
           while the height animates, so the option buttons have to sit inside

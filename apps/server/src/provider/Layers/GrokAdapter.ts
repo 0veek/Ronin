@@ -2147,6 +2147,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         // no `session/set_config_option`, so only a restart changes it.
         sessionModelOptionsSwitch: "unsupported",
       },
+      compaction: { type: "slash-command", command: "/compact" },
       startSession,
       sendTurn,
       interruptTurn,

@@ -1,10 +1,10 @@
 "use client";
 
+import { Spinner } from "~/components/ui/spinner";
 import {
   ArrowUpCircleIcon,
   CopyIcon,
   DownloadIcon,
-  LoaderIcon,
   PlusIcon,
   Trash2Icon,
   XIcon,
@@ -648,15 +648,19 @@ export function ProviderInstanceCard({
           selected ? "bg-foreground/8" : "hover:bg-foreground/4",
         )}
       >
-        <button
-          type="button"
+        <div
           className={cn(
-            "flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring",
+            "pointer-events-none relative flex min-w-0 flex-1 items-start gap-3 rounded-sm text-left transition-opacity",
             !enabled && !selected && "opacity-60 group-hover:opacity-100",
           )}
-          onClick={onSelect}
-          aria-pressed={selected}
         >
+          <button
+            type="button"
+            className="pointer-events-auto absolute inset-0 cursor-pointer rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onSelect}
+            aria-label={`Select ${displayName}`}
+            aria-pressed={selected}
+          />
           {titleIconNode}
           <span className="min-w-0 flex-1">
             <span className="flex min-w-0 items-center gap-2">
@@ -668,9 +672,31 @@ export function ProviderInstanceCard({
               ) : null}
               {versionCodeNode}
               {versionAdvisory ? (
-                <span role="img" aria-label="Update available" className="inline-flex shrink-0">
-                  <ArrowUpCircleIcon className="size-3.5 text-update-foreground" />
-                </span>
+                updateCommand ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          size="icon-xs"
+                          variant="ghost"
+                          className="pointer-events-auto relative shrink-0 text-update-foreground"
+                          aria-label={`Copy ${displayName} update command`}
+                          onClick={() =>
+                            copyToClipboard(updateCommand, { providerName: displayName })
+                          }
+                        >
+                          <ArrowUpCircleIcon className="size-3.5" />
+                        </Button>
+                      }
+                    />
+                    <TooltipPopup side="top">Copy update command</TooltipPopup>
+                  </Tooltip>
+                ) : (
+                  <span role="img" aria-label="Update available" className="inline-flex shrink-0">
+                    <ArrowUpCircleIcon className="size-3.5 text-update-foreground" />
+                  </span>
+                )
               ) : null}
             </span>
             <span className="mt-0.5 flex items-start gap-1.5 text-sm leading-[1.45] text-muted-foreground/80">
@@ -683,7 +709,7 @@ export function ProviderInstanceCard({
               </span>
             </span>
           </span>
-        </button>
+        </div>
         <span className="flex h-5 shrink-0 items-center">
           <Switch
             checked={enabled}
@@ -762,7 +788,7 @@ export function ProviderInstanceCard({
                           disabled={isUpdating}
                           onClick={onRunUpdate}
                         >
-                          {isUpdating ? <LoaderIcon className="animate-spin" /> : <DownloadIcon />}
+                          {isUpdating ? <Spinner /> : <DownloadIcon />}
                           {isUpdating ? "Updating" : "Update now"}
                         </Button>
                       ) : null}

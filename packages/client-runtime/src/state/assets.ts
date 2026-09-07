@@ -1,8 +1,20 @@
-import { AssetResource, EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import {
+  type AssetCreateUrlResult,
+  AssetResource,
+  EnvironmentId,
+  WS_METHODS,
+} from "@t3tools/contracts";
+import {
+  getProjectFaviconResourceKey,
+  isProjectFaviconFallbackUrl,
+} from "@t3tools/shared/projectFavicon";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import type { ProjectFaviconCache, ProjectFaviconTarget } from "../projectFaviconCache.ts";
 import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
 
 const ASSET_URL_REFRESH_INTERVAL_MS = 30 * 60_000;
@@ -77,4 +89,56 @@ export function createAssetEnvironmentAtoms<R, E>(
       readonly resources: ReadonlyArray<AssetResource>;
     }) => createUrlsFamily(JSON.stringify([target.environmentId, target.resources])),
   };
+}
+
+/**
+ * Keeps project icons visible while their environment reconnects. Each resource
+ * owns its last resolved URL, including a confirmed missing-icon response.
+ */
+export function createProjectFaviconUrlAtomFamily(input: {
+  readonly imageCache?: ProjectFaviconCache;
+  readonly createUrl: (target: {
+    readonly environmentId: EnvironmentId;
+    readonly input: { readonly resource: AssetResource };
+  }) => Atom.Atom<AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>>;
+  readonly preparedConnection: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<Option.Option<{ readonly httpBaseUrl: string }>>;
+}) {
+  const decodeKey = Schema.decodeUnknownSync(
+    Schema.Tuple([EnvironmentId, Schema.String, Schema.NullOr(Schema.String)]),
+  );
+  const family = Atom.family((key: string) => {
+    const [environmentId, cwd, path] = decodeKey(JSON.parse(key));
+    const resource = { _tag: "project-favicon" as const, cwd, ...(path ? { path } : {}) };
+    const request = input.createUrl({ environmentId, input: { resource } });
+    const resolvedUrl = Atom.make((get): string | null => {
+      const result = get(request);
+      const connection = get(input.preparedConnection(environmentId));
+      const url =
+        AsyncResult.isSuccess(result) && Option.isSome(connection)
+          ? resolveAssetUrl(connection.value.httpBaseUrl, result.value.relativeUrl)
+          : null;
+      // A reconnect re-runs this atom before the URL is reissued; keep the last
+      // one so the icon does not blink out and back.
+      return url ?? Option.getOrNull(get.self<string | null>());
+    }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
+    const cache = input.imageCache;
+    if (!cache) return resolvedUrl;
+
+    const target = { environmentId, cwd, faviconPath: path };
+    const image = Atom.make((get) => {
+      get(request);
+      const url = get(resolvedUrl);
+      return Effect.promise((signal) => cache.resolve(target, url, signal));
+    }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
+
+    return Atom.make((get): string | null => {
+      const result = get(image);
+      if (isProjectFaviconFallbackUrl(get(resolvedUrl))) return null;
+      return Option.getOrElse(AsyncResult.value(result), () => cache.peek(target));
+    }).pipe(Atom.setIdleTTL(ASSET_URL_IDLE_TTL_MS));
+  });
+  return (target: ProjectFaviconTarget) =>
+    family(getProjectFaviconResourceKey(target.environmentId, target.cwd, target.faviconPath));
 }
