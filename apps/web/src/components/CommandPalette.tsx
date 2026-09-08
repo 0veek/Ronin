@@ -1741,6 +1741,11 @@ function OpenCommandPaletteDialog(props: {
     }
 
     for (const script of contextualProjectScripts) {
+      const shortcutCommand = commandForProjectScript(script.id);
+      // Persisted projects can contain pre-validation IDs that have no valid
+      // keybinding command. They remain runnable from the chat actions menu,
+      // but cannot be dispatched through the keybinding-backed palette bus.
+      if (shortcutCommand === null) continue;
       actionItems.push({
         kind: "action",
         value: `action:script:${script.id}`,
@@ -1748,9 +1753,9 @@ function OpenCommandPaletteDialog(props: {
         title: `Run ${script.name}`,
         description: script.command,
         icon: <PlayIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: commandForProjectScript(script.id),
+        shortcutCommand,
         run: async () => {
-          await runWorkspaceCommandOnThread(commandForProjectScript(script.id));
+          await runWorkspaceCommandOnThread(shortcutCommand);
         },
       });
     }

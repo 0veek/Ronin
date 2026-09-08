@@ -86,13 +86,13 @@ export function settledPrHoverColorClass(
   switch (state) {
     case "open":
       if (isDraft) {
-        return "group-hover/v2-row:text-vcs-draft-foreground";
+        return "group-hover/sidebar-row:text-vcs-draft-foreground";
       }
-      return "group-hover/v2-row:text-vcs-open-foreground";
+      return "group-hover/sidebar-row:text-vcs-open-foreground";
     case "merged":
-      return "group-hover/v2-row:text-vcs-merged-foreground";
+      return "group-hover/sidebar-row:text-vcs-merged-foreground";
     case "closed":
-      return "group-hover/v2-row:text-vcs-closed-foreground";
+      return "group-hover/sidebar-row:text-vcs-closed-foreground";
   }
 }
 

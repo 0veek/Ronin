@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                               |
-| ----------------------------- | --------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `e1230d603` — `fix(mobile): keep pending messages in the chat timeline (#10449)` (2026-09-06) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                               |
-| **Ported on**                 | 2026-09-07                                                                                    |
+|                               |                                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `0d34579d6` — `fix(web): keep project favicon shape consistent across sizes (#10502)` (2026-09-07) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                    |
+| **Ported on**                 | 2026-09-08                                                                                         |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -5160,3 +5160,114 @@ Fork-specific decisions worth recording:
 - A real nightly→stable promotion on GitHub Actions.
 - `grok inspect` / live OpenCode CLI sequential lock (test doubles).
 - The Windows terminal sidecar `processTable` path on a real Windows host. Backoff is unit-tested.
+
+## Batch 29 — reviewed through `0d34579d6` (27 commits)
+
+Reviewed `e1230d603..0d34579d6`, with upstream snapshotted at
+`0d34579d674920cc47fc5c908494f51ed3895204` for the whole run. The worktree started clean. No
+commit needed a product Ask.
+
+### Ported (9)
+
+| Upstream    | Title                                                                    | Notes                                                                                         |
+| ----------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `a7028f139` | fix: use Pierre icons consistently for attachments (#10475)              | **adapted** — replaced Ronin's remaining generic file-row icon; kept its filename placeholder |
+| `7376536b2` | fix(devcontainer): make repository setup work (#7875)                    | **adapted** — Ronin naming, `.ronin` state, no Connect/mobile setup                           |
+| `d8bc6831c` | fix(projects): prevent invalid script IDs from crashing threads (#10019) | **adapted** — see below                                                                       |
+| `b919d6389` | fix(web): keep composer toolbar controls anchored during transitions     | **adapted** — Ronin's mobile selector does not use the compact desktop strip                  |
+| `f57d3832c` | fix(web): resize the floating preview from any edge (#10467)             | **adapted** — preserved Ronin webview chrome and its deliberate lack of pop-out/PiP           |
+| `fe07ffe7c` | fix(web): remove inserted citations on cancel (#10518)                   | clean against Ronin's citation editor shape                                                   |
+| `72d94087b` | fix(web): restore settled PR colors on hover (#10023)                    | **adapted** — Ronin VCS color tokens and `group/sidebar-row`                                  |
+| `9cc983954` | fix(web): keep popup triggers steady when pressed (#10468)               | **adapted** — applied to Ronin's flat shared button recipe                                    |
+| `0d34579d6` | fix(web): keep project favicon shape consistent across sizes (#10502)    | clean                                                                                         |
+
+Fork-specific decisions worth recording:
+
+- **`7376536b2` (devcontainer).** The old Debian/Bun setup did not install the repository's `vp`
+  runner and used the wrong package-manager path. The replacement mirrors CI with Ubuntu 24.04,
+  Node 24, Rust and GitHub CLI, installs through `vp i`, repairs Electron, and warms Vite's cache.
+  Runtime state is isolated at `${containerWorkspaceFolder}/.ronin` through the still-canonical
+  `T3CODE_HOME` environment variable. Upstream's T3 Connect notice and mobile-native paragraph were
+  dropped. The maintainer guide lives at `docs/internals/devcontainer.md` and is indexed.
+- **`d8bc6831c` (script IDs).** The server now rejects newly introduced script IDs that cannot map
+  to `script.<id>.run`, while allowing persisted legacy IDs to be edited or removed. Web helpers
+  return `null` instead of throwing for those IDs, so project settings and chat action menus stay
+  usable. Ronin's command palette is a fork-only extra surface backed by the keybinding command bus;
+  it omits legacy IDs that cannot be represented on that bus, while the chat actions menu can still
+  run them directly.
+- **`b919d6389` (composer strip).** The desktop strip now animates label width rather than
+  translating whole control groups, keeping trailing controls anchored. Ronin's small-screen menu
+  is a separate, always-visible control without compact-label animation, so upstream's mobile-web
+  class hunk had no landing point.
+- **`f57d3832c` (floating preview).** The mini-player stores only its preferred width and derives
+  height from the preview viewport, preserving aspect ratio through device presets, zoom and
+  temporary container constraints. Eight edge/corner handles landed. The upstream pop-out control
+  remains omitted, and Ronin's 8px native-webview corner contract and chrome tokens were preserved.
+
+### Already in the tree (0)
+
+No commit in this range was already satisfied semantically.
+
+### Skipped (18)
+
+**Mobile/native (15).** `bb5748bfa`, `5b68b2c8e`, `bc3dc2694`, `e3b644c5a`, `7dda0b1c0`,
+`062987b2f`, `71297974c`, `b248f5ad5`, `c0d4e95c0`, `e32dd42f8`, `b7175371d`, `dc39615ae`,
+`357b8d521`, `8d7f78121`, `1d1bf5040`. These target `apps/mobile`, iOS/React Native patches, or
+mobile-only helpers. The `packages/shared/orchestrationTiming` hunk in `5b68b2c8e` serves the mobile
+new-task flow and has no runtime caller in this fork.
+
+**Release metadata (1).** `08c715ed9` prepares upstream v0.0.39 and changes mobile/package versions;
+Ronin owns a separate release line.
+
+**Removed onboarding stack (2).** `8b2838e0e` and `62fbbe08a` extend `WelcomeWizard`,
+`AgentSessionScanner`, onboarding project-import logic and their contracts. None of that foundation
+exists in Ronin; importing only the git-config helpers would leave no product caller.
+
+### Verification
+
+- Focused tests: 151 tests across 9 files, then 126 tests across 4 integration-adjacent web files —
+  **277 passed, 0 failed**. Coverage includes the server script invariant, legacy project-script
+  helpers, preview aspect-ratio and eight-direction resize math, mini-player state, PR hover colors,
+  favicons, branch-toolbar logic, PreviewView, ChatView logic, command-palette logic and project
+  settings logic.
+- Typecheck: `@t3tools/web` — 0 errors. A combined `@t3tools/web` + `t3` run reported only the same
+  pre-existing server failure below; no new server diagnostic points at this batch.
+- `vp lint` over all changed `.ts`/`.tsx` files — clean. `vp fmt --check` — clean.
+  `git diff --check` and `bash -n` for both devcontainer lifecycle scripts — clean.
+- React Doctor required by the repository workflow: `--scope changed` scored 56/100 because it
+  scans the full bodies of large touched components. The narrower `--scope lines` pass reported 9
+  findings. Review found no introduced issue: eight are pre-existing component complexity/manual
+  memoization/state-structure warnings, and the lone error points at the existing once-only Web
+  Animation `finish` listener, whose animations are cancelled on replacement and unmount. No
+  finding points at the new floating-preview component.
+
+**Pre-existing, unrelated.** `apps/server/integration/orphanedProviderSessionStartup.integration.test.ts`
+still fails to typecheck because `GitVcsDriver` is missing from the expected Effect context (TS2375
+
+- TS377004). Batch 25 introduced it and batches 26–28 recorded it. This batch neither fixed nor
+  worsened it. The existing `HostResources.ts` suggestions and `serverRuntimeStartup.reconcile.test.ts`
+  warnings also remain non-errors.
+
+**Hit every applicable surface:**
+
+- **Entry points** — valid project scripts remain available from the chat actions menu, Settings,
+  command palette and keybindings. Legacy invalid IDs are editable/removable and directly runnable;
+  only the keybinding-backed palette entry is omitted because no valid command can represent it.
+- **Clients** — changes are in the shared web renderer used by Electron. Floating-preview layout
+  preserves the native webview's corner-radius contract; no desktop IPC changed.
+- **Providers/contracts** — provider adapters are unaffected. Script validation uses the existing
+  keybinding contract and does not change the wire schema.
+- **Reverse states** — floating previews can grow or shrink from every edge/corner, move, return to
+  the panel and close; temporary viewport constraints no longer overwrite the preferred width.
+- **Connection modes** — project metadata validation runs on the environment server, so local,
+  LAN, Tailscale and SSH clients receive the same invariant. No origin is baked into the renderer;
+  the devcontainer still relies on the pairing URL.
+- **Docs** — the new devcontainer maintainer guide is indexed in `docs/README.md`.
+
+### Not tested
+
+- No live client was started, per `AGENTS.md`. The floating preview's eight resize handles,
+  composer-strip transition, citation-cancel removal, settled-PR hover, popup press treatment and
+  favicon curvature have unit/type/static coverage only.
+- A full Dev Container or Codespaces image was not built; its JSONC, shell syntax and repository
+  commands were checked locally.
