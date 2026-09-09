@@ -83,6 +83,22 @@ dispatchable (`thread.create`, `thread.turn.start`, `thread.approval.respond`); 
 and produced only by server-side reactors (`thread.message.assistant.delta`,
 `thread.turn.diff.complete`).
 
+The Electron shell acquires `DesktopPreReadyPlatform.layer` synchronously before asynchronous
+services. On Linux this sets the desktop-entry identity and global-shortcut portal flags before
+Chromium initializes its portal connection. Setting the identity later is too late because Chromium
+caches the first registration, including failures. The identity must match the installed entry
+managed by `DesktopLinuxUrlHandler`. Pre-ready setup also refreshes that entry's `Exec` path before
+portal registration: AppImage updates can remove the previous executable even when the entry's
+filename remains correct. The later URL handler avoids rewriting an identical entry while the
+portal may be reading it. On Wayland, Electron's synchronous shortcut-registration result confirms
+submission, not desktop consent or an active binding.
+
+Native capture modules never load in the Electron main process on the startup path.
+`@crowecawcaw/xa11y` runs only in forked Node-mode children and a worker thread, while `ffi-rs`
+loads lazily inside `WindowsForeground.ts` for a small set of Win32 calls. macOS window lookup
+shells out to `osascript`. A crash or stall in any of these must not take Ronin down, so new native
+capability belongs in a child with a deadline rather than an import in main.
+
 A turn is complete when its session leaves `running` status, projected by
 `settledTurnStateForSessionStatus` in [`projector.ts`][projector]. Checkpoint work settling later
 does not define turn end.

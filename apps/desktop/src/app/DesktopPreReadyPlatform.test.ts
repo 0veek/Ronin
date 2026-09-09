@@ -5,17 +5,28 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { beforeEach, vi } from "vite-plus/test";
 
-const { appendSwitchMock, getSwitchValueMock, hasSwitchMock, registerSchemesMock } = vi.hoisted(
-  () => ({
-    appendSwitchMock: vi.fn(),
-    getSwitchValueMock: vi.fn(),
-    hasSwitchMock: vi.fn(),
-    registerSchemesMock: vi.fn(),
-  }),
-);
+const {
+  appendSwitchMock,
+  getSwitchValueMock,
+  hasSwitchMock,
+  registerSchemesMock,
+  setDesktopNameMock,
+  mkdirSyncMock,
+  writeFileSyncMock,
+} = vi.hoisted(() => ({
+  appendSwitchMock: vi.fn(),
+  getSwitchValueMock: vi.fn(),
+  hasSwitchMock: vi.fn(),
+  registerSchemesMock: vi.fn(),
+  setDesktopNameMock: vi.fn(),
+  mkdirSyncMock: vi.fn(),
+  writeFileSyncMock: vi.fn(),
+}));
 
 vi.mock("electron", () => ({
   app: {
+    setDesktopName: setDesktopNameMock,
+    getVersion: () => "0.0.37",
     commandLine: {
       appendSwitch: appendSwitchMock,
       getSwitchValue: getSwitchValueMock,
@@ -25,6 +36,12 @@ vi.mock("electron", () => ({
   protocol: {
     registerSchemesAsPrivileged: registerSchemesMock,
   },
+}));
+
+vi.mock("node:fs", () => ({
+  readFileSync: () => "{}",
+  mkdirSync: mkdirSyncMock,
+  writeFileSync: writeFileSyncMock,
 }));
 
 import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";

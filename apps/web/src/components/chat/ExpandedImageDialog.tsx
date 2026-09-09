@@ -1,9 +1,22 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, XIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DownloadIcon,
+  ImageIcon,
+  TextIcon,
+  XIcon,
+} from "lucide-react";
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { downloadVideoPreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { FallbackImage, MissingMediaBlock } from "../MissingMedia";
+import {
+  SnapShotAccessibilityData,
+  SnapShotContentsButton,
+  snapShotAccessibilityDetails,
+} from "./SnapShotAttachmentDetails";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface ExpandedImageDialogProps {
   preview: ExpandedImagePreview;
@@ -18,6 +31,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const [failedVideoSrc, setFailedVideoSrc] = useState<string | null>(null);
   const [downloadingVideoSrc, setDownloadingVideoSrc] = useState<string | null>(null);
   const [downloadFailedVideoSrc, setDownloadFailedVideoSrc] = useState<string | null>(null);
+  const [accessibilityDetailsSrc, setAccessibilityDetailsSrc] = useState<string | null>(null);
   const count = preview.images.length;
   // imageOffset is unbounded, so normalize any integer offset back into range.
   const index = count > 0 ? (((preview.index + imageOffset) % count) + count) % count : 0;
@@ -73,6 +87,15 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   const item = preview.images[index];
   if (!item) return null;
   const mediaLabel = item.type === "video" ? "video" : "image";
+  const accessibilityDetails = item.source ? snapShotAccessibilityDetails(item.source) : undefined;
+  const showingAccessibilityDetails =
+    Boolean(accessibilityDetails) && accessibilityDetailsSrc === item.src;
+  const contentsLabel = showingAccessibilityDetails
+    ? "Show screenshot"
+    : accessibilityDetails?.format === "json"
+      ? "Show accessibility JSON"
+      : "Show extracted text";
+  const ContentsIcon = showingAccessibilityDetails ? ImageIcon : TextIcon;
 
   const isDownloadingVideo = downloadingVideoSrc === item.src;
   const videoDownloadFailed = downloadFailedVideoSrc === item.src;
@@ -144,11 +167,16 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               onError={() => setFailedVideoSrc(item.src)}
               className="max-h-[86vh] max-w-[92vw] rounded-(--radius) border border-border bg-black object-contain"
             />
+          ) : showingAccessibilityDetails && accessibilityDetails ? (
+            <SnapShotAccessibilityData
+              details={accessibilityDetails}
+              className="h-[min(86vh,40rem)] w-[min(92vw,42rem)] animate-[snap-shot-contents-enter_140ms_ease-out] rounded-(--radius) border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:animate-none"
+            />
           ) : (
             <FallbackImage
               src={item.src}
               alt={item.name}
-              className="max-h-[86vh] max-w-[92vw] select-none rounded-(--radius) border border-border bg-background object-contain"
+              className="max-h-[86vh] max-w-[92vw] animate-[snap-shot-contents-enter_140ms_ease-out] select-none rounded-(--radius) border border-border bg-background object-contain motion-reduce:animate-none"
               draggable={false}
               fallback={
                 <MissingMediaBlock
@@ -158,10 +186,39 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               }
             />
           )}
-          <p className="mt-2 max-w-[92vw] truncate text-center text-xs text-muted-foreground/80">
-            {item.name}
-            {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
-          </p>
+          <div className="mt-2 flex max-w-[92vw] items-center justify-center gap-1.5 text-xs text-muted-foreground/80">
+            <span className="truncate">
+              {item.name}
+              {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
+            </span>
+            {accessibilityDetails && item.source ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      aria-label={contentsLabel}
+                      aria-pressed={showingAccessibilityDetails}
+                      className="[--control-icon-color:currentColor] hover:bg-white/10 hover:text-white"
+                      onClick={() =>
+                        setAccessibilityDetailsSrc(showingAccessibilityDetails ? null : item.src)
+                      }
+                      size="icon-xs"
+                      variant="ghost"
+                    />
+                  }
+                >
+                  <ContentsIcon className="size-3" aria-hidden="true" />
+                </TooltipTrigger>
+                <TooltipPopup side="top">{contentsLabel}</TooltipPopup>
+              </Tooltip>
+            ) : item.source ? (
+              <SnapShotContentsButton
+                source={item.source}
+                side="top"
+                className="hover:bg-white/10 hover:text-white"
+              />
+            ) : null}
+          </div>
         </div>
         {preview.images.length > 1 && (
           <Button

@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `0d34579d6` — `fix(web): keep project favicon shape consistent across sizes (#10502)` (2026-09-07) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                    |
-| **Ported on**                 | 2026-09-08                                                                                         |
+|                               |                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `5e6cc2b89` — `fix(web): restore text-only draft project title (#10821)` (2026-09-08) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                       |
+| **Ported on**                 | 2026-09-09                                                                            |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -5271,3 +5271,146 @@ still fails to typecheck because `GitVcsDriver` is missing from the expected Eff
   favicon curvature have unit/type/static coverage only.
 - A full Dev Container or Codespaces image was not built; its JSONC, shell syntax and repository
   commands were checked locally.
+
+## Batch 30 — reviewed through `5e6cc2b89` (77 commits)
+
+Reviewed `0d34579d6..5e6cc2b89`, with upstream snapshotted at
+`5e6cc2b89534a8e01772bf647b79a1f2da2f9664` for the whole run. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`. No commit needed a product Ask.
+
+### Ported (37)
+
+| Upstream    | Title                                                                                   | Notes                                                                                              |
+| ----------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `3bf74eb6d` | fix(claude): report usage limits on retried turns (#10549)                              | clean                                                                                              |
+| `577b6cc22` | fix(web): remove excess sidebar thread spacing (#10569)                                 | clean                                                                                              |
+| `c8ec7df12` | fix(web): make settings project scopes searchable and scrollable (#10570)               | **adapted** — shared search input + Ronin sidebar picker; no upstream `ProjectsSettings` page      |
+| `5ec6f77ec` | fix(web): use `tabular-nums` with the ui font for sidebar timer (#10592)                | clean                                                                                              |
+| `12f560444` | fix(web): correct pending question attachment message (#10599)                          | clean                                                                                              |
+| `dadba6d95` | fix(web): remember Composer Fast mode across new chats (#2981)                          | **adapted** — preserves Ronin's per-instance provider selections                                   |
+| `95834d68a` | fix(server): disable executable capabilities in Claude metadata generation (#4169)      | clean; hermetic hook-disabled metadata generation                                                  |
+| `09e8de9c6` | Add stop thread keybinding command (#4308)                                              | all desktop entry points: composer, palette, settings and keybinding contract                      |
+| `ea2983afb` | fix(web): copy selected pull request link from PR page (#10615)                         | **adapted** — Ronin right-panel state and standalone PR page                                       |
+| `d67157a09` | fix(web): keep ref picker steady when opening (#9472)                                   | clean                                                                                              |
+| `569a8cd2c` | fix(web): play pull request videos inline (#10617)                                      | clean                                                                                              |
+| `e0e0bcb11` | fix(desktop): preserve browser editing shortcuts (#10621)                               | clean                                                                                              |
+| `d081ab7ab` | fix(web): open pull request markdown links in the panel (#10623)                        | **adapted** — threads and the standalone PR surface share Ronin's panel routing                    |
+| `299404a75` | feat(desktop): add cross-platform window capture (#8103)                                | **adapted** — full Ronin-branded capture stack; see below                                          |
+| `8588d7f63` | fix(web): open proactive panels when entering threads (#10610)                          | clean                                                                                              |
+| `9fe4d6568` | fix(native): wait for the KDE feedback test listener (#10645)                           | clean                                                                                              |
+| `b7c002f91` | fix(web): add bottom padding to project actions header (#10634)                         | clean                                                                                              |
+| `15193df9f` | fix(web): update machines together in auto balance (#10596)                             | **adapted** — shared-setting patches are filtered against each Ronin environment                   |
+| `9e37f0c29` | fix(preview): transfer recordings to the agent environment (#10572)                     | clean across preview contracts, broker, toolkit and renderer upload                                |
+| `50a76cee7` | fix(web): keep scroll-to-end button close to composer (#10543)                          | **adapted** — measures Ronin's flat composer surface and attached banners                          |
+| `bc4b00666` | fix: generate thread titles with the selected model across connections (#10526)         | **subset** — server/web/client-runtime; mobile hunk dropped                                        |
+| `b5f7fa0ed` | fix(desktop): enable context menus in the browser (#10670)                              | clean                                                                                              |
+| `bc88fdf6a` | fix(desktop): stop generating declarations during bundling (#10679)                     | clean                                                                                              |
+| `349ce3014` | fix(desktop): restore layout control hit targets (#10673)                               | **adapted** — Electron 44 app-region reset lives in Ronin's split `styles/base.css`                |
+| `7220dfe2c` | feat(chat): attach files to question answers (#9871)                                    | **adapted** — desktop/web/server/contracts only; path validation uses Ronin's provider layer graph |
+| `430fbd1ff` | fix(server): give completed turns a full session idle window (#10689)                   | clean                                                                                              |
+| `7d9aaf6a7` | feat(web): add pull request merge defaults (#8088)                                      | clean across settings, desktop persistence, PR actions and contracts                               |
+| `134b7194b` | feat(web): add previous/next turn navigation in minimap (#8531)                         | clean                                                                                              |
+| `83b865fec` | fix(web): copy terminal selection with Ctrl+Insert (#8541)                              | clean                                                                                              |
+| `82451eeb7` | fix(web): show the same project icon in the command palette as everywhere else (#10712) | **adapted** — uses Ronin's existing `ProjectFavicon` API                                           |
+| `d7a59c63c` | fix(web): stop sidebar rows flashing and shifting on click (#10713)                     | clean                                                                                              |
+| `bde39d4d8` | feat(web): accept file drops into sidebar threads (#7892)                               | **subset** — current sidebar + route handoff; removed `LegacySidebar` hunk                         |
+| `061543e9e` | fix(mcp): keep preview snapshots usable by the agent and let it save them (#10501)      | clean; bounded snapshot serialization plus optional save path                                      |
+| `47eed9fac` | fix(server): stop Windows terminal processes when closing (#10771)                      | clean                                                                                              |
+| `12391bd0d` | feat(web): show project favicon in new-thread project picker (#10790)                   | **adapted** — Ronin's favicon API and grouped project picker                                       |
+| `772ea1473` | fix(web): honor terminal link browser overrides (#10060)                                | clean across terminal surface, drawer and integrations setting                                     |
+| `5e6cc2b89` | fix(web): restore text-only draft project title (#10821)                                | clean follow-up to the project-picker favicon                                                      |
+
+`299404a75` is the large feature in this batch. Ronin now has one capture path across macOS,
+Windows, KDE, Hyprland and GNOME; the desktop bridge stages captures durably before acknowledging
+them, the composer preserves screenshot metadata and extracted accessibility content, Settings
+owns shortcut/sound/animation setup, and packaging/CI build the two Rust helpers and GNOME
+extension. User-facing copy and docs say Ronin, while the existing `t3code` URL scheme, bundle IDs
+and protocol identifiers stay stable for compatibility. The upstream MP3 blobs were represented as
+source data instead of importing binary assets.
+
+The durable-capture test exposed a small prerequisite from the previously skipped upstream welcome
+wizard: `useLocalStorage` must resolve `window.localStorage` at call time rather than capturing it at
+module import. Only that generic storage correction was taken; the onboarding product remains cut.
+
+`7220dfe2c` carries attachments through question drafts, uploads, provider answers, normalization
+and orchestration. Claude receives validated local attachment paths; every other provider retains
+the typed optional contract without pretending to support a native attachment shape. The
+`ProviderService` layer supplies `NodeServices.layer` locally so path validation does not leak a new
+filesystem requirement into every consumer.
+
+### Already in the tree (2)
+
+| Upstream    | Title                                                                      | Where it lives                                                                                         |
+| ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `d6dbe8dd6` | fix(web): stop the settings sidebar shifting when switching pages (#10705) | Ronin's grouped settings navigation is already a stable, always-mounted list                           |
+| `b5d89038a` | feat(web): accept file drops into sidebar threads (#7892)                  | empty duplicate of `bde39d4d8`; the parent and tree are identical, so there is no second patch to take |
+
+### Skipped (38)
+
+**Export classification / Knip enforcement (14).** `5b8a69c7b` `5a853a4b4` `89dd9ab32`
+`e279e402c` `b491e41da` `6f4cd07b9` `0af04f180` `161715b1e` `77d9ffc82` `060c576f8`
+`3b6ce931c` `7cdeb696e` `1f0a14cf7` `7d620506a`. These are upstream's internal export-policy
+refactors and enforcement passes. Ronin has a different desktop/server public surface; importing
+the policy wholesale would delete or privatize fork-owned APIs without changing shipped behavior.
+
+**Mobile/native app (7).** `c0cad74bf` `02443335b` `2c8e95a4b` `892de47f0` `b28471567`
+`579266caa` `4664c572a`. No `apps/mobile` or native iOS/Android product exists in this fork.
+
+**Usage-limit presentation stack (3).** `d64335bb5` `6ba15c027` `1f14d6d10`. Ronin still lacks
+upstream's account-row usage-limit source and presentation stack, so these patches have no product
+consumer. They do not affect quota-resume classification.
+
+**Release metadata (1).** `8de9169f0` prepares upstream v0.0.40 and mobile/package versions;
+Ronin owns a separate release line.
+
+**Remote local-media/gallery stack (2).** `a01b227d6` assumes upstream's earlier remote-thread
+local-media serving baseline, which Ronin does not carry. `6df0add6e` builds its linked markdown
+gallery on the same newer media registry and action-source shape; taking a partial gallery would
+drop linked-image semantics and remote ownership.
+
+**Governance (2).** `f0bd43eaf` `5a18fb95e` only add Macroscope labels to upstream convention
+files.
+
+**Toolchain/reference churn (4).** `a37c66406` `bd56e920b` `458f50298` `9d345fa95` upgrade
+TypeScript/Effect/Alchemy and sync vendored references as one upstream toolchain train. Ronin's
+patched Effect beta and dependency set intentionally remain on their fork-tested versions.
+
+**Upstream installer artwork (3).** `991526383` `5d14c0e96` `0fe4c99ee` cycle through T3-branded
+macOS DMG backgrounds and logos. Ronin's product artwork is independent.
+
+**Diverged UI architecture (2).** `11601da84` patches a one-pixel seam in upstream's attached-glass
+composer-banner geometry; Ronin uses a flat composer and already reserves banner clearance.
+`eb1150636` is an upstream-wide `ProjectFavicon` API refactor that conflicts with Ronin's custom
+project/board icon system; the two concrete picker/palette fixes were ported against the existing
+API instead.
+
+### Verification
+
+- Changed desktop tests: 38 files / 589 tests pass after adapting Ronin's desktop-entry identity
+  fixture and explicitly authorizing the new IPC sender-forwarding test.
+- Changed server tests: 13 files / 329 tests pass. Changed web tests: 29 files / 802 tests pass.
+- Contracts: 3 files / 159 tests; local-storage coverage: 2 files / 7 tests; artifact builder:
+  1 file / 31 tests — all pass.
+- Native helpers: KDE 11 tests and Hyprland 10 tests pass with `cargo fmt --check`; GNOME extension
+  3 files / 24 tests pass.
+- Typecheck: `@t3tools/contracts`, `@t3tools/client-runtime`, `@t3tools/web` and desktop pass.
+  Server reports only the same pre-existing
+  `integration/orphanedProviderSessionStartup.integration.test.ts` missing-`GitVcsDriver` context
+  pair (TS2375 / TS377004) recorded in batches 25–29; this batch does not touch that test.
+- React Doctor's required changed-scope scan scored 46/100 before and after the final storage
+  adaptation, with the identical 480-diagnostic backlog. No regression was introduced; findings
+  are existing large-component/compiler diagnostics or unchanged upstream patterns.
+- `vp fmt --check` over 262 changed/untracked files and `git diff --check` pass.
+
+**Hit every applicable surface:** desktop Electron/IPC and packaging, the shared web renderer,
+server orchestration/MCP/provider/terminal paths, wire contracts, local and remote environment
+recording transfer, command-palette/settings/keybinding entry points, reverse capture setup states,
+and user/internals docs. Mobile, Connect/Clerk, WSL, legacy sidebar and upstream release/artwork
+surfaces remain deliberately cut.
+
+### Not tested
+
+- No live client or browser automation was run, per `AGENTS.md`; capture animation, shortcut setup,
+  sidebar drops, minimap navigation and terminal-link routing have unit/type/static coverage.
+- Native capture was not exercised on real macOS, Windows, KDE, Hyprland or GNOME desktops; platform
+  services, geometry, transport and packaging paths are covered by focused tests.

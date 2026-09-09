@@ -29,6 +29,7 @@ import {
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
+  buildRunningThreadTurnInterruptInput,
   buildThreadTurnInterruptInput,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
@@ -187,7 +188,7 @@ describe("proactive panels", () => {
     expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, ref)).toEqual(
       oldPr,
     );
-    expect(shouldOpenProactivePullRequest(loaded.targetKey, "owner/repo:2")).toBe(false);
+    expect(shouldOpenProactivePullRequest(loaded.targetKey, "owner/repo:2")).toBe(true);
     expect(
       shouldOpenProactiveTurnDiff({
         previousRunningTurnId: loaded.runningTurnId,
@@ -195,7 +196,10 @@ describe("proactive panels", () => {
         settledTurnId: turnId,
         turnCompleted: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
+    expect(panels.openProactive(ref, { id: "diff", kind: "diff" }, loaded.userActionRevision)).toBe(
+      false,
+    );
   });
 
   it.each(["idle", "loading", "observed"] as const)(
@@ -242,8 +246,9 @@ describe("proactive panels", () => {
     },
   );
 
-  it("opens a pull request only after a newly observed link appears", () => {
-    expect(shouldOpenProactivePullRequest(undefined, "project:repo:42")).toBe(false);
+  it("opens an existing pull request on entry and follows newly observed links", () => {
+    expect(shouldOpenProactivePullRequest(undefined, "project:repo:42")).toBe(true);
+    expect(shouldOpenProactivePullRequest(undefined, null)).toBe(false);
     expect(shouldOpenProactivePullRequest(null, "project:repo:42")).toBe(true);
     expect(shouldOpenProactivePullRequest("project:repo:42", "project:repo:42")).toBe(false);
     expect(shouldOpenProactivePullRequest("project:repo:42", null)).toBe(false);
@@ -283,7 +288,7 @@ describe("proactive panels", () => {
     ).toBe(false);
   });
 
-  it("opens the diff only when the observed running turn settles", () => {
+  it("opens a completed diff on entry or when the observed running turn settles", () => {
     const turnId = TurnId.make("turn-1");
     expect(
       shouldOpenProactiveTurnDiff({
@@ -292,7 +297,7 @@ describe("proactive panels", () => {
         settledTurnId: turnId,
         turnCompleted: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldOpenProactiveTurnDiff({
         previousRunningTurnId: turnId,
@@ -800,6 +805,29 @@ describe("buildThreadTurnInterruptInput", () => {
     expect(buildThreadTurnInterruptInput(makeThread({ session: readySession }))).toEqual({
       threadId,
     });
+  });
+
+  it("omits a turn id when a running session has not projected its active turn yet", () => {
+    expect(
+      buildThreadTurnInterruptInput(
+        makeThread({ session: { ...readySession, status: "running", activeTurnId: null } }),
+      ),
+    ).toEqual({ threadId });
+  });
+});
+
+describe("buildRunningThreadTurnInterruptInput", () => {
+  it("targets only a running thread", () => {
+    const activeTurnId = TurnId.make("turn-running");
+    const running = makeThread({
+      session: { ...readySession, status: "running", activeTurnId },
+    });
+    expect(buildRunningThreadTurnInterruptInput(running, "running")).toEqual({
+      threadId,
+      turnId: activeTurnId,
+    });
+    expect(buildRunningThreadTurnInterruptInput(running, "ready")).toBeNull();
+    expect(buildRunningThreadTurnInterruptInput(null, "disconnected")).toBeNull();
   });
 });
 

@@ -65,6 +65,7 @@ import {
   BotIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronUpIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   CodeIcon,
@@ -89,6 +90,10 @@ import {
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
+import {
+  SNAP_SHOT_ATTACHMENT_FRAME_CLASS,
+  SnapShotAttachmentDetails,
+} from "./SnapShotAttachmentDetails";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { deriveTurnStartedAtByTurnId, turnDurationLabel } from "./turnReceipt";
@@ -114,6 +119,7 @@ import {
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
   resolveTimelineMinimapHasPersistentGutter,
+  resolveTimelineMinimapCurrentIndex,
   resolveTimelineMinimapHeightStyle,
   resolveTimelineMinimapHitStripWidth,
   resolveTimelineMinimapIndexFromPointer,
@@ -160,6 +166,7 @@ import {
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
 import { FallbackImage, MissingMediaBlock } from "../MissingMedia";
+import { useAssetUrls } from "../../assets/assetUrls";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -544,6 +551,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   }, [anchorMessageId, citationPositioning, contentInsetEndAdjustment, listRef, liveFollowEnabled]);
   const [minimapHasPersistentGutter, setMinimapHasPersistentGutter] = useState(false);
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
+  const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
   const handleAnchorReady = useCallback(
     (info: { anchorIndex: number | undefined }) => {
       if (anchorMessageId !== null && info.anchorIndex !== undefined) {
@@ -575,21 +583,30 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     const scrollTop = state.scroll ?? 0;
     const scrollBottom = scrollTop + (state.scrollLength ?? 0);
 
-    for (const item of minimapItems) {
-      const strip = minimapStripMap.get(item.id);
-      if (!strip) {
-        continue;
-      }
+    const itemBounds = minimapItems.map((item) => ({
+      top: resolveTimelineRowTop(state, item.rowIndex),
+      height: resolveTimelineRowHeight(state, item.rowIndex),
+    }));
 
-      const rowTop = resolveTimelineRowTop(state, item.rowIndex);
-      const rowHeight = resolveTimelineRowHeight(state, item.rowIndex);
+    for (const [index, item] of minimapItems.entries()) {
+      const strip = minimapStripMap.get(item.id);
+      const rowTop = itemBounds[index]?.top ?? null;
+      const rowHeight = itemBounds[index]?.height ?? null;
       const inView =
         rowTop !== null &&
         rowTop < scrollBottom &&
         rowTop + Math.max(1, rowHeight ?? 1) > scrollTop;
 
-      strip.dataset.inView = inView ? "true" : "false";
+      if (strip) strip.dataset.inView = inView ? "true" : "false";
     }
+    const nextCurrentIndex = resolveTimelineMinimapCurrentIndex({
+      scrollTop,
+      scrollBottom,
+      itemBounds,
+    });
+    setMinimapCurrentIndex((current) =>
+      current === nextCurrentIndex ? current : nextCurrentIndex,
+    );
   }, [citationPositioning, listRef, minimapItems, minimapStripMap, onIsAtEndChange]);
 
   useEffect(() => {
@@ -786,6 +803,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             items={minimapItems}
             hasPersistentGutter={minimapHasPersistentGutter}
             hitStripWidth={minimapHitStripWidth}
+            currentIndex={minimapCurrentIndex}
             stripMap={minimapStripMap}
             onSelect={(item) => {
               onManualNavigation();
@@ -887,12 +905,14 @@ function timelineMinimapEventTargetsPreview(target: EventTarget): boolean {
 function TimelineMinimap({
   hasPersistentGutter,
   hitStripWidth,
+  currentIndex,
   items,
   stripMap,
   onSelect,
 }: {
   hasPersistentGutter: boolean;
   hitStripWidth: number;
+  currentIndex: number | null;
   items: ReadonlyArray<TimelineMinimapItem>;
   stripMap: Map<string, HTMLSpanElement>;
   onSelect: (item: TimelineMinimapItem) => void;
@@ -914,6 +934,11 @@ function TimelineMinimap({
         : resolvedActiveIndex === items.length - 1
           ? "-100%"
           : "-50%";
+  const resolvedCurrentIndex =
+    currentIndex !== null && currentIndex >= 0 && currentIndex < items.length ? currentIndex : null;
+  const previousItem =
+    resolvedCurrentIndex === null ? null : (items[resolvedCurrentIndex - 1] ?? null);
+  const nextItem = resolvedCurrentIndex === null ? null : (items[resolvedCurrentIndex + 1] ?? null);
 
   const resolveActiveIndexFromPointer = useCallback(
     (event: MouseEvent<HTMLElement>) => {
@@ -962,6 +987,13 @@ function TimelineMinimap({
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
     >
       <div className="relative h-full w-full select-none">
+        <TimelineMinimapNavigationButton
+          direction="previous"
+          disabled={previousItem === null}
+          onClick={() => {
+            if (previousItem) onSelect(previousItem);
+          }}
+        />
         <button
           aria-label={`Jump to message: ${activeItem?.userText ?? "User message"}`}
           className={cn(
@@ -1079,8 +1111,55 @@ function TimelineMinimap({
             </span>
           ) : null}
         </button>
+        <TimelineMinimapNavigationButton
+          direction="next"
+          disabled={nextItem === null}
+          onClick={() => {
+            if (nextItem) onSelect(nextItem);
+          }}
+        />
       </div>
     </div>
+  );
+}
+
+function TimelineMinimapNavigationButton({
+  direction,
+  disabled,
+  onClick,
+}: {
+  direction: "previous" | "next";
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  const previous = direction === "previous";
+  const label = previous ? "Previous turn" : "Next turn";
+  const Icon = previous ? ChevronUpIcon : ChevronDownIcon;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            className={cn(
+              "pointer-events-auto absolute left-3 z-10 inline-flex -translate-x-1/2 opacity-0 transition-opacity duration-(--duration-fast) hover:opacity-100 focus-within:opacity-100",
+              previous ? "top-2" : "bottom-2",
+            )}
+          />
+        }
+      >
+        <Button
+          aria-label={label}
+          disabled={disabled}
+          onClick={onClick}
+          size="icon-xs"
+          type="button"
+          variant="ghost"
+        >
+          <Icon className="size-4 text-foreground/90" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipPopup side={previous ? "top" : "bottom"}>{label}</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -1163,7 +1242,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {regularImages.map((image) => (
               <div
                 key={image.id}
-                className="overflow-hidden rounded-lg border border-border/80 bg-background/70"
+                className={cn(
+                  "bg-background/70",
+                  image.source?.kind === "snap-shot" && image.previewUrl
+                    ? SNAP_SHOT_ATTACHMENT_FRAME_CLASS
+                    : "overflow-hidden rounded-lg border border-border/80",
+                )}
               >
                 {image.previewUrl ? (
                   <button
@@ -1190,6 +1274,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                     {image.name}
                   </div>
                 )}
+                {image.previewUrl && image.source?.kind === "snap-shot" ? (
+                  <SnapShotAttachmentDetails source={image.source} />
+                ) : null}
               </div>
             ))}
             {userVideos.map((file) => {
@@ -2722,7 +2809,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "circle-alert" : workEntryIconName(workEntry);
-  const heading = toolWorkEntryHeading(workEntry);
+  const heading = workEntry.questionAnswer
+    ? "Question answer submitted"
+    : toolWorkEntryHeading(workEntry);
   const rawPreview = workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
@@ -2882,6 +2971,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
         </div>
       </div>
+      {workEntry.questionAnswer ? (
+        <QuestionAnswerHistory answer={workEntry.questionAnswer} />
+      ) : null}
       {expanded && canExpand ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
@@ -2908,3 +3000,67 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     </div>
   );
 });
+
+function QuestionAnswerHistory({
+  answer,
+}: {
+  answer: import("@t3tools/contracts").UserInputAttachmentAnswerPayload;
+}) {
+  const { activeThreadEnvironmentId } = use(TimelineRowCtx);
+  const attachments = useMemo(() => Object.values(answer.attachmentsByQuestionId).flat(), [answer]);
+  const resources = useMemo(
+    () =>
+      attachments.map((attachment) => ({
+        _tag: "attachment" as const,
+        attachmentId: attachment.id,
+      })),
+    [attachments],
+  );
+  const urls = useAssetUrls(activeThreadEnvironmentId, resources);
+  return (
+    <div className="ms-7 mt-2 space-y-2" onClick={stopRowToggle}>
+      {[
+        ...new Set([
+          ...Object.keys(answer.answers),
+          ...Object.keys(answer.attachmentsByQuestionId),
+        ]),
+      ].map((questionId) => (
+        <div key={questionId} className="space-y-1">
+          {answer.questionTextById?.[questionId] ? (
+            <p className="text-sm text-muted-foreground">{answer.questionTextById[questionId]}</p>
+          ) : null}
+          <p className="whitespace-pre-wrap text-sm">
+            {[answer.answers[questionId]]
+              .flat()
+              .filter((value): value is string => typeof value === "string")
+              .join(", ")}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {(answer.attachmentsByQuestionId[questionId] ?? []).map((attachment) => {
+              const url = urls[attachments.indexOf(attachment)];
+              return (
+                <a
+                  key={attachment.id}
+                  href={url ?? undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm underline"
+                >
+                  {attachment.type === "image" && url ? (
+                    <img
+                      src={url}
+                      alt={attachment.name}
+                      className="h-20 max-w-32 rounded object-contain"
+                    />
+                  ) : (
+                    attachment.name
+                  )}
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

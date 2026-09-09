@@ -147,6 +147,7 @@ import {
 } from "../types";
 import { useTheme } from "../hooks/useTheme";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { subscribeSnapShotComposerFocus } from "../lib/desktopSnapShot";
 import { onRunKeybindingCommand } from "../keybindingCommandBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
@@ -172,6 +173,10 @@ import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
+import {
+  isSameSidebarThreadRef,
+  useSidebarPendingFileDropStore,
+} from "../sidebarPendingFileDropStore";
 import {
   selectThreadPreviewMiniPlayer,
   usePreviewMiniPlayerStore,
@@ -233,6 +238,7 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import { isPreviewFocused } from "../lib/previewFocus";
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../lib/terminalFocus";
 import {
   preventRepeatedTerminalCloseShortcut,
@@ -256,7 +262,7 @@ import {
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
   useComposerDraftStore,
-  type DraftId,
+  DraftId,
 } from "../composerDraftStore";
 import { buildSideChatSeedPrompt } from "../sideChatSeed";
 
@@ -384,6 +390,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildLoadingThreadFromShell,
+  buildRunningThreadTurnInterruptInput,
   buildThreadTurnInterruptInput,
   collectUserMessageBlobPreviewUrls,
   createLocalDispatchSnapshot,
@@ -439,7 +446,14 @@ import {
   getUploadedAttachments,
   releaseDraftAttachments,
   startAttachmentUpload,
+  useAttachmentUploadStore,
 } from "../lib/attachmentUploadQueue";
+import {
+  clearQuestionAttachmentDraft,
+  questionAttachmentDraftId,
+  questionAttachmentDraftPrefix,
+  useQuestionAttachmentPreparation,
+} from "../questionAttachments";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { previewEnvironment } from "../state/preview";
@@ -462,6 +476,7 @@ import {
 } from "./ui/alert-dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { ServerUpdateAction, ServerUpdateProgress } from "./ServerUpdateAction";
+import { useAutoBalanceUpdateBanner } from "./chat/useAutoBalanceUpdateBanner";
 import {
   buildVersionMismatchDismissalKey,
   dismissServerUpdateFailure,
@@ -1598,6 +1613,7 @@ export default function ChatView(props: ChatViewProps) {
     null,
   );
   const [respondingRequestIds, setRespondingRequestIds] = useState<ApprovalRequestId[]>([]);
+  const userInputResponsesInFlight = useRef(new Set<string>());
   const [respondingUserInputRequestIds, setRespondingUserInputRequestIds] = useState<
     ApprovalRequestId[]
   >([]);
@@ -2646,6 +2662,8 @@ export default function ChatView(props: ChatViewProps) {
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
   const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
   const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
+  const supportsQuestionAttachments =
+    attachmentEnvironmentConfig?.environment.capabilities.questionAttachments === true;
   const supportsAttachmentUploads =
     attachmentEnvironmentConfig?.environment.capabilities.attachmentUploads === true;
   const advertisedFileAttachmentBytes =
@@ -2654,6 +2672,34 @@ export default function ChatView(props: ChatViewProps) {
     advertisedFileAttachmentBytes === null
       ? null
       : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
+  const envLocked = Boolean(
+    activeThread &&
+    (activeThread.messages.length > 0 ||
+      (activeThread.session !== null && activeThread.session.status !== "stopped")),
+  );
+  const loadBalancingSettings = useClientSettings();
+  const automaticEnvironment = Boolean(
+    clientSettingsHydrated &&
+    draftId &&
+    !envLocked &&
+    hasMultipleEnvironments &&
+    loadBalancingSettings.loadBalancingEnabled &&
+    draftThread?.environmentSelection !== "manual" &&
+    (!composerHasAttachments || Boolean(draftThread?.loadBalancedEnvironmentId)) &&
+    (!draftThread?.branch || draftThread.environmentSelection === "auto") &&
+    !draftThread?.worktreePath,
+  );
+  const autoUpdateEnvironments = useMemo(
+    () =>
+      automaticEnvironment
+        ? logicalProjectEnvironments.flatMap(({ environmentId }) => {
+            const environment = environmentById.get(environmentId);
+            return environment ? [environment] : [];
+          })
+        : [],
+    [automaticEnvironment, environmentById, logicalProjectEnvironments],
+  );
+  const autoBalanceUpdateBanner = useAutoBalanceUpdateBanner(autoUpdateEnvironments);
   const versionMismatch = resolveServerConfigVersionMismatch(serverConfig);
   const versionMismatchDismissKey =
     versionMismatch && activeThread
@@ -2757,6 +2803,7 @@ export default function ChatView(props: ChatViewProps) {
       }
     }
     if (
+      !automaticEnvironment &&
       serverUpdateEnvironmentId &&
       !reconnectingThroughVersionSkew &&
       (serverUpdateState.status === "idle"
@@ -2839,8 +2886,11 @@ export default function ChatView(props: ChatViewProps) {
             }),
       });
     }
+    if (autoBalanceUpdateBanner) items.push(autoBalanceUpdateBanner);
     return items;
   }, [
+    automaticEnvironment,
+    autoBalanceUpdateBanner,
     activeEnvironmentUnavailableState,
     reconnectWarningGraceElapsed,
     handleReconnectActiveEnvironment,
@@ -2908,6 +2958,70 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  const activePendingRequestKey = JSON.stringify([
+    environmentId,
+    activeThreadId,
+    activePendingUserInput?.requestId,
+  ]);
+  const pendingQuestionDraftKeys = useMemo(
+    () =>
+      activeThreadId
+        ? pendingUserInputs.flatMap((request) =>
+            request.questions.map((question) =>
+              questionAttachmentDraftId(
+                environmentId,
+                activeThreadId,
+                request.requestId,
+                question.id,
+              ),
+            ),
+          )
+        : [],
+    [activeThreadId, environmentId, pendingUserInputs],
+  );
+  const questionComposerDrafts = useComposerDraftStore(
+    useShallow((state) =>
+      Object.fromEntries(
+        pendingQuestionDraftKeys.map((key) => [key, state.draftsByThreadKey[key]]),
+      ),
+    ),
+  );
+  const questionUploadsBlocked = useAttachmentUploadStore(
+    useShallow((state) =>
+      Object.fromEntries(
+        pendingQuestionDraftKeys.map((key) => {
+          const draft = questionComposerDrafts[key];
+          const attachments = draft ? [...draft.images, ...draft.files] : [];
+          return [
+            key,
+            attachments.some((attachment) => {
+              const upload = state.uploadsByImageId[attachment.id];
+              return upload?.status !== "ready" || upload.environmentId !== environmentId;
+            }),
+          ];
+        }),
+      ),
+    ),
+  );
+  const questionPreparations = useQuestionAttachmentPreparation(
+    useShallow((state) =>
+      Object.fromEntries(pendingQuestionDraftKeys.map((key) => [key, state.counts[key] ?? 0])),
+    ),
+  );
+  useEffect(() => {
+    if (!activeThreadId) return;
+    const prefix = questionAttachmentDraftPrefix(environmentId, activeThreadId);
+    const retained = new Set(pendingQuestionDraftKeys);
+    const keys = new Set([
+      ...Object.keys(useComposerDraftStore.getState().draftsByThreadKey),
+      ...Object.keys(useQuestionAttachmentPreparation.getState().counts),
+    ]);
+    for (const key of keys) {
+      if (key.startsWith(prefix) && !retained.has(DraftId.make(key))) {
+        clearQuestionAttachmentDraft(DraftId.make(key));
+      }
+    }
+  }, [activeThreadId, environmentId, pendingQuestionDraftKeys]);
   // A started thread can move to another provider whenever the server would
   // accept the switch. While it cannot, the picker stays locked to the driver
   // the thread is on rather than offering a choice that would bounce.
@@ -2925,16 +3039,44 @@ export default function ChatView(props: ChatViewProps) {
       : null;
   const currentBoundInstanceId =
     boundThreadSession?.providerInstanceId ?? activeThread?.modelSelection.instanceId ?? null;
-  const activePendingDraftAnswers = useMemo(
-    () =>
-      activePendingUserInput
-        ? (pendingUserInputAnswersByRequestId[activePendingUserInput.requestId] ??
-          EMPTY_PENDING_USER_INPUT_ANSWERS)
-        : EMPTY_PENDING_USER_INPUT_ANSWERS,
-    [activePendingUserInput, pendingUserInputAnswersByRequestId],
-  );
+  const activePendingDraftAnswers = useMemo(() => {
+    if (!activePendingUserInput || !activeThreadId) return EMPTY_PENDING_USER_INPUT_ANSWERS;
+    return Object.fromEntries(
+      activePendingUserInput.questions.map((question) => {
+        const key = questionAttachmentDraftId(
+          environmentId,
+          activeThreadId,
+          activePendingUserInput.requestId,
+          question.id,
+        );
+        const draft = questionComposerDrafts[key];
+        const attachments = draft ? [...draft.images, ...draft.files] : [];
+        return [
+          question.id,
+          {
+            ...pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[question.id],
+            attachmentCount: attachments.length,
+            attachmentsBlocked:
+              (attachments.length > 0 && !supportsQuestionAttachments) ||
+              (questionPreparations[key] ?? 0) > 0 ||
+              questionUploadsBlocked[key] === true,
+          },
+        ];
+      }),
+    );
+  }, [
+    activePendingRequestKey,
+    activePendingUserInput,
+    activeThreadId,
+    environmentId,
+    pendingUserInputAnswersByRequestId,
+    questionComposerDrafts,
+    questionPreparations,
+    questionUploadsBlocked,
+    supportsQuestionAttachments,
+  ]);
   const activePendingQuestionIndex = activePendingUserInput
-    ? (pendingUserInputQuestionIndexByRequestId[activePendingUserInput.requestId] ?? 0)
+    ? (pendingUserInputQuestionIndexByRequestId[activePendingRequestKey] ?? 0)
     : 0;
   const activePendingProgress = useMemo(
     () =>
@@ -3588,24 +3730,6 @@ export default function ChatView(props: ChatViewProps) {
     }
   }, [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen]);
 
-  const envLocked = Boolean(
-    activeThread &&
-    (activeThread.messages.length > 0 ||
-      (activeThread.session !== null && activeThread.session.status !== "stopped")),
-  );
-
-  const loadBalancingSettings = useClientSettings();
-  const automaticEnvironment = Boolean(
-    clientSettingsHydrated &&
-    draftId &&
-    !envLocked &&
-    hasMultipleEnvironments &&
-    loadBalancingSettings.loadBalancingEnabled &&
-    draftThread?.environmentSelection !== "manual" &&
-    (!composerHasAttachments || Boolean(draftThread?.loadBalancedEnvironmentId)) &&
-    (!draftThread?.branch || draftThread.environmentSelection === "auto") &&
-    !draftThread?.worktreePath,
-  );
   const needsLoadBalancing = automaticEnvironment && !draftThread?.loadBalancedEnvironmentId;
   const loadBalancingCandidates = useMemo(
     () =>
@@ -3771,6 +3895,7 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
   }, [composerRef]);
+  useEffect(() => subscribeSnapShotComposerFocus(focusComposer), [focusComposer]);
   const scheduleComposerFocus = useCallback(() => {
     window.requestAnimationFrame(() => {
       focusComposer();
@@ -4410,7 +4535,8 @@ export default function ChatView(props: ChatViewProps) {
     const shouldDeferLink = eligibleLink && !pullRequestsCapabilityKnown;
     proactivePanelObservationRef.current = {
       ...observation,
-      runningTurnId: diffAction === "defer" ? (previousRunningTurnId ?? null) : activeRunningTurnId,
+      // Preserve first-entry eligibility while the checkpoint or repository is loading.
+      runningTurnId: diffAction === "defer" ? previousRunningTurnId : activeRunningTurnId,
       targetKey: shouldDeferLink ? (previousTargetKey ?? null) : linkedThreadPullRequestKey,
     };
 
@@ -6162,6 +6288,24 @@ export default function ChatView(props: ChatViewProps) {
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
+  const onInterrupt = useCallback(async () => {
+    const input = buildRunningThreadTurnInterruptInput(activeThread, phase);
+    if (!input || !activeThread) return;
+    const result = await interruptThreadTurn({
+      environmentId: activeThread.environmentId,
+      input,
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      setThreadError(
+        activeThread.id,
+        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+      );
+    }
+  }, [activeThread, interruptThreadTurn, phase, setThreadError]);
+  const canInterruptRunningThread =
+    buildRunningThreadTurnInterruptInput(activeThread, phase) !== null;
+
   /**
    * Runs a workspace command, reporting whether it was this view's to run.
    *
@@ -6215,6 +6359,12 @@ export default function ChatView(props: ChatViewProps) {
 
       if (command === "thread.copyReference") {
         copyActiveThreadReference();
+        return true;
+      }
+
+      if (command === "thread.stop") {
+        if (!canInterruptRunningThread) return false;
+        if (!isRepeat) void onInterrupt();
         return true;
       }
 
@@ -6350,6 +6500,7 @@ export default function ChatView(props: ChatViewProps) {
       activeThreadPinned,
       activeThreadRef,
       activeThreadSettled,
+      canInterruptRunningThread,
       addTerminalSurface,
       chatWidth,
       requestClosePanelTerminal,
@@ -6361,6 +6512,7 @@ export default function ChatView(props: ChatViewProps) {
       isServerThread,
       confirmAndUnpinThread,
       onToggleDiff,
+      onInterrupt,
       pinThread,
       runProjectScript,
       setTerminalOpen,
@@ -6415,6 +6567,8 @@ export default function ChatView(props: ChatViewProps) {
       const shortcutContext = {
         terminalFocus: terminalFocusOwner !== null,
         terminalOpen: Boolean(terminalUiState.terminalOpen),
+        previewFocus: isPreviewFocused(),
+        previewOpen: previewPanelOpen,
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
       };
 
@@ -6444,7 +6598,14 @@ export default function ChatView(props: ChatViewProps) {
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [activeThreadId, composerRef, keybindings, runWorkspaceCommand, terminalUiState.terminalOpen]);
+  }, [
+    activeThreadId,
+    composerRef,
+    keybindings,
+    previewPanelOpen,
+    runWorkspaceCommand,
+    terminalUiState.terminalOpen,
+  ]);
 
   const onRevertToTurnCount = useCallback(
     async (turnCount: number) => {
@@ -6939,6 +7100,7 @@ export default function ChatView(props: ChatViewProps) {
           mimeType: attachment.mimeType,
           sizeBytes: attachment.sizeBytes,
           dataUrl: await readFileAsDataUrl(attachment.file),
+          ...(attachment.source ? { source: attachment.source } : {}),
         };
       }),
     );
@@ -6951,6 +7113,7 @@ export default function ChatView(props: ChatViewProps) {
             mimeType: attachment.mimeType,
             sizeBytes: attachment.sizeBytes,
             previewUrl: attachment.previewUrl,
+            ...(attachment.source ? { source: attachment.source } : {}),
           }
         : {
             type: "file" as const,
@@ -7277,21 +7440,6 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
-  const onInterrupt = async () => {
-    if (!activeThread) return;
-    const result = await interruptThreadTurn({
-      environmentId,
-      input: buildThreadTurnInterruptInput(activeThread),
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
-      );
-    }
-  };
-
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
       if (!activeThreadId) return;
@@ -7322,7 +7470,40 @@ export default function ChatView(props: ChatViewProps) {
 
   const onRespondToUserInput = useCallback(
     async (requestId: ApprovalRequestId, answers: Record<string, unknown>) => {
-      if (!activeThreadId) return;
+      if (!activeThreadId || !activePendingUserInput || activePendingIsResponding) return;
+
+      const responseKey = JSON.stringify([environmentId, activeThreadId, requestId]);
+      if (userInputResponsesInFlight.current.has(responseKey)) return;
+      const attachmentsByQuestionId = new Map<
+        string,
+        import("@t3tools/contracts").UserInputAttachments[string]
+      >();
+      for (const question of activePendingUserInput.questions) {
+        const target = questionAttachmentDraftId(
+          environmentId,
+          activeThreadId,
+          requestId,
+          question.id,
+        );
+        if ((useQuestionAttachmentPreparation.getState().counts[target] ?? 0) > 0) return;
+        const draft = useComposerDraftStore.getState().getComposerDraft(target);
+        const attachments = draft ? [...draft.images, ...draft.files] : [];
+        if (attachments.length === 0) continue;
+        const uploaded = getUploadedAttachments({ environmentId, images: attachments });
+        if (!uploaded) {
+          setThreadError(
+            activeThreadId,
+            "Wait for attachments to finish uploading, or remove failed uploads.",
+          );
+          return;
+        }
+        attachmentsByQuestionId.set(
+          question.id,
+          uploaded as import("@t3tools/contracts").UserInputAttachments[string],
+        );
+      }
+
+      userInputResponsesInFlight.current.add(responseKey);
 
       setRespondingUserInputRequestIds((existing) =>
         existing.includes(requestId) ? existing : [...existing, requestId],
@@ -7333,6 +7514,9 @@ export default function ChatView(props: ChatViewProps) {
           threadId: activeThreadId,
           requestId,
           answers,
+          ...(attachmentsByQuestionId.size > 0
+            ? { attachmentsByQuestionId: Object.fromEntries(attachmentsByQuestionId) }
+            : {}),
         },
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -7342,10 +7526,18 @@ export default function ChatView(props: ChatViewProps) {
           error instanceof Error ? error.message : "Failed to submit user input.",
         );
       }
+      userInputResponsesInFlight.current.delete(responseKey);
       setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
       return result;
     },
-    [activeThreadId, environmentId, respondToThreadUserInput, setThreadError],
+    [
+      activePendingIsResponding,
+      activePendingUserInput,
+      activeThreadId,
+      environmentId,
+      respondToThreadUserInput,
+      setThreadError,
+    ],
   );
 
   // Closes an async question without messaging the agent. The server records
@@ -7381,10 +7573,10 @@ export default function ChatView(props: ChatViewProps) {
       }
       setPendingUserInputQuestionIndexByRequestId((existing) => ({
         ...existing,
-        [activePendingUserInput.requestId]: nextQuestionIndex,
+        [activePendingRequestKey]: nextQuestionIndex,
       }));
     },
-    [activePendingUserInput],
+    [activePendingRequestKey, activePendingUserInput],
   );
 
   const onSelectActivePendingUserInputOption = useCallback(
@@ -7404,11 +7596,11 @@ export default function ChatView(props: ChatViewProps) {
 
         return {
           ...existing,
-          [activePendingUserInput.requestId]: {
-            ...existing[activePendingUserInput.requestId],
+          [activePendingRequestKey]: {
+            ...existing[activePendingRequestKey],
             [questionId]: togglePendingUserInputOptionSelection(
               question,
-              existing[activePendingUserInput.requestId]?.[questionId],
+              existing[activePendingRequestKey]?.[questionId],
               optionLabel,
             ),
           },
@@ -7417,7 +7609,12 @@ export default function ChatView(props: ChatViewProps) {
       promptRef.current = "";
       composerRef.current?.resetCursorState({ cursor: 0 });
     },
-    [activePendingProgress?.activeQuestion, activePendingUserInput, composerRef],
+    [
+      activePendingProgress?.activeQuestion,
+      activePendingRequestKey,
+      activePendingUserInput,
+      composerRef,
+    ],
   );
 
   const onChangeActivePendingUserInputCustomAnswer = useCallback(
@@ -7431,13 +7628,15 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
+      const question = activePendingUserInput.questions.find((entry) => entry.id === questionId);
+      if (!question || question.allowCustomAnswer === false) return;
       promptRef.current = value;
       setPendingUserInputAnswersByRequestId((existing) => ({
         ...existing,
-        [activePendingUserInput.requestId]: {
-          ...existing[activePendingUserInput.requestId],
+        [activePendingRequestKey]: {
+          ...existing[activePendingRequestKey],
           [questionId]: setPendingUserInputCustomAnswer(
-            existing[activePendingUserInput.requestId]?.[questionId],
+            existing[activePendingRequestKey]?.[questionId],
             value,
           ),
         },
@@ -7451,11 +7650,16 @@ export default function ChatView(props: ChatViewProps) {
         composerRef.current?.focusAt(nextCursor);
       }
     },
-    [activePendingUserInput, composerRef],
+    [activePendingRequestKey, activePendingUserInput, composerRef],
   );
 
   const onAdvanceActivePendingUserInput = useCallback(() => {
-    if (!activePendingUserInput || !activePendingProgress) {
+    if (
+      !activePendingUserInput ||
+      !activePendingProgress ||
+      !activePendingProgress.canAdvance ||
+      activePendingIsResponding
+    ) {
       return;
     }
     if (activePendingProgress.isLastQuestion) {
@@ -7468,6 +7672,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [
     activePendingProgress,
     activePendingResolvedAnswers,
+    activePendingIsResponding,
     activePendingUserInput,
     onRespondToUserInput,
     setActivePendingUserInputQuestionIndex,
@@ -8010,6 +8215,38 @@ export default function ChatView(props: ChatViewProps) {
     void onRevertToTurnCountRef.current(targetTurnCount);
   }, []);
 
+  const pendingSidebarFileDrops = useSidebarPendingFileDropStore((state) => state.pending);
+  const consumePendingFileDrop = useSidebarPendingFileDropStore(
+    (state) => state.consumePendingFileDrop,
+  );
+  useEffect(() => {
+    if (pendingSidebarFileDrops.length === 0 || typeof composerDraftTarget === "string") return;
+    if (
+      !pendingSidebarFileDrops.some((drop) =>
+        isSameSidebarThreadRef(composerDraftTarget, drop.threadRef),
+      ) ||
+      !activeThread
+    ) {
+      return;
+    }
+    if (!composerRef.current) {
+      const frame = window.requestAnimationFrame(() => {
+        if (!composerRef.current || typeof composerDraftTarget === "string") return;
+        const files = consumePendingFileDrop(composerDraftTarget);
+        if (files !== null) composerRef.current.addDroppedFiles(files);
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    const files = consumePendingFileDrop(composerDraftTarget);
+    if (files !== null) composerRef.current.addDroppedFiles(files);
+  }, [
+    activeThread,
+    composerDraftTarget,
+    composerRef,
+    consumePendingFileDrop,
+    pendingSidebarFileDrops,
+  ]);
+
   // Empty state: no active thread
   if (!activeThread) {
     return <NoActiveThreadState />;
@@ -8462,6 +8699,7 @@ export default function ChatView(props: ChatViewProps) {
                             environmentId={environmentId}
                             attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}
                             supportsAttachmentUploads={supportsAttachmentUploads}
+                            supportsQuestionAttachments={supportsQuestionAttachments}
                             maxFileAttachmentBytes={maxFileAttachmentBytes}
                             routeKind={routeKind}
                             routeThreadRef={routeThreadRef}

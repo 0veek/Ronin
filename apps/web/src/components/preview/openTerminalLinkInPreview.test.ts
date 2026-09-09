@@ -78,6 +78,7 @@ describe("openTerminalLinkInPreview", () => {
       threadRef,
       openPreview,
       fallbackToBrowser,
+      forceBrowser: false,
     });
 
     expect(fallbackToBrowser).toHaveBeenCalledOnce();
@@ -93,6 +94,7 @@ describe("openTerminalLinkInPreview", () => {
       threadRef,
       openPreview,
       fallbackToBrowser,
+      forceBrowser: false,
     });
 
     expect(openPreview).toHaveBeenCalledOnce();
@@ -114,6 +116,7 @@ describe("openTerminalLinkInPreview", () => {
       threadRef,
       openPreview,
       fallbackToBrowser: vi.fn(),
+      forceBrowser: false,
     });
 
     await vi.waitFor(() => expect(browserDefaultsMocks.resolve).toHaveBeenCalledOnce());
@@ -143,6 +146,7 @@ describe("openTerminalLinkInPreview", () => {
       threadRef,
       openPreview: async () => AsyncResult.failure(cause),
       fallbackToBrowser,
+      forceBrowser: false,
     });
 
     expect(fallbackToBrowser).toHaveBeenCalledOnce();
@@ -167,9 +171,26 @@ describe("openTerminalLinkInPreview", () => {
       threadRef,
       openPreview: async () => AsyncResult.failure(Cause.interrupt()),
       fallbackToBrowser,
+      forceBrowser: false,
     });
 
     expect(reportError).not.toHaveBeenCalled();
     expect(fallbackToBrowser).not.toHaveBeenCalled();
+  });
+
+  it("opens in the system browser when Ctrl or Command is held", async () => {
+    const fallbackToBrowser = vi.fn();
+    const openPreview = vi.fn(async () => AsyncResult.success(snapshot));
+
+    await openTerminalLinkInPreview({
+      url: "https://example.com/docs",
+      threadRef,
+      openPreview,
+      fallbackToBrowser,
+      forceBrowser: true,
+    });
+
+    expect(fallbackToBrowser).toHaveBeenCalledOnce();
+    expect(openPreview).not.toHaveBeenCalled();
   });
 });

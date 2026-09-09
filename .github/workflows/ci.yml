@@ -183,11 +183,17 @@ jobs:
         with:
           components: rustfmt
 
-      - name: Check resource monitor formatting
-        run: cargo fmt --manifest-path native/resource-monitor/Cargo.toml -- --check
+      - name: Check Rust formatting
+        run: |
+          for crate in resource-monitor kde-snap-shot hyprland-snap-shot; do
+            cargo fmt --manifest-path "native/$crate/Cargo.toml" -- --check
+          done
 
-      - name: Test resource monitor
-        run: cargo test --locked --manifest-path native/resource-monitor/Cargo.toml
+      - name: Test Rust crates
+        run: |
+          for crate in resource-monitor kde-snap-shot hyprland-snap-shot; do
+            cargo test --locked --manifest-path "native/$crate/Cargo.toml"
+          done
 
   windows:
     name: Windows Regression

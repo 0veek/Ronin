@@ -9,6 +9,7 @@
  * value so the user can push their current value out.
  */
 import type { EnvironmentId, ServerSettings, ServerSettingsPatch } from "@t3tools/contracts";
+import { isModelSelectionProviderEnabled } from "@t3tools/shared/serverSettings";
 import * as Equal from "effect/Equal";
 import * as Struct from "effect/Struct";
 
@@ -19,6 +20,7 @@ export const SHARED_SERVER_SETTING_KEYS = [
   "defaultThreadEnvMode",
   "newWorktreesStartFromOrigin",
   "sourceControlWritingStyle",
+  "textGenerationModelSelection",
 ] as const satisfies ReadonlyArray<keyof ServerSettings & keyof ServerSettingsPatch>;
 
 export type SharedServerSettingKey = (typeof SHARED_SERVER_SETTING_KEYS)[number];
@@ -50,6 +52,33 @@ export function pickSharedServerSettings(settings: ServerSettings): ServerSettin
   return Struct.pick(settings, SHARED_SERVER_SETTING_KEYS);
 }
 
+/** A model choice only crosses to a machine where the same provider is enabled. */
+export function filterSharedServerPatch(
+  patch: ServerSettingsPatch,
+  settings?: ServerSettings,
+  sourceSettings = settings,
+  targetIsSource = false,
+): ServerSettingsPatch {
+  const instanceId =
+    patch.textGenerationModelSelection?.instanceId ??
+    sourceSettings?.textGenerationModelSelection.instanceId;
+  if (
+    !targetIsSource &&
+    patch.textGenerationModelSelection &&
+    (!settings ||
+      (instanceId !== undefined &&
+        (sourceSettings?.providerInstances[instanceId]?.driver ?? instanceId) !==
+          (settings.providerInstances[instanceId]?.driver ?? instanceId)) ||
+      !isModelSelectionProviderEnabled(settings, {
+        ...settings.textGenerationModelSelection,
+        ...patch.textGenerationModelSelection,
+      }))
+  ) {
+    return Struct.omit(patch, ["textGenerationModelSelection"]);
+  }
+  return patch;
+}
+
 export interface SharedSettingsEnvironment {
   readonly environmentId: EnvironmentId;
   readonly label: string;
@@ -73,7 +102,8 @@ export function findSharedSettingsMismatches(input: {
   if (input.primaryEnvironmentId === null || input.primarySettings === null) {
     return [];
   }
-  const expected = pickSharedServerSettings(input.primarySettings);
+  const primarySettings = input.primarySettings;
+  const expected = pickSharedServerSettings(primarySettings);
   return input.environments.flatMap((environment) => {
     if (
       environment.environmentId === input.primaryEnvironmentId ||
@@ -82,8 +112,19 @@ export function findSharedSettingsMismatches(input: {
     ) {
       return [];
     }
-    const actual = pickSharedServerSettings(environment.settings);
-    return Equal.equals(actual, expected)
+    const expectedForTarget = filterSharedServerPatch(
+      expected,
+      environment.settings,
+      primarySettings,
+    );
+    let actual = filterSharedServerPatch(
+      pickSharedServerSettings(environment.settings),
+      environment.settings,
+    );
+    if (!expectedForTarget.textGenerationModelSelection) {
+      actual = Struct.omit(actual, ["textGenerationModelSelection"]);
+    }
+    return Equal.equals(actual, expectedForTarget)
       ? []
       : [{ environmentId: environment.environmentId, label: environment.label }];
   });

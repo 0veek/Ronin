@@ -43,7 +43,7 @@ function versionCore(version: string): string {
 }
 
 /**
- * The skew a user can act on: the connected server runs an older T3 Code than
+ * The skew a user can act on: the connected server runs an older Ronin than
  * this client, so the server is the side that needs updating.
  *
  * Two nightly builds compare their full versions, including the date and run.
@@ -96,6 +96,12 @@ export function resolveServerSelfUpdateCapability(
   serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
 ): ServerSelfUpdateCapability | null {
   return serverConfig?.environment.capabilities.serverSelfUpdate ?? null;
+}
+
+export function supportsDesktopAppUpdate(
+  serverConfig: Pick<ServerConfig, "environment"> | null | undefined,
+): boolean {
+  return serverConfig?.environment.capabilities.desktopAppUpdate === true;
 }
 
 /** True when the connected server can recover opted-in running turns after

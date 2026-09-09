@@ -23,6 +23,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     projectOrder: [],
     threadLastVisitedAtById: {},
     threadChangedFilesExpandedById: {},
+    pullRequestMergeMethod: "merge",
     defaultAdvertisedEndpointKey: null,
     agentNotificationsEnabled: true,
     agentSoundsEnabled: false,
@@ -150,6 +151,15 @@ describe("uiStateStore pure functions", () => {
 });
 
 describe("parsePersistedState", () => {
+  it("hydrates the last selected pull request merge method", () => {
+    expect(parsePersistedState({ pullRequestMergeMethod: "squash" }).pullRequestMergeMethod).toBe(
+      "squash",
+    );
+    expect(
+      parsePersistedState({ pullRequestMergeMethod: "fast-forward" }).pullRequestMergeMethod,
+    ).toBe("merge");
+  });
+
   it("hydrates raw UI-owned state without server entities", () => {
     const parsed = parsePersistedState({
       projectExpandedById: {
@@ -189,6 +199,7 @@ describe("parsePersistedState", () => {
       agentNotificationsEnabled: true,
       agentSoundsEnabled: false,
       digestSeenAt: null,
+      pullRequestMergeMethod: "merge",
     });
   });
 
@@ -320,6 +331,7 @@ describe("uiStateStore persistence", () => {
       agentNotificationsEnabled: true,
       agentSoundsEnabled: false,
       digestSeenAt: null,
+      pullRequestMergeMethod: "merge",
     });
     expect(parsePersistedState(persisted)).toEqual({
       ...state,

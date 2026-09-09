@@ -2650,7 +2650,7 @@ export function GeneralSettingsPanel() {
         <SettingsRow
           serverScoped
           {...searchableSetting("text-generation-model")}
-          description="Default model for generated text like thread titles and source control content. Source control settings can override it with a dedicated source control writer model."
+          description="Default model for generated text like thread titles on connected devices with this provider. Source control settings can override it with a dedicated source control writer model."
           resetAction={
             isTextGenerationModelDirty ? (
               <SettingResetButton

@@ -3,6 +3,8 @@ import type { UserInputQuestion } from "@t3tools/contracts";
 export interface PendingUserInputDraftAnswer {
   selectedOptionLabels?: string[];
   customAnswer?: string;
+  attachmentCount?: number;
+  attachmentsBlocked?: boolean;
 }
 
 export interface PendingUserInputProgress {
@@ -49,17 +51,26 @@ export function resolvePendingUserInputAnswer(
   question: UserInputQuestion,
   draft: PendingUserInputDraftAnswer | undefined,
 ): string | string[] | null {
-  const customAnswer = normalizeDraftAnswer(draft?.customAnswer);
+  if (draft?.attachmentsBlocked) return null;
+  const customAnswer =
+    question.allowCustomAnswer === false ? null : normalizeDraftAnswer(draft?.customAnswer);
   if (customAnswer) {
     return customAnswer;
   }
 
   const selectedOptionLabels = normalizeSelectedOptionLabels(draft?.selectedOptionLabels);
   if (question.multiSelect) {
-    return selectedOptionLabels.length > 0 ? selectedOptionLabels : null;
+    return selectedOptionLabels.length > 0
+      ? selectedOptionLabels
+      : question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0
+        ? ""
+        : null;
   }
 
-  return selectedOptionLabels[0] ?? null;
+  return (
+    selectedOptionLabels[0] ??
+    (question.allowCustomAnswer !== false && (draft?.attachmentCount ?? 0) > 0 ? "" : null)
+  );
 }
 
 export function setPendingUserInputCustomAnswer(
@@ -110,7 +121,7 @@ export function buildPendingUserInputAnswers(
 
   for (const question of questions) {
     const answer = resolvePendingUserInputAnswer(question, draftAnswers[question.id]);
-    if (!answer) {
+    if (answer === null) {
       return null;
     }
     answers[question.id] = answer;
@@ -124,7 +135,9 @@ export function countAnsweredPendingUserInputQuestions(
   draftAnswers: Record<string, PendingUserInputDraftAnswer>,
 ): number {
   return questions.reduce((count, question) => {
-    return resolvePendingUserInputAnswer(question, draftAnswers[question.id]) ? count + 1 : count;
+    return resolvePendingUserInputAnswer(question, draftAnswers[question.id]) !== null
+      ? count + 1
+      : count;
   }, 0);
 }
 
@@ -156,6 +169,6 @@ export function derivePendingUserInputProgress(
     answeredQuestionCount,
     isLastQuestion,
     isComplete: buildPendingUserInputAnswers(questions, draftAnswers) !== null,
-    canAdvance: Boolean(resolvedAnswer),
+    canAdvance: resolvedAnswer !== null,
   };
 }

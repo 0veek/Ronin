@@ -77,6 +77,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   connectionProbe: Schema.optionalKey(Schema.Boolean),
   /** Missing on older servers, which still accept inline image attachments. */
   attachmentUploads: Schema.optionalKey(Schema.Boolean),
+  /** Uploaded files may accompany question answers. */
+  questionAttachments: Schema.optionalKey(Schema.Boolean),
   /** Missing on servers that only accept image attachments. */
   fileAttachments: Schema.optionalKey(
     Schema.Struct({
@@ -125,6 +127,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server can durably mark running provider turns before a self-update and
       continue them after the replacement process starts. */
   serverUpdateThreadContinuation: Schema.optionalKey(Schema.Boolean),
+  /** The desktop app supervising this server accepts a remote in-app update request. */
+  desktopAppUpdate: Schema.optionalKey(Schema.Boolean),
   /** Server detects `platform.machine` and persists the `environmentIcon`
       setting. Older servers drop the key on write, so clients show the
       picker inert rather than offering a choice that would never stick. */

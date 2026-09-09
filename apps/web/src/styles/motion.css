@@ -247,6 +247,17 @@ html[data-panel-surface-transition="true"]::view-transition-new(t3-panel-surface
   }
 }
 
+/* Expanded capture preview swaps between the screenshot and its extracted text.
+   One-shot fade on whichever panel mounts, so nothing repaints continuously. */
+@keyframes snap-shot-contents-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .prompt-stash-count-enter {
   animation: prompt-stash-count-enter var(--duration-base) var(--ease-out) both;
 }

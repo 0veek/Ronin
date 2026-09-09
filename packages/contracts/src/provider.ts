@@ -20,6 +20,7 @@ import {
   ProviderRequestKind,
   ProviderSandboxMode,
   ProviderUserInputAnswers,
+  UserInputAttachments,
   RuntimeMode,
 } from "./orchestration.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
@@ -117,6 +118,7 @@ export const ProviderRespondToUserInputInput = Schema.Struct({
   threadId: ThreadId,
   requestId: ApprovalRequestId,
   answers: ProviderUserInputAnswers,
+  attachmentsByQuestionId: Schema.optional(UserInputAttachments),
 });
 export type ProviderRespondToUserInputInput = typeof ProviderRespondToUserInputInput.Type;
 

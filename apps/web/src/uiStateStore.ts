@@ -1,4 +1,5 @@
 import { Debouncer } from "@tanstack/react-pacer";
+import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
@@ -31,6 +32,7 @@ export interface PersistedUiState {
   agentNotificationsEnabled?: boolean;
   agentSoundsEnabled?: boolean;
   digestSeenAt?: string | null;
+  pullRequestMergeMethod?: string;
 }
 
 export interface UiProjectState {
@@ -76,8 +78,18 @@ export interface UiNotificationState {
   agentSoundsEnabled: boolean;
 }
 
+export interface UiPullRequestState {
+  pullRequestMergeMethod: PullRequestMergeMethod;
+}
+
 export interface UiState
-  extends UiProjectState, UiThreadState, UiEndpointState, UiNotificationState, UiDigestState {}
+  extends
+    UiProjectState,
+    UiThreadState,
+    UiEndpointState,
+    UiNotificationState,
+    UiDigestState,
+    UiPullRequestState {}
 
 const initialState: UiState = {
   projectExpandedById: {},
@@ -88,6 +100,7 @@ const initialState: UiState = {
   agentNotificationsEnabled: true,
   agentSoundsEnabled: false,
   digestSeenAt: null,
+  pullRequestMergeMethod: "merge",
 };
 
 const LEGACY_PROJECT_CWD_PREFERENCE_PREFIX = "legacy-project-cwd:";
@@ -135,6 +148,10 @@ function sanitizeTimestampRecord(value: unknown): Record<string, string> {
   );
 }
 
+function isPullRequestMergeMethod(value: unknown): value is PullRequestMergeMethod {
+  return value === "merge" || value === "squash" || value === "rebase";
+}
+
 export function parsePersistedState(parsed: PersistedUiState): UiState {
   const projectExpandedById =
     parsed.projectExpandedById === undefined
@@ -179,6 +196,9 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
     agentSoundsEnabled:
       typeof parsed.agentSoundsEnabled === "boolean" ? parsed.agentSoundsEnabled : false,
     digestSeenAt: typeof parsed.digestSeenAt === "string" ? parsed.digestSeenAt : null,
+    pullRequestMergeMethod: isPullRequestMergeMethod(parsed.pullRequestMergeMethod)
+      ? parsed.pullRequestMergeMethod
+      : initialState.pullRequestMergeMethod,
   };
 }
 
@@ -254,6 +274,7 @@ export function persistState(state: UiState): void {
         agentNotificationsEnabled: state.agentNotificationsEnabled,
         agentSoundsEnabled: state.agentSoundsEnabled,
         digestSeenAt: state.digestSeenAt,
+        pullRequestMergeMethod: state.pullRequestMergeMethod,
       } satisfies PersistedUiState),
     );
     if (!legacyKeysCleanedUp) {
@@ -351,6 +372,12 @@ export function setDefaultAdvertisedEndpointKey(state: UiState, key: string | nu
   };
 }
 
+function setPullRequestMergeMethod(state: UiState, method: PullRequestMergeMethod): UiState {
+  return state.pullRequestMergeMethod === method
+    ? state
+    : { ...state, pullRequestMergeMethod: method };
+}
+
 export function resolveProjectExpanded(
   projectExpandedById: Readonly<Record<string, boolean>>,
   preferenceKeys: readonly string[],
@@ -433,6 +460,7 @@ interface UiStateStore extends UiState {
   markThreadUnread: (threadId: string, latestTurnCompletedAt: string | null | undefined) => void;
   setThreadChangedFilesExpanded: (threadId: string, turnId: string, expanded: boolean) => void;
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
+  setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setAgentNotificationsEnabled: (enabled: boolean) => void;
   setAgentSoundsEnabled: (enabled: boolean) => void;
   markDigestSeen: (seenAt: string) => void;
@@ -454,6 +482,7 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
     set((state) => setThreadChangedFilesExpanded(state, threadId, turnId, expanded)),
   setDefaultAdvertisedEndpointKey: (key) =>
     set((state) => setDefaultAdvertisedEndpointKey(state, key)),
+  setPullRequestMergeMethod: (method) => set((state) => setPullRequestMergeMethod(state, method)),
   setAgentNotificationsEnabled: (enabled) =>
     set((state) =>
       state.agentNotificationsEnabled === enabled

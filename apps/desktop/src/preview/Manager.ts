@@ -29,7 +29,15 @@ import type {
 } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
-import { BrowserWindow, type Session, clipboard, nativeImage, shell, webContents } from "electron";
+import {
+  BrowserWindow,
+  ClipboardItem,
+  type Session,
+  clipboard,
+  nativeImage,
+  shell,
+  webContents,
+} from "electron";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -99,6 +107,12 @@ const ZOOM_EPSILON = 0.001;
 const MAX_EVALUATION_BYTES = 64_000;
 const MAX_VISIBLE_TEXT_LENGTH = 20_000;
 const MAX_INTERACTIVE_ELEMENTS = 200;
+/**
+ * A `[role]` container's innerText is its whole subtree, which turned one
+ * snapshot's element list into 60 KB of repeated page text. Names are labels,
+ * not content, so cap them where they are read.
+ */
+const MAX_INTERACTIVE_ELEMENT_NAME_LENGTH = 200;
 const MAX_SCREENSHOT_WIDTH = 1280;
 /** How long an armed tab keeps the exclusive display-media slot before another tab may take it. */
 const RECORDING_ARM_GRACE_MS = 10_000;
@@ -406,6 +420,29 @@ export const previewOwnedShortcutAction = (
 
 export const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
   previewOwnedShortcutAction(input) === "refresh";
+
+export const isPreviewEditingShortcut = (
+  input: Electron.Input,
+  platform: NodeJS.Platform,
+): boolean => {
+  const isMac = platform === "darwin";
+  if (isMac ? !input.meta || input.control : !input.control || input.meta) return false;
+
+  const key = input.key.toLowerCase();
+  // Option changes the DOM key for macOS Paste and Match Style (for example, to ◊).
+  if (isMac && input.alt && input.shift && input.code === "KeyV") return true;
+  if (key === "v" && input.shift) return input.alt === isMac;
+  if (input.alt) return false;
+  if (key === "z") return !input.shift || platform !== "win32";
+  if (input.shift) return false;
+  return (
+    key === "a" ||
+    key === "c" ||
+    key === "v" ||
+    key === "x" ||
+    (key === "y" && platform === "win32")
+  );
+};
 
 const isPreviewInputSignal = (value: unknown): value is PreviewInputSignal => {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
@@ -1701,13 +1738,27 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         ],
       });
     });
+    const syncMenuShortcuts = (contents: Electron.WebContents, input: Electron.Input): void => {
+      if (input.type !== "keyDown") return;
+      // Native editing roles must remain available after the page handles the key.
+      // Background automation must not edit whichever other renderer has focus.
+      contents.setIgnoreMenuShortcuts?.(
+        !isPreviewEditingShortcut(input, hostPlatform) ||
+          webContents.getFocusedWebContents() !== contents,
+      );
+    };
     // A popup opens with Electron's default handler, so the page inside it could
     // otherwise spawn native windows without limit. Nothing in an OAuth flow
     // opens a second popup, so the chain stops at the first one.
     const windowCreated = (window: Electron.BrowserWindow): void => {
+      window.webContents.setIgnoreMenuShortcuts(true);
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      window.webContents.on("before-input-event", (_event, input) => {
+        syncMenuShortcuts(window.webContents, input);
+      });
     };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
+      syncMenuShortcuts(wc, input);
       const previewAction = previewOwnedShortcutAction(input);
       if (previewAction !== null) {
         event.preventDefault();
@@ -1753,6 +1804,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
     const install = Effect.fn("PreviewManager.installWebContentsListeners")(function* () {
       yield* attempt({ operation: "attachListeners", tabId, webContentsId: wc.id }, () => {
+        // Only focused native editing shortcuts may reach the application menu.
+        // Other preview input, including CDP keys, belongs to the page.
+        wc.setIgnoreMenuShortcuts?.(true);
         wc.on("did-start-navigation", navigationStarted);
         wc.on("did-navigate", syncNavigation);
         wc.on("did-navigate-in-page", syncInPageNavigation);
@@ -2776,7 +2830,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
             return {
               tag: element.tagName.toLowerCase(),
               role: element.getAttribute("role"),
-              name: element.getAttribute("aria-label") || element.innerText || element.getAttribute("name") || "",
+              name: (element.getAttribute("aria-label") || element.innerText || element.getAttribute("name") || "").slice(0, ${MAX_INTERACTIVE_ELEMENT_NAME_LENGTH}),
               selector: selectorFor(element),
               x: rect.x,
               y: rect.y,
@@ -3345,8 +3399,14 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     if (image.isEmpty()) {
       return yield* new PreviewArtifactImageLoadError({ artifactPath: resolvedPath });
     }
-    yield* attempt({ operation: "copyArtifactToClipboard.write", artifactPath: resolvedPath }, () =>
-      clipboard.writeImage(image),
+    yield* attemptPromise(
+      { operation: "copyArtifactToClipboard.write", artifactPath: resolvedPath },
+      () =>
+        clipboard.write([
+          new ClipboardItem({
+            "image/png": new Blob([Uint8Array.from(image.toPNG())], { type: "image/png" }),
+          }),
+        ]),
     );
   });
 

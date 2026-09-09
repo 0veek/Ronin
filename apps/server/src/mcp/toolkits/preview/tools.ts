@@ -19,10 +19,12 @@ import {
   PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
+import * as FileSystem from "effect/FileSystem";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
+import * as ServerConfig from "../../../config.ts";
 
 const dependencies = [
   McpInvocationContext.McpInvocationContext,
@@ -108,13 +110,19 @@ export const PreviewSetAppearanceTool = safeBrowserTool(
 export const PreviewSnapshotTool = readonlyBrowserTool(
   Tool.make("preview_snapshot", {
     description:
-      "Inspect a page before interacting. Pass tabId to inspect a specific tab; omit it to use this agent session's current tab. Returns page state, semantic elements, diagnostics, action history, and a PNG screenshot. Set includeImage=false for text-only output with the same page metadata.",
+      "Inspect a page before interacting. Pass tabId to inspect a specific tab; omit it to use this agent session's current tab. Returns bounded page state, semantic elements, diagnostics, action history, and a PNG screenshot. Set includeImage=false for text-only output. Set save=true to write the PNG into this agent's environment and return screenshotPath.",
     parameters: Schema.Struct({
       ...PreviewAutomationTabTargetInput.fields,
       includeImage: Schema.optional(
         Schema.Boolean.annotate({
           description:
             "Include the PNG image in the tool response. Defaults to true. Set false for text-only output.",
+        }),
+      ),
+      save: Schema.optional(
+        Schema.Boolean.annotate({
+          description:
+            "Save the full-resolution PNG into this agent's environment and return its absolute screenshotPath. Defaults to false.",
         }),
       ),
     }),
@@ -168,12 +176,23 @@ export const PreviewScrollTool = safeBrowserTool(
   }).annotate(Tool.Title, "Scroll preview page"),
 );
 
+/**
+ * MCP `structuredContent` must be a JSON object, and Claude Code rejects the
+ * whole result when it is not. Wrapping keeps arrays, strings, numbers, and
+ * null valid instead of failing only for non-object expressions.
+ */
+export const PreviewEvaluateResult = Schema.Struct({
+  value: Schema.Unknown.annotate({
+    description: "The JSON-serializable value the expression produced, or null.",
+  }),
+}).annotate({ description: "The evaluated expression result." });
+
 export const PreviewEvaluateTool = browserTool(
   Tool.make("preview_evaluate", {
     description:
-      "Evaluate JavaScript in the tab selected by tabId, or this agent session's current tab when omitted. Returns a serializable result up to 64 KB; the expression may mutate page state.",
+      "Evaluate JavaScript in the tab selected by tabId, or this agent session's current tab when omitted. Returns {value} with a serializable result up to 64 KB; the expression may mutate page state.",
     parameters: PreviewAutomationEvaluateInput,
-    success: Schema.Unknown,
+    success: PreviewEvaluateResult,
     failure: PreviewAutomationError,
     dependencies,
   }).annotate(Tool.Title, "Evaluate JavaScript in preview"),
@@ -204,11 +223,11 @@ export const PreviewRecordingStartTool = safeBrowserTool(
 export const PreviewRecordingStopTool = safeBrowserTool(
   Tool.make("preview_recording_stop", {
     description:
-      "Stop recording the collaborative browser tab selected by tabId, or this agent session's current tab when omitted, and save it as a local evidence artifact.",
+      "Stop recording the collaborative browser tab selected by tabId, or this agent session's current tab when omitted, and transfer the compressed recording once (up to 50 MiB) to an evidence file readable in this agent's environment. Returns its environment-local path after transfer succeeds.",
     parameters: PreviewAutomationTabTargetInput,
     success: PreviewAutomationRecordingArtifact,
     failure: PreviewAutomationError,
-    dependencies,
+    dependencies: [...dependencies, FileSystem.FileSystem, ServerConfig.ServerConfig],
   }).annotate(Tool.Title, "Stop browser recording"),
 );
 

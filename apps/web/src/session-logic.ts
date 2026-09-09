@@ -1,6 +1,7 @@
 import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
+import * as Schema from "effect/Schema";
 import {
   requestKindFromRequestType,
   type PendingApproval,
@@ -23,6 +24,7 @@ import {
   type ToolLifecycleItemType,
   type ThreadId,
   type TurnId,
+  UserInputAttachmentAnswerPayload,
 } from "@t3tools/contracts";
 
 import type {
@@ -103,6 +105,7 @@ export const PROVIDER_OPTIONS: Array<{
 ];
 
 export interface WorkLogEntry {
+  questionAnswer?: UserInputAttachmentAnswerPayload;
   id: string;
   createdAt: string;
   turnId?: TurnId | null;
@@ -681,6 +684,8 @@ function extractProviderBoundary(
   return null;
 }
 
+const decodeQuestionAttachmentAnswer = Schema.decodeUnknownOption(UserInputAttachmentAnswerPayload);
+
 function toDerivedWorkLogEntry(
   activity: OrchestrationThreadActivity,
   options: WorkLogDerivationOptions = {},
@@ -734,6 +739,10 @@ function toDerivedWorkLogEntry(
           : activity.tone,
     sourceActivityKind: activity.kind,
   };
+  if (activity.kind === "user-input.answer-submitted") {
+    const answer = decodeQuestionAttachmentAnswer(payload);
+    if (Option.isSome(answer)) entry.questionAnswer = answer.value;
+  }
   const providerBoundary = extractProviderBoundary(activity, payload, options);
   if (providerBoundary) {
     entry.providerBoundary = providerBoundary;

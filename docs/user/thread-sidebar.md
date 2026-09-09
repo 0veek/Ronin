@@ -41,6 +41,10 @@ A thread whose composer holds unsent text or attachments shows an amber tint and
 sidebar, the same marks a new-thread draft uses. On web and desktop, hover the row and choose the
 **X** to discard that draft without opening the thread.
 
+On web and desktop, you can also drag files from your computer onto any thread row. The thread
+opens with the files attached in its composer, ready for your next message. The same per-message
+limits apply as when you [attach files directly](composer.md#attach-files).
+
 The server finds the PR for each unsettled thread's saved branch, even when your
 apps are closed. Settled threads keep their saved links. Update the server if
 automatic branch links do not appear.

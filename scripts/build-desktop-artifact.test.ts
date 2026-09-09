@@ -1,3 +1,6 @@
+// @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
+import * as NodePath from "node:path";
+
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -24,6 +27,7 @@ import {
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_EXTRA_RESOURCES,
+  LINUX_CAPTURE_EXTRA_RESOURCES,
   MAC_FILE_EXCLUSIONS,
   InvalidMockUpdateServerPortError,
   UnsupportedDesktopBuildArchitectureError,
@@ -43,6 +47,7 @@ import {
   resolvePackageManagerUserAgent,
   stageLinuxIconSize,
   stageResourceMonitor,
+  WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
@@ -311,6 +316,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.deepStrictEqual(DESKTOP_ELECTRON_LANGUAGES, ["en-US"]);
     assert.deepStrictEqual(DESKTOP_FILE_EXCLUSIONS, [
       "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+      "!apps/desktop/gnome-extension",
+      "!apps/desktop/gnome-extension/**/*",
     ]);
   });
 
@@ -322,7 +329,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       assert.notProperty(mac, "asarUnpack");
       assert.notProperty(linux, "asarUnpack");
-      assert.notProperty(win, "asarUnpack");
+      assert.deepStrictEqual(win.asar, { smartUnpack: false });
+      assert.deepStrictEqual(win.asarUnpack, [WINDOWS_NATIVE_ASAR_UNPACK_GLOB]);
+      assert.deepStrictEqual(linux.extraResources, [
+        ...DESKTOP_EXTRA_RESOURCES,
+        ...LINUX_CAPTURE_EXTRA_RESOURCES,
+      ]);
       // Linux must register the renderer schemes so the generated .desktop
       // entry advertises MimeType=x-scheme-handler/t3code; for OAuth deep links.
       assert.deepStrictEqual((linux.linux as Record<string, unknown>).protocols, [
@@ -343,6 +355,27 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
       "!**/node_modules/node-pty/third_party/conpty/**/*",
     ]);
+  });
+
+  it("unpacks native binaries while keeping their JavaScript and metadata archived", () => {
+    for (const file of [
+      "node_modules/@napi-rs/keyring/keyring.win32-x64-msvc.node",
+      "node_modules/@clerk/electron-passkeys/electron-passkeys.win32-x64-msvc.node",
+      "node_modules/@ff-labs/fff-bin-win32-x64/fff_c.dll",
+      "node_modules/node-pty/prebuilds/win32-x64/conpty/OpenConsole.exe",
+      "node_modules/native/addon.so",
+      "node_modules/native/addon.so.1",
+      "node_modules/native/addon.dylib",
+    ]) {
+      assert.isTrue(NodePath.matchesGlob(file, WINDOWS_NATIVE_ASAR_UNPACK_GLOB));
+    }
+
+    for (const file of [
+      "node_modules/@napi-rs/keyring/index.js",
+      "node_modules/@clerk/electron-passkeys/index.js",
+    ]) {
+      assert.isFalse(NodePath.matchesGlob(file, WINDOWS_NATIVE_ASAR_UNPACK_GLOB));
+    }
   });
 
   it.effect("preserves both Linux icon resize failures with structural context", () => {

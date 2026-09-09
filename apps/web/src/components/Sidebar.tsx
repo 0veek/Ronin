@@ -94,6 +94,7 @@ import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { readLocalApi } from "../localApi";
+import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import {
   buildSidebarProjectSnapshots,
@@ -109,6 +110,7 @@ import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
+import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { readProject, readThreadDetail, useProjects, useThreadShells } from "../state/entities";
 import { downloadThreadExport } from "../lib/threadExport";
@@ -209,7 +211,7 @@ import { Input } from "./ui/input";
 import {
   Combobox,
   ComboboxEmpty,
-  ComboboxInput,
+  ComboboxSearchInput,
   ComboboxItem,
   ComboboxList,
   ComboboxPopup,
@@ -285,12 +287,11 @@ function WorkingDuration(props: { startedAt: string | null }) {
     return () => window.clearInterval(id);
   }, [startedMs]);
   if (Number.isNaN(startedMs)) return null;
-  return (
-    <span className="font-mono tabular-nums">{formatWorkingDurationLabel(nowMs - startedMs)}</span>
-  );
+  return <span className="tabular-nums">{formatWorkingDurationLabel(nowMs - startedMs)}</span>;
 }
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, ProviderInstanceEntry> = new Map();
+const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
 
 function terminalProcessLabel(count: number): string {
   return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
@@ -551,7 +552,7 @@ function SidebarSectionPlaceholder(props: {
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className="relative mx-0.5 h-0"
+      className="relative mx-0.5 -mb-px h-0"
     >
       {props.showHint ? (
         <div
@@ -579,7 +580,7 @@ function SidebarDragBoundary(props: {
     <SortableSidebarMarker
       marker={props.marker}
       data-testid={`sidebar-${props.marker}`}
-      className="pointer-events-none relative mx-0.5 h-0"
+      className="pointer-events-none relative mx-0.5 -mb-px h-0"
     >
       {props.visible ? (
         <div className="sidebar-drag-boundary-label absolute inset-x-2 top-1 flex h-4 items-center gap-2">
@@ -1004,6 +1005,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
+  onFileDropThreads?: ((threadRef: ScopedThreadRef, files: File[]) => void) | undefined;
   /** One indent level when this row is a side chat filed under its parent. */
   depth?: 0 | 1;
 }) {
@@ -1012,6 +1014,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     onCancelRename,
     onCommitRename,
     onContextMenu,
+    onFileDropThreads,
     onAcknowledgeWoke,
     onRenameTitleChange,
     onSettle,
@@ -1238,6 +1241,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     },
     [isRenaming, onStartRename, thread.title, threadRef],
   );
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
+  const fileDropHandlers = useMemo(
+    () =>
+      onFileDropThreads
+        ? makeWorkspaceFileDropHandlers({
+            setDragActive: setIsFileDragOver,
+            addFiles: (files) => onFileDropThreads(threadRef, files),
+          })
+        : null,
+    [onFileDropThreads, threadRef],
+  );
+  useEffect(() => {
+    if (!isFileDragOver) return;
+    const clearFileDrag = () => setIsFileDragOver(false);
+    window.addEventListener("dragend", clearFileDrag);
+    return () => window.removeEventListener("dragend", clearFileDrag);
+  }, [isFileDragOver]);
   const renameCommittedRef = useRef(false);
   useEffect(() => {
     if (isRenaming) renameCommittedRef.current = false;
@@ -1355,6 +1375,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       !props.isActive &&
       !isSelected &&
       "opacity-70 transition-opacity hover:opacity-100",
+    isFileDragOver && "ring-1 ring-inset ring-primary/70",
+    isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
   );
 
   const title = isRenaming ? (
@@ -1492,8 +1514,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       <li
         data-thread-item
         {...sortableRootProps}
+        {...(fileDropHandlers ?? {})}
         className={cn(
-          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_34px]",
+          "list-none [content-visibility:auto] [contain-intrinsic-size:auto_36px]",
           sortable?.isDragging && "z-20",
         )}
       >
@@ -1650,8 +1673,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     <li
       data-thread-item
       {...sortableRootProps}
+      {...(fileDropHandlers ?? {})}
       className={cn(
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
         // Indent rather than a nesting container: the row keeps its own
         // hit area, drag behaviour, and content-visibility budget, and the
         // list stays flat for the virtualizer.
@@ -1911,8 +1935,13 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   resultId: string;
   onHighlight: () => void;
   onSelect: () => void;
+  onFileDropThreads: (threadRef: ScopedThreadRef, files: File[]) => void;
 }) {
   const { thread } = props;
+  const threadRef = useMemo(
+    () => scopeThreadRef(thread.environmentId, thread.id),
+    [thread.environmentId, thread.id],
+  );
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(
     props.isHighlighted || props.isRouteActive,
   );
@@ -1953,8 +1982,23 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
     threadId: thread.id,
   });
   const terminalStatus = terminalStatusFromRunningIds(runningTerminalIds);
+  const [isFileDragOver, setIsFileDragOver] = useState(false);
+  const fileDropHandlers = useMemo(
+    () =>
+      makeWorkspaceFileDropHandlers({
+        setDragActive: setIsFileDragOver,
+        addFiles: (files) => props.onFileDropThreads(threadRef, files),
+      }),
+    [props.onFileDropThreads, threadRef],
+  );
+  useEffect(() => {
+    if (!isFileDragOver) return;
+    const clearFileDrag = () => setIsFileDragOver(false);
+    window.addEventListener("dragend", clearFileDrag);
+    return () => window.removeEventListener("dragend", clearFileDrag);
+  }, [isFileDragOver]);
   return (
-    <li role="presentation" className="list-none">
+    <li role="presentation" className="list-none" {...fileDropHandlers}>
       <Tooltip>
         <TooltipTrigger
           render={
@@ -1978,6 +2022,8 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
                 props.isHighlighted || props.isRouteActive
                   ? "bg-sidebar-row-active text-sidebar-foreground"
                   : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+                isFileDragOver && "ring-1 ring-inset ring-primary/70",
+                isFileDragOver && !props.isRouteActive && "bg-sidebar-row-hover",
               )}
             />
           }
@@ -2645,12 +2691,12 @@ export default function Sidebar() {
   );
   const renderedSettledThreads = useMemo(() => {
     if (settledShelfExpanded) return visibleSettledThreads;
-    if (routeThreadKey === null) return [];
+    if (routeThreadKey === null) return EMPTY_THREADS;
     const routeThread = visibleSettledThreads.find(
       (thread) =>
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
     );
-    return routeThread === undefined ? [] : [routeThread];
+    return routeThread === undefined ? EMPTY_THREADS : [routeThread];
   }, [routeThreadKey, settledShelfExpanded, visibleSettledThreads]);
 
   // The snoozed shelf is collapsed by default: out of the way, never gone.
@@ -2671,12 +2717,12 @@ export default function Sidebar() {
     // snoozed thread reached by route (deep link, open before snoozing
     // elsewhere) keeps its row — with highlight and wake affordance — same
     // exception the settled tail's "Show more" makes.
-    if (routeThreadKey === null) return [];
+    if (routeThreadKey === null) return EMPTY_THREADS;
     const routeThread = snoozedThreads.find(
       (thread) =>
         scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)) === routeThreadKey,
     );
-    return routeThread === undefined ? [] : [routeThread];
+    return routeThread === undefined ? EMPTY_THREADS : [routeThread];
   }, [routeThreadKey, snoozedShelfExpanded, snoozedThreads]);
 
   // Must stay in the same order the rows render in: this is what arrow-key
@@ -2770,12 +2816,36 @@ export default function Sidebar() {
       if (isMobile) {
         setOpenMobile(false);
       }
-      void router.navigate({
+      return router.navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(threadRef),
       });
     },
     [clearSelection, isMobile, router, setOpenMobile, setSelectionAnchor],
+  );
+
+  const queuePendingFileDrop = useSidebarPendingFileDropStore(
+    (state) => state.queuePendingFileDrop,
+  );
+  const clearPendingFileDrop = useSidebarPendingFileDropStore(
+    (state) => state.clearPendingFileDrop,
+  );
+  const handleThreadFileDrop = useCallback(
+    async (threadRef: ScopedThreadRef, files: File[]) => {
+      const dropId = queuePendingFileDrop({ threadRef, files });
+      const destination = router.buildLocation({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+      }).pathname;
+      if (destination === router.state.location.pathname) return;
+      try {
+        await navigateToThread(threadRef);
+        if (destination !== router.state.location.pathname) clearPendingFileDrop(dropId);
+      } catch {
+        clearPendingFileDrop(dropId);
+      }
+    },
+    [clearPendingFileDrop, navigateToThread, queuePendingFileDrop, router],
   );
 
   const navigateToDraft = useCallback(
@@ -3276,11 +3346,24 @@ export default function Sidebar() {
     }
   }, [cancelThreadDrag, dragState, sidebarListItems]);
   const listMotionPaused = dragState !== null;
+  const sidebarListOrderKey = useMemo(
+    () =>
+      sidebarListItems
+        .map((item) => (item.kind === "thread" ? `${item.key}:${item.section}` : item.marker))
+        .join("\0"),
+    [sidebarListItems],
+  );
+  const sidebarListHasRows = sidebarListItems.length + visibleDraftSessionCount > 0;
   useLayoutEffect(() => {
-    listMotionRef.current?.update(
-      !listMotionPaused && sidebarListItems.length + visibleDraftSessionCount > 0,
-    );
-  }, [listMotionPaused, routeDraftIdForRows, sidebarListItems, visibleDraftSessionCount]);
+    void sidebarListOrderKey;
+    listMotionRef.current?.update(!listMotionPaused && sidebarListHasRows);
+  }, [
+    listMotionPaused,
+    routeDraftIdForRows,
+    sidebarListHasRows,
+    sidebarListOrderKey,
+    visibleDraftSessionCount,
+  ]);
   const handleThreadDragOver = useCallback(
     (event: DragOverEvent) => {
       const target = event.over
@@ -4391,30 +4474,17 @@ export default function Sidebar() {
                     align="start"
                     className="w-(--anchor-width) min-w-0 overflow-hidden"
                   >
-                    <div className="shrink-0 px-3 pt-2.5">
-                      <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
-                        <SearchIcon
-                          aria-hidden="true"
-                          className="pointer-events-none absolute top-1.5 left-0 size-4 shrink-0 text-muted-foreground/55"
-                        />
-                        <ComboboxInput
-                          aria-label="Search projects"
-                          className="[&_input]:h-6.5 [&_input]:ps-5 [&_input]:font-sans [&_input]:leading-6.5"
-                          inputClassName="rounded-none bg-transparent text-sm"
-                          placeholder="Search projects..."
-                          showTrigger={false}
-                          size="sm"
-                          unstyled
-                          value={projectScopeMenuState.query}
-                          onChange={(event) =>
-                            dispatchProjectScopeMenu({
-                              type: "query-changed",
-                              query: event.target.value,
-                            })
-                          }
-                        />
-                      </div>
-                    </div>
+                    <ComboboxSearchInput
+                      aria-label="Search projects"
+                      placeholder="Search projects..."
+                      value={projectScopeMenuState.query}
+                      onChange={(event) =>
+                        dispatchProjectScopeMenu({
+                          type: "query-changed",
+                          query: event.target.value,
+                        })
+                      }
+                    />
                     <ComboboxEmpty>No matching projects.</ComboboxEmpty>
                     <ComboboxList>
                       {(item: (typeof projectScopeItems)[number]) => {
@@ -4557,6 +4627,7 @@ export default function Sidebar() {
                         resultId={`sidebar-thread-search-result-${index}`}
                         onHighlight={() => setActiveSearchResultIndex(index)}
                         onSelect={() => selectThreadSearchResult(thread)}
+                        onFileDropThreads={handleThreadFileDrop}
                       />
                     );
                   })}
@@ -4595,7 +4666,7 @@ export default function Sidebar() {
                   <ul
                     ref={attachListMotionRef}
                     role="list"
-                    className="relative flex flex-col gap-px pt-2"
+                    className="relative flex flex-col gap-px"
                   >
                     {(() => {
                       const depthByKey = new Map<string, 0 | 1>();
@@ -4732,6 +4803,7 @@ export default function Sidebar() {
                             onUnsnooze={attemptUnsnooze}
                             onUnpin={attemptUnpin}
                             onAcknowledgeWoke={acknowledgeWoke}
+                            onFileDropThreads={handleThreadFileDrop}
                           />
                         );
                       };

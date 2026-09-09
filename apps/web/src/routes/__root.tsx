@@ -3,6 +3,7 @@ import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/envir
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   Outlet,
+  redirect,
   createRootRoute,
   type ErrorComponentProps,
   useLocation,
@@ -17,6 +18,7 @@ import { WorkspaceShell } from "../components/shell/WorkspaceShell";
 import { CommandPalette } from "../components/CommandPalette";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
+import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
 import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAppActivationCoordinator";
 import { AgentAttentionNotifier } from "../components/AgentAttentionNotifier";
 import { DockAttentionBadge } from "../components/DockAttentionBadge";
@@ -65,6 +67,8 @@ import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
+import { getDesktopSnapShotBridge } from "../lib/desktopSnapShot";
+import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";
 
 export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
@@ -85,6 +89,14 @@ export const Route = createRootRoute({
     }
 
     const authGateState = await resolveInitialServerAuthGateState();
+    if (
+      authGateState.status === "authenticated" &&
+      getDesktopSnapShotBridge() &&
+      shouldResumeSnapShotSetupOnStartup() &&
+      location.pathname !== "/settings/snap-shot"
+    ) {
+      throw redirect({ to: "/settings/snap-shot", replace: true });
+    }
     return {
       authGateState,
     };
@@ -147,6 +159,7 @@ function RootRouteView() {
           {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
           {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
           <SshPasswordPromptDialog />
+          <SnapShotCoordinator />
           <ConfirmDialogHost />
           <SlowRpcRequestToastCoordinator />
           <HostedStaticEnvironmentBootstrap />

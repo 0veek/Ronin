@@ -66,6 +66,9 @@ shortcut the browser leaves alone, such as `alt+w`.
 request is available. Its default shortcut is `mod+shift+c`, and it does not replace terminal copy
 while the terminal has focus.
 
+`thread.stop` interrupts the running turn in the focused thread. It has no default shortcut; assign
+one in **Settings** → **Keybindings**.
+
 `thread.settle` settles the active thread or restores it when it is already settled. Its default
 shortcut is `mod+shift+s`, and it does not run while the terminal has focus.
 

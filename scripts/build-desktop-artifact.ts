@@ -5,6 +5,7 @@ import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
+import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
 import serverPackageJson from "../apps/server/package.json" with { type: "json" };
 
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
@@ -684,12 +685,19 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+  "!apps/desktop/gnome-extension",
+  "!apps/desktop/gnome-extension/**/*",
 ] as const;
 // Windows terminal helpers cannot run on macOS and slow signing and notarization.
 export const MAC_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
   "!**/node_modules/node-pty/third_party/conpty/**/*",
 ] as const;
+
+// dlopen/spawn need real files, while JavaScript and package metadata should
+// remain archived instead of inflating the Windows install's loose-file count.
+export const WINDOWS_NATIVE_ASAR_UNPACK_GLOB =
+  "{**/*.node,**/*.dll,**/*.exe,**/*.so,**/*.so.*,**/*.dylib}";
 
 // node-pty publishes both Darwin prebuilds in one package. Single-architecture
 // apps only need the native target; universal apps need both. An omitted arch
@@ -707,6 +715,21 @@ export const DESKTOP_EXTRA_RESOURCES = [
   {
     from: "apps/desktop/prod-resources/resource-monitor",
     to: "resource-monitor",
+  },
+] as const;
+export const LINUX_CAPTURE_EXTRA_RESOURCES = [
+  {
+    from: "apps/desktop/prod-resources/hyprland-capture",
+    to: "hyprland-capture",
+  },
+  {
+    from: "apps/desktop/prod-resources/kde-capture",
+    to: "kde-capture",
+  },
+  {
+    from: "apps/desktop/gnome-extension",
+    to: "gnome-extension",
+    filter: gnomeCaptureBundle.files,
   },
 ] as const;
 
@@ -976,16 +999,18 @@ export const preflightLinuxDesktopBuild = Effect.fn("preflightLinuxDesktopBuild"
   const reuseResourceMonitor = yield* Config.boolean("T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR").pipe(
     Config.withDefault(false),
   );
+  const reuseCaptureHelpers = yield* Config.boolean(
+    "T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS",
+  ).pipe(Config.withDefault(false));
+  const needsRust = !reuseResourceMonitor || !reuseCaptureHelpers;
   const rustTarget = resolveResourceMonitorRustTargets("linux", arch)[0]!;
 
   const checks = yield* Effect.all(
     {
-      cargo: reuseResourceMonitor
-        ? Effect.succeed(true)
-        : desktopBuildProbeSucceeds(ChildProcess.make("cargo", ["--version"]), "cargo"),
-      "rust-target": reuseResourceMonitor
-        ? Effect.succeed(true)
-        : rustTargetIsInstalled(rustTarget),
+      cargo: needsRust
+        ? desktopBuildProbeSucceeds(ChildProcess.make("cargo", ["--version"]), "cargo")
+        : Effect.succeed(true),
+      "rust-target": needsRust ? rustTargetIsInstalled(rustTarget) : Effect.succeed(true),
       cc: desktopBuildProbeSucceeds(ChildProcess.make("cc", ["--version"]), "cc"),
       make: desktopBuildProbeSucceeds(ChildProcess.make("make", ["--version"]), "make"),
       imagemagick: Effect.all([
@@ -1161,6 +1186,66 @@ export function ancestorNodeModulesPaths(
   }
   return paths;
 }
+
+export const stageLinuxCaptureHelper = Effect.fn("stageLinuxCaptureHelper")(function* (input: {
+  readonly backend: "kde" | "hyprland";
+  readonly repoRoot: string;
+  readonly stageResourcesDir: string;
+  readonly arch: typeof BuildArch.Type;
+  readonly verbose: boolean;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const [rustTarget] = resolveResourceMonitorRustTargets("linux", input.arch);
+  const reuseHelpers = yield* Config.boolean("T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS").pipe(
+    Config.withDefault(false),
+  );
+  const binaryPath = path.join(
+    input.repoRoot,
+    `native/${input.backend}-snap-shot/target`,
+    rustTarget!,
+    `release/t3-${input.backend}-snap-shot`,
+  );
+  if (!reuseHelpers) {
+    const spawnCommand = yield* resolveSpawnCommand("cargo", [
+      "build",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      path.join(input.repoRoot, `native/${input.backend}-snap-shot/Cargo.toml`),
+      "--target",
+      rustTarget!,
+    ]);
+    yield* runCommand(
+      ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+        cwd: input.repoRoot,
+        shell: spawnCommand.shell,
+      }),
+      {
+        label: `cargo build ${input.backend} capture helper (${rustTarget})`,
+        verbose: input.verbose,
+      },
+    );
+  } else if (!(yield* fs.exists(binaryPath))) {
+    return yield* new ResourceMonitorBuildOutputMissingError({
+      binaryPath,
+      rustTarget: rustTarget!,
+      platform: "linux",
+      arch: input.arch,
+    });
+  }
+  const destination = path.join(input.stageResourcesDir, `${input.backend}-capture`);
+  yield* fs.makeDirectory(destination, { recursive: true });
+  const executable = path.join(destination, `t3-${input.backend}-snap-shot`);
+  yield* fs.copyFile(binaryPath, executable);
+  yield* fs.chmod(executable, 0o755);
+  if (input.backend === "hyprland") {
+    yield* fs.copy(
+      path.join(input.repoRoot, "native/hyprland-snap-shot/protocols"),
+      path.join(destination, "protocols"),
+    );
+  }
+});
 
 export const stageResourceMonitor = Effect.fn("stageResourceMonitor")(function* (input: {
   readonly repoRoot: string;
@@ -1540,7 +1625,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     directories: {
       buildResources: "apps/desktop/resources",
     },
-    extraResources: DESKTOP_EXTRA_RESOURCES,
+    ...(platform === "win"
+      ? { asar: { smartUnpack: false }, asarUnpack: [WINDOWS_NATIVE_ASAR_UNPACK_GLOB] }
+      : {}),
+    extraResources: [
+      ...DESKTOP_EXTRA_RESOURCES,
+      ...(platform === "linux" ? LINUX_CAPTURE_EXTRA_RESOURCES : []),
+    ],
   };
   const updateChannel = resolveDesktopUpdateChannel(version);
   const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
@@ -1562,6 +1653,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       target: target === "dmg" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
+      extendInfo: {
+        NSScreenCaptureUsageDescription:
+          "Ronin captures the active window when you use the window capture shortcut.",
+      },
       protocols: [
         {
           name: "Ronin",
@@ -1786,6 +1881,16 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   yield* Effect.log("[desktop-artifact] Staging release app...");
   yield* fs.copy(distDirs.desktopDist, path.join(stageAppDir, "apps/desktop/dist-electron"));
   yield* fs.copy(distDirs.desktopResources, stageResourcesDir);
+  if (options.platform === "linux") {
+    const extensionDir = path.join(stageAppDir, "apps/desktop/gnome-extension");
+    yield* fs.makeDirectory(extensionDir, { recursive: true });
+    for (const file of gnomeCaptureBundle.files) {
+      yield* fs.copyFile(
+        path.join(repoRoot, "apps/desktop/gnome-extension", file),
+        path.join(extensionDir, file),
+      );
+    }
+  }
   yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
   yield* stageResourceMonitor({
     repoRoot,
@@ -1794,6 +1899,17 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     arch: options.arch,
     verbose: options.verbose,
   });
+  if (options.platform === "linux") {
+    for (const backend of ["kde", "hyprland"] as const) {
+      yield* stageLinuxCaptureHelper({
+        backend,
+        repoRoot,
+        stageResourcesDir,
+        arch: options.arch,
+        verbose: options.verbose,
+      });
+    }
+  }
 
   yield* assertPlatformBuildResources(
     options.platform,

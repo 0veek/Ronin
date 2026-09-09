@@ -192,6 +192,8 @@ export const make = Effect.gen(function* () {
     desktopManaged: serverConfig.mode === "desktop",
     launcherManaged: launcher.managed,
   });
+  const desktopAppUpdate =
+    serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
 
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId,
@@ -206,6 +208,7 @@ export const make = Effect.gen(function* () {
       repositoryIdentity: true,
       connectionProbe: true,
       attachmentUploads: true,
+      questionAttachments: true,
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
       threadSettlement: true,
@@ -219,9 +222,10 @@ export const make = Effect.gen(function* () {
       threadPullRequestLinking: true,
       environmentIcon: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
-      ...(serverSelfUpdate === "boot-service"
+      ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? { serverSelfUpdateProgress: true, serverUpdateThreadContinuation: true }
         : {}),
+      ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
     },
   };
 

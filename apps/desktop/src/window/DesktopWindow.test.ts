@@ -256,6 +256,7 @@ function makeTestLayer(input: {
     focusedMainOrFirst: Ref.get(input.mainWindow),
     setMain: (window) => Ref.set(input.mainWindow, Option.some(window)),
     clearMain: () => Ref.set(input.mainWindow, Option.none()),
+    prepareReveal: () => Effect.succeed(false),
     reveal: () => Effect.void,
     sendAll: () => Effect.void,
     destroyAll: Effect.void,

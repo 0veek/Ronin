@@ -5,9 +5,10 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 export interface DesktopIpcWebContents {
-  readonly mainFrame: unknown;
-  getURL(): string;
-  isDestroyed(): boolean;
+  readonly id?: number;
+  readonly mainFrame?: unknown;
+  getURL?(): string;
+  isDestroyed?(): boolean;
 }
 
 export interface DesktopIpcSenderFrame {
@@ -38,7 +39,14 @@ export function isTrustedDesktopIpcSender(input: {
 }): boolean {
   try {
     const { sender, senderFrame } = input.event;
-    if (!sender || !senderFrame || sender.isDestroyed() || senderFrame !== sender.mainFrame) {
+    if (
+      !sender ||
+      !senderFrame ||
+      typeof sender.isDestroyed !== "function" ||
+      typeof sender.getURL !== "function" ||
+      sender.isDestroyed() ||
+      senderFrame !== sender.mainFrame
+    ) {
       return false;
     }
     const owner = input.resolveOwner(sender);
@@ -118,7 +126,7 @@ export const isDesktopIpcError = Schema.is(DesktopIpcError);
 
 export interface DesktopIpcMethod<E, R> {
   readonly channel: string;
-  readonly handler: (raw: unknown) => Effect.Effect<unknown, E, R>;
+  readonly handler: (raw: unknown, event?: DesktopIpcInvokeEvent) => Effect.Effect<unknown, E, R>;
 }
 
 export interface DesktopSyncIpcMethod<E, R> {
@@ -162,7 +170,7 @@ export const make = (
                   if (!isTrustedSender(event)) {
                     return yield* new DesktopIpcUnauthorizedSenderError({ channel });
                   }
-                  return yield* handler(raw);
+                  return yield* handler(raw, event);
                 }).pipe(Effect.annotateLogs({ channel }), Effect.withSpan("desktop.ipc.invoke")),
               ),
             );
@@ -251,7 +259,7 @@ export interface DesktopIpcMethodRegistration<
     ResultDecodingServices,
     ResultEncodingServices
   >;
-  readonly handler: (input: Payload) => Effect.Effect<Result, E, R>;
+  readonly handler: (input: Payload, event?: DesktopIpcInvokeEvent) => Effect.Effect<Result, E, R>;
 }
 
 export const makeIpcMethod = <
@@ -287,9 +295,9 @@ export const makeIpcMethod = <
 
   return {
     channel: method.channel,
-    handler: (raw) =>
+    handler: (raw, event) =>
       decode(raw).pipe(
-        Effect.flatMap(method.handler),
+        Effect.flatMap((input) => method.handler(input, event)),
         Effect.flatMap(encode),
         Effect.withSpan("desktop.ipc.method", { attributes: { channel: method.channel } }),
       ),

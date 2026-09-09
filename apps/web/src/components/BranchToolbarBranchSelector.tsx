@@ -761,7 +761,9 @@ export function BranchToolbarBranchSelector({
         >
           <ComboboxTrigger
             render={<Button variant="ghost" size="xs" />}
-            className="min-w-0 max-w-full text-muted-foreground/70 hover:text-foreground/80"
+            // No press-scale: the popup aligns live to this trigger, so a
+            // momentary 0.97 shrink would drag the open popup ~3px sideways.
+            className="min-w-0 max-w-full text-muted-foreground/70 hover:text-foreground/80 active:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
           >
             <GitBranchIcon className="size-3 shrink-0 opacity-70" />

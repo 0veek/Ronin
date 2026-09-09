@@ -27,6 +27,7 @@ import {
 } from "@t3tools/contracts/settings";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
+  filterSharedServerPatch,
   findSharedSettingsMismatches,
   pickSharedServerSettings,
   splitSharedServerPatch,
@@ -151,10 +152,10 @@ async function hydrateClientSettings(): Promise<void> {
   return clientSettingsHydrationPromise;
 }
 
-function persistClientSettings(settings: ClientSettings): void {
+function persistClientSettings(settings: ClientSettings): Promise<void> {
   const previous = getClientSettingsSnapshot();
   replaceClientSettingsSnapshot(settings);
-  void ensureLocalApi()
+  return ensureLocalApi()
     .persistence.setClientSettings(settings)
     .catch((error) => {
       if (getClientSettingsSnapshot() === settings) {
@@ -381,6 +382,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
     "server settings update",
   );
   const connectedEnvironmentIds = useConnectedEnvironmentIds();
+  const { environments } = useEnvironments();
   const updateSettings = useCallback(
     (patch: UnifiedSettingsPatch) => {
       const { serverPatch, clientPatch } = splitPatch(patch);
@@ -405,6 +407,9 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
           }
         }
         if (Object.keys(sharedPatch).length > 0) {
+          const sourceSettings = environments.find(
+            (target) => target.environmentId === environmentId,
+          )?.serverConfig?.settings;
           const targets = new Set(connectedEnvironmentIds);
           if (environmentId) {
             targets.add(environmentId);
@@ -413,21 +418,31 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
             warnUnsaved();
           }
           for (const targetId of targets) {
+            const targetSettings = environments.find(
+              (candidate) => candidate.environmentId === targetId,
+            )?.serverConfig?.settings;
+            const targetPatch = filterSharedServerPatch(
+              sharedPatch,
+              targetSettings,
+              sourceSettings,
+              targetId === environmentId,
+            );
+            if (Object.keys(targetPatch).length === 0) continue;
             void persistServerSettings({
               environmentId: targetId,
-              input: { patch: sharedPatch },
+              input: { patch: targetPatch },
             });
           }
         }
       }
       if (Object.keys(clientPatch).length > 0) {
-        persistClientSettings({
+        void persistClientSettings({
           ...getClientSettingsSnapshot(),
           ...clientPatch,
         });
       }
     },
-    [connectedEnvironmentIds, environmentId, persistServerSettings],
+    [connectedEnvironmentIds, environmentId, environments, persistServerSettings],
   );
 
   return updateSettings;
@@ -477,12 +492,17 @@ export function useSharedSettingsSync() {
     }
     const patch = pickSharedServerSettings(primarySettings);
     for (const mismatch of mismatches) {
+      const targetSettings = environments.find(
+        (candidate) => candidate.environmentId === mismatch.environmentId,
+      )?.serverConfig?.settings;
       void persistServerSettings({
         environmentId: mismatch.environmentId,
-        input: { patch },
+        input: {
+          patch: filterSharedServerPatch(patch, targetSettings, primarySettings),
+        },
       });
     }
-  }, [mismatches, persistServerSettings, primarySettings]);
+  }, [environments, mismatches, persistServerSettings, primarySettings]);
 
   return { mismatches, applyToAll };
 }
@@ -497,7 +517,7 @@ export function useUpdatePrimarySettings() {
 
 export function useUpdateClientSettings() {
   return useCallback((patch: ClientSettingsPatch) => {
-    persistClientSettings({
+    return persistClientSettings({
       ...getClientSettingsSnapshot(),
       ...patch,
     });

@@ -27,6 +27,7 @@ import * as DesktopServerExposure from "../backend/DesktopServerExposure.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopState from "./DesktopState.ts";
+import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
@@ -146,6 +147,7 @@ const bootstrap = Effect.gen(function* () {
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
   const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
   const appActivation = yield* DesktopAppActivation.DesktopAppActivation;
+  const snapShot = yield* DesktopSnapShot.DesktopSnapShot;
   yield* logBootstrapInfo("bootstrap start");
 
   if (environment.isDevelopment && Option.isNone(environment.configuredBackendPort)) {
@@ -196,6 +198,8 @@ const bootstrap = Effect.gen(function* () {
       "bootstrap fell back to local-only because no advertised network host was available",
     );
   }
+
+  yield* snapShot.initialize;
 
   yield* installDesktopIpcHandlers();
   yield* logBootstrapInfo("bootstrap ipc handlers registered");

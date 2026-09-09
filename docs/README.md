@@ -5,6 +5,7 @@
 - [Install and first run](./user/install.md)
 - [Permission modes](./user/permission-modes.md)
 - [Keyboard shortcuts](./user/keybindings.md)
+- [SnapShots](./user/snap-shot.md)
 - [Keyboard focus](./user/keyboard-focus.md)
 - [Slash commands](./user/slash-commands.md)
 - [Debug mode](./user/debug-mode.md)

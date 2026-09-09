@@ -54,14 +54,23 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
           continue;
         }
 
-        const idleDurationMs = now - lastSeenMs;
-        if (idleDurationMs < inactivityThresholdMs) {
+        if (now - lastSeenMs < inactivityThresholdMs) {
           continue;
         }
 
         const thread = yield* projectionSnapshotQuery
           .getThreadShellById(binding.threadId)
           .pipe(Effect.map(Option.getOrUndefined));
+        // A completed long-running turn gets the full idle window after its
+        // session settles, even if the binding was last touched much earlier.
+        const lastActivityMs = Math.max(
+          lastSeenMs,
+          Date.parse(thread?.session?.updatedAt ?? binding.lastSeenAt),
+        );
+        const idleDurationMs = now - lastActivityMs;
+        if (idleDurationMs < inactivityThresholdMs) {
+          continue;
+        }
         if (thread?.session?.activeTurnId != null) {
           yield* Effect.logDebug("provider.session.reaper.skipped-active-turn", {
             threadId: binding.threadId,

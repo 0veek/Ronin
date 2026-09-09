@@ -433,6 +433,48 @@ describe("ProviderSessionReaper", () => {
     expect(Option.isSome(remaining)).toBe(true);
   });
 
+  it("gives a completed long-running turn a full idle window", async () => {
+    const threadId = ThreadId.make("thread-reaper-completed-long-turn");
+    const completedAt = DateTime.formatIso(await Effect.runPromise(DateTime.now));
+    const harness = await createHarness({
+      readModel: makeReadModel([
+        {
+          id: threadId,
+          session: {
+            threadId,
+            status: "ready",
+            providerName: "claudeAgent",
+            runtimeMode: "full-access",
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: completedAt,
+          },
+        },
+      ]),
+    });
+    const repository = await runtime!.runPromise(
+      Effect.service(ProviderSessionRuntime.ProviderSessionRuntimeRepository),
+    );
+    await runtime!.runPromise(
+      repository.upsert({
+        threadId,
+        providerName: "claudeAgent",
+        providerInstanceId: null,
+        adapterKey: "claudeAgent",
+        runtimeMode: "full-access",
+        status: "running",
+        lastSeenAt: "2026-01-01T00:00:00.000Z",
+        resumeCursor: { opaque: "resume-completed-long-turn" },
+        runtimePayload: null,
+      }),
+    );
+
+    await startReaper();
+    await Effect.runPromise(drainFibers);
+
+    expect(harness.stopSession).not.toHaveBeenCalled();
+  });
+
   it("skips persisted sessions that are already marked stopped", async () => {
     const threadId = ThreadId.make("thread-reaper-stopped");
     const now = "2026-01-01T00:00:00.000Z";

@@ -10,6 +10,7 @@ import {
   Link2Icon,
   MicIcon,
   PaletteIcon,
+  ScanLineIcon,
   Settings2Icon,
   UsersIcon,
   type LucideIcon,
@@ -19,6 +20,7 @@ export type SettingsPath =
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"
+  | "/settings/snap-shot"
   | "/settings/speech-to-text"
   | "/settings/providers"
   | "/settings/skills"
@@ -54,6 +56,12 @@ export const SETTINGS_PAGE_META = {
     description: "Keyboard shortcuts for commands and navigation.",
     icon: KeyboardIcon,
     searchTerms: ["keyboard", "shortcut", "hotkey", "command"],
+  },
+  "/settings/snap-shot": {
+    label: "SnapShots",
+    description: "Capture any app window directly into a draft.",
+    icon: ScanLineIcon,
+    searchTerms: ["window", "capture", "screenshot", "snapshot"],
   },
   "/settings/speech-to-text": {
     label: "Dictation",
@@ -127,6 +135,7 @@ export const SETTINGS_NAV_GROUPS: ReadonlyArray<{
       "/settings/general",
       "/settings/appearance",
       "/settings/keybindings",
+      "/settings/snap-shot",
       "/settings/speech-to-text",
     ],
   },

@@ -137,6 +137,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
     >
       <div className={cn("relative flex flex-col-reverse", hasStack && stackExpanded && "z-50")}>
         <div
+          key={frontItem.id}
           className={cn(
             "relative z-10",
             exitingItemId === frontItem.id ? "pointer-events-none" : null,
@@ -165,7 +166,7 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
         {hasStack ? (
           <div
             ref={noticesRef}
-            className={cn("relative z-20", stackExpanded && "min-h-3")}
+            className="relative z-20 min-h-3"
             onPointerEnter={(event) => {
               if (event.pointerType === "touch") return;
               if (document.activeElement === peekRef.current) {

@@ -2028,6 +2028,9 @@ const make = Effect.gen(function* () {
           threadId: event.payload.threadId,
           requestId: event.payload.requestId,
           answers: event.payload.answers,
+          ...(event.payload.attachmentsByQuestionId
+            ? { attachmentsByQuestionId: event.payload.attachmentsByQuestionId }
+            : {}),
         })
         .pipe(
           Effect.catchCause((cause) =>
