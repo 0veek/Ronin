@@ -62,6 +62,7 @@ import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderComma
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
+import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "./orchestration/ThreadPullRequestReactor.ts";
 import { QuotaResumeReactorLive } from "./orchestration/Layers/QuotaResumeReactor.ts";
 import { BuildSystemRunReactorLive } from "./orchestration/Layers/BuildSystemRunReactor.ts";
@@ -88,6 +89,7 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
+import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
@@ -270,6 +272,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CheckpointReactorLive),
   Layer.provideMerge(ThreadDeletionReactorLive),
   Layer.provideMerge(ThreadSettlementReactor.layer),
+  Layer.provideMerge(PullRequestSyncReactor.layer),
   Layer.provideMerge(ThreadPullRequestReactor.layer),
   Layer.provideMerge(QuotaResumeReactorLive),
   Layer.provideMerge(BuildSystemRunReactorLive),
@@ -319,6 +322,7 @@ const SourceControlProviderRegistryLayerLive = SourceControlProviderRegistry.lay
 
 const PullRequestServiceLive = PullRequestService.layer.pipe(
   Layer.provide(PullRequestProviderRegistry.layer),
+  Layer.provide(PullRequestReadCache.layer),
   Layer.provide(SourceControlProviderRegistryLayerLive),
   Layer.provide(SourceControlRateLimit.layer),
 );

@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `5e6cc2b89` — `fix(web): restore text-only draft project title (#10821)` (2026-09-08) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                       |
-| **Ported on**                 | 2026-09-09                                                                            |
+|                               |                                                                                                           |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `3836890e4` — `Revert "fix(mobile): keep Android markdown icons aligned with text" (#11098)` (2026-09-10) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                           |
+| **Ported on**                 | 2026-09-11                                                                                                |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -5414,3 +5414,139 @@ surfaces remain deliberately cut.
   sidebar drops, minimap navigation and terminal-link routing have unit/type/static coverage.
 - Native capture was not exercised on real macOS, Windows, KDE, Hyprland or GNOME desktops; platform
   services, geometry, transport and packaging paths are covered by focused tests.
+
+## Batch 31 — reviewed through `3836890e4` (31 commits)
+
+Reviewed `5e6cc2b89..3836890e4`, with upstream snapshotted at
+`3836890e4484406813997259efc69065b25ce698` for the whole run. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`. No commit needed a product Ask.
+
+### Ported (17)
+
+| Upstream    | Title                                                                            | Notes                                                                                                      |
+| ----------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `de545c417` | fix(web): stop the bar under the composer popping in after threads load (#10727) | **adapted** — thread-shell readiness now drives the loading boundary                                       |
+| `7fbc545ae` | fix(web): keep the composer footer still while thread data loads (#10768)        | **adapted** — shares the same stable thread-shell/catalog state                                            |
+| `08463e2c4` | fix(server): release consumed event replay pages (#10777)                        | clean; global replay now paginates without retaining consumed pages                                        |
+| `e16b8b059` | feat(web): add provider model bulk toggle (#10947)                               | clean                                                                                                      |
+| `50f918c57` | fix(web): allow expanding duplicate tool call commands (#10981)                  | clean                                                                                                      |
+| `afb84898b` | feat(pull-requests): link multiple pull requests to threads (#10839)             | **adapted** — full contracts/server/web/MCP migration against Ronin's event-sourced project and panel APIs |
+| `f0401c629` | feat(search): find threads by linked pull request (#10870)                       | **adapted** — indexed through Ronin's thread search projection                                             |
+| `de37964db` | feat(prs): navigate, merge and rebase GitHub stacks (#10875)                     | **adapted** — stack actions use Ronin's right panel, environment routing and GitHub service                |
+| `33242d016` | fix(server): preserve recent PR reads across server restarts (#11007)            | clean                                                                                                      |
+| `8d8189e67` | feat(web): zoom and pan expanded images (#10869)                                 | **adapted** — preserves Ronin's video/download/fallback behavior                                           |
+| `b7b3ef1e6` | fix(ui): use available space for composer model names (#11002)                   | clean                                                                                                      |
+| `addfb1390` | fix(web): restore pr list diff counts to the top right (#10609)                  | clean                                                                                                      |
+| `385cc0a4c` | fix(web): show message copy buttons on touch devices (#11020)                    | clean                                                                                                      |
+| `d1eeb1624` | fix(web): middle-click pastes in the terminal on Linux (#11018)                  | clean                                                                                                      |
+| `0f602b337` | fix(editors): open remote projects in Zed (#11022)                               | clean                                                                                                      |
+| `bb5e824c9` | feat: add blue and orange diff color palette (#10671)                            | **adapted** — roles live in Ronin's split token/theme CSS                                                  |
+| `d29c56a5c` | fix(server): resolve project identity before legacy pr relinks (#11045)          | **adapted** — retains the multi-PR projection bridge and shell snapshot mappings                           |
+
+`afb84898b` is the structural center of this batch. A thread can now retain more than one linked
+pull request, with migration 058, typed events and read models, projection/relink handling, MCP
+tools, service/reactor behavior, list and detail panels, link dialogs, and user/internals docs all
+moving together. The follow-up search, stack, cache and legacy-identity commits were reconciled on
+top of that model rather than copied against upstream's different panel and environment shapes.
+
+During verification, the port was tightened in the places where upstream context hid required
+Ronin integrations: requested PR hosts are no longer overwritten by stored links, projector
+handlers and the legacy-link bridge cover every PR event, shell snapshots retain
+`branchPullRequest`, confirmed merges keep the enriched PR summary, and the WebSocket layer
+provides the required SQL service. The related projector, service, runtime-instruction and MCP
+tests cover those adaptations.
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (14)
+
+| Upstream    | Title                                                                        | Why                                                                                          |
+| ----------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `3faeee49a` | refactor(web): consolidate setup wizards into shared components (#10832)     | the upstream setup-wizard product surface is cut from Ronin                                  |
+| `20e2e899e` | fix(desktop): defer keyring loading until macOS cookie import (#10667)       | depends on upstream's BrowserImport/cookie-import flow, which this desktop does not carry    |
+| `fdf34c401` | fix(relay): share notification policy and prioritize waiting agents (#10848) | hosted relay surface is cut                                                                  |
+| `3dfc134e6` | fix(relay): recheck queued iOS alerts and retain fast completions (#10849)   | hosted relay and iOS notification surfaces are cut                                           |
+| `1862686f9` | fix(relay): use current APNs registration routing for queued jobs (#10859)   | hosted relay and APNs surfaces are cut                                                       |
+| `9d6c43f32` | fix(mobile): respect notification permission when tokens rotate (#10850)     | no mobile app in this repo                                                                   |
+| `3e6f856f2` | fix(mobile): tolerate native Headers without getSetCookie (#10851)           | no mobile app in this repo                                                                   |
+| `2a3035353` | feat(mobile): arrange threads with drag handles (#10496)                     | no mobile app in this repo                                                                   |
+| `6c583620f` | feat(mobile): add Android agent notifications and ongoing activity (#10416)  | no mobile app in this repo                                                                   |
+| `a29a7cc58` | fix(mobile): blur glass fallbacks to prevent background text bleed (#10964)  | no mobile app in this repo                                                                   |
+| `75e4ceb96` | fix(mobile): prevent Android chat rows overlapping during sync (#10983)      | no mobile app in this repo                                                                   |
+| `383cc40f4` | fix(mobile): prevent text leaking through Android glass (#10998)             | no mobile app in this repo                                                                   |
+| `444fd8bad` | fix(mobile): keep Android markdown icons aligned with text (#11079)          | no mobile app; the next upstream commit also reverts this exact patch                        |
+| `3836890e4` | Revert "fix(mobile): keep Android markdown icons aligned with text" (#11098) | mobile-only revert; together with `444fd8bad` it is a net-zero upstream change for this fork |
+
+### Verification
+
+The focused test runs used this changed-file selector from the repository root:
+
+```bash
+repo_root=$(pwd)
+changed_tests() {
+  scope=$1
+  {
+    git -C "$repo_root" diff --name-only --diff-filter=ACMRTUXB -- "$scope"
+    git -C "$repo_root" ls-files --others --exclude-standard -- "$scope"
+  } | sed -n -E '/\.test\.(ts|tsx)$/p' | sed "s#^$scope/##"
+}
+(cd packages/contracts && vp test run $(changed_tests packages/contracts))
+(cd packages/shared && vp test run $(changed_tests packages/shared))
+(cd packages/client-runtime && vp test run $(changed_tests packages/client-runtime))
+(cd apps/web && vp test run $(changed_tests apps/web))
+(cd apps/desktop && vp test run $(changed_tests apps/desktop))
+(cd apps/server && vp test run $(changed_tests apps/server))
+```
+
+The remaining checks were run with these commands from their affected workspace or the repository
+root:
+
+```bash
+(cd packages/contracts && vp typecheck)
+(cd packages/shared && vp typecheck)
+(cd packages/client-runtime && vp typecheck)
+(cd apps/web && vp typecheck)
+(cd apps/desktop && vp typecheck)
+(cd apps/server && vp typecheck) # exits 1 on the four pre-existing Effect diagnostics below
+mapfile -d '' changed_paths < <(git diff --name-only -z)
+mapfile -d '' untracked_paths < <(git ls-files --others --exclude-standard -z)
+lint_paths=()
+for path in "${changed_paths[@]}" "${untracked_paths[@]}"; do
+  case "$path" in
+    *.cjs | *.js | *.jsx | *.mjs | *.ts | *.tsx) lint_paths+=("$path") ;;
+  esac
+done
+vp lint --report-unused-disable-directives "${lint_paths[@]}"
+vp fmt --check "${changed_paths[@]}" "${untracked_paths[@]}"
+npx react-doctor@latest --score --scope changed
+git diff --check
+```
+
+- Focused tests pass in every affected workspace: contracts 2 files / 154 tests, shared 4 / 69,
+  client runtime 10 / 171, web 19 / 683, desktop 1 / 8, and server 43 / 988 — 2,073 tests total.
+- Typechecks pass for `@t3tools/contracts`, `@t3tools/shared`, `@t3tools/client-runtime`,
+  `@t3tools/web` and desktop. Server reports only four pre-existing Effect diagnostics:
+  suggestions in `resourceTelemetry/HostResources.ts:63,71` and warnings in
+  `serverRuntimeStartup.reconcile.test.ts:102,737`. The two prior missing-`GitVcsDriver` errors
+  recorded in batches 25–30 are cleared by this synced tree.
+- Changed-file lint passes across 197 TypeScript/JavaScript files. Changed-file formatting and
+  `git diff --check` pass.
+- React Doctor's required changed-scope scan scores 45/100 before and after final reconciliation;
+  no finding was introduced by the reconciliation. The remaining findings are pre-existing or
+  unchanged upstream component/compiler patterns.
+
+**Hit every applicable surface:** desktop and web entry points, server orchestration/projectors,
+provider-facing runtime instructions, MCP tools, wire contracts, client runtime, local and remote
+environment routing, PR link/unlink and stack actions, persisted projections, search, settings,
+and user/internals docs. Mobile, hosted relay, BrowserImport and setup-wizard surfaces remain
+deliberately cut.
+
+### Not tested
+
+- No live client or browser automation was run, per `AGENTS.md`; the composer transitions, image
+  gestures, touch controls, terminal paste, remote Zed routing and PR panels have focused
+  unit/type/static coverage.
+- GitHub stack merge and rebase were not executed against a live repository; service/reactor and
+  UI behavior are covered by focused tests.

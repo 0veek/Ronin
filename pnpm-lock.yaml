@@ -60,7 +60,7 @@ patchedDependencies:
   '@ff-labs/fff-node@0.9.4': 2b16019ce7ab61aec6478dd02f79ef468cc1d5c51e9d00764f7d2ab8167210c8
   '@legendapp/list@3.3.5': 064530db83875fa671559a81ae42dc159726dc2dd6ec4c982da44ff7c7a74706
   '@pierre/diffs@1.3.0-beta.10': 0ccee155b93b63d810e2c1a40c1fd676fb6fbcfa72cf6430dcedf1a3ae475ab4
-  dbus-next@0.10.2: cfff57561b0ee59b5addb3b2e6c6f20906e967507a530ab67e8db8108e520ba4
+  dbus-next@0.10.2: 73c38379b09c6e5821fb20818ce99376473a7ea1a8a0a570f5f464cd5b0e9d98
   effect@4.0.0-beta.103: 8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801
 
 importers:
@@ -111,7 +111,7 @@ importers:
         version: link:../../packages/tailscale
       dbus-next:
         specifier: 0.10.2
-        version: 0.10.2(patch_hash=cfff57561b0ee59b5addb3b2e6c6f20906e967507a530ab67e8db8108e520ba4)
+        version: 0.10.2(patch_hash=73c38379b09c6e5821fb20818ce99376473a7ea1a8a0a570f5f464cd5b0e9d98)
       effect:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801)
@@ -8831,7 +8831,7 @@ snapshots:
 
   data-uri-to-buffer@4.0.1: {}
 
-  dbus-next@0.10.2(patch_hash=cfff57561b0ee59b5addb3b2e6c6f20906e967507a530ab67e8db8108e520ba4):
+  dbus-next@0.10.2(patch_hash=73c38379b09c6e5821fb20818ce99376473a7ea1a8a0a570f5f464cd5b0e9d98):
     dependencies:
       '@nornagon/put': 0.0.8
       event-stream: 3.3.4

@@ -308,6 +308,10 @@
   --color-update-surface: var(--update-surface);
   --color-success-foreground: var(--success-foreground);
   --color-success: var(--success);
+  --color-diff-addition: var(--diff-addition);
+  --color-diff-deletion: var(--diff-deletion);
+  --color-diff-addition-foreground: var(--diff-addition-foreground);
+  --color-diff-deletion-foreground: var(--diff-deletion-foreground);
   --color-info-foreground: var(--info-foreground);
   --color-info: var(--info);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -421,6 +425,10 @@
   --favorite: var(--color-yellow-500);
   --success: var(--color-emerald-500);
   --success-foreground: var(--color-emerald-700);
+  --diff-addition: var(--success);
+  --diff-deletion: var(--destructive);
+  --diff-addition-foreground: var(--color-emerald-600);
+  --diff-deletion-foreground: var(--color-red-600);
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
   --warning-surface: color-mix(in srgb, var(--warning) 8%, transparent);
@@ -494,6 +502,8 @@
     --favorite: var(--color-yellow-500);
     --success: var(--color-emerald-500);
     --success-foreground: var(--color-emerald-400);
+    --diff-addition-foreground: var(--color-emerald-400);
+    --diff-deletion-foreground: var(--color-red-400);
     --warning: var(--color-amber-500);
     --warning-foreground: var(--color-amber-400);
     --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
@@ -516,6 +526,21 @@
     --terminal-scrollbar: rgb(255 255 255 / 10%);
     --terminal-scrollbar-hover: rgb(255 255 255 / 18%);
   }
+}
+
+:root[data-diff-color-scheme="blue-orange"] {
+  --diff-addition: light-dark(var(--color-blue-600), var(--color-blue-400));
+  --diff-deletion: light-dark(var(--color-orange-600), var(--color-orange-400));
+  --diff-addition-foreground: var(--diff-addition);
+  --diff-deletion-foreground: var(--diff-deletion);
+  --diffs-addition-color-override: var(--diff-addition);
+  --diffs-deletion-color-override: var(--diff-deletion);
+  --trees-status-added-override: var(--diff-addition);
+  --trees-status-deleted-override: var(--diff-deletion);
+  --trees-status-untracked-override: var(--diff-addition);
+  --trees-git-added-color-override: var(--diff-addition);
+  --trees-git-deleted-color-override: var(--diff-deletion);
+  --trees-git-untracked-color-override: var(--diff-addition);
 }
 
 /*

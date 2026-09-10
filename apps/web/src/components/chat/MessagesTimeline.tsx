@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
+import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-log/presentation";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
@@ -73,6 +74,7 @@ import {
   EyeIcon,
   FileIcon,
   GlobeIcon,
+  GitPullRequestIcon,
   HammerIcon,
   MessageCircleIcon,
   MessagesSquareIcon,
@@ -1379,7 +1381,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           markdownCwd={ctx.markdownCwd}
         />
       </div>
-      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-(--duration-base) focus-within:opacity-100 group-hover:opacity-100">
+      <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-(--duration-base) pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
           <Tooltip>
             <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -1490,7 +1492,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         {row.showAssistantMeta ? (
           <div
             className={cn(
-              "mt-1.5 flex items-center gap-2 text-xs tabular-nums transition-opacity duration-(--duration-base) focus-within:opacity-100 group-hover/assistant:opacity-100",
+              "mt-1.5 flex items-center gap-2 text-xs tabular-nums transition-opacity duration-(--duration-base) pointer-coarse:opacity-100 focus-within:opacity-100 group-hover/assistant:opacity-100",
               // The way back to the rendered answer cannot be the thing that hides on pointer-out.
               showsSource ? "opacity-100" : "opacity-0",
             )}
@@ -2436,6 +2438,7 @@ type WorkEntryIconName =
   | "circle-alert"
   | "eye"
   | "globe"
+  | "pull-request"
   | "hammer"
   | "message-circle"
   | "square-pen"
@@ -2446,6 +2449,8 @@ type WorkEntryIconName =
 
 function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
+    case "pull-request":
+      return <GitPullRequestIcon className={className} aria-hidden />;
     case "bot":
       return <BotIcon className={className} aria-hidden />;
     case "check":
@@ -2592,6 +2597,9 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (workEntry.requestKind === "command") return "terminal";
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";
+  if (resolveWorkEntryToolPresentation(workEntry)?.icon === "pull-request") {
+    return "pull-request";
+  }
 
   if (workEntry.itemType === "command_execution" || workEntry.command) {
     return "terminal";
@@ -2628,6 +2636,8 @@ function capitalizePhrase(value: string): string {
 }
 
 function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
+  const presentation = resolveWorkEntryToolPresentation(workEntry);
+  if (presentation !== null) return presentation.displayName;
   if (!workEntry.toolTitle) {
     return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
   }
@@ -2843,6 +2853,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const canExpand =
     expandedBody !== null ||
     viewedImage !== null ||
+    Boolean(workEntryRawCommand(workEntry) || workEntry.command?.trim()) ||
     (showFailedIndicator && collapsedText.trim().length > 0);
   const showDestructiveRowStyle =
     showFailedIndicator &&
@@ -2902,10 +2913,29 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-xs leading-5">
-              <span className={cn("min-w-0 shrink truncate", headingClass)}>{heading}</span>
+            <p
+              className="flex min-w-0 w-full items-baseline gap-1.5 text-xs leading-5"
+              onClick={expanded ? stopRowToggle : undefined}
+              onPointerDown={expanded ? stopRowToggle : undefined}
+            >
+              <span
+                className={cn(
+                  "min-w-0 shrink",
+                  expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                  headingClass,
+                )}
+              >
+                {heading}
+              </span>
               {preview && (
-                <span className="min-w-0 flex-1 truncate text-secondary-label">{preview}</span>
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 text-secondary-label",
+                    expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                  )}
+                >
+                  {preview}
+                </span>
               )}
             </p>
           </div>

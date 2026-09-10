@@ -44,6 +44,21 @@ const CUSTOM_MODEL_PLACEHOLDER_BY_KIND: Partial<Record<ProviderDriverKind, strin
   [ProviderDriverKind.make("kilo")]: "kilo/kilo-auto/free",
 };
 
+export function nextHiddenModelsForBulkToggle(
+  models: ReadonlyArray<Pick<ServerProviderModel, "slug" | "isCustom">>,
+  hiddenModels: ReadonlyArray<string>,
+): string[] {
+  const builtInSlugs = models.filter((model) => !model.isCustom).map((model) => model.slug);
+  const builtInSlugSet = new Set(builtInSlugs);
+  const allBuiltInModelsHidden = builtInSlugs.every((slug) => hiddenModels.includes(slug));
+
+  if (allBuiltInModelsHidden) {
+    return hiddenModels.filter((slug) => !builtInSlugSet.has(slug));
+  }
+
+  return [...new Set([...hiddenModels, ...builtInSlugs])];
+}
+
 interface ProviderModelsSectionProps {
   /** Identifier used to namespace input ids within the DOM. */
   readonly instanceId: ProviderInstanceId;
@@ -112,6 +127,8 @@ export function ProviderModelsSection({
   const hiddenModelSet = useMemo(() => new Set(hiddenModels), [hiddenModels]);
   const favoriteModelSet = useMemo(() => new Set(favoriteModels), [favoriteModels]);
   const builtInModels = useMemo(() => models.filter((model) => !model.isCustom), [models]);
+  const allBuiltInModelsHidden =
+    builtInModels.length > 0 && builtInModels.every((model) => hiddenModelSet.has(model.slug));
   const orderedModels = useMemo(() => {
     return sortModelsForProviderInstance(models, {
       favoriteModels: favoriteModelSet,
@@ -202,9 +219,25 @@ export function ProviderModelsSection({
 
   return (
     <div className="lg:flex lg:h-full lg:min-h-0 lg:flex-col">
-      <div className="text-xs font-medium text-foreground">Models</div>
-      <div className="mt-1 text-xs text-muted-foreground">
-        {models.length} model{models.length === 1 ? "" : "s"} available.
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-xs font-medium text-foreground">Models</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {models.length} model{models.length === 1 ? "" : "s"} available.
+          </div>
+        </div>
+        {builtInModels.length > 0 ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={() =>
+              onHiddenModelsChange(nextHiddenModelsForBulkToggle(models, hiddenModels))
+            }
+          >
+            {allBuiltInModelsHidden ? "Enable all" : "Disable all"}
+          </Button>
+        ) : null}
       </div>
       <div
         ref={listRef}

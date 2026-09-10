@@ -1,3 +1,4 @@
+import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -395,8 +396,7 @@ describe("ClaudeAdapterLive", () => {
       assert.deepEqual(createInput?.options.systemPrompt, {
         type: "preset",
         preset: "claude_code",
-        append:
-          "<runtime_info>In case you're asked: you are running in Ronin through the Claude Code harness. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>",
+        append: buildRuntimeInstructions({ harness: "Claude Code" }),
       });
       assert.equal(createInput?.options.permissionMode, "bypassPermissions");
       assert.equal(createInput?.options.allowDangerouslySkipPermissions, true);

@@ -56,6 +56,7 @@ const CODEX_CLIENT_NAME = "ronin_desktop";
 const CODEX_PRESENTATION = {
   displayName: "Codex",
   showInteractionModeToggle: true,
+  reportsContextWindow: true,
 } as const;
 
 export interface CodexAppServerProviderSnapshot {

@@ -1964,6 +1964,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   "-c",
                   `mcp_servers.${McpProviderSession.MCP_SERVER_NAME}.bearer_token_env_var="${McpProviderSession.MCP_BEARER_TOKEN_ENV_VAR}"`,
                 ],
+                browserToolsAvailable: mcpSession.preview,
               }
             : {}),
         };

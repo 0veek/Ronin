@@ -257,6 +257,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
       commitMessage?: string;
       featureBranch?: boolean;
       filePaths?: string[];
+      threadId?: ThreadId;
       onProgress?: (event: GitActionProgressEvent) => void;
     }) => {
       if (resolveScope(scope) === null) {
@@ -276,6 +277,7 @@ export function useGitStackedAction(scope: SourceControlActionScope) {
         ...(input.commitMessage ? { commitMessage: input.commitMessage } : {}),
         ...(input.featureBranch ? { featureBranch: true } : {}),
         ...(input.filePaths?.length ? { filePaths: input.filePaths } : {}),
+        ...(input.threadId !== undefined ? { threadId: input.threadId } : {}),
         ...(input.onProgress ? { onProgress: input.onProgress } : {}),
       });
     },

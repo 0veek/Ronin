@@ -3,17 +3,96 @@ import {
   type RuntimeItemStatus,
   type ToolLifecycleItemType,
 } from "@t3tools/contracts";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 
 export type WorkLogToolLifecycleStatus = RuntimeItemStatus | "stopped";
 
 export interface WorkLogPresentationEntry {
   readonly label: string;
+  readonly toolTitle?: string;
+  readonly toolData?: unknown;
   readonly tone: "thinking" | "tool" | "info" | "error";
   readonly command?: string;
   readonly detail?: string;
   readonly itemType?: ToolLifecycleItemType;
   readonly requestKind?: string;
   readonly toolLifecycleStatus?: WorkLogToolLifecycleStatus;
+}
+
+const PULL_REQUEST_MCP_TOOL_LABELS = {
+  link_pull_request: ["Link", "Linking", "Linked", "a pull request"],
+  unlink_pull_request: ["Unlink", "Unlinking", "Unlinked", "a pull request"],
+  list_thread_pull_requests: ["Check", "Checking", "Checked", "linked pull requests"],
+} as const;
+
+function pullRequestMcpToolPresentation(
+  value: string | undefined,
+  status: WorkLogToolLifecycleStatus | undefined,
+  data?: unknown,
+) {
+  if (!value) return null;
+  const name = value
+    .replace(/\s+(?:complete|completed)\s*$/i, "")
+    .trim()
+    .replace(
+      /^(?:mcp__(?:t3-code|t3_code|t3code)__|(?:t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*))/i,
+      "",
+    );
+  if (!Object.hasOwn(PULL_REQUEST_MCP_TOOL_LABELS, name)) return null;
+
+  const [action, running, completed, detail] =
+    PULL_REQUEST_MCP_TOOL_LABELS[name as keyof typeof PULL_REQUEST_MCP_TOOL_LABELS];
+  const verb =
+    status === "completed"
+      ? completed
+      : status === "failed"
+        ? `Failed to ${action.toLowerCase()}`
+        : status === "declined"
+          ? `Declined to ${action.toLowerCase()}`
+          : status === "stopped"
+            ? `Stopped ${running.toLowerCase()}`
+            : running;
+  const payload = asRecord(data);
+  const input =
+    asRecord(payload?.arguments) ?? asRecord(payload?.input) ?? asRecord(payload?.rawInput);
+  const urlTarget = typeof input?.url === "string" ? parseChangeRequestUrl(input.url) : null;
+  const number = urlTarget?.number ?? input?.number;
+  const target =
+    name !== "list_thread_pull_requests" &&
+    typeof number === "number" &&
+    Number.isSafeInteger(number) &&
+    number > 0
+      ? `PR #${number}`
+      : detail;
+  return { displayName: `${verb} ${target}`, icon: "pull-request" as const };
+}
+
+/** Gives Ronin's compact work rows a native label and icon for its own PR-linking tools. */
+export function resolveWorkEntryToolPresentation(
+  entry: Pick<WorkLogPresentationEntry, "label" | "toolTitle" | "toolData" | "toolLifecycleStatus">,
+) {
+  const data = entry.toolData;
+  if (data !== null && typeof data === "object") {
+    if (
+      "server" in data &&
+      typeof data.server === "string" &&
+      "tool" in data &&
+      typeof data.tool === "string"
+    ) {
+      return pullRequestMcpToolPresentation(
+        `${data.server}.${data.tool}`,
+        entry.toolLifecycleStatus,
+        data,
+      );
+    }
+    if ("toolName" in data && typeof data.toolName === "string") {
+      return pullRequestMcpToolPresentation(data.toolName, entry.toolLifecycleStatus, data);
+    }
+  }
+  return (
+    pullRequestMcpToolPresentation(entry.toolTitle, entry.toolLifecycleStatus, data) ??
+    pullRequestMcpToolPresentation(entry.label, entry.toolLifecycleStatus, data)
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

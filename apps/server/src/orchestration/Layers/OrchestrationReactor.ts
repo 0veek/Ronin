@@ -12,6 +12,7 @@ import { BuildSystemRunReactor } from "../Services/BuildSystemRunReactor.ts";
 import { QuotaResumeReactor } from "../Services/QuotaResumeReactor.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
+import * as PullRequestSyncReactor from "../PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 
 export const makeOrchestrationReactor = Effect.gen(function* () {
@@ -21,6 +22,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
   const threadDeletionReactor = yield* ThreadDeletionReactor;
   const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
   const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+  const pullRequestSyncReactor = yield* PullRequestSyncReactor.PullRequestSyncReactor;
   const quotaResumeReactor = yield* QuotaResumeReactor;
   const buildSystemRunReactor = yield* BuildSystemRunReactor;
 
@@ -31,6 +33,7 @@ export const makeOrchestrationReactor = Effect.gen(function* () {
     yield* threadDeletionReactor.start();
     yield* threadPullRequestReactor.start();
     yield* threadSettlementReactor.start();
+    yield* pullRequestSyncReactor.start();
     yield* quotaResumeReactor.start();
     yield* buildSystemRunReactor.start();
   });

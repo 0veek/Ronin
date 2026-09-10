@@ -10,13 +10,14 @@ import {
 import { Button } from "../ui/button";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
 import { downloadVideoPreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
-import { FallbackImage, MissingMediaBlock } from "../MissingMedia";
+import { MissingMediaBlock } from "../MissingMedia";
 import {
   SnapShotAccessibilityData,
   SnapShotContentsButton,
   snapShotAccessibilityDetails,
 } from "./SnapShotAttachmentDetails";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { ZoomableImage, type ZoomableImageHandle } from "./ZoomableImage";
 
 interface ExpandedImageDialogProps {
   preview: ExpandedImagePreview;
@@ -28,6 +29,8 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   onClose,
 }: ExpandedImageDialogProps) {
   const [imageOffset, setImageOffset] = useState(0);
+  const zoomableImageRef = useRef<ZoomableImageHandle>(null);
+  const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
   const [failedVideoSrc, setFailedVideoSrc] = useState<string | null>(null);
   const [downloadingVideoSrc, setDownloadingVideoSrc] = useState<string | null>(null);
   const [downloadFailedVideoSrc, setDownloadFailedVideoSrc] = useState<string | null>(null);
@@ -68,6 +71,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
 
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      if (zoomableImageRef.current?.pan(event.key)) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (preview.images.length <= 1) return;
       if (event.key === "ArrowLeft") {
         event.preventDefault();
@@ -172,18 +181,18 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               details={accessibilityDetails}
               className="h-[min(86vh,40rem)] w-[min(92vw,42rem)] animate-[snap-shot-contents-enter_140ms_ease-out] rounded-(--radius) border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:animate-none"
             />
+          ) : failedImageSrc === item.src ? (
+            <MissingMediaBlock
+              label={item.name}
+              className="size-72 rounded-(--radius) border border-border border-dashed bg-background"
+            />
           ) : (
-            <FallbackImage
+            <ZoomableImage
+              ref={zoomableImageRef}
+              key={`${index}:${item.src}`}
               src={item.src}
-              alt={item.name}
-              className="max-h-[86vh] max-w-[92vw] animate-[snap-shot-contents-enter_140ms_ease-out] select-none rounded-(--radius) border border-border bg-background object-contain motion-reduce:animate-none"
-              draggable={false}
-              fallback={
-                <MissingMediaBlock
-                  label={item.name}
-                  className="size-72 rounded-(--radius) border border-border border-dashed bg-background"
-                />
-              }
+              name={item.name}
+              onError={() => setFailedImageSrc(item.src)}
             />
           )}
           <div className="mt-2 flex max-w-[92vw] items-center justify-center gap-1.5 text-xs text-muted-foreground/80">

@@ -100,6 +100,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/appearance",
   },
   {
+    id: "diff-color-scheme",
+    title: "Diff colors",
+    to: "/settings/appearance",
+    searchTerms: ["red green blue orange additions deletions changes counts palette colorblind"],
+  },
+  {
     id: "panel-animations",
     title: "Panel animations",
     to: "/settings/appearance",

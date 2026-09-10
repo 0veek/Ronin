@@ -207,6 +207,9 @@ export const ServerProvider = Schema.Struct({
   badgeLabel: Schema.optional(TrimmedNonEmptyString),
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
+  // The driver streams context window usage, so a started thread will have a
+  // meter once its activities load. Clients reserve the meter's space on it.
+  reportsContextWindow: Schema.optional(Schema.Boolean),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
   /**
    * Whether this driver can stop one subagent without interrupting the turn

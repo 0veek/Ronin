@@ -479,8 +479,8 @@
     margin-top: 0.1875rem;
     background: linear-gradient(
       to right,
-      var(--success) 0 var(--diffstat-add-share),
-      var(--destructive) var(--diffstat-add-share) 100%
+      var(--diff-addition) 0 var(--diffstat-add-share),
+      var(--diff-deletion) var(--diffstat-add-share) 100%
     );
   }
 

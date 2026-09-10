@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   extractWorkLogToolLifecycleStatus,
+  resolveWorkEntryToolPresentation,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
@@ -41,6 +42,43 @@ describe("extractWorkLogToolLifecycleStatus", () => {
     expect(extractWorkLogToolLifecycleStatus(null)).toBeUndefined();
     expect(extractWorkLogToolLifecycleStatus({})).toBeUndefined();
     expect(extractWorkLogToolLifecycleStatus({ status: "unknown" })).toBeUndefined();
+  });
+});
+
+describe("pull request tool presentation", () => {
+  it.each([
+    "mcp__t3-code__link_pull_request",
+    "mcp__t3_code__link_pull_request",
+    "T3-code · link_pull_request",
+    "t3code/link_pull_request",
+    "link_pull_request",
+  ])("recognizes the native linking tool: %s", (label) => {
+    expect(
+      resolveWorkEntryToolPresentation({
+        label,
+        toolLifecycleStatus: "completed",
+      }),
+    ).toEqual({ displayName: "Linked a pull request", icon: "pull-request" });
+  });
+
+  it("describes a target supplied in tool data", () => {
+    expect(
+      resolveWorkEntryToolPresentation({
+        label: "MCP tool call",
+        toolLifecycleStatus: "completed",
+        toolData: {
+          server: "t3-code",
+          tool: "link_pull_request",
+          arguments: { url: "https://github.com/acme/web/pull/42" },
+        },
+      }),
+    ).toEqual({ displayName: "Linked PR #42", icon: "pull-request" });
+  });
+
+  it("does not claim similarly named third-party tools", () => {
+    expect(
+      resolveWorkEntryToolPresentation({ label: "mcp__another-server__link_pull_request" }),
+    ).toBeNull();
   });
 });
 

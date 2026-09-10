@@ -10,6 +10,7 @@ import { ProviderCommandReactor } from "../Services/ProviderCommandReactor.ts";
 import { ProviderRuntimeIngestionService } from "../Services/ProviderRuntimeIngestion.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import * as ThreadSettlementReactor from "../ThreadSettlementReactor.ts";
+import * as PullRequestSyncReactor from "../PullRequestSyncReactor.ts";
 import * as ThreadPullRequestReactor from "../ThreadPullRequestReactor.ts";
 import { QuotaResumeReactor } from "../Services/QuotaResumeReactor.ts";
 import { BuildSystemRunReactor } from "../Services/BuildSystemRunReactor.ts";
@@ -86,6 +87,16 @@ describe("OrchestrationReactor", () => {
           }),
         ),
         Layer.provideMerge(
+          Layer.succeed(PullRequestSyncReactor.PullRequestSyncReactor, {
+            start: () => {
+              started.push("pull-request-sync-reactor");
+              return Effect.void;
+            },
+            drain: Effect.void,
+            requestSync: () => Effect.void,
+          }),
+        ),
+        Layer.provideMerge(
           Layer.succeed(QuotaResumeReactor, {
             start: () => {
               started.push("quota-resume-reactor");
@@ -117,6 +128,7 @@ describe("OrchestrationReactor", () => {
       "thread-deletion-reactor",
       "thread-pull-request-reactor",
       "thread-settlement-reactor",
+      "pull-request-sync-reactor",
       "quota-resume-reactor",
       "build-system-run-reactor",
     ]);

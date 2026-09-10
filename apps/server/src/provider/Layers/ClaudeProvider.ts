@@ -49,6 +49,7 @@ export const CLAUDE_PRESENTATION = {
   showInteractionModeToggle: true,
   // ClaudeAdapter implements stopAgent on top of the SDK's stopTask.
   supportsAgentStop: true,
+  reportsContextWindow: true,
 } as const;
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
