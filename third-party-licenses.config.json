@@ -395,6 +395,71 @@
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2025 opencode"]
       }
+    },
+    {
+      "name": "@earendil-works/pi-coding-agent",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/earendil-works/pi/tree/main/packages/coding-agent",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2025 Mario Zechner"]
+      }
+    },
+    {
+      "name": "@earendil-works/pi-agent-core",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/earendil-works/pi/tree/main/packages/agent",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2025 Mario Zechner"]
+      }
+    },
+    {
+      "name": "@earendil-works/pi-ai",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/earendil-works/pi/tree/main/packages/ai",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2025 Mario Zechner"]
+      }
+    },
+    {
+      "name": "@earendil-works/pi-tui",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/earendil-works/pi/tree/main/packages/tui",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2025 Mario Zechner"]
+      }
+    },
+    {
+      "name": "@mariozechner/clipboard",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/badlogic/clipboard",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) Mario Zechner"],
+        "preamble": ["Fork of @crosscopy/clipboard. All credit goes to the original authors."]
+      }
+    },
+    {
+      "name": "@mariozechner/clipboard-linux-x64-gnu",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/badlogic/clipboard",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) Mario Zechner"],
+        "preamble": ["Native binding for @mariozechner/clipboard. Fork of @crosscopy/clipboard."]
+      }
+    },
+    {
+      "name": "data-uri-to-buffer",
+      "license": "MIT",
+      "sourceUrl": "https://github.com/TooTallNate/node-data-uri-to-buffer",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2014 Nathan Rajlich <nathan@tootallnate.net>"]
+      }
     }
   ]
 }
