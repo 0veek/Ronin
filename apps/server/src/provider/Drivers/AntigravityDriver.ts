@@ -67,7 +67,6 @@ const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
       updateLockKey: "agy",
     }),
 };
-
 export type AntigravityDriverEnv =
   | BackgroundPolicy.BackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner

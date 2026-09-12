@@ -40,6 +40,7 @@ export function ThreadCommandSubtitle(props: {
   projectFaviconPath?: string | null;
   projectIcon?: import("@t3tools/contracts").ProjectIconOverride | null;
   projectTitle: string | null;
+  environmentLabel?: string | null;
   branch: string | null;
   worktreePath: string | null;
   isCurrent: boolean;
@@ -80,6 +81,12 @@ export function ThreadCommandSubtitle(props: {
             />
           ) : null}
           <span className="min-w-0 truncate">{projectLabel}</span>
+          {props.environmentLabel ? (
+            <>
+              <CommandPaletteMetaDot />
+              <span className="shrink-0">{props.environmentLabel}</span>
+            </>
+          ) : null}
         </span>
       ) : null}
 

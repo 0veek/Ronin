@@ -7,7 +7,7 @@ import { HttpClient } from "effect/unstable/http";
 import type { PreparedConnection } from "../connection/model.ts";
 import {
   executeEnvironmentHttpRequest,
-  makeEnvironmentHttpApiClient,
+  makeEnvironmentHttpApiGroupClient,
   makeEnvironmentHttpApiUrlBuilder,
   type RemoteEnvironmentRequestError,
 } from "../rpc/http.ts";
@@ -25,14 +25,17 @@ export const fetchEnvironmentPullRequestDiff = Effect.fn(
   const requestUrl = makeEnvironmentHttpApiUrlBuilder(
     input.prepared.httpBaseUrl,
   ).pullRequests.diff();
-  const client = yield* makeEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
+  const client = yield* makeEnvironmentHttpApiGroupClient(
+    input.prepared.httpBaseUrl,
+    "pullRequests",
+  );
   const headers = buildEnvironmentAuthHeaders(input.prepared.httpAuthorization);
   return yield* executeEnvironmentHttpRequest(
     requestUrl,
     input.timeoutMs ?? DEFAULT_PULL_REQUEST_DIFF_TIMEOUT_MS,
     withEnvironmentCredentials(
       input.prepared.httpAuthorization,
-      client.pullRequests.diff({ payload: input.diff, headers }),
+      client.diff({ payload: input.diff, headers }),
     ),
   );
 });

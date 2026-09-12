@@ -770,6 +770,7 @@ export function projectEvent(
             role: payload.role,
             text: payload.text,
             ...(payload.attachments !== undefined ? { attachments: payload.attachments } : {}),
+            ...(payload.context !== undefined ? { context: payload.context } : {}),
             turnId: payload.turnId,
             streaming: payload.streaming,
             ...(payload.providerInstanceId !== undefined
@@ -800,9 +801,9 @@ export function projectEvent(
                     ...(message.attachments !== undefined
                       ? { attachments: message.attachments }
                       : {}),
+                    ...(message.context !== undefined ? { context: message.context } : {}),
                     // Only the first delta of a reply carries attribution; the
-                    // completion event carries none. Spreading unconditionally
-                    // would erase the author on the last write.
+                    // completion event carries none. Preserve the original author.
                     ...(message.providerInstanceId !== undefined
                       ? { providerInstanceId: message.providerInstanceId }
                       : {}),

@@ -129,6 +129,7 @@ function createProviderServiceHarness() {
     getContinuationState: () => unsupported(),
     recordDeliveredMessage: () => Effect.void,
     clearContinuationLedger: () => unsupported(),
+    assertConversationRollbackSupported: () => Effect.void,
     rollbackConversation: () => unsupported(),
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);

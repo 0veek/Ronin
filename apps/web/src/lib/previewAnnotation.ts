@@ -19,27 +19,14 @@ export interface ExtractedPreviewAnnotation {
 }
 
 export function buildPreviewAnnotationPrompt(annotation: PreviewAnnotationPayload): string {
-  const lines = ["Preview annotation:"];
-  lines.push(`Id: ${annotation.id}`);
-  const title = annotation.pageTitle?.trim() || annotation.pageUrl.trim() || "Preview";
-  lines.push(`Page: ${title}`);
+  const lines = ["Preview annotation:", `Id: ${annotation.id}`];
+  lines.push(`Page: ${annotation.pageTitle?.trim() || annotation.pageUrl.trim() || "Preview"}`);
   if (annotation.comment.trim()) lines.push(`Comment: ${annotation.comment.trim()}`);
   const targets: string[] = [];
-  if (annotation.elements.length > 0) {
-    targets.push(
-      `${annotation.elements.length} selected element${annotation.elements.length === 1 ? "" : "s"}`,
-    );
-  }
-  if (annotation.regions.length > 0) {
-    targets.push(
-      `${annotation.regions.length} marked region${annotation.regions.length === 1 ? "" : "s"}`,
-    );
-  }
-  if (annotation.strokes.length > 0) {
-    targets.push(
-      `${annotation.strokes.length} drawing${annotation.strokes.length === 1 ? "" : "s"}`,
-    );
-  }
+  if (annotation.elements.length > 0)
+    targets.push(`${annotation.elements.length} selected elements`);
+  if (annotation.regions.length > 0) targets.push(`${annotation.regions.length} marked regions`);
+  if (annotation.strokes.length > 0) targets.push(`${annotation.strokes.length} drawings`);
   if (targets.length > 0) lines.push(`Targets: ${targets.join(", ")}.`);
   if (annotation.styleChanges.length > 0) {
     lines.push("Requested visual changes:");
@@ -47,9 +34,7 @@ export function buildPreviewAnnotationPrompt(annotation: PreviewAnnotationPayloa
       lines.push(`- ${change.property}: ${change.previousValue || "(unset)"} → ${change.value}`);
     }
   }
-  if (annotation.screenshot) {
-    lines.push("The attached screenshot is the annotated preview crop.");
-  }
+  if (annotation.screenshot) lines.push("The attached screenshot is the annotated preview crop.");
   const elementContexts = annotation.elements
     .map((target) => normalizeElementContextSelection(target.element))
     .filter((context) => context !== null);
@@ -89,10 +74,10 @@ export function extractTrailingPreviewAnnotation(prompt: string): ExtractedPrevi
   return {
     promptText: prompt.slice(0, match.index).replace(/\n+$/, ""),
     annotation: {
-      id: idLine?.slice("Id: ".length).trim() || `${match.index}`,
-      title: pageLine?.slice("Page: ".length).trim() || "Preview annotation",
-      comment: commentLine?.slice("Comment: ".length).trim() || "",
-      targetSummary: targetsLine?.slice("Targets: ".length).trim() || "",
+      id: idLine?.slice(4).trim() || `${match.index}`,
+      title: pageLine?.slice(6).trim() || "Preview annotation",
+      comment: commentLine?.slice(9).trim() || "",
+      targetSummary: targetsLine?.slice(9).trim() || "",
       styleChanges,
       hasScreenshot: body.includes("The attached screenshot is the annotated preview crop."),
     },

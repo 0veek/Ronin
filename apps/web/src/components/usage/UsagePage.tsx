@@ -3,7 +3,13 @@ import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftIcon, CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type { DailyTotals, HourlyTotals, ProviderTotals } from "@t3tools/shared/usageMerge";
+import {
+  isModelCostUnknown,
+  type DailyTotals,
+  type HourlyTotals,
+  type ModelTotals,
+  type ProviderTotals,
+} from "@t3tools/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
@@ -339,7 +345,11 @@ export function UsagePage() {
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {metric === "cost"
-                        ? `* if billed at full API rate · ${formatTokens(merged.totalTokens)} tokens across ${formatCount(merged.sessions)} sessions`
+                        ? `* if billed at full API rate · ${formatTokens(merged.totalTokens)} tokens across ${formatCount(merged.sessions)} sessions${
+                            merged.costQuality.unpricedShare > 0
+                              ? ` · excludes ${formatPercent(merged.costQuality.unpricedShare)} unpriced records`
+                              : ""
+                          }`
                         : `Input, cache reads and output across ${formatCount(merged.sessions)} sessions`}
                     </span>
                   </div>
@@ -545,17 +555,7 @@ function ProviderRow({
   );
 }
 
-function ModelBreakdown({
-  models,
-}: {
-  readonly models: readonly {
-    readonly model: string;
-    readonly provider: UsageProviderKind;
-    readonly costUsd: number;
-    readonly totalTokens: number;
-    readonly costShare: number;
-  }[];
-}) {
+function ModelBreakdown({ models }: { readonly models: readonly ModelTotals[] }) {
   return (
     <table className="w-full text-sm">
       <thead>
@@ -586,23 +586,31 @@ function ModelBreakdown({
                 </span>
               </td>
               <td className="py-2 text-right text-foreground tabular-nums">
-                {formatUsd(model.costUsd)}
+                {isModelCostUnknown(model) ? (
+                  <span className="text-muted-foreground">Unpriced</span>
+                ) : (
+                  formatUsd(model.costUsd)
+                )}
               </td>
               <td className="py-2">
-                <span className="flex items-center justify-end gap-2">
-                  <span className="h-1 w-20 overflow-hidden rounded-full bg-muted">
-                    <span
-                      className="block h-full rounded-full"
-                      style={{
-                        width: `${(model.costShare * 100).toFixed(1)}%`,
-                        backgroundColor: PROVIDER_COLOR[model.provider],
-                      }}
-                    />
+                {isModelCostUnknown(model) ? (
+                  <span className="block text-right text-muted-foreground">—</span>
+                ) : (
+                  <span className="flex items-center justify-end gap-2">
+                    <span className="h-1 w-20 overflow-hidden rounded-full bg-muted">
+                      <span
+                        className="block h-full rounded-full"
+                        style={{
+                          width: `${(model.costShare * 100).toFixed(1)}%`,
+                          backgroundColor: PROVIDER_COLOR[model.provider],
+                        }}
+                      />
+                    </span>
+                    <span className="w-12 text-right text-muted-foreground tabular-nums">
+                      {formatPercent(model.costShare)}
+                    </span>
                   </span>
-                  <span className="w-12 text-right text-muted-foreground tabular-nums">
-                    {formatPercent(model.costShare)}
-                  </span>
-                </span>
+                )}
               </td>
               <td className="py-2 text-right text-muted-foreground tabular-nums">
                 {formatTokens(model.totalTokens)}

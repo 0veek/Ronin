@@ -59,6 +59,7 @@ const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
 const GROK_PRESENTATION = {
   displayName: "Grok",
+  supportsConversationRollback: false,
   showInteractionModeToggle: false,
 } as const;
 /**

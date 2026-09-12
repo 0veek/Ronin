@@ -19,13 +19,22 @@ export interface WorkLogPresentationEntry {
   readonly toolLifecycleStatus?: WorkLogToolLifecycleStatus;
 }
 
-const PULL_REQUEST_MCP_TOOL_LABELS = {
+const RONIN_MCP_TOOL_LABELS = {
   link_pull_request: ["Link", "Linking", "Linked", "a pull request"],
   unlink_pull_request: ["Unlink", "Unlinking", "Unlinked", "a pull request"],
   list_thread_pull_requests: ["Check", "Checking", "Checked", "linked pull requests"],
+  device_list: ["List", "Listing", "Listed", "simulators and emulators"],
+  device_open: ["Open", "Opening", "Opened", "a device in the Device panel"],
+  device_screenshot: [
+    "Take a screenshot of",
+    "Taking a screenshot of",
+    "Took a screenshot of",
+    "the device",
+  ],
+  device_close: ["Close", "Closing", "Closed", "a device"],
 } as const;
 
-function pullRequestMcpToolPresentation(
+function roninMcpToolPresentation(
   value: string | undefined,
   status: WorkLogToolLifecycleStatus | undefined,
   data?: unknown,
@@ -35,13 +44,13 @@ function pullRequestMcpToolPresentation(
     .replace(/\s+(?:complete|completed)\s*$/i, "")
     .trim()
     .replace(
-      /^(?:mcp__(?:t3-code|t3_code|t3code)__|(?:t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*))/i,
+      /^(?:mcp__(?:ronin|t3-code|t3_code|t3code)__|(?:ronin|t3-code|t3_code|t3code)(?:[.:/]|\s*·\s*))/i,
       "",
     );
-  if (!Object.hasOwn(PULL_REQUEST_MCP_TOOL_LABELS, name)) return null;
+  if (!Object.hasOwn(RONIN_MCP_TOOL_LABELS, name)) return null;
 
   const [action, running, completed, detail] =
-    PULL_REQUEST_MCP_TOOL_LABELS[name as keyof typeof PULL_REQUEST_MCP_TOOL_LABELS];
+    RONIN_MCP_TOOL_LABELS[name as keyof typeof RONIN_MCP_TOOL_LABELS];
   const verb =
     status === "completed"
       ? completed
@@ -59,15 +68,19 @@ function pullRequestMcpToolPresentation(
   const number = urlTarget?.number ?? input?.number;
   const target =
     name !== "list_thread_pull_requests" &&
+    !name.startsWith("device_") &&
     typeof number === "number" &&
     Number.isSafeInteger(number) &&
     number > 0
       ? `PR #${number}`
       : detail;
-  return { displayName: `${verb} ${target}`, icon: "pull-request" as const };
+  return {
+    displayName: `${verb} ${target}`,
+    icon: name.startsWith("device_") ? ("device" as const) : ("pull-request" as const),
+  };
 }
 
-/** Gives Ronin's compact work rows a native label and icon for its own PR-linking tools. */
+/** Gives Ronin's compact work rows a native label and icon for its own MCP tools. */
 export function resolveWorkEntryToolPresentation(
   entry: Pick<WorkLogPresentationEntry, "label" | "toolTitle" | "toolData" | "toolLifecycleStatus">,
 ) {
@@ -79,19 +92,19 @@ export function resolveWorkEntryToolPresentation(
       "tool" in data &&
       typeof data.tool === "string"
     ) {
-      return pullRequestMcpToolPresentation(
+      return roninMcpToolPresentation(
         `${data.server}.${data.tool}`,
         entry.toolLifecycleStatus,
         data,
       );
     }
     if ("toolName" in data && typeof data.toolName === "string") {
-      return pullRequestMcpToolPresentation(data.toolName, entry.toolLifecycleStatus, data);
+      return roninMcpToolPresentation(data.toolName, entry.toolLifecycleStatus, data);
     }
   }
   return (
-    pullRequestMcpToolPresentation(entry.toolTitle, entry.toolLifecycleStatus, data) ??
-    pullRequestMcpToolPresentation(entry.label, entry.toolLifecycleStatus, data)
+    roninMcpToolPresentation(entry.toolTitle, entry.toolLifecycleStatus, data) ??
+    roninMcpToolPresentation(entry.label, entry.toolLifecycleStatus, data)
   );
 }
 

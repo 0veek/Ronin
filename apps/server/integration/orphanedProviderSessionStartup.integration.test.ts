@@ -132,6 +132,7 @@ const startupDependencies = Layer.mergeAll(
     listSessions: () => Effect.succeed([]),
     getCapabilities: () => Effect.die("unused"),
     getInstanceInfo: () => Effect.die("unused"),
+    assertConversationRollbackSupported: () => Effect.die("unused"),
     rollbackConversation: () => Effect.die("unused"),
     streamEvents: Stream.empty,
   }),

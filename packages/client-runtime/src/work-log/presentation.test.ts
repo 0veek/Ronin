@@ -61,6 +61,19 @@ describe("pull request tool presentation", () => {
     ).toEqual({ displayName: "Linked a pull request", icon: "pull-request" });
   });
 
+  it("labels device tools with the device icon", () => {
+    expect(
+      resolveWorkEntryToolPresentation({
+        label: "mcp__ronin__device_open",
+        toolLifecycleStatus: "completed",
+      }),
+    ).toEqual({ displayName: "Opened a device in the Device panel", icon: "device" });
+    expect(resolveWorkEntryToolPresentation({ label: "t3-code · device_screenshot" })).toEqual({
+      displayName: "Taking a screenshot of the device",
+      icon: "device",
+    });
+  });
+
   it("describes a target supplied in tool data", () => {
     expect(
       resolveWorkEntryToolPresentation({

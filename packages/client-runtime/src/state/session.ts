@@ -11,7 +11,7 @@ import type { PreparedConnection } from "../connection/model.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
-import { executeEnvironmentHttpRequest, makeEnvironmentHttpApiClient } from "../rpc/http.ts";
+import { executeEnvironmentHttpRequest, makeEnvironmentHttpApiGroupClient } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 
@@ -42,12 +42,12 @@ export const fetchEnvironmentSessionState = Effect.fn(
   "clientRuntime.state.fetchEnvironmentSessionState",
 )(function* (input: { readonly prepared: PreparedConnection; readonly timeoutMs?: number }) {
   const requestUrl = environmentEndpointUrl(input.prepared.httpBaseUrl, "/api/auth/session");
-  const client = yield* makeEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
+  const client = yield* makeEnvironmentHttpApiGroupClient(input.prepared.httpBaseUrl, "auth");
   const headers = buildEnvironmentAuthHeaders(input.prepared.httpAuthorization);
   return yield* executeEnvironmentHttpRequest(
     requestUrl,
     input.timeoutMs ?? DEFAULT_SESSION_STATE_TIMEOUT_MS,
-    withEnvironmentCredentials(input.prepared.httpAuthorization, client.auth.session({ headers })),
+    withEnvironmentCredentials(input.prepared.httpAuthorization, client.session({ headers })),
   );
 });
 

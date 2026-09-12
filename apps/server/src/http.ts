@@ -31,6 +31,7 @@ import { OtlpTracer } from "effect/unstable/observability";
 
 import * as ServerConfig from "./config.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
+import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
   ATTACHMENT_UPLOAD_ROUTE_PREFIX,
   storeAttachmentUpload,
@@ -59,8 +60,10 @@ const DOWNLOAD_MIME_TYPE_PATTERN = /^[\w!#$&^.+-]+\/[\w!#$&^.+-]+$/;
 const isSafeDownloadMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) &&
   !/(?:^text\/html$|\/xml(?:$|-)|\+xml$)/i.test(mimeType.trim().toLowerCase());
-const isSafeInlineVideoMimeType = (mimeType: string): boolean =>
-  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && mimeType.toLowerCase().startsWith("video/");
+const isSafeInlineMediaMimeType = (mimeType: string): boolean =>
+  DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && /^(?:audio|video)\//i.test(mimeType);
+const isSafeInlineDocumentMimeType = (mimeType: string): boolean =>
+  mimeType.toLowerCase() === "application/pdf" || mimeType.toLowerCase() === "text/html";
 
 /** RFC 6266 disposition with an ASCII fallback name plus a UTF-8 `filename*`. */
 export function downloadContentDisposition(fileName?: string): string {
@@ -94,7 +97,7 @@ export function assetResponseHeaders(
   },
 ): Record<string, string> {
   const lowerPath = filePath.toLowerCase();
-  const inlineVideoMimeType = options?.mimeType?.split(";", 1)[0]?.trim();
+  const inlineMimeType = options?.mimeType?.split(";", 1)[0]?.trim();
   return {
     "Cache-Control": "private, max-age=3600",
     "X-Content-Type-Options": "nosniff",
@@ -107,23 +110,123 @@ export function assetResponseHeaders(
               ? options.mimeType
               : "application/octet-stream",
         }
-      : inlineVideoMimeType !== undefined && isSafeInlineVideoMimeType(inlineVideoMimeType)
-        ? { "Content-Type": inlineVideoMimeType }
-        : lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
+      : inlineMimeType !== undefined && isSafeInlineMediaMimeType(inlineMimeType)
+        ? { "Content-Type": inlineMimeType }
+        : inlineMimeType !== undefined && isSafeInlineDocumentMimeType(inlineMimeType)
           ? {
-              "Content-Type": "text/html; charset=utf-8",
-              "Content-Security-Policy": HTML_CONTENT_SECURITY_POLICY,
+              "Content-Type":
+                inlineMimeType.toLowerCase() === "text/html"
+                  ? "text/html; charset=utf-8"
+                  : "application/pdf",
+              ...(inlineMimeType.toLowerCase() === "text/html"
+                ? { "Content-Security-Policy": HTML_CONTENT_SECURITY_POLICY }
+                : {}),
             }
-          : // nosniff is set above, so a PDF the viewer frames needs its type
-            // named or the browser refuses to render it.
-            lowerPath.endsWith(".pdf")
-            ? { "Content-Type": "application/pdf" }
-            : {}),
+          : lowerPath.endsWith(".html") || lowerPath.endsWith(".htm")
+            ? {
+                "Content-Type": "text/html; charset=utf-8",
+                "Content-Security-Policy": HTML_CONTENT_SECURITY_POLICY,
+              }
+            : lowerPath.endsWith(".pdf")
+              ? { "Content-Type": "application/pdf" }
+              : {}),
     ...(!options?.download && lowerPath.endsWith(".svg")
       ? { "Content-Security-Policy": SVG_CONTENT_SECURITY_POLICY }
       : {}),
   };
 }
+
+/** A single byte range for native media readers; unsupported range syntax uses the full file. */
+function assetByteRange(header: string, size: bigint) {
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  const first = match[1] ? BigInt(match[1]) : null;
+  const last = match[2] ? BigInt(match[2]) : null;
+  if (first !== null && last !== null && last < first) return null;
+  if (size === 0n || (first !== null && first >= size) || (first === null && last === 0n)) {
+    return { _tag: "Unsatisfiable" as const };
+  }
+  const start = first ?? (last! >= size ? 0n : size - last!);
+  const end = first === null || last === null || last >= size ? size - 1n : last;
+  if (!Number.isSafeInteger(Number(start)) || !Number.isSafeInteger(Number(end))) {
+    return { _tag: "Unsatisfiable" as const };
+  }
+  return {
+    _tag: "Range" as const,
+    offset: start,
+    bytesToRead: end - start + 1n,
+    contentRange: `bytes ${start}-${end}/${size}`,
+  };
+}
+
+export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
+  asset: {
+    readonly path: string;
+    readonly download?: boolean;
+    readonly fileName?: string;
+    readonly mimeType?: string;
+    readonly file?: OpenMediaFile;
+  },
+  rangeHeader?: string,
+  ifRangeHeader?: string,
+  method: "GET" | "HEAD" = "GET",
+) {
+  const headers = assetResponseHeaders(asset.path, asset);
+  const mediaFile = asset.file;
+  const mediaInfo = mediaFile ? yield* statMediaFile(asset.path, mediaFile) : undefined;
+  const isMedia = /^(?:audio|video)\//i.test(headers["Content-Type"] ?? "");
+  if (isMedia) {
+    // Host media can change in place. Do not invite conditional range requests
+    // with validators that cannot establish byte-for-byte identity. Attachment media
+    // carries no `file`, and must not outlive the signed URL that granted it either.
+    headers["Cache-Control"] = "private, no-store";
+  }
+  let status = 200;
+  let offset = 0n;
+  let bytesToRead: bigint | undefined;
+  if (isMedia) {
+    headers["Accept-Ranges"] = "bytes";
+    // If-Range requires a matching validator. A full response is safe when we cannot validate it.
+    if (method === "GET" && rangeHeader && ifRangeHeader === undefined) {
+      const fs = yield* FileSystem.FileSystem;
+      const info = mediaInfo ?? (yield* fs.stat(asset.path));
+      const range = assetByteRange(rangeHeader, info.size);
+      if (range?._tag === "Unsatisfiable") {
+        return HttpServerResponse.empty({
+          status: 416,
+          headers: { ...headers, "Content-Range": `bytes */${info.size}` },
+        });
+      }
+      if (range?._tag === "Range") {
+        status = 206;
+        offset = range.offset;
+        bytesToRead = range.bytesToRead;
+        headers["Content-Range"] = range.contentRange;
+      }
+    }
+  }
+  if (mediaFile && mediaInfo) {
+    const size = bytesToRead ?? mediaInfo.size;
+    headers["Content-Type"] ??= Mime.getType(asset.path) ?? "application/octet-stream";
+    headers["Content-Length"] = String(size);
+    if (!isMedia) {
+      headers["Last-Modified"] = mediaInfo.mtime.toUTCString();
+      headers.ETag = `W/"${mediaInfo.size.toString(16)}-${mediaInfo.mtimeMs.toString(16)}"`;
+    }
+    if (method === "HEAD" || size === 0n) {
+      return HttpServerResponse.empty({ status, headers });
+    }
+    const body = streamMediaFile(mediaFile, offset, size);
+    if (!body) {
+      return HttpServerResponse.text("File is too large to preview.", { status: 413 });
+    }
+    return HttpServerResponse.stream(body, {
+      status,
+      headers,
+    });
+  }
+  return yield* HttpServerResponse.file(asset.path, { status, offset, bytesToRead, headers });
+});
 
 export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
@@ -310,19 +413,12 @@ export const assetRouteLayer = HttpRouter.add(
     if (!asset) {
       return HttpServerResponse.text("Not Found", { status: 404 });
     }
-    return yield* HttpServerResponse.file(asset.path, {
-      status: 200,
-      headers: assetResponseHeaders(
-        asset.path,
-        asset.download || asset.mimeType !== undefined
-          ? {
-              ...(asset.download ? { download: true } : {}),
-              ...(asset.fileName !== undefined ? { fileName: asset.fileName } : {}),
-              ...(asset.mimeType !== undefined ? { mimeType: asset.mimeType } : {}),
-            }
-          : undefined,
-      ),
-    }).pipe(
+    return yield* assetFileResponse(
+      asset,
+      request.method === "GET" ? request.headers.range : undefined,
+      request.headers["if-range"],
+      request.method === "HEAD" ? "HEAD" : "GET",
+    ).pipe(
       Effect.orElseSucceed(() => HttpServerResponse.text("Internal Server Error", { status: 500 })),
     );
   }),

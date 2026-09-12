@@ -1,9 +1,20 @@
 import { EnvironmentId } from "@t3tools/contracts";
+import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
+vi.mock("../hooks/useSettings", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../hooks/useSettings")>();
+  const settings = actual.getClientSettings();
+  return {
+    ...actual,
+    useClientSettings: (select?: (value: typeof settings) => unknown) =>
+      select ? select(settings) : settings,
+  };
+});
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/session", async (importOriginal) => ({
@@ -34,6 +45,74 @@ import ChatMarkdown, {
   orderedListGutterStyle,
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
+
+describe("ChatMarkdown context references", () => {
+  it("renders text and image references through the chip renderer, with readable fallback", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let renderer: ReactTestRenderer | undefined;
+    const text =
+      "See [Terminal output](t3-context://v1/terminal/term-1) and ![Error image](t3-context://v1/image/img-1).";
+    try {
+      await act(async () => {
+        renderer = create(
+          <ChatMarkdown
+            cwd={undefined}
+            text={text}
+            renderContextReference={({ kind, label }) => (
+              <button>
+                {kind}: {label}
+              </button>
+            )}
+          />,
+        );
+      });
+      expect(
+        renderer!.root.findAllByType("button").map((button) => button.children.join("")),
+      ).toEqual(["terminal: Terminal output", "image: Error image"]);
+      expect(renderer!.root.findAllByType("img")).toHaveLength(0);
+      expect(renderer!.root.findAllByType("a")).toHaveLength(0);
+      await act(async () => {
+        renderer!.update(<ChatMarkdown cwd={undefined} text={text} />);
+      });
+      expect(renderer!.root.findAllByType("span").map((span) => span.children.join(""))).toEqual([
+        "Terminal output",
+        "Error image",
+      ]);
+      expect(renderer!.root.findAllByType("img")).toHaveLength(0);
+    } finally {
+      await act(async () => {
+        renderer?.unmount();
+      });
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reads formatted context labels through nested markup instead of the context id", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let renderer: ReactTestRenderer | undefined;
+    const seen: Array<string> = [];
+    try {
+      await act(async () => {
+        renderer = create(
+          <ChatMarkdown
+            cwd={undefined}
+            text="See [**Bold** `code`](t3-context://v1/terminal/term-1)."
+            renderContextReference={({ kind, label }) => {
+              seen.push(`${kind}: ${label}`);
+              return <button>{label}</button>;
+            }}
+          />,
+        );
+      });
+      expect(seen).toEqual(["terminal: Bold code"]);
+    } finally {
+      await act(async () => {
+        renderer?.unmount();
+      });
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("canUseMarkdownFileShellActions", () => {
   const environmentId = EnvironmentId.make("environment-1");

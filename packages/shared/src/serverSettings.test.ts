@@ -18,6 +18,16 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  it("replaces SSH host lists when saving, editing, and removing hosts", () => {
+    const host = { id: "mini", label: "Mac mini", target: "mini" };
+    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });
+    expect(saved.deviceHosts).toEqual([host]);
+    const replacement = { ...host, target: "other-mini" };
+    const edited = applyServerSettingsPatch(saved, { deviceHosts: [replacement] });
+    expect(edited.deviceHosts).toEqual([replacement]);
+    expect(applyServerSettingsPatch(edited, { deviceHosts: [] }).deviceHosts).toEqual([]);
+  });
+
   it("normalizes optional persisted strings", () => {
     expect(normalizePersistedServerSettingString(undefined)).toBeUndefined();
     expect(normalizePersistedServerSettingString("   ")).toBeUndefined();

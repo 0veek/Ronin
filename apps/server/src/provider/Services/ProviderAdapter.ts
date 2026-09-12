@@ -49,6 +49,8 @@ export interface ProviderAdapterCapabilities {
   /** Starts a resumed turn with no synthetic user prompt. Omitted means the
       adapter needs an explicit continuation instruction. */
   readonly promptlessTurnContinuation?: boolean;
+  /** False when native conversation history cannot be rewound. */
+  readonly supportsConversationRollback?: boolean;
   /**
    * Declares whether a live session can adopt new model *options* — Claude's
    * thinking effort, Grok's reasoning effort. Providers that bind them on the

@@ -1,11 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { AssetImageDimensions, AssetResource, EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { assetEnvironment } from "~/state/assets";
 import { usePreparedConnection } from "~/state/session";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
 export { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 
@@ -50,12 +52,22 @@ export function useAssetUrlState(
       };
 }
 
-export function useAssetUrl(environmentId: EnvironmentId, resource: AssetResource): string | null {
-  const result = useAssetUrlState(environmentId, resource);
-  if (result._tag !== "Success") {
-    return null;
-  }
-  return result.url;
+export function useAssetUrlRefresh(
+  environmentId: EnvironmentId | null,
+  resource: AssetResource | null,
+): () => Promise<string | null> {
+  const connection = usePreparedConnection(environmentId);
+  const httpBaseUrl = connection._tag === "Some" ? connection.value.httpBaseUrl : null;
+  const refresh = useAtomQueryRunner(assetEnvironment.createUrl, {
+    reportFailure: false,
+    refresh: true,
+  });
+  return useCallback(async () => {
+    if (environmentId === null || resource === null || httpBaseUrl === null) return null;
+    const result = await refresh({ environmentId, input: { resource } });
+    if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+    return resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
+  }, [environmentId, resource, refresh, httpBaseUrl]);
 }
 
 export function useAssetUrls(

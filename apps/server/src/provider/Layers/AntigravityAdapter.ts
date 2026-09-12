@@ -36,6 +36,7 @@ import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
 import { ServerConfig } from "../../config.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import {
   ProviderAdapterProcessError,
   ProviderAdapterRequestError,
@@ -325,16 +326,18 @@ export function makeAntigravityAdapter(
         // refuses to spawn directly and only finds through PATHEXT. The shared
         // resolver answers both: the real executable, and whether it has to go
         // through cmd.exe (with every argument escaped for it).
-        const spawnCommand = yield* resolveSpawnCommand(
-          command,
-          args,
-          options?.environment ? { env: options.environment } : {},
+        const providerEnvironment = McpProviderSession.withAgentDeviceEnvironment(
+          options?.environment ?? process.env,
+          McpProviderSession.readMcpProviderSession(input.threadId),
         );
+        const spawnCommand = yield* resolveSpawnCommand(command, args, {
+          env: providerEnvironment,
+        });
         const child = yield* Effect.try({
           try: () =>
             NodeChildProcess.spawn(spawnCommand.command, spawnCommand.args, {
               cwd,
-              env: options?.environment,
+              env: providerEnvironment,
               stdio: ["ignore", "pipe", "pipe"],
               shell: spawnCommand.shell,
             }),

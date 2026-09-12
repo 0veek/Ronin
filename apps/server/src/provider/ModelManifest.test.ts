@@ -9,6 +9,7 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
+  applyManifestDefault,
   BUNDLED_MODEL_MANIFEST,
   classifyModels,
   make,
@@ -34,6 +35,20 @@ const model = (overrides: Partial<ServerProviderModel>): ServerProviderModel => 
 });
 
 describe("classifyModels", () => {
+  it("classifies qualified Codex families without changing their wire ids", () => {
+    const manifest: ModelManifestData = { version: 1, currentModels: { codex: ["gpt-test"] } };
+    const models = [
+      model({ slug: "openai.gpt-test", isLegacy: true }),
+      model({ slug: "openai.gpt-old" }),
+    ];
+    assert.deepStrictEqual(
+      classifyModels(models, manifest, CODEX).map((entry) => [entry.slug, entry.isLegacy ?? false]),
+      [
+        ["openai.gpt-test", false],
+        ["openai.gpt-old", true],
+      ],
+    );
+  });
   it("flags non-current models, clears stale flags, and skips custom models", () => {
     const manifest: ModelManifestData = {
       version: 1,
@@ -59,6 +74,50 @@ describe("classifyModels", () => {
   });
 });
 
+describe("applyManifestDefault", () => {
+  it("resolves the manifest default to the qualified live model", () => {
+    const manifest: ModelManifestData = {
+      version: 1,
+      currentModels: {},
+      providers: { codex: { models: [], profiles: {}, defaults: { chat: "gpt-test" } } },
+    };
+    const models = [
+      model({ slug: "openai.gpt-old", isDefault: true }),
+      model({ slug: "openai.gpt-test" }),
+    ];
+    assert.strictEqual(
+      applyManifestDefault(models, manifest, CODEX).find((entry) => entry.isDefault)?.slug,
+      "openai.gpt-test",
+    );
+  });
+  it("moves the default flag and its aliases to the manifest's chat default", () => {
+    const driver = ProviderDriverKind.make("antigravity");
+    const manifest: ModelManifestData = {
+      version: 1,
+      currentModels: {},
+      providers: {
+        antigravity: {
+          defaults: { chat: "gemini-new" },
+          profiles: {},
+          models: [{ slug: "gemini-new", name: "New", status: "current" }],
+        },
+      },
+    };
+    const models = [
+      model({ slug: "gemini-old", isDefault: true, aliases: ["antigravity-default"] }),
+      model({ slug: "gemini-new" }),
+    ];
+    assert.deepStrictEqual(applyManifestDefault(models, manifest, driver), [
+      model({ slug: "gemini-old" }),
+      model({ slug: "gemini-new", isDefault: true, aliases: ["antigravity-default"] }),
+    ]);
+    // The account does not offer the manifest default: keep the runtime's choice.
+    assert.deepStrictEqual(
+      applyManifestDefault(models.slice(0, 1), manifest, driver),
+      models.slice(0, 1),
+    );
+  });
+});
 describe("resolveProviderCatalog", () => {
   it("resolves generic model presentation through a reusable profile", () => {
     const manifest: ModelManifestData = {

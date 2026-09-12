@@ -1,6 +1,7 @@
 "use client";
 
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -27,6 +28,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import {
   type EnvironmentId,
+  type EnvironmentMachineKind,
   type FilesystemBrowseResult,
   type KeybindingCommand,
   type ProjectId,
@@ -135,6 +137,7 @@ import {
   ADDON_ICON_CLASS,
   browseInputEndPaddingClass,
   buildBrowseGroups,
+  buildCommandPaletteProjectMetadata,
   buildProjectActionItems,
   buildRootGroups,
   buildThreadActionItems,
@@ -227,6 +230,38 @@ function workspaceCommandIcon(command: KeybindingCommand): ReactNode {
     default:
       return <BoxIcon className={ITEM_ICON_CLASS} />;
   }
+}
+
+function ProjectSearchDescription(props: {
+  readonly environmentLabels: ReadonlyArray<string>;
+  readonly grouped: boolean;
+  readonly location: {
+    readonly kind: "local" | "remote";
+    readonly label: string;
+    readonly machine: EnvironmentMachineKind;
+  };
+  readonly workspaceRoot: string;
+}) {
+  if (!props.grouped) {
+    return (
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="inline-flex min-w-0 items-center gap-1">
+          {props.location.kind === "remote" ? (
+            <EnvironmentMachineIcon
+              aria-hidden
+              kind={props.location.machine}
+              className={COMMAND_PALETTE_META_ICON_CLASS}
+            />
+          ) : null}
+          <span className="truncate">{props.location.label}</span>
+        </span>
+        <CommandPaletteMetaDot />
+        <span className="truncate">{props.workspaceRoot}</span>
+      </span>
+    );
+  }
+
+  return <span className="truncate">{props.environmentLabels.join(" · ")}</span>;
 }
 
 function getEnvironmentBrowsePlatform(os: string | null | undefined): string {
@@ -1159,15 +1194,43 @@ function OpenCommandPaletteDialog(props: {
         projects: pickerProjects,
         valuePrefix: "project",
         searchTerms: (project) => {
-          const group = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`);
+          const members = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
+            ?.memberProjects ?? [project];
+          return buildCommandPaletteProjectMetadata({
+            projects: members,
+            locationByEnvironmentId: projectEnvironmentLocationById,
+          }).searchTerms;
+        },
+        renderDescription: (project) => {
+          const members = projectGroupByTargetKey.get(`${project.environmentId}:${project.id}`)
+            ?.memberProjects ?? [project];
+          const metadata = buildCommandPaletteProjectMetadata({
+            projects: members,
+            locationByEnvironmentId: projectEnvironmentLocationById,
+          });
+          const location = projectEnvironmentLocationById.get(project.environmentId) ?? {
+            kind: "remote" as const,
+            label: "Remote",
+            machine: "server" as const,
+          };
           return (
-            group?.memberProjects.flatMap((member) => [member.title, member.workspaceRoot]) ?? []
+            <ProjectSearchDescription
+              environmentLabels={metadata.environmentLabels}
+              grouped={members.length > 1}
+              location={location}
+              workspaceRoot={project.workspaceRoot}
+            />
           );
         },
         icon: projectFavicon,
         runProject: openProjectFromSearch,
       }),
-    [openProjectFromSearch, pickerProjects, projectGroupByTargetKey],
+    [
+      openProjectFromSearch,
+      pickerProjects,
+      projectEnvironmentLocationById,
+      projectGroupByTargetKey,
+    ],
   );
 
   const boardProjectItems = useMemo(
@@ -1280,6 +1343,9 @@ function OpenCommandPaletteDialog(props: {
                 projectIconByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null
               }
               projectTitle={projectTitle ?? null}
+              environmentLabel={
+                projectEnvironmentLocationById.get(thread.environmentId)?.label ?? "Remote"
+              }
               branch={thread.branch}
               worktreePath={thread.worktreePath}
               isCurrent={thread.id === activeThreadId}
@@ -1319,6 +1385,7 @@ function OpenCommandPaletteDialog(props: {
       projectCwdById,
       projectFaviconPathById,
       projectIconByKey,
+      projectEnvironmentLocationById,
       projectTitleById,
       providerEntryByEnvironmentAndInstanceId,
       threadContentMatchByKey,
@@ -1749,6 +1816,7 @@ function OpenCommandPaletteDialog(props: {
         value: "action:open-thread-pull-requests",
         searchTerms: ["pull requests", "linked", "stack", "prs"],
         title: "Show linked pull requests",
+        disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
         icon: <GitPullRequestArrowIcon className={ITEM_ICON_CLASS} />,
         run: async () => {
           useRightPanelStore.getState().open(threadRef, "pull-requests");

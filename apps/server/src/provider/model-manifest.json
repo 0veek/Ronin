@@ -14,7 +14,7 @@
   "providers": {
     "claudeAgent": {
       "defaults": {
-        "chat": "claude-sonnet-5"
+        "chat": "claude-fable-5-1"
       },
       "profiles": {
         "fable-5": {
@@ -31,12 +31,12 @@
                   },
                   {
                     "id": "medium",
-                    "label": "Medium"
+                    "label": "Medium",
+                    "isDefault": true
                   },
                   {
                     "id": "high",
-                    "label": "High",
-                    "isDefault": true
+                    "label": "High"
                   },
                   {
                     "id": "xhigh",

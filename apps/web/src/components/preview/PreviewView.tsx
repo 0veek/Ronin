@@ -5,7 +5,6 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import {
   DEFAULT_BROWSER_PROFILE_ID,
   FILL_PREVIEW_VIEWPORT,
-  type PreviewAnnotationPayload,
   type PreviewViewportSetting,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
@@ -19,7 +18,6 @@ import {
   setTitleForThreadUrl,
   useThreadRecentHistory,
 } from "~/browserHistoryStore";
-import { type ComposerImageAttachment } from "~/composerDraftStore";
 import { ensureLocalApi } from "~/localApi";
 import {
   rememberPreviewUrl,
@@ -30,7 +28,11 @@ import { resolveDiscoveredServerUrl } from "~/browser/browserTargetResolver";
 import { useEnvironmentHttpBaseUrl } from "~/state/environments";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { selectThreadPreviewMiniPlayer, usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
+import {
+  browserMiniPlayerSource,
+  selectThreadPreviewMiniPlayerTabId,
+  usePreviewMiniPlayerStore,
+} from "~/previewMiniPlayerStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 import { previewBridge } from "./previewBridge";
@@ -70,10 +72,6 @@ interface Props {
   tabId?: string | null;
   configuredUrls?: ReadonlyArray<string> | undefined;
   visible: boolean;
-  onSendAnnotation?: (
-    annotation: PreviewAnnotationPayload,
-    image: ComposerImageAttachment | null,
-  ) => void;
 }
 
 export function previewProfileName(
@@ -102,8 +100,8 @@ export function PreviewView({ threadRef, tabId: requestedTabId, configuredUrls, 
     threadRef,
     BROWSER_HISTORY_MAX_ENTRIES_PER_PROJECT,
   );
-  const miniPlayer = usePreviewMiniPlayerStore((state) =>
-    selectThreadPreviewMiniPlayer(state.byThreadKey, threadRef),
+  const miniPlayerTabId = usePreviewMiniPlayerStore((state) =>
+    selectThreadPreviewMiniPlayerTabId(state.byThreadKey, threadRef),
   );
   const environmentHttpBaseUrl = useEnvironmentHttpBaseUrl(threadRef.environmentId);
   const environmentHostname = environmentHttpBaseUrl
@@ -319,13 +317,13 @@ export function PreviewView({ threadRef, tabId: requestedTabId, configuredUrls, 
 
   const handlePictureInPicture = useCallback(() => {
     if (!tabId) return;
-    if (miniPlayer?.tabId === tabId) {
+    if (miniPlayerTabId === tabId) {
       usePreviewMiniPlayerStore.getState().close(threadRef);
       return;
     }
-    usePreviewMiniPlayerStore.getState().open(threadRef, tabId);
+    usePreviewMiniPlayerStore.getState().open(threadRef, browserMiniPlayerSource(tabId));
     useRightPanelStore.getState().close(threadRef);
-  }, [miniPlayer?.tabId, tabId, threadRef]);
+  }, [miniPlayerTabId, tabId, threadRef]);
 
   const handleCapture = useCallback(
     (record: boolean) => {
@@ -616,8 +614,8 @@ export function PreviewView({ threadRef, tabId: requestedTabId, configuredUrls, 
         captureDisabled={!desktopOverlay || isUnreachable}
         recording={recordingRuntimeTabId !== null}
         onPictureInPicture={previewBridge && tabId ? handlePictureInPicture : undefined}
-        pictureInPicture={miniPlayer?.tabId === tabId}
-        pictureInPictureDisabled={isUnreachable}
+        pictureInPicture={miniPlayerTabId === tabId}
+        pictureInPictureDisabled={!desktopOverlay?.hasWebContents || isUnreachable}
         leadingActions={
           // Only when it differs from the default: labelling every tab
           // "Default" would be noise on the common case, while a tab in

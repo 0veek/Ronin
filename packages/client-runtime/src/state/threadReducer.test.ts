@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   CheckpointRef,
   CommandId,
+  ComposerContextId,
   EventId,
   MessageId,
   ProjectId,
@@ -578,6 +579,54 @@ describe("applyThreadDetailEvent", () => {
   });
 
   describe("thread.message-sent", () => {
+    it.each([
+      ["first", ["first+", "middle", "last"]],
+      ["middle", ["first", "middle+", "last"]],
+      ["last", ["first", "middle", "last+"]],
+      ["new", ["first", "middle", "last", "+"]],
+    ] as const)("applies a delta to %s without changing other messages", (id, texts) => {
+      const messages = Object.freeze(
+        ["first", "middle", "last"].map((name) =>
+          Object.freeze({
+            id: MessageId.make(name),
+            role: "assistant" as const,
+            text: name,
+            turnId: null,
+            streaming: false,
+            createdAt: baseThread.createdAt,
+            updatedAt: baseThread.updatedAt,
+          }),
+        ),
+      );
+      const result = applyThreadDetailEvent(
+        { ...baseThread, messages },
+        {
+          ...baseEventFields,
+          sequence: 6,
+          occurredAt: baseThread.updatedAt,
+          aggregateKind: "thread",
+          aggregateId: baseThread.id,
+          type: "thread.message-sent",
+          payload: {
+            threadId: baseThread.id,
+            messageId: MessageId.make(id),
+            role: "assistant",
+            text: "+",
+            turnId: null,
+            streaming: true,
+            createdAt: baseThread.createdAt,
+            updatedAt: baseThread.updatedAt,
+          },
+        },
+      );
+      expect(result.kind).toBe("updated");
+      if (result.kind !== "updated") return;
+      expect(result.thread.messages.map((message) => message.text)).toEqual(texts);
+      for (const [index, message] of messages.entries()) {
+        if (message.id !== id) expect(result.thread.messages[index]).toBe(message);
+      }
+    });
+
     it("appends a new message", () => {
       const result = applyThreadDetailEvent(baseThread, {
         ...baseEventFields,
@@ -602,6 +651,82 @@ describe("applyThreadDetailEvent", () => {
       if (result.kind === "updated") {
         expect(result.thread.messages).toHaveLength(1);
         expect(result.thread.messages[0]?.text).toBe("Hello, world!");
+      }
+    });
+
+    it("keeps imported replies turnless when delivered again", () => {
+      const event = {
+        ...baseEventFields,
+        sequence: 6,
+        occurredAt: "2026-04-01T06:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: baseThread.id,
+        type: "thread.message-sent",
+        payload: {
+          threadId: baseThread.id,
+          messageId: MessageId.make("import:codex:session-1:000001"),
+          role: "assistant",
+          text: "Imported reply",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-03-01T06:00:00.000Z",
+          updatedAt: "2026-03-01T06:00:00.000Z",
+        },
+      } as const;
+
+      const imported = applyThreadDetailEvent(baseThread, event);
+      expect(imported.kind).toBe("updated");
+      if (imported.kind !== "updated") return;
+      expect(imported.thread.latestTurn).toBeNull();
+      expect(imported.thread.checkpoints).toBe(baseThread.checkpoints);
+
+      const repeated = applyThreadDetailEvent(imported.thread, { ...event, sequence: 7 });
+      expect(repeated.kind).toBe("updated");
+      if (repeated.kind !== "updated") return;
+      expect(repeated.thread.messages).toEqual(imported.thread.messages);
+      expect(repeated.thread.latestTurn).toBeNull();
+      expect(repeated.thread.checkpoints).toBe(baseThread.checkpoints);
+    });
+
+    it("keeps structured context on a newly sent message", () => {
+      const context = {
+        version: 1 as const,
+        records: [
+          {
+            version: 1 as const,
+            contextId: ComposerContextId.make("video-1"),
+            kind: "file" as const,
+            label: "demo.mp4",
+            attachmentId: "attachment-video-1",
+            name: "demo.mp4",
+            mimeType: "video/mp4",
+            sizeBytes: 42,
+          },
+        ],
+      };
+      const result = applyThreadDetailEvent(baseThread, {
+        ...baseEventFields,
+        sequence: 7,
+        occurredAt: "2026-04-01T06:01:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.message-sent",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          messageId: MessageId.make("msg-with-context"),
+          role: "user",
+          text: "Watch [demo.mp4](t3-context://v1/file/video-1).",
+          context,
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T06:01:00.000Z",
+          updatedAt: "2026-04-01T06:01:00.000Z",
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages[0]?.context).toEqual(context);
       }
     });
 

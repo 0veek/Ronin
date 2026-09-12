@@ -135,6 +135,11 @@ export interface ProviderServiceShape {
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<ProviderInstanceRoutingInfo, ProviderServiceError>;
 
+  /** Reject unsupported rewind before files change, without resuming the session. */
+  readonly assertConversationRollbackSupported: (
+    threadId: ThreadId,
+  ) => Effect.Effect<void, ProviderServiceError>;
+
   /**
    * The resume state an instance left behind on a thread the last time it (or
    * anything in its continuation group) ran there.

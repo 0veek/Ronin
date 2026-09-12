@@ -190,6 +190,7 @@ describe("ProviderSessionReaper", () => {
       getContinuationState: () => unsupported(),
       recordDeliveredMessage: () => Effect.void,
       clearContinuationLedger: () => unsupported(),
+      assertConversationRollbackSupported: () => Effect.void,
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.empty,
     };
@@ -220,6 +221,7 @@ describe("ProviderSessionReaper", () => {
           getCounts: () => Effect.die("unused"),
           getEventReplayStats: () => Effect.die("unused"),
           getActiveProjectByWorkspaceRoot: () => Effect.die("unused"),
+          getProjectShells: () => Effect.die("unused"),
           getProjectShellById: () => Effect.die("unused"),
           getFirstActiveThreadIdByProjectId: () => Effect.die("unused"),
           getThreadCheckpointContext: () => Effect.die("unused"),

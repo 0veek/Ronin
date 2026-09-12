@@ -257,7 +257,7 @@
     -webkit-mask-position: top, bottom, right;
     -webkit-mask-repeat: no-repeat;
     -webkit-mask-size:
-      100% var(--workspace-titlebar-scroll-fade-height),
+      100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
       100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
       var(--app-scrollbar-width) 100%;
     mask-image:
@@ -275,7 +275,7 @@
     mask-position: top, bottom, right;
     mask-repeat: no-repeat;
     mask-size:
-      100% var(--workspace-titlebar-scroll-fade-height),
+      100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
       100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
       var(--app-scrollbar-width) 100%;
   }

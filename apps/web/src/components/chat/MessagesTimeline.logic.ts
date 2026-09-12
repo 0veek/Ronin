@@ -26,7 +26,6 @@ export interface TimelineEndState {
   readonly scroll?: number;
   readonly scrollLength?: number;
 }
-
 /**
  * Follow re-arm band above the hard bottom. Strict on purpose: LegendList's
  * isNearEnd fires within half a viewport, which re-armed live-follow while the

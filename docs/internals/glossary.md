@@ -1,325 +1,66 @@
 # Glossary
 
-> For maintainers. Using Ronin? See [docs/user](../user/).
-
-This is a living glossary for Ronin. It explains what common terms mean in this codebase.
-
-## Table of contents
-
-- [Project and workspace](#project-and-workspace)
-- [Thread timeline](#thread-timeline)
-- [Orchestration](#orchestration)
-- [Provider runtime](#provider-runtime)
-- [Scheduled work](#scheduled-work)
-- [Checkpointing](#checkpointing)
-- [Working copy edits](#working-copy-edits)
-- [Appearance](#appearance)
-
-## Concepts
-
-### Project and workspace
-
-#### Project
-
-The top-level workspace record in the app. In [the orchestration contracts][1], a project has a `workspaceRoot` and a title. It does not contain threads: `OrchestrationProject` and `OrchestrationThread` are separate arrays on the read model, and a project can have zero threads. See [workspace-layout.md][2].
-
-#### Workspace root
-
-The root filesystem path for a project. In [the orchestration model][1], it is the base directory for branches and optional worktrees. See [workspace-layout.md][2].
-
-#### Worktree
-
-A Git worktree used as an isolated workspace for a thread. If a thread has a `worktreePath` in [the contracts][1], it runs there instead of in the main working tree. Git operations live behind the VCS driver contract in `apps/server/src/vcs/VcsDriver.ts`, implemented by [GitVcsDriverCore.ts][3].
-
-### Thread timeline
-
-#### Thread
-
-The main durable unit of conversation and workspace history. In [the orchestration contracts][1], a thread holds messages, activities, checkpoints, and session-related state. See [projector.ts][4].
-
-#### Turn
-
-A single user-to-assistant work cycle inside a thread. It starts with user input and ends when the session leaves `running` status, which [projector.ts][4] treats as the authoritative completion signal (`settledTurnStateForSessionStatus`). Checkpoint and diff work may settle afterward without changing when the turn ended. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].
-
-#### Activity
-
-A user-visible log item attached to a thread. In [the contracts][1], activities cover important non-message events like approvals, tool actions, and failures. They are projected into thread state in [projector.ts][4].
-
-#### Side chat
-
-A thread opened from one message of another thread, to ask about it without adding the question to the original conversation's context. It is an ordinary thread in every respect — same project, same checkout, its own history — plus a `sideChat` origin in [the contracts][1] naming its parent and the anchored message. Provenance only: deleting the parent does not delete the side chat. The sidebar files it under its parent (`groupSideChatsUnderParents` in [Sidebar.logic.ts][30]). See [side-chats.md][31].
-
-#### Captured task
-
-A thread created already carrying work, from a passage the user selected in another thread. The prompt rides on the thread as `queuedPrompt` in [the contracts][1] rather than in the client's composer drafts, so a capture made on one device is a task on all of them. A thread with a queued prompt and no turn is exactly what the board's Draft lane holds. The prompt is cleared by the projector when the thread's first user message lands — the transcript is the record from then on — or explicitly through `thread.meta.update` with `queuedPrompt: null`. Client side: `capturedTask.ts` derives the title, `useCaptureTask.ts` dispatches the create. See [captured-tasks.md][39].
-
-#### Turn replay
-
-A client-only view of one turn as an ordered, scrubbable list of steps, built by `buildTurnReplay` in `apps/web/src/turnReplay.ts` from the timeline entries whose `turnId` matches. Nothing is fetched: messages and activities already carry `turnId` and timestamps, so the replay is a projection of state the client holds. Playback runs on a compressed clock — gaps under `REPLAY_VERBATIM_GAP_MS` play at true length, longer ones ease logarithmically to `REPLAY_MAX_GAP_MS` — and advances step by step on a timer rather than sweeping a playhead per frame, so the surface never repaints continuously. See [turn-replay.md][40].
-
-#### Comparison group
-
-The id shared by threads racing one prompt across providers, carried as `comparisonGroupId` in [the contracts][1] and indexed in `projection_threads`. Grouping rather than nesting: no entrant is the original, so there is no parent to orphan when one is deleted. Each entrant is created through the ordinary turn-start bootstrap (`createThread` + `prepareWorktree` + `runSetupScript`), which is what gives every one its own checkout — without that the entrants would edit the same tree and the comparison would mean nothing. Client side: `secondOpinion.ts` validates the field, `useSecondOpinion.ts` dispatches entrants in series to avoid `.git` lock contention. See [second-opinion.md][41].
-
-#### Board
-
-The full-page lane view of every thread at `/board`, rendered by `apps/web/src/components/board/`. Lanes are derived, never stored: `deriveBoardLane` in `board.logic.ts` walks the same predicates the sidebar partition uses — `effectiveSnoozed`, `threadNeedsYou`, `resolveSidebarThreadStatus`, `effectiveSettled` — in the same precedence order, so a lane can never claim a thread the sidebar files elsewhere. Dragging a card resolves through `resolveBoardDrop`, whose result is either an existing thread command (settle, un-settle, snooze, unsnooze) or an explicit refusal. See [board.md][38].
-
-### Orchestration
-
-Orchestration is the server-side domain layer that turns runtime activity into stable app state. The main entry point is [OrchestrationEngine.ts][7], with core logic in [decider.ts][8] and [projector.ts][4].
-
-#### Aggregate
-
-The domain object a command or event belongs to. In [the contracts][1], that is usually `project` or `thread`. See [decider.ts][8].
-
-#### Command
-
-A typed request to change domain state. In [the contracts][1], commands are validated in [commandInvariants.ts][9] and turned into events by [decider.ts][8].
-Examples include `thread.create`, `thread.turn.start`, and `thread.checkpoint.revert`.
-
-#### Domain Event
-
-A persisted fact that something already happened. In [the contracts][1], events are the source of truth, and [projector.ts][4] shows how they are applied.
-Examples include `thread.created`, `thread.message-sent`, and `thread.turn-diff-completed`.
-
-#### Decider
-
-The pure orchestration logic that turns commands plus current state into events. The core implementation is in [decider.ts][8], with preconditions in [commandInvariants.ts][9].
-
-#### Projection
-
-A read-optimized view derived from events. See [projector.ts][4], [ProjectionPipeline.ts][11], and [ProjectionSnapshotQuery.ts][10].
-
-#### Projector
-
-The logic that applies domain events to the read model or projection tables. See [projector.ts][4] and [ProjectionPipeline.ts][11].
-
-#### Read model
-
-The current materialized view of orchestration state. In [the contracts][1], it holds projects, threads, messages, activities, checkpoints, and session state. See [ProjectionSnapshotQuery.ts][10] and [OrchestrationEngine.ts][7].
-
-#### Reactor
-
-A side-effecting service that handles follow-up work after events or runtime signals. Examples include [CheckpointReactor.ts][6], [ProviderCommandReactor.ts][12], and [ProviderRuntimeIngestion.ts][5].
-
-#### Receipt
-
-A typed signal emitted when an async milestone completes, such as `checkpoint.baseline.captured`, `checkpoint.diff.finalized`, or `turn.processing.quiesced`. Receipts are a test-only mechanism: the production `RuntimeReceiptBusLive` publish is a no-op and only the test layer is PubSub-backed. Do not build production behavior on them. See [RuntimeReceiptBus.ts][13] and [CheckpointReactor.ts][6].
-
-#### Quiesced
-
-"Quiesced" means a turn has gone quiet and stable: follow-up work such as [CheckpointReactor.ts][6] has settled. It appears in [the receipt schema][13], so in practice it is something tests wait on rather than a production signal.
-
-### Provider runtime
-
-The live backend agent implementation and its event stream. The main service is [ProviderService.ts][14], the adapter contract is [ProviderAdapter.ts][15], and the overview is in [providers.md][16].
-
-#### Provider
-
-The backend agent runtime that actually performs work. Five drivers ship built in: Codex, Claude, Cursor, Grok, and OpenCode. See [ProviderService.ts][14], [ProviderAdapter.ts][15], and [CodexAdapter.ts][17] as a representative adapter.
-
-#### Session
-
-The live provider-backed runtime attached to a thread. Session shape is in [the orchestration contracts][1], and lifecycle is managed in [ProviderService.ts][14].
-
-#### Agent skill
-
-A folder holding a `SKILL.md` that a provider loads on demand. [skillsCatalog.ts][27] discovers three kinds: the user's portable copies under `~/.ronin/skills`, provider-native copies in each provider's own folder, and the built-in packs. A native copy wins a name collision, then the portable copy, then the built-in one. See [agent-skills.md][28].
-
-#### Built-in skill
-
-A skill Ronin ships with, vendored under `apps/server/skills` and packaged to `dist/skills`. It crosses the wire as `scope: "bundled"` — the constant is `BUNDLED_SKILLS_SCOPE` in [the server contracts][29], shared by discovery and the settings UI. Say "built-in" everywhere a user can read it; "bundled" is the scope value and the build vocabulary, not a second name for the concept.
-
-#### Continuation group
-
-The set of provider instances that can resume each other's sessions on a thread, identified by a `continuationKey` — `${driverKind}:instance:${instanceId}` by default, and a shared-home key for Codex instances pointing at the same directory. Moving a thread within a group is a restart; moving across groups is a handoff. Each group's resume cursor is kept per thread in [ProviderSessionLedger.ts][25], so a provider stays resumable after the thread is handed away. See [providers.md][16].
-
-#### Handoff brief
-
-The conversation summary given to a provider picking up a thread it did not start: the transcript (or only the part it missed, if it resumed its own session), the workspace, and the files changed so far. Recent turns stay in full; older ones collapse to one-line bullets. The brief is wrapped in `<handoff_context>` so it does not mix with the user's latest message. Built purely from the thread's own record in [providerHandoffBrief.ts][26], so it costs no queries and no model call and rebuilds identically on a retry. See [providers.md][16].
-
-#### Runtime mode
-
-The safety/access mode for a thread or session. [The contracts][1] define four values: `approval-required`, `auto-accept-edits`, `auto`, and `full-access`. See [permission modes][18].
-
-#### Interaction mode
-
-The agent interaction style for a thread. In [the contracts][1], the values are `default` and `plan`.
-
-#### Assistant delivery mode
-
-Controls how assistant text reaches the thread timeline. In [the contracts][1], `streaming` updates incrementally and `buffered` accumulates text. Buffered delivery is not held until the turn completes: it spills once accumulated text would exceed 24,000 characters, and flushes at approval and user-input boundaries. See [ProviderRuntimeIngestion.ts][5].
-
-#### Snapshot
-
-A point-in-time view of state. The word is used in multiple layers, including orchestration, provider, and checkpointing. See [ProjectionSnapshotQuery.ts][10], [ProviderAdapter.ts][15], and [CheckpointStore.ts][19].
-
-#### Model manifest
-
-The per-driver list of current model slugs that decides which models land in the model picker's legacy section. Bundled at `apps/server/src/provider/model-manifest.json` and refreshed at runtime from the same file on this repository's `main`, so classification updates ship as commits instead of releases. See the [provider architecture][16] model manifest section.
-
-### Scheduled work
-
-#### Automation
-
-A saved prompt plus a rule for when to send it, scoped to one project. Configuration rather than history, so it lives in its own `automations` table instead of the event log — replaying events must never re-fire a schedule. Shape is in [the automation contracts][32]; the rules are in [AutomationService.ts][33]. See [automations.md][34].
-
-#### Automation run
-
-One firing of an automation. Records only whether the turn _started_ (`started`, `skipped`, `failed`) — what the agent then did is the thread's business, and duplicating a turn outcome here would be a second source of truth. Firing expands to `thread.create`, optional worktree preparation, then `thread.turn.start`, because the `bootstrap` field on a turn-start command is a WebSocket-layer convenience the decider does not understand.
-
-#### Build system
-
-A per-project team: one orchestrator model and named teammate roles, each with its own model. Configuration, not history, so it lives in `build_systems` rather than the event log. Shape is in [the build system contracts][42]; the rules are in [BuildSystemService.ts][43]. See [build-systems.md][44] and [the coordinator notes][45].
-
-#### Orchestrator
-
-The lead model of a build system. It does not edit files. It ends each turn with a `t3-directive` block the server parses, then the coordinator starts the next teammate or asks the user.
-
-#### Teammate
-
-A named role on a build system. One persistent thread per role per run, sharing the orchestrator's worktree, so session memory survives across delegations.
-
-#### Delegation
-
-One handoff from the orchestrator to a teammate: the coordinator starts that role's turn with a brief, waits for the turn to settle, and reports the result back.
-
-#### Gate
-
-A teammate marked "ask first". A `delegate` to that role pauses the run in `waiting-gate` until the user approves or denies it.
-
-#### Build system run
-
-One launch of a team against a task. Snapshots the roster at start so later edits cannot rewrite a conversation that already happened. Status and pending prompt live on the run; the interesting sequence is in `build_system_run_steps`.
-
-#### Parked turn
-
-A turn that died because a provider's subscription window was spent, held in memory and replayed once the window resets. Deliberately not part of the read model: it is scheduler state with a live clock, and it does not survive a restart. Classification lives in [quotaFailureClassification.ts][35], scheduling in [QuotaResumeService.ts][36]. See [quota-resume.md][37].
-
-### Checkpointing
-
-Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6].
-
-#### Checkpoint
-
-A saved snapshot of a thread workspace at a particular turn. In practice it is a hidden Git ref in [CheckpointStore.ts][19] plus a projected summary from [ProjectionCheckpoints.ts][21]. Capture and lifecycle work happen in [CheckpointReactor.ts][6].
-
-#### Checkpoint ref
-
-The durable identifier for a filesystem checkpoint, stored as a Git ref. It is typed in [the contracts][1], constructed in [Utils.ts][22], and used by [CheckpointStore.ts][19].
-
-#### Revert undo checkpoint
-
-The workspace state captured immediately before a revert, stored at
-`refs/t3/checkpoints/<thread>/revert-undo` by [Utils.ts][22]. Reverting restores the
-target tree and then runs `git clean`, which discards untracked work created since
-that checkpoint; this ref is what makes that recoverable. It is a sibling of the
-`turn/` refs, so per-turn stale cleanup never prunes it, and each revert on a thread
-overwrites it. Recover with `git restore --source <ref> --worktree -- .` or inspect
-with `git show <ref>:<path>`. Captured in [CheckpointReactor.ts][6].
-
-#### Checkpoint baseline
-
-The starting checkpoint for diffing a thread timeline. This flow is surfaced through [RuntimeReceiptBus.ts][13], coordinated in [CheckpointReactor.ts][6], and supported by [Utils.ts][22].
-
-#### Checkpoint diff
-
-The difference between two checkpoints. [CheckpointDiffQuery.ts][20] reads full patches on demand. [CheckpointReactor.ts][6] uses NUL-delimited Git numstat output for automatic file summaries, parsed by [Diffs.ts][23].
-
-#### Turn diff
-
-The file patch and changed-file summary for one turn. It is usually computed in [CheckpointDiffQuery.ts][20], represented in [the contracts][1], and recorded into thread state by [projector.ts][4].
-
-### Working copy edits
-
-#### Diff scope
-
-Which comparison the diff panel is showing: the working tree against `HEAD`, the index against `HEAD` (`staged`), a branch against its base, or one turn's checkpoint. The three Git scopes come back as separate sources from one `review.getDiffPreview` call in [GitVcsDriverCore.ts][3]; the panel picks between them in [DiffPanel.tsx][46].
-
-#### Patch slice
-
-A one-hunk or one-file patch cut out of the very diff text the panel is rendering, built in [patchHunks.ts][47]. Slicing the original text rather than re-rendering the parsed model is what keeps whitespace and end-of-file markers exactly as Git wrote them, so `git apply` accepts the result. Hunks are addressed by file line number because the viewer reshapes hunks when a file expands to full contents.
-
-#### Hunk action
-
-Staging, unstaging, or reverting one patch slice, sent as `vcs.applyPatch` and applied by [GitVcsDriverCore.ts][3]. A revert clears the change from the index as well as the working tree. A patch Git refuses comes back as `stale` rather than an error: the diff it was cut from can always have moved on.
-
-### Appearance
-
-#### Environment theme
-
-A theme an environment's machine publishes for clients to follow, one file per theme under `themes/` in that environment's state directory; the filename is the theme id. [environmentTheme.ts][48] watches the directory and streams the set over `subscribeServerConfig`; clients render each as a library card, generating a full palette when the file carries seed colors and using the palette directly when it is a standard exported theme file. A desktop that retints its apps when the system theme changes rewrites its file, so Ronin follows along without a restart. See [environment-theme.md][49].
-
-#### Default theme
-
-The environment's theme, held in its `settings.json` as `defaultTheme` (with `defaultThemeSetAt`
-as the set-generation) and set with `t3 theme set <id>`. Web and desktop clients apply each set
-once — live when connected, on the next connect otherwise — so setting it switches them, while a
-theme a user picks in Settings afterwards sticks until the next set; Naming a published [environment theme](#environment-theme) is how a desktop
-ships Ronin already matching it.
-
-## Practical Shortcuts
-
-- If you see `requested`, think "intent recorded".
-- If you see `completed`, think "result applied".
-- If you see `receipt`, think "async milestone signal, for tests".
-- If you see `checkpoint`, think "workspace snapshot for diff/restore".
-- If you see `quiesced`, think "all relevant follow-up work has gone idle".
-
-## Related Docs
-
-- [Architecture overview][24]
-- [Provider architecture][16]
-- [Permission modes][18]
-- [Workspace layout][2]
-
-[1]: ../../packages/contracts/src/orchestration.ts
-[2]: ./workspace-layout.md
-[3]: ../../apps/server/src/vcs/GitVcsDriverCore.ts
-[4]: ../../apps/server/src/orchestration/projector.ts
-[5]: ../../apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
-[6]: ../../apps/server/src/orchestration/Layers/CheckpointReactor.ts
-[7]: ../../apps/server/src/orchestration/Layers/OrchestrationEngine.ts
-[8]: ../../apps/server/src/orchestration/decider.ts
-[9]: ../../apps/server/src/orchestration/commandInvariants.ts
-[10]: ../../apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts
-[11]: ../../apps/server/src/orchestration/Layers/ProjectionPipeline.ts
-[12]: ../../apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
-[13]: ../../apps/server/src/orchestration/Services/RuntimeReceiptBus.ts
-[14]: ../../apps/server/src/provider/Layers/ProviderService.ts
-[15]: ../../apps/server/src/provider/Services/ProviderAdapter.ts
-[16]: ./providers.md
-[17]: ../../apps/server/src/provider/Layers/CodexAdapter.ts
-[18]: ../user/permission-modes.md
-[19]: ../../apps/server/src/checkpointing/CheckpointStore.ts
-[20]: ../../apps/server/src/checkpointing/CheckpointDiffQuery.ts
-[21]: ../../apps/server/src/persistence/Services/ProjectionCheckpoints.ts
-[22]: ../../apps/server/src/checkpointing/Utils.ts
-[23]: ../../apps/server/src/checkpointing/Diffs.ts
-[24]: ./overview.md
-[25]: ../../apps/server/src/persistence/ProviderSessionLedger.ts
-[26]: ../../apps/server/src/orchestration/providerHandoffBrief.ts
-[27]: ../../apps/server/src/provider/skillsCatalog.ts
-[28]: ../user/agent-skills.md
-[29]: ../../packages/contracts/src/server.ts
-[30]: ../../apps/web/src/components/Sidebar.logic.ts
-[31]: ../user/side-chats.md
-[32]: ../../packages/contracts/src/automation.ts
-[33]: ../../apps/server/src/automation/AutomationService.ts
-[34]: ../user/automations.md
-[35]: ../../apps/server/src/quotaResume/quotaFailureClassification.ts
-[36]: ../../apps/server/src/quotaResume/QuotaResumeService.ts
-[37]: ../user/quota-resume.md
-[38]: ../user/board.md
-[39]: ../user/captured-tasks.md
-[40]: ../user/turn-replay.md
-[41]: ../user/second-opinion.md
-[42]: ../../packages/contracts/src/buildSystem.ts
-[43]: ../../apps/server/src/buildSystem/BuildSystemService.ts
-[44]: ../user/build-systems.md
-[45]: ./build-systems.md
-[46]: ../../apps/web/src/components/DiffPanel.tsx
-[47]: ../../apps/web/src/lib/patchHunks.ts
-[48]: ../../apps/server/src/environmentTheme.ts
-[49]: ../user/environment-theme.md
+Terms whose meaning matters across T3 Code. Architecture and lifecycle constraints belong in the
+[overview](./overview.md), not in these definitions.
+
+## Workspace and conversation
+
+| Term           | Meaning                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| Environment    | One running server and the machine, credentials, workspace access, and state it owns.             |
+| Client         | A web, desktop, or mobile UI connected to an environment. The desktop app can also host a server. |
+| Project        | An environment-local workspace record rooted at a directory.                                      |
+| Workspace root | The project's base filesystem directory on the environment.                                       |
+| Worktree       | A separate Git checkout a thread can use instead of the project's main checkout.                  |
+| Thread         | The durable conversation and work history for a project. It survives provider process exits.      |
+| Turn           | One user-to-agent work cycle. Provider work can finish before checkpoint and diff work settles.   |
+| Activity       | A non-message timeline item, such as a tool action, approval, or failure.                         |
+| T3 home        | The base data directory. Runtime state normally lives under its `userdata` directory.             |
+
+## Orchestration
+
+| Term                    | Meaning                                                                                      |
+| ----------------------- | -------------------------------------------------------------------------------------------- |
+| Command                 | A request to change domain state. Accepting it does not mean its side effects have finished. |
+| Event                   | A persisted fact produced by a command.                                                      |
+| Decider                 | The pure logic that turns a command and current state into events.                           |
+| Projection / read model | A view of current state derived from persisted events.                                       |
+| Projector               | The logic that applies events to a read model.                                               |
+| Reactor                 | A worker that performs follow-up work in response to recorded intent or runtime signals.     |
+| Command receipt         | A durable record of a command's result, used to make retries idempotent.                     |
+| Runtime receipt         | A test-only signal that an asynchronous milestone completed.                                 |
+| Quiesced                | The relevant follow-up workers have finished, beyond the provider turn merely ending.        |
+
+## Providers and checkpoints
+
+| Term                | Meaning                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Provider            | The agent runtime T3 Code controls, such as Codex or Claude Code.                                            |
+| Driver              | The integration for a provider kind.                                                                         |
+| Provider instance   | One configured provider, with its own settings and lifecycle. Multiple instances can use the same driver.    |
+| Adapter             | The boundary translating a provider's native protocol into T3 Code operations and events.                    |
+| Session             | The provider runtime attached to a thread. A session can be stopped and resumed without deleting the thread. |
+| Runtime mode        | The thread's permission policy. See [permission modes](../user/permission-modes.md).                         |
+| Interaction mode    | How the agent approaches the task, such as planning. Separate from permission policy.                        |
+| Checkpoint          | A saved workspace state used for diffs and restore, stored as a hidden Git ref.                              |
+| Checkpoint baseline | The workspace state captured before the work being compared.                                                 |
+| Turn diff           | The workspace changes attributed to one turn.                                                                |
+
+## Pull requests
+
+| Term                 | Meaning                                                                                                                                                                                  |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pull request link    | A persisted thread association identified by host, repository, and number. Links can cross projects within an environment and carry a server-maintained snapshot.                        |
+| Pull request sync    | The reactor that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.               |
+| Current pull request | The link used by single-review controls and older clients. Open work takes precedence; a completed single chain points at its top layer. Unrelated terminal links use the latest update. |
+
+## Composer context
+
+| Term                 | Meaning                                                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Context record       | The typed payload behind a composer chip, keyed by `contextId` in `message.context.records`. It never holds bytes.                  |
+| Context reference    | One occurrence of a record in message text: `[label](t3-context://v1/<kind>/<contextId>)`. Several references can share one record. |
+| Attachment binding   | The link from an image or file record to its server-owned attachment. Its attachment ID can change without changing `contextId`.    |
+| Attachment inventory | The ordered image records shown as thumbnails above the prose, including images with no inline references.                          |
+
+See [composer context references](./composer-context-references.md) for the contract and lifecycle.

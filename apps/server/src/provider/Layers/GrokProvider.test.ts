@@ -262,6 +262,7 @@ describe("buildInitialGrokProviderSnapshot", () => {
         ]);
         expect(effort.currentValue).toBe("low");
       }
+      expect(snapshot.supportsConversationRollback).toBe(false);
     }),
   );
 });

@@ -265,7 +265,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 {group.paths.map((to) => {
                   const meta = SETTINGS_PAGE_META[to];
                   const Icon = meta.icon;
-                  const isActive = pathname === to || pathname.startsWith(`${to}/`);
+                  const isGeneralDetailPage =
+                    to === "/settings/general" && pathname === "/settings/open-source-licenses";
+                  const isActive =
+                    isGeneralDetailPage || pathname === to || pathname.startsWith(`${to}/`);
                   return (
                     <SidebarMenuItem key={to}>
                       <SidebarMenuButton

@@ -1,10 +1,13 @@
-import { type ThreadId } from "@t3tools/contracts";
-import type { PickedElementPayload, PickedElementStackFrame } from "@t3tools/contracts";
+import type {
+  PickedElementPayload,
+  PickedElementStackFrame,
+  PreviewAnnotationPayload,
+  ThreadId,
+} from "@t3tools/contracts";
 
 const ELEMENT_CONTEXT_HTML_PREVIEW_LIMIT = 4000;
 const ELEMENT_CONTEXT_STYLES_LIMIT = 4000;
 const ELEMENT_CONTEXT_LABEL_TAG_MAX = 24;
-
 const TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN =
   /\n*<element_context>\n([\s\S]*?)\n<\/element_context>\s*$/;
 
@@ -34,10 +37,8 @@ export interface ElementContextSelection {
 }
 
 export interface ElementContextDraft extends ElementContextSelection {
-  /** Stable composer-side id used for keyed rendering + dedupe. */
   id: string;
   threadId: ThreadId;
-  /** ISO-8601 wall clock pick time. */
   pickedAt: string;
 }
 
@@ -94,10 +95,6 @@ export function normalizeElementContextSelection(
   };
 }
 
-/**
- * Stable dedupe key. Two picks of the same element on the same page produce
- * the same key, so we don't end up with a runaway chip row from spam-clicks.
- */
 export function elementContextDedupKey(context: ElementContextSelection): string {
   return [context.pageUrl, context.selector ?? "", context.tagName, context.componentName ?? ""]
     .join("|")
@@ -109,10 +106,6 @@ function shortenTagLabel(tagName: string): string {
   return `${tagName.slice(0, ELEMENT_CONTEXT_LABEL_TAG_MAX - 1)}…`;
 }
 
-/**
- * Compact chip label — `<Button>` for component picks, `<button>` otherwise.
- * Component name takes priority because it's higher-signal for the agent.
- */
 export function formatElementContextLabel(context: ElementContextSelection): string {
   if (context.componentName) return `<${context.componentName}>`;
   return `<${shortenTagLabel(context.tagName)}>`;
@@ -127,8 +120,7 @@ export function formatElementContextSourceLabel(context: ElementContextSelection
   const source = context.source;
   if (!source?.fileName) return null;
   const base = basenameFromPath(source.fileName);
-  if (source.lineNumber == null) return base;
-  return `${base}:${source.lineNumber}`;
+  return source.lineNumber == null ? base : `${base}:${source.lineNumber}`;
 }
 
 function buildContextHeader(context: ElementContextSelection): string {
@@ -142,48 +134,31 @@ function indentLines(value: string): string[] {
 }
 
 function buildSingleContextLines(context: ElementContextSelection): string[] {
-  const lines: string[] = [];
-  lines.push(`- ${buildContextHeader(context)}:`);
-  if (context.pageUrl.length > 0) {
-    lines.push(`  url: ${context.pageUrl}`);
-  }
-  if (context.selector) {
-    lines.push(`  selector: ${context.selector}`);
-  }
+  const lines = [`- ${buildContextHeader(context)}:`];
+  if (context.pageUrl.length > 0) lines.push(`  url: ${context.pageUrl}`);
+  if (context.selector) lines.push(`  selector: ${context.selector}`);
   if (context.source?.fileName) {
     const { fileName, lineNumber, columnNumber } = context.source;
     const location =
-      lineNumber != null
-        ? `${fileName}:${lineNumber}${columnNumber != null ? `:${columnNumber}` : ""}`
-        : fileName;
+      lineNumber == null
+        ? fileName
+        : `${fileName}:${lineNumber}${columnNumber == null ? "" : `:${columnNumber}`}`;
     lines.push(`  source: ${location}`);
   }
   const html = context.htmlPreview.trim();
-  if (html.length > 0) {
-    lines.push("  html:");
-    lines.push(...indentLines(html));
-  }
+  if (html.length > 0) lines.push("  html:", ...indentLines(html));
   const styles = context.styles.trim();
-  if (styles.length > 0) {
-    lines.push("  styles:");
-    lines.push(...indentLines(styles));
-  }
+  if (styles.length > 0) lines.push("  styles:", ...indentLines(styles));
   return lines;
 }
 
-/**
- * Serialize element-context drafts into the `<element_context>` block we
- * append to the user's outgoing message text. Mirrors the `<terminal_context>`
- * block format so it composes cleanly when both are present.
- */
 export function buildElementContextBlock(contexts: ReadonlyArray<ElementContextSelection>): string {
   if (contexts.length === 0) return "";
   const lines: string[] = [];
-  for (let index = 0; index < contexts.length; index += 1) {
-    const context = contexts[index]!;
+  contexts.forEach((context, index) => {
     lines.push(...buildSingleContextLines(context));
     if (index < contexts.length - 1) lines.push("");
-  }
+  });
   return ["<element_context>", ...lines, "</element_context>"].join("\n");
 }
 
@@ -197,24 +172,16 @@ export function appendElementContextsToPrompt(
   return trimmed.length > 0 ? `${trimmed}\n\n${block}` : block;
 }
 
-const ELEMENT_CONTEXT_ID_PREFIX = "el_";
 let nextElementContextSequence = 0;
 
 export function newElementContextId(): string {
   nextElementContextSequence += 1;
-  return `${ELEMENT_CONTEXT_ID_PREFIX}${nextElementContextSequence.toString(36)}`;
+  return `el_${nextElementContextSequence.toString(36)}`;
 }
 
-/**
- * Mirror image of `appendElementContextsToPrompt` for transcript display:
- * detects (and strips) a trailing `<element_context>` block so we can render
- * the original prompt body and chips separately in user-message bubbles.
- */
 export function extractTrailingElementContexts(prompt: string): ExtractedElementContexts {
   const match = TRAILING_ELEMENT_CONTEXT_BLOCK_PATTERN.exec(prompt);
-  if (!match) {
-    return { promptText: prompt, contextCount: 0, contexts: [] };
-  }
+  if (!match) return { promptText: prompt, contextCount: 0, contexts: [] };
   const promptText = prompt.slice(0, match.index).replace(/\n+$/, "");
   const contexts = parseElementContextEntries(match[1] ?? "");
   return { promptText, contextCount: contexts.length, contexts };
@@ -233,12 +200,38 @@ function parseElementContextEntries(block: string): ParsedElementContextEntry[] 
     if (headerMatch) {
       commit();
       current = { header: headerMatch[1]!, bodyLines: [] };
-      continue;
+    } else if (current && line.startsWith("  ")) {
+      current.bodyLines.push(line.slice(2));
+    } else if (current && line.length === 0) {
+      current.bodyLines.push("");
     }
-    if (!current) continue;
-    if (line.startsWith("  ")) current.bodyLines.push(line.slice(2));
-    else if (line.length === 0) current.bodyLines.push("");
   }
   commit();
   return entries;
+}
+
+/** Converts a saved element pick into the annotation shape used by current drafts. */
+export function elementContextToPreviewAnnotation(
+  element: ElementContextSelection,
+  id: string,
+  pickedAt: string,
+): PreviewAnnotationPayload {
+  return {
+    id,
+    pageUrl: element.pageUrl,
+    pageTitle: element.pageTitle,
+    comment: "",
+    elements: [
+      {
+        id,
+        element: { ...element, stack: [], pickedAt },
+        rect: { x: 0, y: 0, width: 0, height: 0 },
+      },
+    ],
+    regions: [],
+    strokes: [],
+    styleChanges: [],
+    screenshot: null,
+    createdAt: pickedAt,
+  };
 }

@@ -46,6 +46,7 @@ const buttonVariants = cva(
         xs: "h-7 gap-1 px-[calc(--spacing(2)-1px)] text-sm sm:h-6 sm:text-xs [&_svg:not([class*='size-'])]:size-4 sm:[&_svg:not([class*='size-'])]:size-3.5",
       },
       variant: {
+        chip: "",
         default:
           "border-primary bg-primary text-primary-foreground [:hover,[data-pressed]]:bg-primary/88",
         destructive:
@@ -58,6 +59,10 @@ const buttonVariants = cva(
         ghost:
           "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-foreground data-pressed:bg-accent [:hover,[data-pressed]]:bg-accent",
         link: "border-transparent underline-offset-4 [:hover,[data-pressed]]:underline",
+        "media-close":
+          "[--control-icon-color:currentColor] border-transparent bg-black/65 text-white shadow-sm ring-1 ring-white/20 [:hover,[data-pressed]]:bg-black/80 focus-visible:ring-white",
+        "media-navigation":
+          "[--control-icon-color:currentColor] absolute top-1/2 z-20 -translate-y-1/2 border-transparent text-white/90 [:hover,[data-pressed]]:bg-white/10 [:hover,[data-pressed]]:text-white focus-visible:ring-white",
         outline:
           "[--control-icon-color:var(--contrast-muted-foreground)] border-input bg-transparent text-foreground [:hover,[data-pressed]]:bg-accent",
         secondary:
@@ -80,7 +85,8 @@ function Button({ className, variant, size, render, ...props }: ButtonProps) {
     : "button";
 
   const defaultProps = {
-    className: cn(buttonVariants({ className, size, variant })),
+    className:
+      variant === "chip" ? cn(className) : cn(buttonVariants({ className, size, variant })),
     "data-slot": "button",
     type: typeValue,
   };

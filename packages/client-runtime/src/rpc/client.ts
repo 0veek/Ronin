@@ -49,6 +49,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeTerminalMetadata
   | typeof WS_METHODS.subscribePreviewEvents
   | typeof WS_METHODS.subscribeDiscoveredLocalServers
+  | typeof WS_METHODS.subscribeDeviceState
   | typeof WS_METHODS.subscribeResourceTelemetry
   | typeof WS_METHODS.pullRequestsSubscribeRefreshes
   | typeof WS_METHODS.previewAutomationConnect
@@ -232,11 +233,12 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                         input,
                       });
                       return method(input).pipe(
-                        Stream.tap(() =>
-                          Effect.sync(() => {
-                            consecutiveExpectedFailures = 0;
-                          }),
-                        ),
+                        // Preserve transport chunks so downstream replay consumers can publish
+                        // one state update per batch instead of one update per message.
+                        Stream.mapArray((items) => {
+                          consecutiveExpectedFailures = 0;
+                          return items;
+                        }),
                         Stream.ensuring(completeObservation),
                       );
                     }),

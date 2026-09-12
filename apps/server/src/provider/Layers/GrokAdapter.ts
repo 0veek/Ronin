@@ -1016,7 +1016,14 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               ...(requestedStartEffort ? { reasoningEffort: requestedStartEffort } : {}),
             }),
             runtimeMode: input.runtimeMode,
-            ...(options?.environment ? { environment: options.environment } : {}),
+            ...(options?.environment || mcpSession?.agentDeviceEnvironment
+              ? {
+                  environment: McpProviderSession.withAgentDeviceEnvironment(
+                    options?.environment ?? process.env,
+                    mcpSession,
+                  ),
+                }
+              : {}),
             childProcessSpawner,
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
@@ -2091,7 +2098,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
     const rollbackThread: GrokAdapterShape["rollbackThread"] = (threadId, numTurns) =>
       Effect.gen(function* () {
-        const ctx = yield* requireSession(threadId);
+        yield* requireSession(threadId);
         if (!Number.isInteger(numTurns) || numTurns < 1) {
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
@@ -2099,14 +2106,11 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
             issue: "numTurns must be an integer >= 1.",
           });
         }
-        const nextLength = Math.max(0, ctx.turns.length - numTurns);
-        ctx.turns.splice(nextLength);
-        ctx.session = {
-          ...ctx.session,
-          resumeCursor: undefined,
-        };
-        yield* stopSessionInternal(ctx);
-        return { threadId, turns: ctx.turns };
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/rollback",
+          detail: "Grok ACP sessions do not support provider-side rollback yet.",
+        });
       });
 
     const stopSession: GrokAdapterShape["stopSession"] = (threadId) =>
@@ -2146,6 +2150,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
         // `--reasoning-effort` is a spawn-line flag and Grok Build implements
         // no `session/set_config_option`, so only a restart changes it.
         sessionModelOptionsSwitch: "unsupported",
+        supportsConversationRollback: false,
       },
       compaction: { type: "slash-command", command: "/compact" },
       startSession,

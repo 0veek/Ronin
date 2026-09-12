@@ -1,5 +1,5 @@
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
-import type { PullRequestReviewPosition } from "@t3tools/contracts";
+import { PullRequestContextMetadata, type PullRequestReviewPosition } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 const ReviewCommentSelectionSchema = Schema.Struct({
@@ -22,6 +22,7 @@ export const ReviewCommentContextSchema = Schema.Struct({
   diff: Schema.String,
   fenceLanguage: Schema.optional(Schema.String),
   selection: Schema.optional(ReviewCommentSelectionSchema),
+  pullRequest: Schema.optional(PullRequestContextMetadata),
 });
 
 export interface ReviewCommentContext {
@@ -36,6 +37,7 @@ export interface ReviewCommentContext {
   readonly diff: string;
   readonly fenceLanguage?: string | undefined;
   readonly selection?: ReviewCommentSelection | undefined;
+  readonly pullRequest?: PullRequestContextMetadata | undefined;
 }
 
 interface DiffReviewLine {

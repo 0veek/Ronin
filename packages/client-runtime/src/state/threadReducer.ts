@@ -14,6 +14,12 @@ import type {
   TurnId,
 } from "@t3tools/contracts";
 import { threadPullRequestKeysEqual } from "@t3tools/shared/threadPullRequests";
+import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
+
+/** Imported-session message ids retain their origin after projection into SQLite. */
+function isImportedAgentSessionMessageId(messageId: string): boolean {
+  return messageId.startsWith("import:");
+}
 
 export type ThreadDetailReducerResult =
   | { readonly kind: "updated"; readonly thread: OrchestrationThread }
@@ -395,6 +401,7 @@ export function applyThreadDetailEvent(
         ...(event.payload.attachments !== undefined
           ? { attachments: event.payload.attachments }
           : {}),
+        ...(event.payload.context !== undefined ? { context: event.payload.context } : {}),
         turnId: event.payload.turnId,
         streaming: event.payload.streaming,
         ...(event.payload.providerInstanceId !== undefined
@@ -407,35 +414,31 @@ export function applyThreadDetailEvent(
         updatedAt: event.payload.updatedAt,
       };
 
-      const existingMessage = thread.messages.find((entry) => entry.id === message.id);
-      const messages = existingMessage
-        ? Arr.map(thread.messages, (entry) =>
-            entry.id !== message.id
-              ? entry
-              : {
-                  ...entry,
-                  text: message.streaming
-                    ? `${entry.text}${message.text}`
-                    : message.text.length > 0
-                      ? message.text
-                      : entry.text,
-                  streaming: message.streaming,
-                  ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
-                  ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
-                  ...(message.attachments !== undefined
-                    ? { attachments: message.attachments }
-                    : {}),
-                  // Attribution rides on the reply's first delta only, so a
-                  // later delta or the completion event must not blank it.
-                  ...(message.providerInstanceId !== undefined
-                    ? { providerInstanceId: message.providerInstanceId }
-                    : {}),
-                  ...(message.providerName !== undefined
-                    ? { providerName: message.providerName }
-                    : {}),
-                },
-          )
-        : Arr.append(thread.messages, message);
+      let found = false;
+      const messages = thread.messages.map((entry) => {
+        if (entry.id !== message.id) return entry;
+        found = true;
+        return {
+          ...entry,
+          text: message.streaming
+            ? `${entry.text}${message.text}`
+            : message.text.length > 0
+              ? message.text
+              : entry.text,
+          streaming: message.streaming,
+          ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
+          ...(message.streaming ? {} : { updatedAt: message.updatedAt }),
+          ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
+          ...(message.context !== undefined ? { context: message.context } : {}),
+          // Attribution rides on the reply's first delta only, so a later
+          // delta or completion event must not blank it.
+          ...(message.providerInstanceId !== undefined
+            ? { providerInstanceId: message.providerInstanceId }
+            : {}),
+          ...(message.providerName !== undefined ? { providerName: message.providerName } : {}),
+        };
+      });
+      if (!found) messages.push(message);
       // Update latestTurn for assistant messages bound to a turn. A completed
       // assistant message only settles the turn once the session is no longer
       // running it — providers may emit several assistant messages per turn
@@ -656,7 +659,11 @@ export function applyThreadDetailEvent(
       );
 
       const retainedTurnIds = new Set(Arr.map(checkpoints, (entry) => entry.turnId));
-      const messages = retainMessagesAfterRevert(thread.messages, retainedTurnIds);
+      const messages = retainMessagesAfterRevert(
+        thread.messages,
+        retainedTurnIds,
+        event.payload.turnCount,
+      );
       const proposedPlans = pipe(
         thread.proposedPlans,
         Arr.filter((plan) => plan.turnId === null || retainedTurnIds.has(plan.turnId)),
@@ -849,16 +856,44 @@ function rebindCheckpointAssistantMessage(
 function retainMessagesAfterRevert(
   messages: ReadonlyArray<OrchestrationMessage>,
   retainedTurnIds: ReadonlySet<string>,
+  turnCount: number,
 ): OrchestrationMessage[] {
-  // Keep messages that belong to a retained turn, plus system messages and
-  // messages without a turn binding (pre-turn-0 user messages).
-  return Arr.filter(messages, (message) => {
-    if (message.role === "system") {
-      return true;
+  const retainedMessageIds = new Set<string>();
+  for (const message of messages) {
+    if (message.role === "system" || isImportedAgentSessionMessageId(message.id)) {
+      retainedMessageIds.add(message.id);
+    } else if (message.turnId !== null && retainedTurnIds.has(message.turnId)) {
+      retainedMessageIds.add(message.id);
     }
-    if (message.turnId === null) {
-      return true;
+  }
+
+  for (const role of ["user", "assistant"] as const) {
+    const retainedCount = messages.filter(
+      (message) =>
+        message.role === role &&
+        !isImportedAgentSessionMessageId(message.id) &&
+        retainedMessageIds.has(message.id),
+    ).length;
+    const missingCount = Math.max(0, turnCount - retainedCount);
+    const fallbackMessages = messages
+      .filter(
+        (message) =>
+          message.role === role &&
+          !retainedMessageIds.has(message.id) &&
+          (message.turnId === null || retainedTurnIds.has(message.turnId)),
+      )
+      // `.sort()`, not `.toSorted()`: `.filter()` above already returned a fresh array, and
+      // this is shared with mobile, which runs on Hermes and has no ES2023 array methods.
+      .sort(
+        (left, right) =>
+          compareDateTimeStrings(left.createdAt, right.createdAt) ||
+          left.id.localeCompare(right.id),
+      )
+      .slice(0, missingCount);
+    for (const message of fallbackMessages) {
+      retainedMessageIds.add(message.id);
     }
-    return retainedTurnIds.has(message.turnId);
-  });
+  }
+
+  return Arr.filter(messages, (message) => retainedMessageIds.has(message.id));
 }

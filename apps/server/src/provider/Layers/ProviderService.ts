@@ -34,6 +34,7 @@ import {
   type ProviderSession,
 } from "@t3tools/contracts";
 import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
@@ -42,6 +43,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -51,6 +53,9 @@ import * as Stream from "effect/Stream";
 import { appendUserInputAttachmentPaths } from "../userInputAttachments.ts";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
+import * as DeviceService from "../../device/DeviceService.ts";
+import { ensureAgentDeviceShim } from "../../device/AgentDeviceShim.ts";
+import type * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import {
   increment,
   providerMetricAttributes,
@@ -399,6 +404,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const issueMcpCredential =
     options?.issueMcpCredential ?? McpSessionRegistry.issueActiveMcpCredential;
   const fileSystem = yield* FileSystem.FileSystem;
+  const pathService = yield* Path.Path;
   const runtimeEventPubSub = yield* PubSub.unbounded<ProviderRuntimeEvent>();
   const pendingCompactions = new Map<ThreadId, PendingCompaction>();
   const timedOutNativeCompactions = new Set<ThreadId>();
@@ -430,22 +436,66 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     ),
   );
 
-  /**
-   * Attach the `t3-code` MCP server to the session that is about to start.
-   *
-   * Every session gets a credential: the pull request toolkit is always on,
-   * since it only registers links on the session's own thread. Browser access
-   * is a capability on that credential, so turning the setting off withholds
-   * the preview tools without taking the server away. `issueActiveMcpCredential`
-   * revokes the thread's previous token first, which matters because a session
-   * restart (runtime mode, cwd, model) re-prepares without stopping.
-   */
+  const agentDeviceAccessEnabled = serverSettings.getSettings.pipe(
+    Effect.map((settings) => settings.enableAgentDeviceAccess),
+    Effect.catch((cause) =>
+      Effect.logWarning(
+        "Could not read server settings; withholding agent device access for this session.",
+        { cause },
+      ).pipe(Effect.as(false)),
+    ),
+  );
+
+  const agentAccessCapabilities = Effect.fn("ProviderService.agentAccessCapabilities")(function* (
+    _threadId: ThreadId,
+  ) {
+    const capabilities = new Set<McpInvocationContext.McpCapability>(["pull-requests"]);
+    if (yield* agentBrowserAccessEnabled) capabilities.add("preview");
+    if (yield* agentDeviceAccessEnabled) capabilities.add("device");
+    return capabilities;
+  });
+
+  /** Install only the local CLI here. device_open supplies a separate config for each host. */
+  const hostPlatform = yield* HostProcessPlatform;
+  const agentDeviceEnvironment = Effect.gen(function* () {
+    const devices = yield* Effect.serviceOption(DeviceService.DeviceService);
+    if (Option.isNone(devices)) return undefined;
+    const entryPath = yield* devices.value.agentCli.pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Agent device CLI unavailable", { cause }).pipe(Effect.as(null)),
+      ),
+    );
+    if (!entryPath) return undefined;
+    const shimDir = yield* ensureAgentDeviceShim({
+      entryPath,
+      stateDir: serverConfig.stateDir,
+    }).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, pathService),
+      Effect.orElseSucceed(() => undefined),
+    );
+    if (!shimDir) return undefined;
+    return {
+      PATH: shimDir,
+      PATH_SEPARATOR: hostPlatform === "win32" ? ";" : ":",
+      AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
+    } satisfies Record<string, string>;
+  });
+
   const prepareMcpSession = (threadId: ThreadId, providerInstanceId: ProviderInstanceId) =>
     Effect.gen(function* () {
-      const preview = yield* agentBrowserAccessEnabled;
-      const credential = yield* issueMcpCredential({ threadId, providerInstanceId, preview });
+      const capabilities = yield* agentAccessCapabilities(threadId);
+      const credential = yield* issueMcpCredential({ threadId, providerInstanceId, capabilities });
       if (credential) {
-        yield* Effect.sync(() => McpProviderSession.setMcpProviderSession(credential.config));
+        const deviceEnvironment = capabilities.has("device")
+          ? yield* agentDeviceEnvironment
+          : undefined;
+        yield* Effect.sync(() =>
+          McpProviderSession.setMcpProviderSession({
+            ...credential.config,
+            ...(deviceEnvironment ? { agentDeviceEnvironment: deviceEnvironment } : {}),
+          }),
+        );
       }
       return credential;
     });
@@ -593,6 +643,35 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         provider: canonicalEvent.provider,
         eventType: canonicalEvent.type,
       });
+      if (
+        source.provider === "claudeAgent" &&
+        (canonicalEvent.type === "turn.completed" || canonicalEvent.type === "turn.aborted")
+      ) {
+        // Background Claude turns have no sendTurn response to persist their
+        // new native boundary. Save it before clients can checkpoint the turn.
+        yield* Effect.gen(function* () {
+          const adapter = yield* registry.getByInstance(source.instanceId);
+          const session = (yield* adapter.listSessions()).find(
+            (session) => session.threadId === canonicalEvent.threadId,
+          );
+          if (session?.resumeCursor !== undefined) {
+            const binding = yield* directory.getBinding(session.threadId);
+            if (Option.isNone(binding) || binding.value.providerInstanceId !== source.instanceId) {
+              return;
+            }
+            yield* directory.upsert({
+              threadId: session.threadId,
+              provider: source.provider,
+              providerInstanceId: source.instanceId,
+              resumeCursor: session.resumeCursor,
+            });
+          }
+        }).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("failed to persist Claude turn resume state", { cause }),
+          ),
+        );
+      }
       if (
         isCompactedEvent(canonicalEvent) &&
         timedOutNativeCompactions.delete(canonicalEvent.threadId)
@@ -1419,6 +1498,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           "provider.thread_id": input.threadId,
         });
         if (routed.isActive) {
+          const session = (yield* routed.adapter.listSessions()).find(
+            (session) => session.threadId === routed.threadId,
+          );
+          if (session) {
+            yield* upsertSessionBinding(
+              { ...session, providerInstanceId: routed.instanceId },
+              input.threadId,
+            );
+          }
           yield* routed.adapter.stopSession(routed.threadId);
         }
         const pendingCompaction = pendingCompactions.get(input.threadId);
@@ -1581,6 +1669,21 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
   const clearContinuationLedger: ProviderServiceMethod<"clearContinuationLedger"> = (input) =>
     directory.clearLedger(input.threadId);
 
+  const assertConversationRollbackSupported: ProviderServiceMethod<"assertConversationRollbackSupported"> =
+    Effect.fn("assertConversationRollbackSupported")(function* (threadId) {
+      const routed = yield* resolveRoutableSession({
+        threadId,
+        operation: "ProviderService.assertConversationRollbackSupported",
+        allowRecovery: false,
+      });
+      if (routed.adapter.capabilities.supportsConversationRollback === false) {
+        return yield* toValidationError(
+          "ProviderService.assertConversationRollbackSupported",
+          `Provider '${routed.adapter.provider}' does not support conversation rewind.`,
+        );
+      }
+    });
+
   const rollbackConversation: ProviderServiceMethod<"rollbackConversation"> = Effect.fn(
     "rollbackConversation",
   )(function* (rawInput) {
@@ -1594,6 +1697,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     }
     let metricProvider = "unknown";
     return yield* Effect.gen(function* () {
+      yield* assertConversationRollbackSupported(input.threadId);
       const routed = yield* resolveRoutableSession({
         threadId: input.threadId,
         operation: "ProviderService.rollbackConversation",
@@ -1607,6 +1711,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         "provider.rollback_turns": input.numTurns,
       });
       yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+      const session = (yield* routed.adapter.listSessions()).find(
+        (session) => session.threadId === routed.threadId,
+      );
+      if (session) {
+        yield* upsertSessionBinding(
+          { ...session, providerInstanceId: routed.instanceId },
+          input.threadId,
+        );
+      }
     }).pipe(
       withMetrics({
         counter: providerTurnsTotal,
@@ -1688,6 +1801,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     getContinuationState,
     recordDeliveredMessage,
     clearContinuationLedger,
+    assertConversationRollbackSupported,
     rollbackConversation,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each

@@ -76,11 +76,13 @@ export function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrat
     `script-src ${scriptSources.join(" ")}`,
     `connect-src ${connectSources.join(" ")}`,
     `img-src 'self' ${input.scheme}: blob: data: http: https:`,
-    `media-src 'self' ${input.scheme}: blob:`,
+    `media-src 'self' ${input.scheme}: blob: http: https:`,
     "style-src 'self' 'unsafe-inline'",
     `font-src 'self' ${input.scheme}: data:`,
     "worker-src 'self' blob:",
-    "frame-src 'self'",
+    // Document viewers use local Blob URLs and signed assets from runtime environments.
+    // HTML viewers retain their own sandbox; the renderer's script policy stays unchanged.
+    "frame-src 'self' blob: http: https:",
     "form-action 'self'",
   ].join("; ");
 }

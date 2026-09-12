@@ -60,11 +60,14 @@ import React, {
 } from "react";
 import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
 import ReactMarkdown from "react-markdown";
+import { toHtml } from "hast-util-to-html";
 import { defaultUrlTransform } from "react-markdown";
+import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
+import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import remarkGfm from "remark-gfm";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
@@ -107,6 +110,8 @@ import { fnv1a32 } from "../lib/diffRendering";
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { GitHubIcon } from "./Icons";
+import { createIncrementalHighlightedDocument } from "../lib/incrementalHighlighting";
+import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
@@ -182,6 +187,14 @@ interface ChatMarkdownProps {
   imageBaseDir?: string | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
+  /** Renders a `t3-context://` link as a chip; without it the link shows its label as text. */
+  renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
+}
+
+export interface ChatMarkdownContextReference {
+  kind: string;
+  contextId: string;
+  label: string;
 }
 
 export function canUseMarkdownFileShellActions(
@@ -339,7 +352,8 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), "file", "t3-citation"],
+    href: [...(defaultSchema.protocols?.href ?? []), "file", "t3-citation", "t3-context"],
+    src: [...(defaultSchema.protocols?.src ?? []), "file", "t3-context"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -898,9 +912,14 @@ function SuspenseShikiCodeBlock({
   themeName,
   isStreaming,
 }: SuspenseShikiCodeBlockProps) {
+  const [hasStreamed, setHasStreamed] = useState(isStreaming);
+  if (isStreaming && !hasStreamed) setHasStreamed(true);
   const language = extractFenceLanguage(className);
   const cacheKey = createHighlightCacheKey(code, language, themeName);
-  const cachedHighlightedHtml = !isStreaming ? highlightedCodeCache.get(cacheKey) : null;
+  // Once lines are mounted individually, keep that renderer when streaming
+  // finishes so switching to cached HTML cannot clear an existing selection.
+  const cachedHighlightedHtml =
+    !isStreaming && !hasStreamed ? highlightedCodeCache.get(cacheKey) : null;
 
   if (cachedHighlightedHtml != null) {
     return (
@@ -918,6 +937,7 @@ function SuspenseShikiCodeBlock({
       themeName={themeName}
       cacheKey={cacheKey}
       isStreaming={isStreaming}
+      preserveLines={isStreaming || hasStreamed}
     />
   );
 }
@@ -928,6 +948,7 @@ interface UncachedShikiCodeBlockProps {
   themeName: DiffThemeName;
   cacheKey: string;
   isStreaming: boolean;
+  preserveLines: boolean;
 }
 
 function UncachedShikiCodeBlock({
@@ -936,11 +957,20 @@ function UncachedShikiCodeBlock({
   themeName,
   cacheKey,
   isStreaming,
+  preserveLines,
 }: UncachedShikiCodeBlockProps) {
   const highlighter = use(getSyntaxHighlighterPromise(language));
-  const highlightedHtml = useMemo(() => {
+  const incrementalHighlight = useMemo(
+    () =>
+      preserveLines ? createIncrementalHighlightedDocument(highlighter, language, themeName) : null,
+    [highlighter, preserveLines, language, themeName],
+  );
+  const highlighted = useMemo(() => {
     try {
-      return highlighter.codeToHtml(code, { lang: language, theme: themeName });
+      if (incrementalHighlight) return incrementalHighlight(code);
+      return preserveLines
+        ? highlighter.codeToHast(code, { lang: language, theme: themeName })
+        : highlighter.codeToHtml(code, { lang: language, theme: themeName });
     } catch (error) {
       // Log highlighting failures for debugging while falling back to plain text
       console.warn(
@@ -948,22 +978,29 @@ function UncachedShikiCodeBlock({
         error instanceof Error ? error.message : error,
       );
       // If highlighting fails for this language, render as plain text
-      return highlighter.codeToHtml(code, { lang: "text", theme: themeName });
+      return preserveLines
+        ? highlighter.codeToHast(code, { lang: "text", theme: themeName })
+        : highlighter.codeToHtml(code, { lang: "text", theme: themeName });
     }
-  }, [code, highlighter, language, themeName]);
+  }, [code, highlighter, incrementalHighlight, language, preserveLines, themeName]);
 
   useEffect(() => {
     if (!isStreaming) {
+      const highlightedHtml = typeof highlighted === "string" ? highlighted : toHtml(highlighted);
       highlightedCodeCache.set(
         cacheKey,
         highlightedHtml,
         estimateHighlightedSize(highlightedHtml, code),
       );
     }
-  }, [cacheKey, code, highlightedHtml, isStreaming]);
+  }, [cacheKey, code, highlighted, isStreaming]);
 
-  return (
-    <div className="chat-markdown-shiki" dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+  return typeof highlighted === "string" ? (
+    <div className="chat-markdown-shiki" dangerouslySetInnerHTML={{ __html: highlighted }} />
+  ) : (
+    <div className="chat-markdown-shiki">
+      <HighlightedCodeLines root={highlighted} />
+    </div>
   );
 }
 
@@ -1378,6 +1415,16 @@ function plainHastText(node: unknown): string | null {
     return null;
   });
   return parts.every((part) => part !== null) ? parts.join("") : null;
+}
+
+/** Collect an anchor label through nested emphasis and code nodes. */
+function hastPlainTextDeep(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  if ("type" in node && node.type === "text" && "value" in node && typeof node.value === "string") {
+    return node.value;
+  }
+  if (!("children" in node) || !Array.isArray(node.children)) return "";
+  return node.children.map(hastPlainTextDeep).join("");
 }
 
 /**
@@ -1884,6 +1931,7 @@ function ChatMarkdown({
   onUseArtifactTemplate,
   imageBaseDir,
   onImageExpand,
+  renderContextReference,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
@@ -1972,7 +2020,7 @@ function ChatMarkdown({
     return buildFileLinkParentSuffixByPath(filePaths);
   }, [inlineCodeFileLinkMetaByText, markdownFileLinkMetaByHref]);
   const markdownUrlTransform = useCallback((href: string) => {
-    if (parseAssistantCitationHref(href)) return href;
+    if (parseAssistantCitationHref(href) || parseComposerContextHref(href)) return href;
     return rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href);
   }, []);
   // Re-emit highlighted content as markdown so copying out of the rendered
@@ -2275,6 +2323,15 @@ function ChatMarkdown({
       a({ node, href, children, title: _title, ...props }) {
         const citation = href ? parseAssistantCitationHref(href) : null;
         if (citation) return <AssistantCitationChip citation={citation} />;
+        const contextReference = href ? parseComposerContextHref(href) : null;
+        if (contextReference) {
+          const label = hastPlainTextDeep(node) || contextReference.contextId;
+          return renderContextReference ? (
+            renderContextReference({ ...contextReference, label })
+          ) : (
+            <span>{label}</span>
+          );
+        }
         const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
         const fileLinkMeta = normalizedHref
           ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
@@ -2447,6 +2504,15 @@ function ChatMarkdown({
         );
       },
       img({ node: _node, src, alt, title: _title }) {
+        const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
+        if (contextReference) {
+          const label = alt || contextReference.contextId;
+          return renderContextReference ? (
+            renderContextReference({ ...contextReference, label })
+          ) : (
+            <span>{label}</span>
+          );
+        }
         return (
           <MarkdownImage
             src={typeof src === "string" ? src : ""}
@@ -2517,6 +2583,7 @@ function ChatMarkdown({
     resolvedTheme,
     revealMarkdownFileInFileManager,
     revealInFileManagerLabel,
+    renderContextReference,
     skills,
     text,
     threadRef,
@@ -2524,12 +2591,15 @@ function ChatMarkdown({
   ]);
   /* eslint-enable react/no-unstable-nested-components */
 
+  const incrementalParsing =
+    isStreaming && extraRemarkPlugins.length === 0 && /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(text);
   const remarkPlugins = useMemo(
     () => [
       ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
       ...extraRemarkPlugins,
+      ...(incrementalParsing ? [createIncrementalMarkdownPlugin()] : []),
     ],
-    [extraRemarkPlugins, lineBreaks],
+    [extraRemarkPlugins, incrementalParsing, lineBreaks],
   );
 
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.

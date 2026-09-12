@@ -297,6 +297,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "open-source-licenses",
+    title: "Open source licenses",
+    to: "/settings/general",
+  },
+  {
     id: "legacy-plan-mode",
     title: "Plan mode (legacy)",
     searchTerms: ["build plan composer old"],
@@ -390,6 +395,33 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "browser",
   },
   {
+    id: "device-hosts",
+    title: "Device hosts",
+    to: "/settings/integrations",
+    searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
+  },
+  {
+    id: "agent-device-access",
+    title: "Agent device access",
+    to: "/settings/integrations",
+    targetId: "devices",
+    searchTerms: ["allow simulator emulator ios android drive tools sessions"],
+  },
+  {
+    id: "device-hub",
+    title: "Device hub",
+    to: "/settings/integrations",
+    targetId: "devices",
+    searchTerms: ["simulator emulator ios android install start"],
+  },
+  {
+    id: "device-platform-support",
+    title: "Simulator support",
+    to: "/settings/integrations",
+    targetId: "devices",
+    searchTerms: ["xcode android studio sdk avd runtime"],
+  },
+  {
     id: "browser-profiles",
     title: "Browser profiles",
     to: "/settings/integrations",
@@ -437,7 +469,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "browser-auto-show-floating-preview",
     title: "Auto-show floating preview",
-    searchTerms: ["agent opens browser pop into view hide"],
+    searchTerms: ["agent opens browser device simulator pop into view hide"],
     to: "/settings/integrations",
     targetId: "browser",
   },

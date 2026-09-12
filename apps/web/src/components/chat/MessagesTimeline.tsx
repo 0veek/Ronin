@@ -1,15 +1,30 @@
 import {
+  deriveTimelineMinimapItems,
+  resolveTimelineMinimapPreview,
+  type TimelineMinimapItem,
+} from "./timelineMinimapItems";
+import {
+  COMPOSER_CONTEXT_KINDS,
   type AssistantCitation,
-  type ChatFileAttachment,
+  type ComposerContextId,
+  type ComposerContextRecord,
   type EnvironmentId,
+  type KnownComposerContextRecord,
   type MessageId,
   type ScopedThreadRef,
   type ServerProviderSkill,
   type TurnId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-log/presentation";
+import {
+  getQuestionAnswerPreview,
+  getQuestionAnswerText,
+  hasQuestionAnswer,
+} from "@t3tools/client-runtime/work-log/user-input";
 import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
@@ -40,6 +55,8 @@ import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import { FileDiff } from "@pierre/diffs/react";
 import {
   deriveTimelineEntries,
+  createMessageAttachmentPreviewProjector,
+  selectMessageImageResources,
   type ProviderBoundaryWorkLogEntry,
   workEntryIndicatesToolFailure,
   workEntryIndicatesToolNeutralStatus,
@@ -48,6 +65,7 @@ import {
   workLogEntryIsToolLike,
 } from "../../session-logic";
 import {
+  type ChatFileAttachment,
   type ChatImageAttachment,
   isFileAttachment,
   isImageAttachment,
@@ -60,7 +78,10 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "../../lib/syntaxHighlighting";
-import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
+import ChatMarkdown, {
+  ChatMarkdownAssetImage,
+  type ChatMarkdownContextReference,
+} from "../ChatMarkdown";
 import { resolveViewedImageAsset, workEntryViewedImagePath } from "../../workLogViewedImage";
 import {
   BotIcon,
@@ -83,6 +104,7 @@ import {
   PaintbrushIcon,
   MinusIcon,
   PlayIcon,
+  SmartphoneIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -136,18 +158,7 @@ import {
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { WorkingGlyph } from "./WorkingGlyph";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  deriveDisplayedUserMessageState,
-  type ParsedTerminalContextEntry,
-} from "~/lib/terminalContext";
-import {
-  extractTrailingElementContexts,
-  type ParsedElementContextEntry,
-} from "~/lib/elementContext";
-import {
-  extractTrailingPreviewAnnotation,
-  type ParsedPreviewAnnotation,
-} from "~/lib/previewAnnotation";
+import { type ParsedTerminalContextEntry } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
@@ -169,6 +180,48 @@ import {
 } from "../../reviewCommentContext";
 import { FallbackImage, MissingMediaBlock } from "../MissingMedia";
 import { useAssetUrls } from "../../assets/assetUrls";
+import {
+  ContextChipPopover as UserMessageContextPopover,
+  ContextChipShell,
+  FileChip,
+  ImageChipButton,
+  PullRequestChip,
+  UnresolvedChip,
+} from "../contextChipParts";
+import {
+  asKnownContextRecord,
+  isPullRequestSummaryContext,
+  pullRequestContextDisplayState,
+  pullRequestContextKindLabel,
+  resolveUserMessageContext,
+  reviewCommentContextLabel,
+  selectedMessageContextFragment,
+} from "~/lib/composerContextRecords";
+import {
+  collectComposerContextReferences,
+  formatComposerContextReference,
+} from "@t3tools/shared/composerContextReferences";
+import {
+  COMPOSER_CONTEXT_CLIPBOARD_MIME,
+  encodeComposerContextClipboardHtml,
+  encodeComposerContextFragment,
+} from "@t3tools/shared/composerContextClipboard";
+import { chatMarkdownClipboardPayload } from "../../markdown-clipboard";
+import {
+  CHAT_INLINE_CHIP_CLASS_NAME,
+  CHAT_INLINE_CHIP_LABEL_CLASS_NAME,
+  COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
+  SKILL_CHIP_ICON_SVG,
+  CONTEXT_INLINE_CHIP_ICON_TONE_CLASS_NAMES,
+  CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES,
+  PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES,
+} from "../composerInlineChip";
+import { createContextPresentationRegistry } from "../contextPresentationRegistry";
+import { useRightPanelStore } from "~/rightPanelStore";
+import { inferEntryKindFromPath } from "../../pierre-icons";
+import { PierreEntryIcon } from "./PierreEntryIcon";
+import ReadOnlySourcePreview from "../files/ReadOnlySourcePreview";
+import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -188,7 +241,7 @@ interface TimelineRowSharedState {
   workspaceRoot: string | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
-  onRevertToTurnCount: (targetTurnCount: number) => void;
+  onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   /**
    * Open a side chat anchored to a message. Absent when there is nowhere to
    * open one into — a draft thread has no project yet.
@@ -287,9 +340,15 @@ interface MessagesTimelineProps {
   runningTurnId: TurnId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   routeThreadKey: string;
+  /**
+   * Thread whose entries are currently painted. Differs from `routeThreadKey`
+   * while a jump is still holding the previous list. Identity for row
+   * projection and list extraData — do not remount on this value.
+   */
+  displayThreadKey?: string;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onReplayTurn?: ((turnId: TurnId) => void) | null;
-  onRevertToTurnCount: (targetTurnCount: number) => void;
+  onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onAskOnTheSide?: ((messageId: MessageId) => void) | null;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   isRevertingCheckpoint: boolean;
@@ -341,6 +400,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   runningTurnId,
   turnDiffSummaries,
   routeThreadKey,
+  displayThreadKey,
   onOpenTurnDiff,
   onReplayTurn = null,
   onRevertToTurnCount,
@@ -367,13 +427,26 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   loadEarlier = null,
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
+  const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
+  const listIdentityKey = displayThreadKey ?? routeThreadKey;
+  const listIdentityRef = useRef(listIdentityKey);
+  const previousLatestTurnRef = useRef(latestTurn);
+  let paintedExpandedTurnIds = expandedTurnIds;
+  let paintedExpandedWorkGroupIds = expandedWorkGroupIds;
+  if (listIdentityRef.current !== listIdentityKey) {
+    listIdentityRef.current = listIdentityKey;
+    previousLatestTurnRef.current = latestTurn;
+    paintedExpandedTurnIds = new Set();
+    paintedExpandedWorkGroupIds = new Set();
+    setExpandedTurnIds(paintedExpandedTurnIds);
+    setExpandedWorkGroupIds(paintedExpandedWorkGroupIds);
+  }
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
   const expandCitedTurn = useCallback((turnId: TurnId) => {
     setExpandedTurnIds((current) =>
       current.has(turnId) ? current : new Set([...current, turnId]),
     );
   }, []);
-  const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
   const [disclosureToggleSettling, setDisclosureToggleSettling] = useState(false);
   const [minimapStripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const disclosureAnchorKeyRef = useRef<string | null>(null);
@@ -458,7 +531,6 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   // An in-session interrupt leaves its turn expanded so the user keeps their
   // place; the next turn (or a reload, since this is local state) folds it.
-  const previousLatestTurnRef = useRef(latestTurn);
   useEffect(() => {
     const previous = previousLatestTurnRef.current;
     previousLatestTurnRef.current = latestTurn;
@@ -497,31 +569,31 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         timelineEntries,
         latestTurn,
         runningTurnId,
-        expandedTurnIds,
-        expandedWorkGroupIds,
+        expandedTurnIds: paintedExpandedTurnIds,
+        expandedWorkGroupIds: paintedExpandedWorkGroupIds,
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaries,
       },
-      previous?.threadKey === routeThreadKey && previous.workspaceRoot === workspaceRoot
+      previous?.threadKey === listIdentityKey && previous.workspaceRoot === workspaceRoot
         ? previous.projection
         : null,
     );
-    rowsProjectionRef.current = { threadKey: routeThreadKey, workspaceRoot, projection };
+    rowsProjectionRef.current = { threadKey: listIdentityKey, workspaceRoot, projection };
     return projection.rows;
   }, [
-    routeThreadKey,
+    listIdentityKey,
     workspaceRoot,
     timelineEntries,
     latestTurn,
     runningTurnId,
-    expandedTurnIds,
-    expandedWorkGroupIds,
+    paintedExpandedTurnIds,
+    paintedExpandedWorkGroupIds,
     isWorking,
     activeTurnStartedAt,
     turnDiffSummaries,
   ]);
-  const rows = useStableRows(rawRows);
+  const rows = useStableRows(rawRows, listIdentityKey);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -732,7 +804,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
   if (rows.length === 0 && !isWorking) {
     if (hideEmptyPlaceholder) {
-      return null;
+      // Occupy the pane with the theme surface so a thread switch cannot
+      // punch a hole through to the window chrome (white in light mode).
+      return <div className="h-full min-h-0 bg-background" data-timeline-loading="true" />;
     }
     return (
       <div className="flex h-full items-center justify-center">
@@ -759,6 +833,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
           <LegendList<MessagesTimelineRow>
             ref={listRef}
             data={rows}
+            extraData={`${listIdentityKey}:${rows.length}`}
             keyExtractor={keyExtractor}
             getItemType={getItemType}
             renderItem={renderItem}
@@ -830,64 +905,12 @@ function getItemType(item: MessagesTimelineRow) {
   return item.kind === "message" ? `message:${item.message.role}` : item.kind;
 }
 
-interface TimelineMinimapItem {
-  readonly id: string;
-  readonly rowIndex: number;
-  readonly userText: string | null;
-  readonly assistantText: string | null;
-}
-
 interface TimelinePositionState {
   readonly contentLength?: number;
   readonly scroll?: number;
   readonly scrollLength?: number;
   readonly positionAtIndex?: (index: number) => number | undefined;
   readonly sizeAtIndex?: (index: number) => number | undefined;
-}
-
-function deriveTimelineMinimapItems(
-  rows: ReadonlyArray<MessagesTimelineRow>,
-): TimelineMinimapItem[] {
-  const items: TimelineMinimapItem[] = [];
-  for (let index = 0; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message" || row.message.role !== "user") {
-      continue;
-    }
-
-    items.push({
-      id: row.id,
-      rowIndex: index,
-      userText: compactMinimapPreview(row.message.text),
-      assistantText: compactMinimapPreview(resolveFinalAssistantTextForTurn(rows, index)),
-    });
-  }
-  return items;
-}
-
-function resolveFinalAssistantTextForTurn(
-  rows: ReadonlyArray<MessagesTimelineRow>,
-  userRowIndex: number,
-) {
-  let finalAssistantText: string | null = null;
-  for (let index = userRowIndex + 1; index < rows.length; index += 1) {
-    const row = rows[index];
-    if (row?.kind !== "message") {
-      continue;
-    }
-    if (row.message.role === "user") {
-      break;
-    }
-    if (row.message.role === "assistant") {
-      finalAssistantText = row.message.text ?? null;
-    }
-  }
-  return finalAssistantText;
-}
-
-function compactMinimapPreview(text: string | null | undefined) {
-  const compact = text?.replace(/\s+/g, " ").trim() ?? "";
-  return compact.length > 0 ? compact : null;
 }
 
 function resolveTimelineRowTop(state: TimelinePositionState, rowIndex: number) {
@@ -923,7 +946,13 @@ function TimelineMinimap({
 
   const resolvedActiveIndex =
     activeIndex !== null && activeIndex < items.length ? activeIndex : null;
-  const activeItem = resolvedActiveIndex === null ? null : (items[resolvedActiveIndex] ?? null);
+  const activeItem = useMemo(
+    () =>
+      resolveTimelineMinimapPreview(
+        resolvedActiveIndex === null ? null : (items[resolvedActiveIndex] ?? null),
+      ),
+    [items, resolvedActiveIndex],
+  );
   const activeTopPercent =
     resolvedActiveIndex === null
       ? 0
@@ -1208,33 +1237,146 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  // The attachment union has an open member, so guards (not literal type
-  // comparisons) split it. Unknown types render as inert rows below the files.
-  const userImages = (row.message.attachments ?? []).filter(isImageAttachment);
-  const userFiles = (row.message.attachments ?? []).filter(isFileAttachment);
+  const { onImageExpand, onFileOpen } = ctx;
+  const resources = useMemo(
+    () => selectMessageImageResources(row.message.attachments),
+    [row.message.attachments],
+  );
+  const previewUrls = useAssetUrls(ctx.activeThreadEnvironmentId, resources);
+  const [projectPreviews] = useState(createMessageAttachmentPreviewProjector);
+  const messageWithPreviews = useMemo(() => {
+    const urlsById = new Map(
+      resources.flatMap((resource, index) => {
+        const url = previewUrls[index];
+        return url ? [[resource.attachmentId, url] as const] : [];
+      }),
+    );
+    return projectPreviews(row.message, (attachment) => urlsById.get(attachment.id));
+  }, [previewUrls, projectPreviews, resources, row.message]);
+
+  const userImages = useMemo(
+    () => (messageWithPreviews.attachments ?? []).filter(isImageAttachment),
+    [messageWithPreviews.attachments],
+  );
+  const userFiles = useMemo(
+    () => (messageWithPreviews.attachments ?? []).filter(isFileAttachment),
+    [messageWithPreviews.attachments],
+  );
   const userVideos = userFiles.filter(isVideoAttachment);
   const otherUserFiles = userFiles.filter((file) => !isVideoAttachment(file));
-  const unknownAttachments = (row.message.attachments ?? []).filter(
+  const unknownAttachments = (messageWithPreviews.attachments ?? []).filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
-  const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
-  const terminalContexts = displayedUserMessage.contexts;
-  const previewAnnotations: ParsedPreviewAnnotation[] = [];
-  let visibleText = displayedUserMessage.visibleText;
-  while (true) {
-    const extracted = extractTrailingPreviewAnnotation(visibleText);
-    if (!extracted.annotation) break;
-    previewAnnotations.unshift(extracted.annotation);
-    visibleText = extracted.promptText;
-  }
-  const elementContextState = extractTrailingElementContexts(visibleText);
-  const elementContexts = [
-    ...displayedUserMessage.elementContexts,
-    ...elementContextState.contexts,
-  ];
-  const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
+  const resolvedContext = useMemo(() => resolveUserMessageContext(row.message), [row.message]);
+  const previewImages = useMemo(
+    () => userImages.filter((image) => image.name.startsWith("preview-annotation-")),
+    [userImages],
+  );
   const regularImages = userImages.filter((image) => !image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
+
+  const chippedAttachmentIds = new Set(
+    collectComposerContextReferences(resolvedContext.text).flatMap((occurrence) => {
+      const record = asKnownContextRecord(resolvedContext.recordsById.get(occurrence.contextId));
+      return record?.kind === "file" || record?.kind === "image" ? [record.attachmentId] : [];
+    }),
+  );
+  const unchippedFiles = otherUserFiles.filter((file) => !chippedAttachmentIds.has(file.id));
+  const annotationRecordIds = useMemo(
+    () =>
+      resolvedContext.records
+        .filter((record) => record.kind === "preview-annotation")
+        .map((record) => record.contextId),
+    [resolvedContext.records],
+  );
+  const contextClipboardFragment =
+    resolvedContext.records.length === 0
+      ? null
+      : encodeComposerContextFragment({
+          version: 1,
+          source: {
+            environmentId: ctx.activeThreadEnvironmentId,
+            ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
+            messageId: row.message.id,
+          },
+          records: resolvedContext.records,
+        });
+
+  const onBodyCopyCapture = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (resolvedContext.records.length === 0 || !event.clipboardData) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    const copiedMarkdown: string[] = [];
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      const container = document.createElement("div");
+      container.appendChild(selection.getRangeAt(index).cloneContents());
+      for (const element of container.querySelectorAll("[data-markdown-copy]")) {
+        copiedMarkdown.push(element.getAttribute("data-markdown-copy") ?? "");
+      }
+    }
+    const fragment = selectedMessageContextFragment({
+      markdown: copiedMarkdown.join("\n"),
+      records: resolvedContext.records,
+      environmentId: ctx.activeThreadEnvironmentId,
+      ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
+      messageId: row.message.id,
+    });
+    if (!fragment) return;
+    const payload = chatMarkdownClipboardPayload(selection);
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", payload?.text ?? selection.toString());
+    if (payload) {
+      event.clipboardData.setData(
+        "text/html",
+        encodeComposerContextClipboardHtml(payload.text, fragment, payload.html),
+      );
+    }
+    event.clipboardData.setData(COMPOSER_CONTEXT_CLIPBOARD_MIME, fragment);
+  };
+
+  const renderContextReference = useCallback(
+    (reference: ChatMarkdownContextReference) => {
+      const record = asKnownContextRecord(resolvedContext.recordsById.get(reference.contextId));
+      const annotationImage =
+        record?.kind === "preview-annotation"
+          ? resolvePreviewAnnotationImage({
+              record,
+              recordsById: resolvedContext.recordsById,
+              userImages,
+              previewImages,
+              annotationRecordIds,
+            })
+          : null;
+      const attachment =
+        record?.kind === "image"
+          ? (userImages.find((image) => image.id === record.attachmentId) ?? null)
+          : record?.kind === "file"
+            ? (userFiles.find((file) => file.id === record.attachmentId) ?? null)
+            : null;
+      return (
+        <UserMessageContextReferenceChip
+          reference={reference}
+          record={record}
+          annotationImage={annotationImage}
+          attachment={attachment}
+          onExpandImage={(image) => {
+            const preview = buildExpandedImagePreview(userImages, image.id);
+            if (preview) onImageExpand(preview);
+          }}
+          onOpenFile={onFileOpen}
+        />
+      );
+    },
+    [
+      annotationRecordIds,
+      onFileOpen,
+      onImageExpand,
+      previewImages,
+      resolvedContext.recordsById,
+      userFiles,
+      userImages,
+    ],
+  );
 
   return (
     <div className="group flex flex-col items-end gap-1">
@@ -1258,8 +1400,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                     aria-label={`Preview ${image.name}`}
                     onClick={() => {
                       const preview = buildExpandedImagePreview(regularImages, image.id);
-                      if (!preview) return;
-                      ctx.onImageExpand(preview);
+                      if (preview) ctx.onImageExpand(preview);
                     }}
                   >
                     <FallbackImage
@@ -1296,8 +1437,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                     aria-disabled={isOpening || undefined}
                     aria-label={`${isOpening ? "Loading" : "Play"} ${file.name}`}
                     onClick={() => {
-                      if (isOpening) return;
-                      ctx.onFileOpen(file);
+                      if (!isOpening) ctx.onFileOpen(file);
                     }}
                   >
                     {isOpening ? (
@@ -1312,16 +1452,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             })}
           </div>
         )}
-        {previewAnnotations.map((annotation, index) => (
-          <UserMessagePreviewAnnotationCard
-            key={annotation.id}
-            annotation={annotation}
-            image={previewImages[index] ?? null}
-          />
-        ))}
-        {otherUserFiles.length > 0 || unknownAttachments.length > 0 ? (
+        {unchippedFiles.length > 0 || unknownAttachments.length > 0 ? (
           <div className="mb-2 flex flex-col gap-1">
-            {otherUserFiles.map((file) => {
+            {unchippedFiles.map((file) => {
               const content = (
                 <>
                   <FileIcon className="size-4 shrink-0 text-secondary-label" />
@@ -1364,22 +1497,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ))}
           </div>
         ) : null}
-        {elementContexts.length > 0 ? (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {elementContexts.map((context) => (
-              <UserMessageElementContextChip
-                key={`${context.header}:${context.body}`}
-                context={context}
-              />
-            ))}
-          </div>
-        ) : null}
-        <CollapsibleUserMessageBody
-          text={elementContextState.promptText}
-          terminalContexts={terminalContexts}
-          skills={ctx.skills}
-          markdownCwd={ctx.markdownCwd}
-        />
+        <div onCopyCapture={onBodyCopyCapture}>
+          <CollapsibleUserMessageBody
+            text={resolvedContext.text}
+            terminalContexts={[]}
+            renderContextReference={renderContextReference}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        </div>
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-(--duration-base) pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
@@ -1393,10 +1519,25 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           </Tooltip>
           <div className="flex items-center gap-0.5">
             {typeof revertTurnCount === "number" && (
-              <RevertUserMessageButton turnCount={revertTurnCount} />
+              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+            {resolvedContext.text && (
+              <MessageCopyButton
+                text={
+                  contextClipboardFragment
+                    ? resolvedContext.text
+                    : replaceComposerContextReferences(
+                        resolvedContext.text,
+                        (reference) => reference.label,
+                      )
+                }
+                {...(contextClipboardFragment
+                  ? {
+                      extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
+                    }
+                  : {})}
+                variant="ghost"
+              />
             )}
           </div>
         </div>
@@ -1405,7 +1546,34 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
 }
 
-function RevertUserMessageButton({ turnCount }: { turnCount: number }) {
+export function resolvePreviewAnnotationImage(input: {
+  record: Extract<KnownComposerContextRecord, { kind: "preview-annotation" }>;
+  recordsById: ReadonlyMap<string, ComposerContextRecord>;
+  userImages: ReadonlyArray<ChatImageAttachment>;
+  previewImages: ReadonlyArray<ChatImageAttachment>;
+  annotationRecordIds: ReadonlyArray<string>;
+}): ChatImageAttachment | null {
+  const screenshotRecord = input.record.screenshotContextId
+    ? asKnownContextRecord(input.recordsById.get(input.record.screenshotContextId))
+    : undefined;
+  return (
+    (screenshotRecord?.kind === "image"
+      ? input.userImages.find((image) => image.id === screenshotRecord.attachmentId)
+      : undefined) ??
+    input.previewImages.find(
+      (image) => image.name === `preview-annotation-${input.record.annotationId}.png`,
+    ) ??
+    input.previewImages[input.annotationRecordIds.indexOf(input.record.contextId)] ??
+    null
+  );
+}
+function RevertUserMessageButton({
+  turnCount,
+  messageId,
+}: {
+  turnCount: number;
+  messageId: MessageId;
+}) {
   const ctx = use(TimelineRowCtx);
   const activity = use(TimelineRowActivityCtx);
 
@@ -1418,14 +1586,14 @@ function RevertUserMessageButton({ turnCount }: { turnCount: number }) {
             size="xs"
             variant="ghost"
             disabled={activity.isRevertingCheckpoint || activity.isWorking}
-            onClick={() => ctx.onRevertToTurnCount(turnCount)}
-            aria-label="Revert to this message"
+            onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}
+            aria-label="Edit from here"
           />
         }
       >
         <Undo2Icon className="size-3" />
       </TooltipTrigger>
-      <TooltipPopup side="top">Revert to this message</TooltipPopup>
+      <TooltipPopup side="top">Edit from here</TooltipPopup>
     </Tooltip>
   );
 }
@@ -1986,51 +2154,103 @@ function AssistantChangedFilesSectionInner({
 // Leaf components
 // ---------------------------------------------------------------------------
 
-const UserMessageTerminalContextInlineLabel = memo(
-  function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {
-    const tooltipText =
-      props.context.body.length > 0
-        ? `${props.context.header}\n${props.context.body}`
-        : props.context.header;
-
-    return <TerminalContextInlineChip label={props.context.header} tooltipText={tooltipText} />;
-  },
-);
-
-const UserMessageElementContextChip = memo(function UserMessageElementContextChip(props: {
-  context: ParsedElementContextEntry;
+function UserMessageMentionChip(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "mention" }>;
+  copyMarkdown: string;
 }) {
-  const tooltipText = props.context.body
-    ? `${props.context.header}\n${props.context.body}`
-    : props.context.header;
+  const ctx = use(TimelineRowCtx);
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-border/70 bg-background/70 px-1.5 py-0.5 text-foreground/85 text-xs">
-            <MousePointerClickIcon className="size-3 shrink-0" />
-            <span className="truncate">{props.context.header}</span>
-          </span>
+          <button
+            type="button"
+            aria-label={`Preview ${props.record.path}`}
+            className={cn(
+              CHAT_INLINE_CHIP_CLASS_NAME,
+              CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.mention,
+              "cursor-pointer focus-visible:outline-2",
+            )}
+            data-markdown-copy={props.copyMarkdown}
+            onClick={() => {
+              if (ctx.threadRef) {
+                useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
+              }
+            }}
+          >
+            <PierreEntryIcon
+              pathValue={props.record.path}
+              kind={inferEntryKindFromPath(props.record.path)}
+              theme={ctx.resolvedTheme}
+              className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME}
+            />
+            <span className={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}>{props.record.label}</span>
+          </button>
         }
       />
-      <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap leading-tight">
-        {tooltipText}
-      </TooltipPopup>
+      <TooltipPopup>{props.record.path}</TooltipPopup>
     </Tooltip>
   );
-});
+}
 
-function UserMessagePreviewAnnotationCard(props: {
-  annotation: ParsedPreviewAnnotation;
+function UserMessageContextChip(props: {
+  icon: ReactNode;
+  label: string;
+  kindLabel?: string;
+  copyMarkdown: string;
+  tooltip?: string;
+  toneClassName?: string;
+  interactive?: boolean;
+}) {
+  return (
+    <ContextChipShell
+      icon={props.icon}
+      label={props.label}
+      className={cn(CHAT_INLINE_CHIP_CLASS_NAME, props.toneClassName)}
+      labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
+      aria-label={props.kindLabel ? `${props.kindLabel}, ${props.label}` : undefined}
+      data-markdown-copy={props.copyMarkdown}
+      tooltip={props.tooltip}
+      interactive={props.interactive === true}
+    />
+  );
+}
+
+function UserMessagePullRequestContextChip(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "review-comment" }>;
+  copyMarkdown: string;
+  toneClassName: string;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const openPullRequest = useOpenChangeRequestLink(ctx.threadRef ?? undefined);
+  const metadata = props.record.pullRequest;
+  if (metadata === undefined) return null;
+  return (
+    <PullRequestChip
+      metadata={metadata}
+      label={reviewCommentContextLabel(props.record)}
+      kindLabel={pullRequestContextKindLabel(props.record)}
+      className={cn(CHAT_INLINE_CHIP_CLASS_NAME, props.toneClassName)}
+      labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
+      copyMarkdown={props.copyMarkdown}
+      onOpen={(event, url) => {
+        openPullRequest(event, url);
+      }}
+    />
+  );
+}
+
+function UserMessagePreviewAnnotationDetails(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "preview-annotation" }>;
   image: ChatImageAttachment | null;
 }) {
   const ctx = use(TimelineRowCtx);
   return (
-    <div className="mb-2 flex max-w-full items-center overflow-hidden rounded-lg border border-border/70 bg-background/70">
+    <div className="max-w-full overflow-hidden rounded-lg border border-border/70 bg-background/70">
       {props.image?.previewUrl ? (
         <button
           type="button"
-          className="size-14 shrink-0 cursor-zoom-in overflow-hidden border-r border-border/70 bg-muted"
+          className="block max-h-64 w-full cursor-zoom-in overflow-hidden border-b border-border/70 bg-muted"
           aria-label={`Preview ${props.image.name}`}
           onClick={() => {
             if (!props.image) return;
@@ -2041,37 +2261,391 @@ function UserMessagePreviewAnnotationCard(props: {
           <FallbackImage
             src={props.image.previewUrl}
             alt="Annotated preview crop"
-            className="size-full object-cover"
-            fallback={<MissingMediaBlock label="" className="size-full p-1" />}
+            className="max-h-64 w-full object-contain"
+            fallback={<MissingMediaBlock label="Screenshot unavailable" className="min-h-24" />}
           />
         </button>
-      ) : null}
-      <div className="min-w-0 px-2.5 py-2">
-        {props.annotation.comment ? (
-          <div className="max-w-80 truncate text-foreground text-xs font-medium">
-            {props.annotation.comment}
+      ) : (
+        <div className="border-b border-border/70 bg-muted/40 px-3 py-2 text-secondary-label text-xs">
+          Screenshot unavailable
+        </div>
+      )}
+      <div className="min-w-0 px-3 py-2.5">
+        <div className="text-message-foreground text-xs font-medium">
+          {props.record.pageTitle?.trim() || props.record.pageUrl || "Preview annotation"}
+        </div>
+        {props.record.comment ? (
+          <div className="mt-1 whitespace-pre-wrap wrap-break-word text-sm">
+            {props.record.comment}
           </div>
         ) : null}
-        <div
-          className={cn(
-            "flex items-center gap-2 text-secondary-label text-3xs",
-            props.annotation.comment && "mt-1",
-          )}
-        >
-          {props.annotation.targetSummary ? (
-            <span className="truncate">{props.annotation.targetSummary}</span>
-          ) : null}
-          {props.annotation.styleChanges.length > 0 ? (
-            <span className="inline-flex shrink-0 items-center gap-1">
-              <PaintbrushIcon className="size-3" />
-              {props.annotation.styleChanges.length}
-            </span>
-          ) : null}
-        </div>
+        {props.record.targetSummary || (props.record.styleChanges?.length ?? 0) > 0 ? (
+          <div className="mt-1 flex items-center gap-2 text-secondary-label text-3xs">
+            {props.record.targetSummary ? <span>{props.record.targetSummary}</span> : null}
+            {(props.record.styleChanges?.length ?? 0) > 0 ? (
+              <span className="inline-flex items-center gap-1">
+                <PaintbrushIcon className="size-3" />
+                {props.record.styleChanges?.length}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );
 }
+
+function UserMessageElementDetails({
+  record,
+}: {
+  record: Extract<KnownComposerContextRecord, { kind: "element" }>;
+}) {
+  const sourceLabel = record.source?.fileName
+    ? `${record.source.fileName}${record.source.lineNumber === null ? "" : `:${record.source.lineNumber}`}`
+    : null;
+  return (
+    <div className="max-w-full overflow-hidden rounded-lg border border-border/70 bg-background/70">
+      <div className="border-b border-border/70 px-3 py-2.5">
+        <div className="truncate text-message-foreground text-xs font-medium">
+          {record.pageTitle?.trim() || record.pageUrl}
+        </div>
+        <div className="mt-0.5 truncate text-secondary-label text-3xs">{record.pageUrl}</div>
+      </div>
+      <div className="space-y-2 px-3 py-2.5">
+        <div className="flex min-w-0 items-center gap-2 text-xs">
+          <code className="truncate text-message-foreground">
+            {record.selector || `<${record.tagName}>`}
+          </code>
+          {sourceLabel ? (
+            <span className="ml-auto shrink-0 text-secondary-label">{sourceLabel}</span>
+          ) : null}
+        </div>
+        {record.htmlPreview?.trim() ? (
+          <div className="flex h-40 flex-col overflow-hidden rounded border border-border">
+            <ReadOnlySourcePreview name="element.html" text={record.htmlPreview} />
+          </div>
+        ) : null}
+        {record.styles?.trim() ? (
+          <div className="flex h-32 flex-col overflow-hidden rounded border border-border">
+            <ReadOnlySourcePreview name="styles.css" text={record.styles} />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+interface UserMessageContextRenderContext {
+  reference: ChatMarkdownContextReference;
+  annotationImage: ChatImageAttachment | null;
+  attachment: ChatImageAttachment | ChatFileAttachment | null;
+  resolvedTheme: "light" | "dark";
+  copyMarkdown: string;
+  onExpandImage: (image: ChatImageAttachment) => void;
+  onOpenFile: (file: ChatFileAttachment) => void;
+}
+
+function UnavailableUserMessageContextChip(props: UserMessageContextRenderContext) {
+  return (
+    <UnresolvedChip
+      label={props.reference.label}
+      className={CHAT_INLINE_CHIP_CLASS_NAME}
+      labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
+      copyMarkdown={props.copyMarkdown}
+      tooltip="This context is no longer available."
+      tooltipClassName="max-w-96 whitespace-pre-wrap leading-tight"
+    />
+  );
+}
+
+const userMessageContextPresentationRegistry = createContextPresentationRegistry<
+  KnownComposerContextRecord,
+  UserMessageContextRenderContext,
+  ReactNode
+>({
+  requiredKinds: COMPOSER_CONTEXT_KINDS,
+  handlers: [
+    {
+      kind: "mention",
+      canRender: (record) => record.kind === "mention",
+      render: (record, context) =>
+        record.kind === "mention" ? (
+          <UserMessageMentionChip record={record} copyMarkdown={context.copyMarkdown} />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "skill",
+      canRender: (record) => record.kind === "skill",
+      render: (record, context) =>
+        record.kind === "skill" ? (
+          <UserMessageContextChip
+            icon={
+              <span
+                aria-hidden="true"
+                className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME}
+                dangerouslySetInnerHTML={{ __html: SKILL_CHIP_ICON_SVG }}
+              />
+            }
+            label={record.label || record.name}
+            kindLabel="Skill"
+            tooltip={`$${record.name}`}
+            copyMarkdown={context.copyMarkdown}
+            toneClassName={CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.skill}
+          />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "image",
+      canRender: (record, context) =>
+        record.kind === "image" &&
+        context.attachment !== null &&
+        isImageAttachment(context.attachment),
+      render: (record, context) => {
+        if (
+          record.kind !== "image" ||
+          context.attachment === null ||
+          !isImageAttachment(context.attachment)
+        ) {
+          return <UnavailableUserMessageContextChip {...context} />;
+        }
+        return (
+          <ImageChipButton
+            name={record.name}
+            previewUrl={context.attachment.previewUrl}
+            className={CHAT_INLINE_CHIP_CLASS_NAME}
+            labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
+            size={formatAttachmentSize(record.sizeBytes)}
+            data-markdown-copy={context.copyMarkdown}
+            onClick={() => context.onExpandImage(context.attachment as ChatImageAttachment)}
+          />
+        );
+      },
+    },
+    {
+      kind: "file",
+      canRender: (record, context) =>
+        record.kind === "file" && context.attachment !== null && context.attachment.type === "file",
+      render: (record, context) => {
+        if (
+          record.kind !== "file" ||
+          context.attachment === null ||
+          context.attachment.type !== "file"
+        ) {
+          return <UnavailableUserMessageContextChip {...context} />;
+        }
+        const attachment = context.attachment;
+        const isVideo = isVideoAttachment(attachment);
+        const size = formatAttachmentSize(record.sizeBytes);
+        return (
+          <FileChip
+            name={record.name}
+            size={size}
+            isVideo={isVideo}
+            theme={context.resolvedTheme}
+            className={CHAT_INLINE_CHIP_CLASS_NAME}
+            labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
+            disabled={attachment.downloadable === false}
+            accessibleLabel={`${isVideo ? "Video" : "File"} attachment, ${record.name}, ${size}`}
+            copyMarkdown={context.copyMarkdown}
+            onOpen={() => context.onOpenFile(attachment)}
+            tooltip={`${record.name}\n${size}`}
+          />
+        );
+      },
+    },
+    {
+      kind: "terminal",
+      canRender: (record) => record.kind === "terminal",
+      render: (record, context, definition) =>
+        record.kind === "terminal" ? (
+          <span data-markdown-copy={context.copyMarkdown}>
+            <TerminalContextInlineChip
+              surface="transcript"
+              label={record.label}
+              terminalLabel={record.terminalLabel}
+              lineStart={record.lineStart}
+              lineEnd={record.lineEnd}
+              text={record.text}
+              detailsMode={definition.capabilities.details}
+            />
+          </span>
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "element",
+      canRender: (record) => record.kind === "element",
+      render: (record, context) =>
+        record.kind === "element" ? (
+          <UserMessageContextPopover
+            copyMarkdown={context.copyMarkdown}
+            accessibleLabel={`Browser element, ${record.label}`}
+            chip={
+              <UserMessageContextChip
+                icon={
+                  <MousePointerClickIcon
+                    className={cn(
+                      COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
+                      CONTEXT_INLINE_CHIP_ICON_TONE_CLASS_NAMES.element,
+                      "size-3.5",
+                    )}
+                  />
+                }
+                label={record.label}
+                kindLabel="Browser element"
+                copyMarkdown={context.copyMarkdown}
+                interactive
+                toneClassName={CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.element}
+              />
+            }
+          >
+            <UserMessageElementDetails record={record} />
+          </UserMessageContextPopover>
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "review-comment",
+      canRender: (record) => record.kind === "review-comment",
+      render: (record, context) => {
+        if (record.kind !== "review-comment") {
+          return <UnavailableUserMessageContextChip {...context} />;
+        }
+        const isPullRequest = isPullRequestSummaryContext(record);
+        const label = reviewCommentContextLabel(record);
+        const kindLabel = isPullRequest ? pullRequestContextKindLabel(record) : "Review comment";
+        const pullRequestState = pullRequestContextDisplayState(record) ?? "unknown";
+        if (isPullRequest && record.pullRequest !== undefined) {
+          return (
+            <UserMessagePullRequestContextChip
+              record={record}
+              copyMarkdown={context.copyMarkdown}
+              toneClassName={PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES[pullRequestState]}
+            />
+          );
+        }
+        return (
+          <UserMessageContextPopover
+            copyMarkdown={context.copyMarkdown}
+            accessibleLabel={`${kindLabel}, ${label}`}
+            chip={
+              <UserMessageContextChip
+                icon={
+                  <MessageCircleIcon
+                    className={cn(
+                      COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
+                      CONTEXT_INLINE_CHIP_ICON_TONE_CLASS_NAMES["review-comment"],
+                      "size-3.5",
+                    )}
+                  />
+                }
+                label={label}
+                kindLabel={kindLabel}
+                copyMarkdown={context.copyMarkdown}
+                interactive
+                toneClassName={CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES["review-comment"]}
+              />
+            }
+          >
+            <UserMessageReviewCommentCard
+              comment={{
+                id: record.contextId,
+                sectionId: record.sectionId,
+                sectionTitle: record.sectionTitle,
+                filePath: record.filePath,
+                startIndex: record.startIndex,
+                endIndex: record.endIndex,
+                rangeLabel: record.rangeLabel,
+                text: record.text,
+                diff: record.diff,
+                ...(record.fenceLanguage !== undefined
+                  ? { fenceLanguage: record.fenceLanguage }
+                  : {}),
+                ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
+              }}
+            />
+          </UserMessageContextPopover>
+        );
+      },
+    },
+    {
+      kind: "preview-annotation",
+      canRender: (record) => record.kind === "preview-annotation",
+      render: (record, context) =>
+        record.kind === "preview-annotation" ? (
+          <UserMessageContextPopover
+            copyMarkdown={context.copyMarkdown}
+            accessibleLabel={`Preview annotation, ${record.label}`}
+            chip={
+              <UserMessageContextChip
+                icon={
+                  <MousePointerClickIcon
+                    className={cn(
+                      COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
+                      CONTEXT_INLINE_CHIP_ICON_TONE_CLASS_NAMES["preview-annotation"],
+                      "size-3.5",
+                    )}
+                  />
+                }
+                label={record.label}
+                kindLabel="Preview annotation"
+                copyMarkdown={context.copyMarkdown}
+                interactive
+                toneClassName={CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES["preview-annotation"]}
+              />
+            }
+          >
+            <UserMessagePreviewAnnotationDetails record={record} image={context.annotationImage} />
+          </UserMessageContextPopover>
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+  ],
+  fallback: (_kind, _record, context) => <UnavailableUserMessageContextChip {...context} />,
+});
+
+function UserMessageContextReferenceChip(props: {
+  reference: ChatMarkdownContextReference;
+  record: KnownComposerContextRecord | undefined;
+  annotationImage: ChatImageAttachment | null;
+  attachment: ChatImageAttachment | ChatFileAttachment | null;
+  onExpandImage: (image: ChatImageAttachment) => void;
+  onOpenFile: (file: ChatFileAttachment) => void;
+}) {
+  const { resolvedTheme } = use(TimelineRowCtx);
+  const copyMarkdown = formatComposerContextReference({
+    kind: props.reference.kind,
+    contextId: props.reference.contextId as ComposerContextId,
+    label: props.reference.label,
+  });
+  return userMessageContextPresentationRegistry.render(props.reference.kind, props.record, {
+    reference: props.reference,
+    annotationImage: props.annotationImage,
+    attachment: props.attachment,
+    resolvedTheme,
+    copyMarkdown,
+    onExpandImage: props.onExpandImage,
+    onOpenFile: props.onOpenFile,
+  });
+}
+
+const UserMessageTerminalContextInlineLabel = memo(
+  function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {
+    const tooltipText =
+      props.context.body.length > 0
+        ? `${props.context.header}\n${props.context.body}`
+        : props.context.header;
+
+    return <TerminalContextInlineChip label={props.context.header} tooltipText={tooltipText} />;
+  },
+);
 
 const MAX_COLLAPSED_USER_MESSAGE_LINES = 8;
 const MAX_COLLAPSED_USER_MESSAGE_LENGTH = 600;
@@ -2092,6 +2666,7 @@ function shouldCollapseUserMessage(text: string): boolean {
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
+  renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
   footer?: ReactNode;
@@ -2122,6 +2697,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
           <UserMessageBody
             text={props.text}
             terminalContexts={props.terminalContexts}
+            renderContextReference={props.renderContextReference}
             skills={props.skills}
             markdownCwd={props.markdownCwd}
           />
@@ -2160,6 +2736,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
+  renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
@@ -2185,6 +2762,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
             className="text-message-foreground"
             lineBreaks
             parseRawHtml={false}
+            renderContextReference={props.renderContextReference}
           />
         ) : null}
         {trailingWhitespace ? <span aria-hidden="true">{trailingWhitespace}</span> : null}
@@ -2208,6 +2786,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
                   className="text-message-foreground"
                   lineBreaks
                   parseRawHtml={false}
+                  renderContextReference={props.renderContextReference}
                 />
               </div>
             ) : null
@@ -2297,6 +2876,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
           className="text-message-foreground"
           lineBreaks
           parseRawHtml={false}
+          renderContextReference={props.renderContextReference}
         />,
       );
     } else if (inlinePrefix.length === 0) {
@@ -2323,6 +2903,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       className="text-message-foreground"
       lineBreaks
       parseRawHtml={false}
+      renderContextReference={props.renderContextReference}
     />
   );
 });
@@ -2388,17 +2969,23 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
 
 /** Returns a structurally-shared copy of `rows`: for each row whose content
  *  hasn't changed since last call, the previous object reference is reused. */
-function useStableRows(rows: MessagesTimelineRow[]): MessagesTimelineRow[] {
+function useStableRows(rows: MessagesTimelineRow[], identity: string): MessagesTimelineRow[] {
   const prevState = useRef<StableMessagesTimelineRowsState>({
     byId: new Map<string, MessagesTimelineRow>(),
     result: [],
   });
+  const prevIdentity = useRef(identity);
 
   return useMemo(() => {
-    const nextState = computeStableMessagesTimelineRows(rows, prevState.current);
+    const previous =
+      prevIdentity.current === identity
+        ? prevState.current
+        : { byId: new Map<string, MessagesTimelineRow>(), result: [] };
+    prevIdentity.current = identity;
+    const nextState = computeStableMessagesTimelineRows(rows, previous);
     prevState.current = nextState;
     return nextState.result;
-  }, [rows]);
+  }, [identity, rows]);
 }
 
 // ---------------------------------------------------------------------------
@@ -2436,6 +3023,7 @@ type WorkEntryIconName =
   | "bot"
   | "check"
   | "circle-alert"
+  | "device"
   | "eye"
   | "globe"
   | "pull-request"
@@ -2453,6 +3041,8 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
       return <GitPullRequestIcon className={className} aria-hidden />;
     case "bot":
       return <BotIcon className={className} aria-hidden />;
+    case "device":
+      return <SmartphoneIcon className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
@@ -2589,6 +3179,7 @@ const toolCallExpandedBodyClassName =
 
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (
+    workEntry.questionAnswer ||
     workEntry.sourceActivityKind === "user-input.requested" ||
     workEntry.sourceActivityKind === "user-input.resolved"
   ) {
@@ -2597,9 +3188,11 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (workEntry.requestKind === "command") return "terminal";
   if (workEntry.requestKind === "file-read") return "eye";
   if (workEntry.requestKind === "file-change") return "square-pen";
-  if (resolveWorkEntryToolPresentation(workEntry)?.icon === "pull-request") {
+  const nativeToolPresentation = resolveWorkEntryToolPresentation(workEntry);
+  if (nativeToolPresentation?.icon === "pull-request") {
     return "pull-request";
   }
+  if (nativeToolPresentation?.icon === "device") return "device";
 
   if (workEntry.itemType === "command_execution" || workEntry.command) {
     return "terminal";
@@ -2645,6 +3238,18 @@ function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
 }
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
+
+/**
+ * Click handler for expanded row labels, which turn text selection back on.
+ * Only a click that ends a real selection is withheld from the row toggle, so
+ * an ordinary click on the label still bubbles and collapses the row it opened.
+ */
+const stopRowToggleWhileSelectingText = (e: MouseEvent<HTMLElement>) => {
+  const selection = e.currentTarget.ownerDocument.getSelection();
+  if (selection && !selection.isCollapsed) {
+    e.stopPropagation();
+  }
+};
 
 /**
  * A1 spawn CTA: one anchored row per workflow run (or per-turn direct-spawn
@@ -2819,9 +3424,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "circle-alert" : workEntryIconName(workEntry);
-  const heading = workEntry.questionAnswer
-    ? "Question answer submitted"
-    : toolWorkEntryHeading(workEntry);
+  const heading = toolWorkEntryHeading(workEntry);
+  const answerPreview = workEntry.questionAnswer
+    ? getQuestionAnswerPreview(workEntry.questionAnswer)
+    : null;
   const rawPreview = workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
@@ -2851,6 +3457,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   );
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const canExpand =
+    Boolean(workEntry.questionAnswer) ||
     expandedBody !== null ||
     viewedImage !== null ||
     Boolean(workEntryRawCommand(workEntry) || workEntry.command?.trim()) ||
@@ -2880,11 +3487,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showSuccessIndicator =
     workEntryIndicatesToolSuccess(workEntry) ||
     (turnSettled && workEntryIndicatesToolNeutralStatus(workEntry));
+  const accessibleDisplayText = [displayText, answerPreview].filter(Boolean).join(": ");
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
         tabIndex: 0 as const,
-        "aria-label": displayText,
+        "aria-label": accessibleDisplayText,
+        "aria-expanded": expanded,
         onClick: () => setExpanded((v) => !v),
         onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -2915,18 +3524,32 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           <div className="min-w-0 flex-1 overflow-hidden">
             <p
               className="flex min-w-0 w-full items-baseline gap-1.5 text-xs leading-5"
-              onClick={expanded ? stopRowToggle : undefined}
+              onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
               onPointerDown={expanded ? stopRowToggle : undefined}
             >
               <span
                 className={cn(
-                  "min-w-0 shrink",
+                  answerPreview ? "shrink-0" : "min-w-0 shrink",
                   expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
                   headingClass,
                 )}
               >
                 {heading}
               </span>
+              {answerPreview ? (
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    !expanded &&
+                      workEntry.questionAnswer &&
+                      hasQuestionAnswer(workEntry.questionAnswer)
+                      ? "text-foreground"
+                      : "text-secondary-label",
+                  )}
+                >
+                  {answerPreview}
+                </span>
+              ) : null}
               {preview && (
                 <span
                   className={cn(
@@ -3001,10 +3624,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </div>
         </div>
       </div>
-      {workEntry.questionAnswer ? (
+      {expanded && workEntry.questionAnswer ? (
         <QuestionAnswerHistory answer={workEntry.questionAnswer} />
       ) : null}
-      {expanded && canExpand ? (
+      {expanded && canExpand && !workEntry.questionAnswer ? (
         <div
           className="mt-1 ms-7 cursor-default border-s border-border/45 ps-3 pt-0.5"
           onClick={stopRowToggle}
@@ -3051,20 +3674,22 @@ function QuestionAnswerHistory({
     <div className="ms-7 mt-2 space-y-2" onClick={stopRowToggle}>
       {[
         ...new Set([
+          ...Object.keys(answer.questionTextById ?? {}),
           ...Object.keys(answer.answers),
           ...Object.keys(answer.attachmentsByQuestionId),
         ]),
       ].map((questionId) => (
         <div key={questionId} className="space-y-1">
           {answer.questionTextById?.[questionId] ? (
-            <p className="text-sm text-muted-foreground">{answer.questionTextById[questionId]}</p>
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+              {answer.questionTextById[questionId]}
+            </p>
           ) : null}
-          <p className="whitespace-pre-wrap text-sm">
-            {[answer.answers[questionId]]
-              .flat()
-              .filter((value): value is string => typeof value === "string")
-              .join(", ")}
-          </p>
+          {getQuestionAnswerText(answer.answers[questionId]) ? (
+            <p className="ms-3 whitespace-pre-wrap text-sm text-muted-foreground">
+              {getQuestionAnswerText(answer.answers[questionId])}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {(answer.attachmentsByQuestionId[questionId] ?? []).map((attachment) => {
               const url = urls[attachments.indexOf(attachment)];

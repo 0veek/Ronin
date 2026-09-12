@@ -25,6 +25,7 @@
 - [Side chats](./user/side-chats.md)
 - [Captured tasks](./user/captured-tasks.md)
 - [Inline previews](./user/inline-previews.md)
+- [Devices](./user/devices.md)
 - [Customize a project icon](./user/project-settings.md)
 - [Environment themes](./user/environment-theme.md)
 - [Remote access](./user/remote-access.md)
@@ -54,6 +55,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Server updates](./internals/server-updates.md)
 - [Resource telemetry](./internals/resource-telemetry.md)
 - [Environment auth](./internals/environment-auth.md)
+- [Devices](./internals/devices.md)
 - [CI gates](./internals/ci.md)
 - [Engineering work artifacts](./internals/work-artifacts.md)
 

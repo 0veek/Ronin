@@ -19,6 +19,7 @@ import {
   type ProviderDriverKind,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import { codexModelFamily } from "@t3tools/shared/model";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -198,13 +199,15 @@ export function isLegacyModel(
   driverKind: ProviderDriverKind,
   slug: string,
 ): boolean {
-  const catalogModel = manifest.providers?.[driverKind]?.models.find(
-    (model) => model.slug === slug,
-  );
+  const family = driverKind === "codex" ? codexModelFamily(slug) : slug;
+  const catalog = manifest.providers?.[driverKind]?.models;
+  const catalogModel =
+    catalog?.find((model) => model.slug === slug) ??
+    catalog?.find((model) => model.slug === family);
   if (catalogModel) return catalogModel.status === "legacy";
   const currentModels = manifest.currentModels[driverKind];
   if (!currentModels) return false;
-  return !currentModels.includes(slug);
+  return !currentModels.includes(slug) && !currentModels.includes(family);
 }
 
 /**
@@ -216,7 +219,61 @@ export function applyModelManifest(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
 ): ServerProviderDraft {
-  return { ...draft, models: classifyModels(draft.models, manifest, driverKind) };
+  return {
+    ...draft,
+    models: applyManifestDefault(
+      classifyModels(draft.models, manifest, driverKind),
+      manifest,
+      driverKind,
+    ),
+  };
+}
+
+/** The manifest's chat default for `driverKind`, when it names one. */
+export function manifestDefaultModel(
+  manifest: ModelManifestData,
+  driverKind: ProviderDriverKind,
+): string | undefined {
+  return manifest.providers?.[driverKind]?.defaults?.chat;
+}
+
+/**
+ * Moves `isDefault` to the manifest's chat default when the catalog carries
+ * it. Providers that learn their default from the runtime (Antigravity takes
+ * Google's current model) can be overridden here without a release. Aliases
+ * that pointed at the old default move with the flag so the shared
+ * "provider default" alias keeps resolving.
+ */
+export function applyManifestDefault(
+  models: ReadonlyArray<ServerProviderModel>,
+  manifest: ModelManifestData,
+  driverKind: ProviderDriverKind,
+): ReadonlyArray<ServerProviderModel> {
+  const requestedSlug = manifestDefaultModel(manifest, driverKind);
+  if (requestedSlug === undefined) return models;
+  const slug =
+    models.find((model) => model.slug === requestedSlug)?.slug ??
+    (driverKind === "codex"
+      ? models.find(
+          (model) =>
+            !model.isCustom && codexModelFamily(model.slug) === codexModelFamily(requestedSlug),
+        )?.slug
+      : undefined);
+  if (slug === undefined) return models;
+  const previous = models.find((model) => model.isDefault && model.slug !== slug);
+  if (!previous) return models;
+  const movedAliases = previous.aliases ?? [];
+  return models.map((model) => {
+    if (model.slug === previous.slug) {
+      const { isDefault: _isDefault, aliases: _aliases, ...rest } = model;
+      return rest;
+    }
+    if (model.slug === slug) {
+      const aliases = [...new Set([...(model.aliases ?? []), ...movedAliases])];
+      return { ...model, isDefault: true, ...(aliases.length > 0 ? { aliases } : {}) };
+    }
+    return model;
+  });
 }
 
 /** Model-level half of `applyModelManifest`, exported for focused tests. */

@@ -10,7 +10,7 @@ import type { PreparedConnection } from "../connection/model.ts";
 import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import {
   executeEnvironmentHttpRequest,
-  makeEnvironmentHttpApiClient,
+  makeEnvironmentHttpApiGroupClient,
   type RemoteEnvironmentRequestError,
 } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
@@ -47,14 +47,17 @@ export const fetchEnvironmentThreadSnapshot = Effect.fn(
     input.prepared.httpBaseUrl,
     `/api/orchestration/threads/${input.threadId}`,
   );
-  const client = yield* makeEnvironmentHttpApiClient(input.prepared.httpBaseUrl);
+  const client = yield* makeEnvironmentHttpApiGroupClient(
+    input.prepared.httpBaseUrl,
+    "orchestration",
+  );
   const headers = buildEnvironmentAuthHeaders(input.prepared.httpAuthorization);
   return yield* executeEnvironmentHttpRequest(
     requestUrl,
     input.timeoutMs ?? DEFAULT_THREAD_SNAPSHOT_TIMEOUT_MS,
     withEnvironmentCredentials(
       input.prepared.httpAuthorization,
-      client.orchestration.threadSnapshot({
+      client.threadSnapshot({
         params: { threadId: input.threadId },
         payload: {
           ...(input.window !== undefined ? { turnLimit: input.window.turnLimit } : {}),
