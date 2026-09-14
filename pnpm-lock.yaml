@@ -39,11 +39,9 @@ overrides:
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-arm64': '-'
   '@anthropic-ai/claude-agent-sdk>@anthropic-ai/claude-agent-sdk-win32-x64': '-'
   '@effect/atom-react': 4.0.0-beta.103
-  '@effect/platform-bun': 4.0.0-beta.103
   '@effect/platform-node': 4.0.0-beta.103
   '@effect/platform-node-shared': 4.0.0-beta.103
   '@effect/sql-pg': 4.0.0-beta.103
-  '@effect/sql-sqlite-bun': 4.0.0-beta.103
   '@effect/vitest': 4.0.0-beta.103
   '@effect/vitest>vitest': '-'
   '@pierre/diffs>@shikijs/transformers': ^4.2.0
@@ -57,8 +55,8 @@ packageExtensionsChecksum: sha256-FV3+2NW/9MFbunJaPsMxvO0LAzyfccoPtPiKoIXAwUU=
 
 patchedDependencies:
   '@effect/vitest@4.0.0-beta.103': a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b
-  '@ff-labs/fff-node@0.9.4': 2b16019ce7ab61aec6478dd02f79ef468cc1d5c51e9d00764f7d2ab8167210c8
-  '@legendapp/list@3.3.5': 064530db83875fa671559a81ae42dc159726dc2dd6ec4c982da44ff7c7a74706
+  '@ff-labs/fff-node@0.9.4': 77191463e5547e159dbe4430f4716f7ee4214b5d5c6f4b0d046cff56bcd76bd8
+  '@legendapp/list@3.3.5': dacfa16a447bc388a79b644527c962fe8a0328ada9caafe3822e94e6afafe4ad
   '@pierre/diffs@1.3.0-beta.10': 0ccee155b93b63d810e2c1a40c1fd676fb6fbcfa72cf6430dcedf1a3ae475ab4
   dbus-next@0.10.2: 73c38379b09c6e5821fb20818ce99376473a7ea1a8a0a570f5f464cd5b0e9d98
   effect@4.0.0-beta.103: 8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801
@@ -155,21 +153,15 @@ importers:
       '@earendil-works/pi-coding-agent':
         specifier: ^0.81.1
         version: 0.81.1(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(bufferutil@4.1.0)(utf-8-validate@6.0.6)(ws@8.21.3(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.4.3)
-      '@effect/platform-bun':
-        specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))(utf-8-validate@6.0.6)
       '@effect/platform-node':
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))(ioredis@5.11.0)(utf-8-validate@6.0.6)
       '@effect/platform-node-shared':
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))(utf-8-validate@6.0.6)
-      '@effect/sql-sqlite-bun':
-        specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))
       '@ff-labs/fff-node':
         specifier: 0.9.4
-        version: 0.9.4(patch_hash=2b16019ce7ab61aec6478dd02f79ef468cc1d5c51e9d00764f7d2ab8167210c8)
+        version: 0.9.4(patch_hash=77191463e5547e159dbe4430f4716f7ee4214b5d5c6f4b0d046cff56bcd76bd8)
       '@opencode-ai/sdk':
         specifier: ^1.18.16
         version: 1.18.16
@@ -251,7 +243,7 @@ importers:
         version: 0.9.0
       '@legendapp/list':
         specifier: 'catalog:'
-        version: 3.3.5(patch_hash=064530db83875fa671559a81ae42dc159726dc2dd6ec4c982da44ff7c7a74706)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 3.3.5(patch_hash=dacfa16a447bc388a79b644527c962fe8a0328ada9caafe3822e94e6afafe4ad)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@lexical/react':
         specifier: ^0.41.0
         version: 0.41.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(yjs@13.6.31)
@@ -991,11 +983,6 @@ packages:
       '@effect/platform-node': 4.0.0-beta.103
       effect: 4.0.0-beta.103
 
-  '@effect/platform-bun@4.0.0-beta.103':
-    resolution: {integrity: sha512-/ay1/lhE9FUKEiDRQs56463eJ9u9ivtUtOCi2eeqI8Aooau7PupKNtV5zKjoRBCLInZMAX7JezT46NW5AdACBQ==}
-    peerDependencies:
-      effect: 4.0.0-beta.103
-
   '@effect/platform-node-shared@4.0.0-beta.103':
     resolution: {integrity: sha512-0aCZMBid5ifqmY55TkfCDLaGTIM8qu3bNFUW7qL9vh/7jFOkaIAMX2MA8muG4deqW17XWxawddWu4v0fK+UW3g==}
     engines: {node: '>=18.0.0'}
@@ -1008,11 +995,6 @@ packages:
     peerDependencies:
       effect: 4.0.0-beta.103
       ioredis: ^5.7.0
-
-  '@effect/sql-sqlite-bun@4.0.0-beta.103':
-    resolution: {integrity: sha512-u10I6SEWgUc1sKrlT0luxOBNzlUXunzxCChrD75pK5khIN1baKlPn2DD3f7bkh20NxwSzOfxF3hWsrO4VktvNg==}
-    peerDependencies:
-      effect: 4.0.0-beta.103
 
   '@effect/tsgo-darwin-arm64@0.13.2':
     resolution: {integrity: sha512-AlYlxU2sD3urNCmNCQWtatPJS/+m2r3CvgZdDTs9KEz2YcyQc2GV1g2RWFkoMwmgzYBx69DBLu1oscqJO2qAog==}
@@ -6550,14 +6532,6 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@effect/platform-bun@4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))(utf-8-validate@6.0.6)':
-    dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))(utf-8-validate@6.0.6)
-      effect: 4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801)
-    transitivePeerDependencies:
-      - bufferutil
-      - utf-8-validate
-
   '@effect/platform-node-shared@4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))(utf-8-validate@6.0.6)':
     dependencies:
       '@types/ws': 8.18.1
@@ -6577,10 +6551,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-
-  '@effect/sql-sqlite-bun@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801))':
-    dependencies:
-      effect: 4.0.0-beta.103(patch_hash=8e763a22514264f121cffa3ed0e5ed72e24169ced3361a390a8b6328c0a71801)
 
   '@effect/tsgo-darwin-arm64@0.13.2':
     optional: true
@@ -6858,7 +6828,7 @@ snapshots:
   '@ff-labs/fff-bin-win32-x64@0.9.4':
     optional: true
 
-  '@ff-labs/fff-node@0.9.4(patch_hash=2b16019ce7ab61aec6478dd02f79ef468cc1d5c51e9d00764f7d2ab8167210c8)':
+  '@ff-labs/fff-node@0.9.4(patch_hash=77191463e5547e159dbe4430f4716f7ee4214b5d5c6f4b0d046cff56bcd76bd8)':
     dependencies:
       ffi-rs: 1.3.2
     optionalDependencies:
@@ -6999,7 +6969,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@legendapp/list@3.3.5(patch_hash=064530db83875fa671559a81ae42dc159726dc2dd6ec4c982da44ff7c7a74706)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@legendapp/list@3.3.5(patch_hash=dacfa16a447bc388a79b644527c962fe8a0328ada9caafe3822e94e6afafe4ad)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       react: 19.2.8
       use-sync-external-store: 1.6.0(react@19.2.8)

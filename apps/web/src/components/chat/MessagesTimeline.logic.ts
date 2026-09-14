@@ -11,7 +11,12 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
-import { type MessageId, type OrchestrationLatestTurn, type TurnId } from "@t3tools/contracts";
+import {
+  type MessageId,
+  type OrchestrationLatestTurn,
+  type TurnId,
+  type WorktreeSetupSnapshot,
+} from "@t3tools/contracts";
 
 export const MAX_VISIBLE_WORK_LOG_ENTRIES = 1;
 export const TIMELINE_MINIMAP_ITEM_SPACING = 8;
@@ -246,6 +251,12 @@ export type MessagesTimelineRow =
       createdAt: string;
       turnPlan: TurnPlanEntry;
     }
+  | {
+      kind: "worktree-setup";
+      id: string;
+      createdAt: string | null;
+      snapshot: WorktreeSetupSnapshot;
+    }
   | { kind: "working"; id: string; createdAt: string | null };
 
 export interface StableMessagesTimelineRowsState {
@@ -474,14 +485,14 @@ function deriveTurnFolds(input: {
       if (entry.id === group.terminalEntry?.id) {
         continue;
       }
-      // Agent-spawn CTA rows never fold: workflows outlive their launching
-      // turn (dynamic spawns, background execution), and folding the CTA
-      // when the turn settles makes a still-running fleet invisible.
+      // User input and subagent batches stay visible after their turn settles.
       if (
         entry.kind === "work" &&
-        (entry.entry.agentSpawn !== undefined ||
-          entry.entry.sourceActivityKind === "context-compaction")
+        (entry.entry.questionAnswer !== undefined || entry.entry.agentSpawn !== undefined)
       ) {
+        continue;
+      }
+      if (entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction") {
         continue;
       }
       hiddenEntryIds.add(entry.id);
@@ -593,6 +604,8 @@ export function deriveMessagesTimelineRows(input: {
   isWorking: boolean;
   activeTurnStartedAt: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+  liveAgentTaskIds?: ReadonlySet<string> | undefined;
+  worktreeSetup?: WorktreeSetupSnapshot | null;
 }): MessagesTimelineRow[] {
   const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>();
   for (const summary of input.turnDiffSummaries) {
@@ -670,6 +683,15 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
+      if (timelineEntry.entry.questionAnswer !== undefined) {
+        nextRows.push({
+          kind: "work",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          groupedEntries: [timelineEntry.entry],
+        });
+        continue;
+      }
       const groupedEntries = [timelineEntry.entry];
       let cursor = index + 1;
       while (cursor < input.timelineEntries.length) {
@@ -677,6 +699,7 @@ export function deriveMessagesTimelineRows(input: {
         if (
           !nextEntry ||
           nextEntry.kind !== "work" ||
+          nextEntry.entry.questionAnswer !== undefined ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)
         ) {
@@ -804,6 +827,32 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
+  if (input.worktreeSetup) {
+    const setupRow = {
+      kind: "worktree-setup",
+      id: WORKTREE_SETUP_ROW_ID,
+      createdAt: input.worktreeSetup.startedAt,
+      snapshot: input.worktreeSetup,
+    } as const;
+    const firstUserRowIndex = nextRows.findIndex(
+      (row) => row.kind === "message" && row.message.role === "user",
+    );
+    if (firstUserRowIndex >= 0) {
+      nextRows.splice(firstUserRowIndex + 1, 0, setupRow);
+    } else {
+      nextRows.push(setupRow);
+    }
+    if (input.worktreeSetup.phase === "running") return nextRows;
+    if (input.isWorking) {
+      nextRows.splice(firstUserRowIndex >= 0 ? firstUserRowIndex + 2 : nextRows.length, 0, {
+        kind: "working",
+        id: "working-indicator-row",
+        createdAt: input.activeTurnStartedAt,
+      });
+      return nextRows;
+    }
+  }
+
   if (input.isWorking) {
     nextRows.push({
       kind: "working",
@@ -814,6 +863,8 @@ export function deriveMessagesTimelineRows(input: {
 
   return nextRows;
 }
+
+export const WORKTREE_SETUP_ROW_ID = "worktree-setup-row";
 
 type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
 
@@ -916,6 +967,9 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
   switch (a.kind) {
     case "working":
       return a.createdAt === (b as typeof a).createdAt;
+
+    case "worktree-setup":
+      return a.snapshot === (b as typeof a).snapshot;
 
     case "turn-fold": {
       const bf = b as typeof a;

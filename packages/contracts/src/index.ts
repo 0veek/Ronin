@@ -41,3 +41,4 @@ export * from "./automation.ts";
 export * from "./buildSystem.ts";
 export * from "./speechToText.ts";
 export * from "./rpc.ts";
+export * from "./worktreeSetup.ts";

@@ -71,6 +71,22 @@ Requested scopes must be a subset of the one-time bootstrap credential grant.
 An ordinary paired client therefore cannot exchange its grant for
 `access:read` or `access:write`.
 
+### Reusable Dev Credential
+
+Web development can opt into a reusable administrative credential by setting a fixed
+`T3CODE_DEV_AUTH_TOKEN` of at least 32 characters. The dev runner reads repository env files,
+and the worktree setup links the main checkout's gitignored `.env` into new worktrees. Desktop,
+production, and non-dev servers ignore this setting.
+
+Open the printed startup pairing URL once per browser profile. It installs a hostname-wide,
+port-independent dev cookie, allowing that browser to use later worktree origins without consuming
+another one-time link. Each environment still persists its own revocable session record and keeps
+its own signing key and database. Rotating the configured token invalidates the prior credential.
+
+Because browsers send cookies to every service on the same hostname, use this only on a hostname
+where every service is trusted. The token and startup URL are reusable administrative secrets and
+must never be committed or published.
+
 ### WebSocket Ticket
 
 `POST /api/auth/websocket-ticket` accepts any authenticated session and returns

@@ -12,6 +12,7 @@ This document covers the unified release workflow for stable and nightly desktop
   - push tag matching `v*.*.*` for a stable release of an explicit commit
   - scheduled nightly check every 30 minutes
   - manual `workflow_dispatch` with `channel=nightly`
+  - manual `workflow_dispatch` with `channel=preview`, the maintainers' test train. It exercises the whole release flow (build, sign, notarize, smoke, publish) for a commit that end users must never receive, which is how an unmerged branch or a risky change gets a real release run before it lands. It builds the triggering commit with nightly's versioning under the `preview` prerelease identifier (`0.0.41-preview.<date>.<run>`) and publishes a GitHub prerelease plus the npm packages under the `preview` dist-tag. Nothing ever selects preview on its own: it is not on the schedule, no default npm dist-tag points at it, its desktop builds carry no update feed, and no updater manifest (`latest*.yml`, `nightly*.yml`, blockmaps) is attached, so a stable or nightly install cannot be offered one. The only ways onto it are downloading the release by hand, `npx t3@preview`, `T3CODE_CHANNEL=preview` for the install scripts, or `t3 update --channel preview` from a terminal; each prints a warning, and the CLI asks for confirmation when the running build is not itself a preview. The release itself is named as a maintainer test build and its body is a warning rather than generated notes: a changelog of unmerged branch history is not a changelog, and nightly and stable notes are unaffected because each series resolves its previous tag within its own channel. Keep it; it costs nothing when idle.
 - A manual stable release builds the commit of the latest published nightly, not `main` HEAD.
   Nightly is the release candidate: verify the nightly, then promote it. Merges to `main` keep
   landing while you verify and never leak into the stable build.
@@ -32,9 +33,13 @@ This document covers the unified release workflow for stable and nightly desktop
   - Nightly runs are always GitHub prereleases and never marked latest.
   - Automatically generated release notes are pinned to the previous tag in the same channel, so stable compares to the previous stable tag and nightly compares to the previous nightly tag.
 - Includes Electron auto-update metadata (for example `latest*.yml`, `nightly*.yml`, and `*.blockmap`) in release assets.
+- Builds, smoke-tests, and attaches self-contained CLI archives for macOS arm64, Linux x64, and
+  Windows x64, plus a `SHA256SUMS` file. These are the runtimes installed for managed remote
+  environments; Intel macOS and arm64 Linux/Windows continue to use source or npm installs.
 - Publishes the CLI package (`apps/server`, npm package `t3`) with OIDC trusted publishing from the same workflow file:
   - stable releases publish npm dist-tag `latest`
   - nightly releases publish npm dist-tag `nightly`
+  - preview releases publish npm dist-tag `preview`
 - Signing is optional and auto-detected per platform from secrets.
 
 ## Required release credentials
@@ -65,31 +70,29 @@ independent from the shared Release App installation.
   - `make_latest` is always `false`
 - Uses the next stable patch version as the nightly base. For example, `0.0.17` produces nightlies on `0.0.18-nightly.*`.
 - Publishes Electron auto-update metadata to the dedicated `nightly` updater channel, so desktop users can opt into that track independently from stable.
-- Publishes the CLI package (`apps/server`, npm package `t3`) to the `nightly` npm dist-tag using the same nightly version.
+- Publishes the `t3` CLI package to the `nightly` npm dist-tag using the same nightly version.
 - Does not commit version bumps back to `main`.
 
 ## Server self-update release invariant
 
-Connected servers update to the client's exact version, not to an npm dist-tag. Every released
-desktop client version must therefore have a matching `t3@<version>` package available on npm before
-users can receive that client.
+Connected managed servers update to the client's exact version from a release archive. Every
+released desktop client version must therefore have matching CLI archives and `SHA256SUMS`
+attached to its GitHub Release before users can receive that client.
 
 The workflow enforces this ordering:
 
-1. `publish_cli` publishes the exact stable or nightly version to npm.
-2. `release` depends on `publish_cli` before exposing desktop artifacts in GitHub Releases.
+1. Each platform build uploads its exact-version CLI archive.
+2. `publish_cli` publishes the matching full `t3` package for direct npm users.
+3. `release` waits for both before exposing desktop artifacts and archives in GitHub Releases.
 
-Preserve these dependencies when changing the release graph. Publishing a client first would leave
-the **Update server** action targeting a package version that does not exist yet.
+Preserve these dependencies when changing the release graph. Publishing a client without its
+archive would leave managed remote updates targeting an asset that does not exist.
 
-For a release smoke test, confirm `npm view t3@<version> version` returns the expected version, then
+For a release smoke test, confirm the expected CLI archive and checksum are attached, then
 connect the new client to a server on the previous version and verify that the update action
 reconnects to the matching server. When the release adds database migrations, verify that the
 remote update applies them and reconnects. A failed trial must restore the database snapshot and
-restart the previous server. If the installed launcher does not support the target protocol,
-verify that the update stops before restart and run `npx t3@<version> service update` once on the
-server machine. Also test the manual or desktop-managed guidance when those environments are
-available.
+restart the previous server. Also test the manual guidance on a platform without an archive.
 
 ## Desktop app update notification
 
@@ -103,24 +106,24 @@ release assets for users to choose and download from GitHub.
 
 ## 0) npm OIDC trusted publishing setup (CLI)
 
-The workflow invokes `node apps/server/scripts/cli.ts publish` after aligning package versions. That
-script temporarily prepares the `t3` package, then runs `vp pm publish --filter t3 ...` from the
-repository root so workspace publish configuration is applied correctly.
+The workflow publishes the full `apps/server` package as `t3`. This npm path remains available for
+people who run `npx t3` or install it globally; managed runtimes use the GitHub Release archives.
 
 Checklist:
 
-1. Confirm npm org/user owns package `t3` (or rename package first if needed).
-2. In npm package settings, configure Trusted Publisher:
+1. Confirm the npm account owns package `t3`.
+2. For `t3`, configure a Trusted Publisher in the
+   npm package settings (a package that has never been published needs a first publish or a
+   placeholder before the setting exists):
    - Provider: GitHub Actions
    - Repository: this repo
    - Workflow file: `.github/workflows/release.yml`
    - Environment (if used): match your npm trusted publishing config
-3. Ensure npm account and org policies allow trusted publishing for the package.
+3. Ensure npm account policies allow trusted publishing.
 4. Create release tag `vX.Y.Z` and push; workflow will:
-   - align the release package versions to `X.Y.Z`
-   - build web + server
-   - invoke the CLI publish script with npm dist-tag `latest`
-5. Nightly runs invoke the same publish script with npm dist-tag `nightly`.
+   - build and smoke-test the supported CLI archives
+   - publish the full CLI package with npm dist-tag `latest`
+5. Nightly runs publish with npm dist-tag `nightly`; preview runs with `preview`.
 
 ## 1) Release validation and unsigned builds
 
@@ -217,7 +220,7 @@ Checklist:
 4. Verify workflow steps:
    - preflight passes
    - release quality checks pass
-   - all matrix builds pass
+   - `build_bundle` and all platform builds pass
    - `publish_cli` publishes the exact release version before the release job
    - release job uploads expected files
 5. Smoke test downloaded artifacts.

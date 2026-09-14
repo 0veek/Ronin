@@ -360,6 +360,7 @@ const migrateSavedEnvironmentRecords = Effect.fn(
     targets,
     profiles,
     credentials,
+    disabledEnvironmentIds: [],
   };
 });
 

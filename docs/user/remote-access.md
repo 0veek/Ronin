@@ -176,7 +176,8 @@ If reconnecting after an app update fails, retry the SSH launch once. The launch
 
 Auto balance is off by default. Enable it in
 **Settings → Connections → Load balancing** to automatically choose a machine for
-new threads in projects grouped across connected environments.
+new threads in projects grouped across connected environments. The section appears
+once two or more machines are switched on.
 
 Each machine starts at **Normal**. Choose **Prefer** to favor it when it has CPU and
 memory available, **Less often** to reduce its share, or **Manual only** to exclude
@@ -201,6 +202,13 @@ see [Keeping Ronin in Sync](./updating.md).
 
 On a Linux host, you can keep the server running after logout and manage it independently of the
 connection method. See [Running Ronin in the Background](./background-service.md).
+
+## Use the desktop app only for remote work
+
+Open **Settings → Connections** and switch off **Local environment** when this computer should only
+drive work running elsewhere. Ronin restarts without launching a local server, so local agents and
+terminals stay off while saved paired and SSH environments remain available. Projects, history,
+and saved connections are kept. Switch the setting back on to restore the previous local setup.
 
 ## How Pairing Works
 

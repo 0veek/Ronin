@@ -485,7 +485,11 @@ export function PullRequestCodeTab({
           groupAt(anchor.side, anchor.line).draft = true;
         }
 
-        const collapsed = isFileDiffCollapsed(fileKey, foldOverride, toggledFiles);
+        const collapsed = isFileDiffCollapsed(
+          fileKey,
+          foldOverride ?? (settings.diffFilesCollapsed ? "folded" : "expanded"),
+          toggledFiles,
+        );
 
         const annotations: ReviewAnnotation[] = [...groups.values()].map((group) => ({
           side: toViewerSide(group.side),
@@ -538,6 +542,7 @@ export function PullRequestCodeTab({
       foldOverride,
       pendingComments,
       placedThreadIds,
+      settings.diffFilesCollapsed,
       toggledFiles,
     ],
   );
@@ -957,7 +962,14 @@ export function PullRequestCodeTab({
     review.verdicts.length === 0 ? null : (
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10">
         {reviewOpen ? (
-          <div className="composer-surface pointer-events-auto absolute inset-x-3 bottom-3">
+          <div
+            className={cn(
+              "composer-surface pointer-events-auto absolute inset-x-3",
+              detail.capabilities.comment && detail.viewerPermissions.comment
+                ? "bottom-16"
+                : "bottom-3",
+            )}
+          >
             <Button
               type="button"
               size="icon-sm"
@@ -972,6 +984,7 @@ export function PullRequestCodeTab({
               environmentId={environmentId}
               reference={reference}
               verdicts={review.verdicts}
+              requestChangesSummaryRequired={detail.provider === "forgejo"}
               onSubmitted={() => {
                 onRefresh();
                 setReviewOpen(false);
@@ -979,11 +992,14 @@ export function PullRequestCodeTab({
             />
           </div>
         ) : (
-          // Bottom-right, clear of the vertical scrollbar the diff view keeps to its own right
-          // edge.
           <button
             type="button"
-            className="pointer-events-auto absolute right-4 bottom-3 flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 font-medium text-xs"
+            className={cn(
+              "pointer-events-auto absolute bottom-3 flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1.5 font-medium text-xs",
+              detail.capabilities.comment && detail.viewerPermissions.comment
+                ? "right-16"
+                : "right-4",
+            )}
             onClick={() => setReviewOpen(true)}
           >
             <MessageSquareIcon className="size-3.5" />

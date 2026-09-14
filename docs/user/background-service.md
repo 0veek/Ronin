@@ -23,6 +23,12 @@ Update or repair it:
 npx t3@latest service update
 ```
 
+If an update has been installed but the service is still running the previous version, restart it:
+
+```sh
+npx t3@latest service restart
+```
+
 The service uses the same Ronin version as the CLI you run. To install a nightly or an exact
 version, use that version of the CLI:
 

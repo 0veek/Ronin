@@ -40,6 +40,7 @@ import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
+import { requestConfirmDialog } from "~/confirmDialog";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel, formatExpiresInLabel } from "../../timestampFormat";
 import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
@@ -52,7 +53,9 @@ import {
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconPicker } from "./EnvironmentIconPicker";
+import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
+import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { Input } from "../ui/input";
 import { CommandShortcut } from "../ui/command";
 import {
@@ -116,6 +119,7 @@ import {
 } from "~/versionSkew";
 import { authEnvironment } from "~/state/auth";
 import { environmentCatalog } from "~/connection/catalog";
+import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import {
   connectPairing as connectPairingAtom,
   connectSshEnvironment as connectSshEnvironmentAtom,
@@ -1369,29 +1373,30 @@ function NetworkAccessDescription({
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
   removingEnvironmentId: EnvironmentId | null;
-  onConnect: (environmentId: EnvironmentId) => void;
+  onSetEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
   onRemove: (environmentId: EnvironmentId) => void;
 };
 
 function SavedBackendListRow({
   environment,
   removingEnvironmentId,
-  onConnect,
+  onSetEnabled,
   onRemove,
 }: SavedBackendListRowProps) {
   const environmentId = environment.environmentId;
+  const enabled = environment.entry.enabled;
   const connectionState = environment.connection.phase;
   const isConnected = connectionState === "connected";
-  const isConnecting = connectionState === "connecting" || connectionState === "reconnecting";
-  const stateDotClassName =
-    connectionState === "connected"
+  const stateDotClassName = !enabled
+    ? "bg-muted-foreground/40"
+    : connectionState === "connected"
       ? "bg-success"
       : connectionState === "connecting" || connectionState === "reconnecting"
         ? "bg-warning"
         : connectionState === "error"
           ? "bg-destructive"
           : "bg-muted-foreground/40";
-  const statusTooltip = connectionStatusText(environment.connection);
+  const statusTooltip = enabled ? connectionStatusText(environment.connection) : "Off";
   const errorTraceId = environment.connection.traceId;
   const { copyToClipboard: copyTraceIdToClipboard } = useCopyToClipboard<{ traceId: string }>({
     target: "trace ID",
@@ -1428,12 +1433,13 @@ function SavedBackendListRow({
     environment.entry.profile.value._tag === "SshConnectionProfile"
       ? environment.entry.profile.value.target
       : null;
-  const metadataBits = [sshTarget ? `SSH ${formatDesktopSshTarget(sshTarget)}` : null].filter(
-    (value): value is string => value !== null,
-  );
+  const metadataBits = [
+    sshTarget ? `SSH ${formatDesktopSshTarget(sshTarget)}` : null,
+    enabled ? null : "Off",
+  ].filter((value): value is string => value !== null);
 
   return (
-    <div className={ITEM_ROW_CLASSNAME}>
+    <div className={cn(ITEM_ROW_CLASSNAME, !enabled && "opacity-60")}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
@@ -1441,7 +1447,7 @@ function SavedBackendListRow({
               tooltipText={statusTooltip}
               dotClassName={stateDotClassName}
               pingClassName={
-                connectionState === "connecting" || connectionState === "reconnecting"
+                enabled && (connectionState === "connecting" || connectionState === "reconnecting")
                   ? "bg-warning/60"
                   : null
               }
@@ -1489,7 +1495,7 @@ function SavedBackendListRow({
               </TooltipPopup>
             </Tooltip>
           ) : null}
-          {environment.connection.error && !resumingServerUpdate ? (
+          {enabled && environment.connection.error && !resumingServerUpdate ? (
             <p className="flex min-w-0 items-center gap-2 text-destructive text-xs">
               <span className="truncate">{connectionStatusText(environment.connection)}</span>
               {errorTraceId ? (
@@ -1505,7 +1511,8 @@ function SavedBackendListRow({
           ) : null}
         </div>
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
-          {versionMismatch &&
+          {enabled &&
+          versionMismatch &&
           (serverUpdateState.status === "idle" || serverUpdateState.status === "failed") ? (
             <ServerUpdateAction
               environmentId={environmentId}
@@ -1516,29 +1523,19 @@ function SavedBackendListRow({
               label={serverUpdateState.status === "failed" ? "Retry" : "Update"}
             />
           ) : null}
-          {!isConnected ? (
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={removingEnvironmentId === environmentId}
-              onClick={() => void onRemove(environmentId)}
-            >
-              {removingEnvironmentId === environmentId ? "Removing…" : "Remove"}
-            </Button>
-          ) : null}
+          <Switch
+            checked={enabled}
+            disabled={removingEnvironmentId === environmentId}
+            aria-label={`${enabled ? "Switch off" : "Switch on"} ${environment.label}`}
+            onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
+          />
           <Button
             size="xs"
             variant="outline"
-            disabled={isConnecting || removingEnvironmentId === environmentId}
-            onClick={() => void (isConnected ? onRemove(environmentId) : onConnect(environmentId))}
+            disabled={removingEnvironmentId === environmentId}
+            onClick={() => void onRemove(environmentId)}
           >
-            {isConnected
-              ? removingEnvironmentId === environmentId
-                ? "Disconnecting…"
-                : "Disconnect"
-              : isConnecting
-                ? "Connecting…"
-                : "Connect"}
+            {removingEnvironmentId === environmentId ? "Removing…" : "Remove"}
           </Button>
         </div>
       </div>
@@ -1570,7 +1567,9 @@ export function ConnectionsSettings() {
     reportFailure: false,
   });
   const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
-  const retryEnvironment = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
+  const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
+    reportFailure: false,
+  });
   const primaryEnvironmentId = primaryEnvironment?.environmentId ?? null;
   const primarySessionState = usePrimarySessionState();
   const currentSessionScopes = desktopBridge
@@ -1581,9 +1580,20 @@ export function ConnectionsSettings() {
   const currentAuthPolicy = desktopBridge ? null : (primarySessionState.data?.auth.policy ?? null);
   const savedEnvironments = useMemo(
     () =>
-      environments
-        .filter((environment) => environment.entry.target._tag !== "PrimaryConnectionTarget")
-        .toSorted((left, right) => left.label.localeCompare(right.label)),
+      environments.filter(
+        (environment) => environment.entry.target._tag !== "PrimaryConnectionTarget",
+      ),
+    [environments],
+  );
+  const listedEnvironments = useMemo(
+    () =>
+      savedEnvironments.filter(
+        (environment) => !isDesktopLocalConnectionTarget(environment.entry.target),
+      ),
+    [savedEnvironments],
+  );
+  const loadBalancingEnvironments = useMemo(
+    () => environments.filter((environment) => environment.entry.enabled),
     [environments],
   );
   const savedDesktopSshEnvironmentKeys = useMemo(() => {
@@ -2130,28 +2140,39 @@ export function ConnectionsSettings() {
     ],
   );
 
-  const handleConnectSavedBackend = useCallback(
-    async (environmentId: EnvironmentId) => {
+  const handleSetSavedBackendEnabled = useCallback(
+    async (environmentId: EnvironmentId, enabled: boolean) => {
       setSavedBackendError(null);
-      const result = await retryEnvironment(environmentId);
+      const result = await setEnvironmentEnabled({ environmentId, enabled });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
-        const message = error instanceof Error ? error.message : "Failed to connect environment.";
+        const message =
+          error instanceof Error
+            ? error.message
+            : `Failed to switch environment ${enabled ? "on" : "off"}.`;
         setSavedBackendError(message);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Could not connect environment",
+            title: `Could not switch environment ${enabled ? "on" : "off"}`,
             description: message,
           }),
         );
       }
     },
-    [retryEnvironment],
+    [setEnvironmentEnabled],
   );
 
   const handleRemoveSavedBackend = useCallback(
     async (environmentId: EnvironmentId) => {
+      const environment = savedEnvironments.find(
+        (candidate) => candidate.environmentId === environmentId,
+      );
+      const confirmed = await requestConfirmDialog(
+        `Remove ${environment?.label ?? "this environment"} from this device?\nThis forgets its pairing, credentials, and cached threads. Switch it off instead to keep it saved.`,
+        { variant: "destructive" },
+      );
+      if (confirmed !== true) return;
       setRemovingSavedEnvironmentId(environmentId);
       setSavedBackendError(null);
       const result = await removeEnvironment(environmentId);
@@ -2169,7 +2190,7 @@ export function ConnectionsSettings() {
         );
       }
     },
-    [removeEnvironment],
+    [removeEnvironment, savedEnvironments],
   );
 
   const visibleDesktopPairingLinks = desktopPairingLinks;
@@ -2618,11 +2639,12 @@ export function ConnectionsSettings() {
     />
   );
 
-  return (
-    <SettingsPageContainer>
+  const primarySettings = (
+    <>
       {canManageLocalBackend ? (
         <>
           <SettingsSection title="This environment">
+            <LocalEnvironmentSetting />
             {primaryVersionMismatch || primaryServerUpdateState.status !== "idle" ? (
               <SettingsRow
                 title={
@@ -2888,9 +2910,15 @@ export function ConnectionsSettings() {
           />
         </SettingsSection>
       )}
+    </>
+  );
 
+  return (
+    <SettingsPageContainer className="max-w-6xl">
+      {primarySettings}
       <SettingsSection
         {...searchableSetting("remote-environments")}
+        title="Environments"
         headerAction={
           <Dialog
             open={addBackendDialogOpen}
@@ -2954,18 +2982,19 @@ export function ConnectionsSettings() {
           </Dialog>
         }
       >
-        {savedEnvironments.map((environment) => (
+        {listedEnvironments.map((environment) => (
           <SavedBackendListRow
             key={environment.environmentId}
             environment={environment}
             removingEnvironmentId={removingSavedEnvironmentId}
-            onConnect={handleConnectSavedBackend}
+            onSetEnabled={handleSetSavedBackendEnabled}
             onRemove={handleRemoveSavedBackend}
           />
         ))}
-        {savedEnvironments.length === 0 ? <EmptyRemoteEnvironments /> : null}
+        {listedEnvironments.length === 0 ? <EmptyRemoteEnvironments /> : null}
       </SettingsSection>
-      <LoadBalancingSettings environments={environments} />
+      <LoadBalancingSettings environments={loadBalancingEnvironments} />
+      <GitHubRoutingSettings environments={loadBalancingEnvironments} />
     </SettingsPageContainer>
   );
 }

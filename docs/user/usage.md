@@ -16,6 +16,11 @@ carries the same identity, so nothing on the page depends on telling two hues ap
 Grok totals come from the session records it writes as each turn completes, so a turn that never
 finished writing one does not appear.
 
+Usage includes each configured account's history, including disabled accounts. Custom homes follow
+the account's home setting or its `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, or `GROK_HOME` environment
+variable. Use absolute paths or `~/` paths in account environment settings; accounts that share a
+history directory are counted once.
+
 Where a cost figure comes from depends on the provider: Grok records the exact cost of each turn and
 that figure is used as-is, while Codex, Claude Code, and Antigravity totals are priced from a
 published rate table. Models with no published rate still count their tokens; their cost is reported

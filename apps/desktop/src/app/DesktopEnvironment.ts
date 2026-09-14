@@ -54,6 +54,8 @@ export class DesktopEnvironment extends Context.Service<
     readonly rootDir: string;
     readonly appRoot: string;
     readonly backendEntryPath: string;
+    // Built web client the packaged renderer is served from over t3code://app.
+    readonly clientAssetsDir: string;
     readonly backendCwd: string;
     readonly preloadPath: string;
     readonly appUpdateYmlPath: string;
@@ -214,6 +216,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     rootDir,
     appRoot,
     backendEntryPath: path.join(appRoot, "apps/server/dist/bin.mjs"),
+    clientAssetsDir: path.join(appRoot, "apps/server/dist/client"),
     backendCwd: input.isPackaged ? homeDirectory : appRoot,
     preloadPath: path.join(input.dirname, "preload.cjs"),
     appUpdateYmlPath: input.isPackaged

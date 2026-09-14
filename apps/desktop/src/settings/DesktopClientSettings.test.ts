@@ -34,6 +34,7 @@ const clientSettings: ClientSettings = {
   continueThreadsAfterServerUpdate: true,
   contextWindowMeterEnabled: false,
   dismissedProviderUpdateNotificationKeys: [],
+  diffFilesCollapsed: false,
   diffIgnoreWhitespace: true,
   diffLayout: "stacked",
   environmentIdentificationMode: "artwork",

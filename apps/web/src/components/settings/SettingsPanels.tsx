@@ -47,6 +47,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_TERMINAL_FONT_SIZE,
   type QuitConfirmationMode,
+  type ResponseStreamingMode,
 } from "@t3tools/contracts/settings";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -100,6 +101,15 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogPopup,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import {
   Dialog,
@@ -174,6 +184,18 @@ const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, s
   artwork: "Artwork",
   pill: "Version pill",
   none: "None",
+};
+
+const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
+  turn: "Wait for the full response",
+  paragraph: "Show finished paragraphs",
+  token: "Token by token (legacy)",
+};
+
+const RESPONSE_STREAMING_MODE_DESCRIPTIONS: Record<ResponseStreamingMode, string> = {
+  turn: "Text appears once the agent finishes its turn.",
+  paragraph: "Each paragraph or code block appears as soon as it is complete.",
+  token: "Every token repaints the message as it arrives. Slower and harder to read.",
 };
 
 const TIMESTAMP_FORMAT_LABELS = {
@@ -426,9 +448,15 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled
         ? ["Context window indicator"]
         : []),
+      ...(settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode
+        ? ["Response streaming"]
+        : []),
       ...(settings.wordWrap !== DEFAULT_UNIFIED_SETTINGS.wordWrap ? ["Word wrap"] : []),
       ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),
       ...getChangedTypographySettingLabels(settings),
+      ...(settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed
+        ? ["Default diff file state"]
+        : []),
       ...(settings.diffIgnoreWhitespace !== DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace
         ? ["Diff whitespace changes"]
         : []),
@@ -494,6 +522,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.addProjectBaseDirectory,
       settings.defaultThreadEnvMode,
       settings.newWorktreesStartFromOrigin,
+      settings.diffFilesCollapsed,
       settings.diffIgnoreWhitespace,
       settings.diffLayout,
       settings.proactivePanelsEnabled,
@@ -508,6 +537,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.fontSizePrompt,
       settings.fontSizeTerminal,
       settings.panelAnimationDurationMs,
+      settings.responseStreamingMode,
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
       settings.quotaResume.maximumWait,
@@ -594,6 +624,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
+      diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
       diffIgnoreWhitespace: DEFAULT_UNIFIED_SETTINGS.diffIgnoreWhitespace,
       diffLayout: DEFAULT_UNIFIED_SETTINGS.diffLayout,
       proactivePanelsEnabled: DEFAULT_UNIFIED_SETTINGS.proactivePanelsEnabled,
@@ -603,6 +634,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
+      responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
       backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
@@ -654,6 +686,40 @@ export function useSettingsRestore(onRestored?: () => void) {
     changedSettingLabels,
     restoreDefaults,
   };
+}
+
+function TokenStreamingWarningDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  onUseParagraphs,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  onUseParagraphs: () => void;
+}) {
+  return (
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogPopup className="max-w-lg">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Token by token is a worse experience</AlertDialogTitle>
+          <AlertDialogDescription>
+            Token streaming repaints the message on every delta. It is slower, harder to read, and
+            costs more CPU on every connected device. This mode stays only for backwards
+            compatibility. Use paragraph streaming instead.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button variant="ghost" className="sm:mr-auto" onClick={onConfirm}>
+            Use token by token
+          </Button>
+          <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+          <Button onClick={onUseParagraphs}>Use paragraphs</Button>
+        </AlertDialogFooter>
+      </AlertDialogPopup>
+    </AlertDialog>
+  );
 }
 
 function BackgroundActivityAdvancedDialog({
@@ -1982,9 +2048,16 @@ export function GeneralSettingsPanel() {
   const setAgentNotificationsEnabled = useUiStateStore(
     (state) => state.setAgentNotificationsEnabled,
   );
+  const agentInAppNotificationsEnabled = useUiStateStore(
+    (state) => state.agentInAppNotificationsEnabled,
+  );
+  const setAgentInAppNotificationsEnabled = useUiStateStore(
+    (state) => state.setAgentInAppNotificationsEnabled,
+  );
   const agentSoundsEnabled = useUiStateStore((state) => state.agentSoundsEnabled);
   const setAgentSoundsEnabled = useUiStateStore((state) => state.setAgentSoundsEnabled);
   const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
+  const [tokenStreamingWarningOpen, setTokenStreamingWarningOpen] = useState(false);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
@@ -2143,6 +2216,17 @@ export function GeneralSettingsPanel() {
           enabled={agentNotificationsEnabled}
           onEnabledChange={setAgentNotificationsEnabled}
         />
+        <SettingsRow
+          {...searchableSetting("in-app-notifications")}
+          description="Show a toast when another agent finishes, fails, or needs approval while Ronin has focus. Per device."
+          control={
+            <Switch
+              checked={agentInAppNotificationsEnabled}
+              onCheckedChange={setAgentInAppNotificationsEnabled}
+              aria-label="In-app notifications"
+            />
+          }
+        />
         <AgentSoundsRow enabled={agentSoundsEnabled} onEnabledChange={setAgentSoundsEnabled} />
         {supportsAutoSettlement && settings.sidebarAutoSettleAfterDays !== null ? (
           <SettingsRow
@@ -2201,6 +2285,69 @@ export function GeneralSettingsPanel() {
         />
 
         <SettingsRow
+          serverScoped
+          {...searchableSetting("response-streaming")}
+          description={RESPONSE_STREAMING_MODE_DESCRIPTIONS[settings.responseStreamingMode]}
+          resetAction={
+            settings.responseStreamingMode !== DEFAULT_UNIFIED_SETTINGS.responseStreamingMode ? (
+              <SettingResetButton
+                label="response streaming"
+                onClick={() =>
+                  updateSettings({
+                    responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <>
+              <Select
+                value={settings.responseStreamingMode}
+                onValueChange={(value) => {
+                  if (value === "token") {
+                    setTokenStreamingWarningOpen(true);
+                    return;
+                  }
+                  if (value === "turn" || value === "paragraph") {
+                    updateSettings({ responseStreamingMode: value });
+                  }
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Response streaming">
+                  <SelectValue>
+                    {RESPONSE_STREAMING_MODE_LABELS[settings.responseStreamingMode]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="turn">
+                    {RESPONSE_STREAMING_MODE_LABELS.turn}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="paragraph">
+                    {RESPONSE_STREAMING_MODE_LABELS.paragraph}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="token">
+                    {RESPONSE_STREAMING_MODE_LABELS.token}
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+              <TokenStreamingWarningDialog
+                open={tokenStreamingWarningOpen}
+                onOpenChange={setTokenStreamingWarningOpen}
+                onConfirm={() => {
+                  updateSettings({ responseStreamingMode: "token" });
+                  setTokenStreamingWarningOpen(false);
+                }}
+                onUseParagraphs={() => {
+                  updateSettings({ responseStreamingMode: "paragraph" });
+                  setTokenStreamingWarningOpen(false);
+                }}
+              />
+            </>
+          }
+        />
+
+        <SettingsRow
           {...searchableSetting("hide-whitespace-changes")}
           description="Set whether the diff panel ignores whitespace-only edits by default."
           resetAction={
@@ -2223,6 +2370,49 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Hide whitespace changes by default"
             />
+          }
+        />
+
+        <SettingsRow
+          {...searchableSetting("default-diff-file-state")}
+          description="Start with files expanded or collapsed when opening diffs or a pull request's Code tab."
+          resetAction={
+            settings.diffFilesCollapsed !== DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed ? (
+              <SettingResetButton
+                label="default diff file state"
+                onClick={() =>
+                  updateSettings({
+                    diffFilesCollapsed: DEFAULT_UNIFIED_SETTINGS.diffFilesCollapsed,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.diffFilesCollapsed ? "collapsed" : "expanded"}
+              onValueChange={(value) => {
+                if (value === "expanded" || value === "collapsed") {
+                  updateSettings({ diffFilesCollapsed: value === "collapsed" });
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-40"
+                aria-label="Default diff file state"
+              >
+                <SelectValue>{settings.diffFilesCollapsed ? "Collapsed" : "Expanded"}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="expanded">
+                  Expanded
+                </SelectItem>
+                <SelectItem hideIndicator value="collapsed">
+                  Collapsed
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
 

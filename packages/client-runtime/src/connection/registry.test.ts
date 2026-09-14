@@ -127,6 +127,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     readonly beforeRegistrationRemove?: (
       target: ConnectionTarget,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
+    readonly initialDisabled?: ReadonlyArray<EnvironmentId>;
   },
 ) {
   const storedTargets = yield* Ref.make(
@@ -143,9 +144,13 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   const profileReadCount = yield* Ref.make(0);
   const storedCredentials = yield* Ref.make(new Map(initialCredentials));
   const disconnectedSshTargets = yield* Ref.make<ReadonlyArray<DesktopSshEnvironmentTarget>>([]);
+  const storedDisabled = yield* Ref.make<ReadonlySet<EnvironmentId>>(
+    new Set(options?.initialDisabled ?? []),
+  );
 
   const targetStore = Persistence.ConnectionTargetStore.of({
     list: Ref.get(storedTargets).pipe(Effect.map((targets) => [...targets.values()])),
+    listDisabled: Ref.get(storedDisabled).pipe(Effect.map((ids) => [...ids])),
   });
   const registrationStore = Persistence.ConnectionRegistrationStore.of({
     register: (registration) =>
@@ -197,6 +202,13 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
             return next;
           });
         }
+      }),
+    setEnabled: (environmentId, enabled) =>
+      Ref.update(storedDisabled, (current) => {
+        const next = new Set(current);
+        if (enabled) next.delete(environmentId);
+        else next.add(environmentId);
+        return next;
       }),
   });
   const cacheStore = Persistence.EnvironmentCacheStore.of({
@@ -346,6 +358,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     storedProfiles,
     profileReadCount,
     storedCredentials,
+    storedDisabled,
     disconnectedSshTargets,
     networkStatus,
   };
@@ -403,6 +416,50 @@ describe("EnvironmentRegistry", () => {
         expect(entry?.target).toEqual(SSH_CONNECTION);
         expect(Option.getOrThrow(entry?.profile ?? Option.none())).toEqual(SSH_PROFILE);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("switches a saved environment off and back on without removing it", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness(
+        [BEARER_TARGET],
+        [BEARER_PROFILE],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+      );
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        yield* registry.setEnabled(BEARER_TARGET.environmentId, false);
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "available",
+        );
+        expect(
+          (yield* SubscriptionRef.get(registry.entries)).get(BEARER_TARGET.environmentId)?.enabled,
+        ).toBe(false);
+        expect((yield* Ref.get(harness.storedTargets)).has(BEARER_TARGET.environmentId)).toBe(true);
+        expect((yield* Ref.get(harness.storedDisabled)).has(BEARER_TARGET.environmentId)).toBe(
+          true,
+        );
+
+        yield* registry.setEnabled(BEARER_TARGET.environmentId, true);
+        yield* awaitConnectionState(
+          registry,
+          BEARER_TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+        expect((yield* Ref.get(harness.storedDisabled)).has(BEARER_TARGET.environmentId)).toBe(
+          false,
+        );
+      }).pipe(Effect.provide(harness.layer));
     }),
   );
 

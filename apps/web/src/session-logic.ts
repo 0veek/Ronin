@@ -220,10 +220,9 @@ export interface WorkLogEntry {
   /** Agent role (subagent_type) for labeled timeline rows. */
   agentRole?: string;
   /**
-   * Present on agent-spawn CTA rows: one per workflow run or per-turn batch
-   * of direct spawns. The row renders as a call-to-action ("Kicked off N
-   * subagents") whose live status is derived from the agent panel model at
-   * render time; clicking opens the Agents panel.
+   * Present on agent-spawn rows: one per workflow run or per-turn batch of
+   * direct spawns. The row derives its live status and member list from the
+   * agent panel model at render time.
    */
   agentSpawn?: {
     /** Workflow coordinator taskId, or null for a direct-spawn batch. */
@@ -722,6 +721,20 @@ export function deriveWorkLogEntries(
   options: WorkLogDerivationOptions = {},
 ): WorkLogEntry[] {
   const ordered = [...activities].toSorted(compareActivitiesByOrder);
+  // A launch tool and its task lifecycle describe the same run. Only hide
+  // launch rows once their tool-use id has an agent row to replace them.
+  const agentLaunchToolIds = new Set<string>();
+  for (const activity of ordered) {
+    if (
+      (activity.kind === "task.started" ||
+        activity.kind === "task.progress" ||
+        activity.kind === "task.completed") &&
+      isAgentTaskStartedActivity(activity)
+    ) {
+      const toolUseId = asTrimmedString(asRecord(activity.payload)?.toolUseId);
+      if (toolUseId) agentLaunchToolIds.add(toolUseId);
+    }
+  }
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of foldUserInputActivities(ordered)) {
     if (activity.kind === "tool.started") continue;
@@ -737,7 +750,28 @@ export function deriveWorkLogEntries(
     if (isNoContentRuntimeWarning(activity)) continue;
     if (isPlanBoundaryToolActivity(activity)) continue;
     if (isAgentInternalActivity(activity)) continue;
-    entries.push(toDerivedWorkLogEntry(activity, options));
+    const entry = toDerivedWorkLogEntry(activity, options);
+    // Native agent launches get their visible row from task.started. Defer
+    // their active tool row so another launch cannot duplicate the batch.
+    if (
+      activity.kind === "tool.updated" &&
+      entry.itemType === "collab_agent_tool_call" &&
+      entry.toolLifecycleStatus === "inProgress" &&
+      entry.tone !== "error"
+    ) {
+      const toolName = asRecord(asRecord(activity.payload)?.data)?.toolName;
+      if (toolName === "Agent" || toolName === "Task") continue;
+    }
+    if (
+      (activity.kind === "tool.updated" || activity.kind === "tool.completed") &&
+      entry.toolCallId &&
+      agentLaunchToolIds.has(entry.toolCallId) &&
+      entry.tone !== "error" &&
+      entry.toolLifecycleStatus !== "failed"
+    ) {
+      continue;
+    }
+    entries.push(entry);
   }
   return collapseDerivedWorkLogEntries(entries);
 }
@@ -1014,7 +1048,7 @@ function collapseDerivedWorkLogEntries(
   const collapsed: DerivedWorkLogEntry[] = [];
   // Subagent rows collapse by spawn group, not adjacency: a workflow run (or
   // a turn's batch of direct spawns) is ONE narrative event in the chat — a
-  // CTA row that opens the Agents panel — no matter how many agents it
+  // spawn row in the timeline — no matter how many agents it
   // contains or how their progress rows interleave (quiet-timeline
   // guarantee).
   const spawnRowIndex = new Map<string, number>();

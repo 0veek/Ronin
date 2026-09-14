@@ -19,8 +19,15 @@ import {
   ProviderInstanceId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
+import {
+  isPasteAsTextShortcut,
+  nextPastedTextFileName,
+  pastedTextDisposition,
+  wouldTextPasteExceedLimit,
+} from "@t3tools/client-runtime/text-paste";
 import {
   COMPOSER_SLASH_COMMAND_DEFINITIONS,
   getAvailableComposerSlashCommands,
@@ -46,6 +53,7 @@ import {
 } from "react";
 import {
   changeQuestionAttachmentPreparation,
+  countQuestionAttachments,
   questionAttachmentDraftId,
   useQuestionAttachmentPreparation,
 } from "../../questionAttachments";
@@ -133,8 +141,11 @@ import {
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
 import {
   collectInlineContextIds,
+  inlineContextReferenceReplacement,
   insertInlineContextReference,
 } from "../../lib/composerContextReferences";
+import { readPastedComposerContext } from "../composerInlineTokenPaste";
+import { DESKTOP_PASTE_AS_TEXT_EVENT } from "../../lib/desktopPasteAsText";
 import {
   fileContextReference,
   previewAnnotationContextId,
@@ -159,6 +170,7 @@ import { ProviderModelPicker } from "./ProviderModelPicker";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
+import { ComposerImageThumbnail } from "./ComposerImageThumbnail";
 import {
   ComposerDictationContext,
   createComposerDictationInsert,
@@ -201,7 +213,7 @@ import {
 } from "../../lib/snapShotAnimation";
 import { resizeSnapShotSource } from "../../lib/snapShotSource";
 import { basenameOfPath } from "../../pierre-icons";
-import { cn, randomUUID } from "~/lib/utils";
+import { cn, isMacPlatform, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
 import {
   getComposerPromptLengthValidationMessage,
@@ -651,6 +663,8 @@ export interface ChatComposerHandle {
   addDroppedFiles: (files: File[]) => void;
   hasPendingAttachments: () => boolean;
   insertTextAtEnd: (text: string, options?: { ensureLeadingBoundary?: boolean }) => boolean;
+  /** Apply large-paste folding for text redirected from a blurred composer. */
+  pasteTextAtEnd: (text: string, options?: { bypassAutoAttachment?: boolean }) => boolean;
   citeAssistantText: (
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
@@ -1441,6 +1455,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Refs
   // ------------------------------------------------------------------
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const pasteAsTextShortcutUntilRef = useRef(0);
+  const pastedTextFileNamesRef = useRef<{ targetKey: string; names: Set<string> }>({
+    targetKey: "",
+    names: new Set(),
+  });
   const attachmentInputRef = useRef<HTMLInputElement>(null);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerFooterControlsRef = useRef<HTMLDivElement>(null);
@@ -1471,6 +1490,46 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const pendingImageCompressionsRef = useRef<Map<string, number>>(new Map());
   const isRevertingCheckpointRef = useRef(isRevertingCheckpoint);
   isRevertingCheckpointRef.current = isRevertingCheckpoint;
+
+  useEffect(() => {
+    const armPasteAsTextShortcut = () => {
+      pasteAsTextShortcutUntilRef.current = Date.now() + 1_000;
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof Node &&
+        composerFormRef.current?.contains(event.target) &&
+        isPasteAsTextShortcut(event, isMacPlatform(navigator.platform))
+      ) {
+        armPasteAsTextShortcut();
+      }
+    };
+    const onBlur = () => {
+      pasteAsTextShortcutUntilRef.current = 0;
+    };
+    const onDesktopPasteAsText = () => {
+      const activeElement = document.activeElement;
+      const blocksPasteToFocus =
+        activeElement instanceof Element &&
+        activeElement.closest(
+          'input, textarea, select, button, a[href], summary, [contenteditable="true"], [contenteditable="plaintext-only"], [role="textbox"], [role="button"], [role="menuitem"], [role="option"]',
+        ) !== null;
+      if (
+        (activeElement instanceof Node && composerFormRef.current?.contains(activeElement)) ||
+        !blocksPasteToFocus
+      ) {
+        armPasteAsTextShortcut();
+      }
+    };
+    window.addEventListener(DESKTOP_PASTE_AS_TEXT_EVENT, onDesktopPasteAsText);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener(DESKTOP_PASTE_AS_TEXT_EVENT, onDesktopPasteAsText);
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1718,7 +1777,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (nextPrompt: string) => {
       if (nextPrompt === promptRef.current) {
         scheduleComposerFocus();
-        return;
+        return false;
       }
       promptRef.current = nextPrompt;
       setComposerDraftPrompt(composerDraftTarget, nextPrompt);
@@ -1812,15 +1871,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       addComposerDraftImages(attachmentDraftTarget, images);
     },
     [addComposerDraftImages, attachmentDraftTarget],
-  );
-
-  const addComposerFilesToDraft = useCallback(
-    (files: ComposerFileAttachment[]) => {
-      addComposerDraftFiles(attachmentDraftTarget, files, {
-        appendReference: questionAttachmentTarget === null,
-      });
-    },
-    [addComposerDraftFiles, attachmentDraftTarget, questionAttachmentTarget],
   );
 
   const removeComposerImageFromDraft = useCallback(
@@ -2752,6 +2802,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             mimeType: file.mimeType,
             sizeBytes: file.sizeBytes,
             file: null,
+            ...(file.source ? { source: file.source } : {}),
             // An expired upload carries no ids, so it hydrates as a
             // needs-reattach row and the "Attach again" flow takes over.
             ...(expired
@@ -2995,6 +3046,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         sizeBytes: file.sizeBytes,
         attachmentId: upload.attachmentId,
         environmentId,
+        ...(file.source ? { source: file.source } : {}),
       });
     }
     // A repeat ⌘S on the *same* still-unencoded snapshot would stash it
@@ -3220,8 +3272,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Callbacks: attachments
   // ------------------------------------------------------------------
-  const addComposerAttachments = async (files: File[]) => {
-    if (!activeThreadId || files.length === 0 || isRevertingCheckpointRef.current) return;
+  const countReservedAttachments = () => {
+    const questionRequest = pendingUserInputs[0];
+    const otherQuestionKeys =
+      questionAttachmentTarget && questionRequest && activeThreadId
+        ? questionRequest.questions
+            .map((question) =>
+              questionAttachmentDraftId(
+                environmentId,
+                activeThreadId,
+                questionRequest.requestId,
+                question.id,
+              ),
+            )
+            .filter((key) => key !== questionAttachmentTarget)
+        : [];
+    return (
+      composerImagesRef.current.length +
+      composerFilesRef.current.length +
+      (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) +
+      countQuestionAttachments(otherQuestionKeys)
+    );
+  };
+
+  const addComposerAttachments = async (
+    files: File[],
+    options?: {
+      readonly source?: ChatFileAttachment["source"];
+      readonly selection?: { start: number; end: number };
+    },
+  ): Promise<boolean> => {
+    if (!activeThreadId || files.length === 0 || isRevertingCheckpointRef.current) return false;
     if (
       pendingUserInputs.length > 0 &&
       (!supportsQuestionAttachments ||
@@ -3232,7 +3313,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         type: "error",
         title: "This question cannot accept attachments.",
       });
-      return;
+      return false;
     }
     // Captured before the awaits below: the user may switch threads while a
     // large image is being compressed, and the attachments and errors belong
@@ -3243,30 +3324,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // accepted files reserve their attachment slots (via the pending counter)
     // before the first await, keeping the total under the limit.
     const pendingCount = pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0;
-    const otherQuestionAttachments =
-      questionAttachmentTarget && pendingUserInputs[0]
-        ? pendingUserInputs[0].questions.reduce((count, question) => {
-            const target = questionAttachmentDraftId(
-              environmentId,
-              threadId,
-              pendingUserInputs[0]!.requestId,
-              question.id,
-            );
-            if (target === questionAttachmentTarget) return count;
-            const draft = getComposerDraft(target);
-            return (
-              count +
-              (draft?.images.length ?? 0) +
-              (draft?.files.length ?? 0) +
-              (useQuestionAttachmentPreparation.getState().counts[target] ?? 0)
-            );
-          }, 0)
-        : 0;
-    let reservedCount =
-      composerImagesRef.current.length +
-      composerFilesRef.current.length +
-      pendingCount +
-      otherQuestionAttachments;
+    let reservedCount = countReservedAttachments();
     // A pick that matches a needs-reattach marker replaces it in the draft, so
     // it must not consume a slot; a draft full of markers would otherwise hit
     // the capacity error before the replacement path could run.
@@ -3333,6 +3391,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           mimeType: fileMimeType,
           sizeBytes: attachmentFile.size,
           file: attachmentFile,
+          ...(options?.source ? { source: options.source } : {}),
         });
       }
       if (!matchingReattachMarker) {
@@ -3340,10 +3399,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
     }
     setThreadError(threadId, error);
+    let insertedAny = false;
     if (acceptedFiles.length > 0) {
-      addComposerFilesToDraft(acceptedFiles);
+      const storedIds = new Set(
+        addComposerDraftFiles(attachmentDraftTarget, acceptedFiles, {
+          appendReference: options?.selection === undefined && questionAttachmentTarget === null,
+        }),
+      );
+      const storedFiles = acceptedFiles.filter((file) => storedIds.has(file.id));
+      if (options?.selection && storedFiles.length > 0) {
+        const edit = inlineContextReferenceReplacement(
+          promptRef.current,
+          options.selection,
+          storedFiles.map(fileContextReference),
+        );
+        insertedAny = applyPromptReplacement(edit.start, edit.end, edit.text);
+      } else {
+        insertedAny = storedFiles.length > 0;
+      }
+      if (options?.source?._tag === "pasted-text" && storedFiles.length > 0) {
+        const attached = storedFiles[0]!;
+        toastManager.add({
+          type: "info",
+          title: `Large paste attached as ${attached.name}`,
+          description: `${formatAttachmentSize(attached.sizeBytes)} · Use ${
+            isMacPlatform(navigator.platform) ? "⌘⇧V" : "Ctrl+Shift+V"
+          } to keep a large paste inline.`,
+          data: { hideCopyButton: true },
+        });
+      }
     }
-    if (acceptedImages.length === 0) return;
+    if (acceptedImages.length === 0) return insertedAny;
 
     pendingImageCompressionsRef.current.set(
       attachmentTargetKey,
@@ -3386,7 +3472,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         !useQuestionAttachmentPreparation.getState().counts[questionAttachmentTarget]
       ) {
         for (const image of nextImages) URL.revokeObjectURL(image.previewUrl);
-        return;
+        return false;
       }
       if (nextImages.length === 1 && nextImages[0]) {
         addComposerImage(nextImages[0]);
@@ -3412,6 +3498,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         pendingImageCompressionsRef.current.delete(attachmentTargetKey);
       }
     }
+    return true;
   };
 
   const removeComposerImage = (imageId: string) => {
@@ -3421,24 +3508,103 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Callbacks: paste / drag
   // ------------------------------------------------------------------
+  const foldPastedText = (
+    plainText: string,
+    bypassAutoAttachment: boolean,
+    selectionOverride?: { start: number; end: number },
+  ): boolean => {
+    const questionCanAttach =
+      pendingUserInputs.length === 0 ||
+      (supportsQuestionAttachments &&
+        activePendingProgress?.activeQuestion?.allowCustomAnswer !== false &&
+        !activePendingIsResponding);
+    const hasAttachmentSlot = countReservedAttachments() < PROVIDER_SEND_TURN_MAX_ATTACHMENTS;
+    const selection = selectionOverride ?? composerEditorRef.current?.readSelectionRange();
+    const wouldExceedInputLimit = wouldTextPasteExceedLimit({
+      valueLength: promptRef.current.length,
+      selection: selection ?? { start: 0, end: 0 },
+      textLength: plainText.length,
+      maxLength: PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+    });
+    const shouldFold =
+      pastedTextDisposition({
+        text: plainText,
+        bypassAutoAttachment,
+        wouldExceedInputLimit,
+        canAttach: true,
+      }) === "attachment";
+    if (!shouldFold) return false;
+
+    const canStageAttachment =
+      Boolean(activeThreadId) &&
+      !isRevertingCheckpointRef.current &&
+      questionCanAttach &&
+      hasAttachmentSlot;
+    if (!canStageAttachment || fileStagingLimit === null) {
+      if (!wouldExceedInputLimit) return false;
+      toastManager.add({
+        type: "error",
+        title: "Pasted text is too large for this message",
+        description: "Remove some text or an attachment, then paste again.",
+        data: { hideCopyButton: true },
+      });
+      return true;
+    }
+
+    if (pastedTextFileNamesRef.current.targetKey !== attachmentTargetKey) {
+      pastedTextFileNamesRef.current = { targetKey: attachmentTargetKey, names: new Set() };
+    }
+    const reservedNames = pastedTextFileNamesRef.current.names;
+    for (const file of composerFilesRef.current) reservedNames.add(file.name);
+    const foldedFileName = nextPastedTextFileName([...reservedNames]);
+    reservedNames.add(foldedFileName);
+    const foldedFile = new File([plainText], foldedFileName, {
+      type: "text/plain;charset=utf-8",
+    });
+    if (foldedFile.size > fileStagingLimit) {
+      reservedNames.delete(foldedFileName);
+      if (!wouldExceedInputLimit) return false;
+      toastManager.add({
+        type: "error",
+        title: "Pasted text is too large to attach",
+        description: "Reduce the clipboard contents or save a smaller excerpt as a file.",
+        data: { hideCopyButton: true },
+      });
+      return true;
+    }
+
+    void addComposerAttachments([foldedFile], {
+      source: { _tag: "pasted-text" },
+      ...(selection ? { selection } : {}),
+    });
+    return true;
+  };
+
   const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
     const files = Array.from(event.clipboardData.files);
+    const plainText = event.clipboardData.getData("text/plain");
+    const bypassAutoAttachment = Date.now() <= pasteAsTextShortcutUntilRef.current;
+    pasteAsTextShortcutUntilRef.current = 0;
     // Claimable pastes go through even when agent questions are pending or the
     // composer is at its attachment limit: `addComposerAttachments` surfaces
     // those as a toast and a thread error. An early return here would swallow
     // the paste with no feedback.
     if (
-      files.length === 0 ||
-      !activeThreadId ||
-      !shouldHandleComposerAttachmentPaste({
-        files,
-        plainText: event.clipboardData.getData("text/plain"),
-      })
+      files.length > 0 &&
+      activeThreadId &&
+      shouldHandleComposerAttachmentPaste({ files, plainText })
     ) {
+      event.preventDefault();
+      event.stopPropagation();
+      void addComposerAttachments(files);
       return;
     }
+
+    if ((readPastedComposerContext(event.clipboardData)?.records.length ?? 0) > 0) return;
+    if (!foldPastedText(plainText, bypassAutoAttachment)) return;
+
     event.preventDefault();
-    void addComposerAttachments(files);
+    event.stopPropagation();
   };
 
   const insertComposerText = useCallback(
@@ -3656,6 +3822,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       hasPendingAttachments: () =>
         (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0,
       insertTextAtEnd: insertComposerTextAtEnd,
+      pasteTextAtEnd: (text: string, options) => {
+        const bypassAutoAttachment =
+          options?.bypassAutoAttachment === true ||
+          Date.now() <= pasteAsTextShortcutUntilRef.current;
+        pasteAsTextShortcutUntilRef.current = 0;
+        const promptLength = promptRef.current.length;
+        if (
+          !foldPastedText(text, bypassAutoAttachment, {
+            start: promptLength,
+            end: promptLength,
+          })
+        ) {
+          return false;
+        }
+        focusComposer();
+        return true;
+      },
       citeAssistantText: (citation, sourceAnchor) =>
         insertComposerText(
           formatAssistantCitationForComposer(citation, citation.comment),
@@ -3753,6 +3936,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activeThread,
       addComposerAttachments,
+      foldPastedText,
       composerDraftTarget,
       composerCursor,
       composerTerminalContexts,
@@ -4110,10 +4294,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                   onExpandImage(preview);
                                 }}
                               >
-                                <img
-                                  src={image.previewUrl}
+                                <ComposerImageThumbnail
+                                  file={image.file}
                                   alt={image.name}
                                   className="h-full w-full object-cover"
+                                  fallback={
+                                    <span className="flex h-full items-center justify-center px-1 text-[10px] text-secondary-label">
+                                      {image.name}
+                                    </span>
+                                  }
                                 />
                               </button>
                             ) : (

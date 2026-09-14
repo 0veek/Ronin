@@ -7,6 +7,7 @@ export {
   type EnvironmentConnectionLease,
 } from "./driver.ts";
 export * from "./errors.ts";
+export * from "./githubRoutingPermissions.ts";
 export * as Connection from "./layer.ts";
 export * from "./model.ts";
 export {

@@ -66,6 +66,14 @@ separate target kind. A Tailscale URL is paired through the ordinary bearer path
 host plus pairing code. Tailscale is an endpoint provider and transport, not a distinct runtime
 concept.
 
+### Desktop without a local environment
+
+Desktop normally launches its own primary server, but the `localEnvironmentEnabled` desktop
+setting can turn that off without deleting local state. On the next launch the main process skips
+the local backend and server exposure, while the renderer is still served from bundled client
+assets. The renderer receives the setting through the desktop bridge and omits the primary target,
+leaving saved paired and SSH environments available.
+
 ### AdvertisedEndpoint
 
 A server- or desktop-authored candidate endpoint for an environment: a concrete HTTP and WebSocket

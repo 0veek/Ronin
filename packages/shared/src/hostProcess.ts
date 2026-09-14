@@ -1,6 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as NodeOS from "node:os";
+import * as NodeSea from "node:sea";
 
 export const HostProcessPlatform = Context.Reference<NodeJS.Platform>(
   "@t3tools/shared/hostProcess/HostProcessPlatform",
@@ -49,6 +50,18 @@ export const HostProcessArguments = Context.Reference<ReadonlyArray<string>>(
   {
     defaultValue: () => process.argv,
   },
+);
+
+/** The command passed to the host before Node resolved it to the executable. */
+export const HostProcessInvokedAs = Context.Reference<string>(
+  "@t3tools/shared/hostProcess/HostProcessInvokedAs",
+  { defaultValue: () => process.argv0 },
+);
+
+/** Whether the current process is a Node single-executable application. */
+export const HostProcessIsExecutable = Context.Reference<boolean>(
+  "@t3tools/shared/hostProcess/HostProcessIsExecutable",
+  { defaultValue: () => NodeSea.isSea() },
 );
 
 /** Undefined on platforms without POSIX uids (Windows). */

@@ -7,8 +7,15 @@ import {
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
+  WORKTREE_SETUP_ROW_ID,
 } from "./MessagesTimeline.logic";
-import { MessageId, TurnId } from "@t3tools/contracts";
+import {
+  ApprovalRequestId,
+  MessageId,
+  ThreadId,
+  TurnId,
+  type WorktreeSetupSnapshot,
+} from "@t3tools/contracts";
 import type { TurnDiffSummary } from "../../types";
 
 describe("shouldPreserveAssistantLineBreaks", () => {
@@ -293,6 +300,80 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
+  it("shows the worktree setup card instead of the working placeholder", () => {
+    const snapshot: WorktreeSetupSnapshot = {
+      threadId: ThreadId.make("thread-setup"),
+      phase: "running",
+      startedAt: "2026-01-01T00:00:00Z",
+      endedAt: null,
+      branch: "feature",
+      baseRef: "main",
+      worktreePath: null,
+      setupScript: null,
+      stages: [],
+      error: null,
+      sequence: 3,
+    };
+    const userEntry = {
+      id: "user-entry",
+      kind: "message",
+      createdAt: "2026-01-01T00:00:00Z",
+      message: {
+        id: "user-1" as never,
+        role: "user",
+        text: "Build it",
+        turnId: null,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
+        streaming: false,
+      },
+    } as const;
+    const assistantEntry = {
+      id: "assistant-entry",
+      kind: "message",
+      createdAt: "2026-01-01T00:00:30Z",
+      message: {
+        id: "assistant-1" as never,
+        role: "assistant",
+        text: "On it",
+        turnId: "turn-1" as never,
+        createdAt: "2026-01-01T00:00:30Z",
+        updatedAt: "2026-01-01T00:00:30Z",
+        streaming: true,
+      },
+    } as const;
+    const withoutMessages = deriveMessagesTimelineRows({
+      timelineEntries: [],
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaries: [],
+      worktreeSetup: snapshot,
+    });
+    expect(withoutMessages).toEqual([
+      {
+        kind: "worktree-setup",
+        id: WORKTREE_SETUP_ROW_ID,
+        createdAt: "2026-01-01T00:00:00Z",
+        snapshot,
+      },
+    ]);
+
+    // Once the agent has replied the finished card stays under the send.
+    const withMessages = deriveMessagesTimelineRows({
+      timelineEntries: [userEntry, assistantEntry],
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaries: [],
+      worktreeSetup: { ...snapshot, phase: "done" },
+    });
+    expect(withMessages.map((row) => row.kind)).toEqual([
+      "message",
+      "worktree-setup",
+      "working",
+      "message",
+    ]);
+  });
+
   it("keeps context compaction visible outside folded work", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
@@ -1238,6 +1319,172 @@ describe("deriveMessagesTimelineRows", () => {
     );
 
     expect(assistantRows.map((row) => row.showAssistantMeta)).toEqual([false, true]);
+  });
+
+  it("keeps user input in its own row through tool grouping and turn folding", () => {
+    const turnId = TurnId.make("answer-turn");
+    const answer = {
+      id: "answer-submitted",
+      createdAt: "2026-01-01T00:00:02Z",
+      turnId,
+      tone: "info" as const,
+      label: "User input submitted",
+      sourceActivityKind: "user-input.answer-submitted",
+      questionAnswer: {
+        requestId: ApprovalRequestId.make("answer-request"),
+        answers: { scope: "Use the private repository" },
+        questionTextById: { scope: "Which repository?" },
+        attachmentsByQuestionId: {},
+      },
+    };
+    const timelineEntries = [
+      {
+        id: "tool-before",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        entry: {
+          id: "tool-before",
+          createdAt: "2026-01-01T00:00:01Z",
+          turnId,
+          tone: "tool" as const,
+          label: "Ran command",
+        },
+      },
+      {
+        id: "answer-entry",
+        kind: "work" as const,
+        createdAt: answer.createdAt,
+        entry: answer,
+      },
+      {
+        id: "tool-after",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          id: "tool-after",
+          createdAt: "2026-01-01T00:00:03Z",
+          turnId,
+          tone: "tool" as const,
+          label: "Ran command",
+        },
+      },
+      {
+        id: "assistant-final",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:04Z",
+        message: {
+          id: MessageId.make("assistant-final"),
+          role: "assistant" as const,
+          text: "Done.",
+          turnId,
+          createdAt: "2026-01-01T00:00:04Z",
+          updatedAt: "2026-01-01T00:00:05Z",
+          streaming: false,
+        },
+      },
+    ];
+
+    for (const expandedTurnIds of [undefined, new Set([turnId])]) {
+      const rows = deriveMessagesTimelineRows({
+        timelineEntries,
+        latestTurn: {
+          turnId,
+          state: "completed",
+          startedAt: "2026-01-01T00:00:00Z",
+          completedAt: "2026-01-01T00:00:05Z",
+        },
+        ...(expandedTurnIds ? { expandedTurnIds } : {}),
+        isWorking: false,
+        activeTurnStartedAt: null,
+        turnDiffSummaries: [],
+      });
+      expect(
+        rows.filter((row) => row.kind === "work" && row.groupedEntries.includes(answer)),
+      ).toMatchObject([{ groupedEntries: [answer] }]);
+    }
+  });
+
+  it("keeps subagent spawn rows visible after their turn settles", () => {
+    const turnId = TurnId.make("spawn-turn");
+    const spawn = {
+      id: "spawn-entry",
+      createdAt: "2026-01-01T00:00:02Z",
+      turnId,
+      tone: "info" as const,
+      label: "Kicked off 2 subagents",
+      agentSpawn: {
+        workflowId: null,
+        agentTaskIds: ["agent-a", "agent-b"],
+      },
+    };
+    const timelineEntries = [
+      {
+        id: "assistant-first",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:01Z",
+        message: {
+          id: MessageId.make("assistant-first"),
+          role: "assistant" as const,
+          text: "I am delegating this.",
+          turnId,
+          createdAt: "2026-01-01T00:00:01Z",
+          updatedAt: "2026-01-01T00:00:01Z",
+          streaming: false,
+        },
+      },
+      {
+        id: spawn.id,
+        kind: "work" as const,
+        createdAt: spawn.createdAt,
+        entry: spawn,
+      },
+      {
+        id: "tool-entry",
+        kind: "work" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        entry: {
+          id: "tool-entry",
+          createdAt: "2026-01-01T00:00:03Z",
+          turnId,
+          tone: "tool" as const,
+          label: "Read files",
+        },
+      },
+      {
+        id: "assistant-final",
+        kind: "message" as const,
+        createdAt: "2026-01-01T00:00:04Z",
+        message: {
+          id: MessageId.make("assistant-final"),
+          role: "assistant" as const,
+          text: "Done.",
+          turnId,
+          createdAt: "2026-01-01T00:00:04Z",
+          updatedAt: "2026-01-01T00:00:05Z",
+          streaming: false,
+        },
+      },
+    ];
+
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries,
+      latestTurn: {
+        turnId,
+        state: "completed",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: "2026-01-01T00:00:05Z",
+      },
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      liveAgentTaskIds: new Set(),
+    });
+
+    expect(rows.map((row) => row.id)).toEqual([
+      "turn-fold:spawn-turn",
+      "spawn-entry",
+      "assistant-final",
+    ]);
   });
 
   it("withholds assistant metadata while the active turn is still in progress", () => {

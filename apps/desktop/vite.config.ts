@@ -1,6 +1,11 @@
 import { defineConfig } from "vite-plus";
 
+import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
+
 const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
+
+const isMainProcessExternal = (id: string) =>
+  id === "electron" || id.startsWith("electron/") || isDesktopRuntimeExternalDependency(id);
 
 export default defineConfig({
   run: {
@@ -42,7 +47,9 @@ export default defineConfig({
       ],
       clean: true,
       deps: {
-        alwaysBundle: (id) => id.startsWith("@t3tools/"),
+        alwaysBundle: (id) => !id.startsWith("node:") && !isMainProcessExternal(id),
+        neverBundle: isMainProcessExternal,
+        onlyBundle: false,
       },
       ...(shouldLaunchElectronAfterPack ? { onSuccess: "node scripts/dev-electron.mjs" } : {}),
     },

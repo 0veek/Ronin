@@ -283,13 +283,22 @@ export function makeAntigravityAdapter(
             issue: "A prompt is required.",
           });
         }
-        // Print mode has no image input path at all, and a dropped attachment
-        // reads to the user as an answer about a picture the agent never saw.
-        if (input.attachments && input.attachments.length > 0) {
+        // Print mode has no native attachment input. Folded clipboard text is
+        // the exception: ProviderService has already placed its on-disk path
+        // in the prompt, so keeping the attachment path-only is intentional.
+        const unsupportedAttachment = input.attachments?.some(
+          (attachment) =>
+            !(
+              attachment.type === "file" &&
+              "source" in attachment &&
+              attachment.source?._tag === "pasted-text"
+            ),
+        );
+        if (unsupportedAttachment) {
           return yield* new ProviderAdapterValidationError({
             provider: PROVIDER,
             operation: "turn/start",
-            issue: "Antigravity cannot receive image attachments.",
+            issue: "Antigravity cannot receive native attachments.",
           });
         }
         const turnId = TurnId.make(yield* randomUUIDv4);

@@ -37,6 +37,7 @@ const TARGET = new PrimaryConnectionTarget({
 const TARGET_ENTRY: ConnectionCatalogEntry = {
   target: TARGET,
   profile: Option.none(),
+  enabled: true,
 };
 
 const PREPARED_CONNECTION: PreparedConnection = {

@@ -15,10 +15,12 @@ import {
   type OrchestrationThreadActivity,
   type ProviderInstanceId,
   type ProviderRuntimeEvent,
+  type ResponseStreamingMode,
   RuntimeRequestId,
 } from "@t3tools/contracts";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -51,6 +53,7 @@ import {
 import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { canReplaceThreadTitle } from "../threadTitles.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
@@ -105,6 +108,11 @@ const BUFFERED_PROPOSED_PLAN_BY_ID_TTL = Duration.minutes(120);
 const TASK_DESCRIPTION_BY_TASK_CACHE_CAPACITY = 10_000;
 const TASK_DESCRIPTION_BY_TASK_TTL = Duration.minutes(120);
 const MAX_BUFFERED_ASSISTANT_CHARS = 24_000;
+// Paragraphs that finish within this window after a delivery stay buffered
+// and land together on the next one. Keeps fast models from repainting the
+// message several times a second while still showing the first paragraph
+// as soon as it is done.
+const MIN_ASSISTANT_DELIVERY_INTERVAL_MS = 400;
 const STRICT_PROVIDER_LIFECYCLE_GUARD = process.env.T3CODE_STRICT_PROVIDER_LIFECYCLE_GUARD !== "0";
 
 type TurnStartRequestedDomainEvent = Extract<
@@ -176,6 +184,58 @@ function normalizeProposedPlanMarkdown(planMarkdown: string | undefined): string
 
 function hasRenderableAssistantText(text: string | undefined): boolean {
   return (text?.trim().length ?? 0) > 0;
+}
+
+// An opening fence may sit at any indentation, since fences inside list
+// items are indented past the marker. A closing fence may be indented at most
+// three spaces more than its opener. Deeper lines are content in the block.
+const MARKDOWN_FENCE_PATTERN = /^( *)(`{3,}|~{3,})/;
+// CommonMark blank lines hold only spaces and tabs. Other whitespace, such as
+// a no-break space, is paragraph content.
+const BLANK_LINE_PATTERN = /^[ \t]*$/;
+
+/**
+ * Splits buffered assistant text at the last blank line or closing code fence
+ * that is not inside an open fenced code block. `ready` is safe to deliver now
+ * because the markdown before it will not change shape as more text arrives.
+ * `rest` stays buffered until the next boundary or completion. Only fully
+ * terminated lines count, so a trailing partial line never leaks.
+ */
+export function splitBufferedAssistantText(text: string): { ready: string; rest: string } {
+  let openFence: { marker: string; indent: number } | null = null;
+  let boundary = -1;
+  let lineStart = 0;
+  for (;;) {
+    const newline = text.indexOf("\n", lineStart);
+    if (newline === -1) {
+      break;
+    }
+    const line = text.slice(lineStart, newline).replace(/[ \t\r]+$/, "");
+    const fenceMatch = MARKDOWN_FENCE_PATTERN.exec(line);
+    if (fenceMatch) {
+      const indent = fenceMatch[1]!.length;
+      const marker = fenceMatch[2]!;
+      if (openFence === null) {
+        openFence = { marker, indent };
+      } else if (
+        marker[0] === openFence.marker[0] &&
+        marker.length >= openFence.marker.length &&
+        indent <= openFence.indent + 3 &&
+        line.length === indent + marker.length
+      ) {
+        // CommonMark: a closing fence carries no info string.
+        openFence = null;
+        boundary = newline + 1;
+      }
+    } else if (openFence === null && BLANK_LINE_PATTERN.test(line) && lineStart > 0) {
+      boundary = newline + 1;
+    }
+    lineStart = newline + 1;
+  }
+  if (boundary === -1) {
+    return { ready: "", rest: text };
+  }
+  return { ready: text.slice(0, boundary), rest: text.slice(boundary) };
 }
 
 function proposedPlanIdForTurn(threadId: ThreadId, turnId: TurnId): string {
@@ -915,6 +975,7 @@ const make = Effect.gen(function* () {
   const projectionThreadProposedPlans = yield* ProjectionThreadProposedPlanRepository;
   const projectionTurnRepository = yield* ProjectionTurnRepository;
   const projectionThreadActivityRepository = yield* ProjectionThreadActivityRepository;
+  const serverSettingsService = yield* ServerSettingsService;
   const providerCommandId = (event: ProviderRuntimeEvent, tag: string) =>
     crypto.randomUUIDv4.pipe(
       Effect.map((uuid) => CommandId.make(`provider:${event.eventId}:${tag}:${uuid}`)),
@@ -930,6 +991,12 @@ const make = Effect.gen(function* () {
     capacity: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY,
     timeToLive: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_TTL,
     lookup: () => Effect.succeed(""),
+  });
+  // Epoch millis of the last early delivery per message, for pacing.
+  const lastAssistantDeliveryAtByMessageId = yield* Cache.make<MessageId, number>({
+    capacity: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_CACHE_CAPACITY,
+    timeToLive: BUFFERED_MESSAGE_TEXT_BY_MESSAGE_ID_TTL,
+    lookup: () => Effect.succeed(0),
   });
 
   const assistantSegmentStateByTurnKey = yield* Cache.make<string, AssistantSegmentState>({
@@ -1107,7 +1174,17 @@ const make = Effect.gen(function* () {
       });
     });
 
-  const appendBufferedAssistantText = (messageId: MessageId, delta: string) =>
+  const resolveResponseStreamingMode = Effect.map(
+    serverSettingsService.getSettings,
+    (settings) => settings.responseStreamingMode,
+  );
+
+  const appendBufferedAssistantText = (
+    messageId: MessageId,
+    delta: string,
+    mode: Exclude<ResponseStreamingMode, "token">,
+    atMillis: number,
+  ) =>
     Cache.getOption(bufferedAssistantTextByMessageId, messageId).pipe(
       Effect.flatMap((existingText) =>
         Effect.gen(function* () {
@@ -1115,6 +1192,33 @@ const make = Effect.gen(function* () {
             onNone: () => delta,
             onSome: (text) => `${text}${delta}`,
           });
+
+          // Deliver finished paragraphs and closed code blocks early so the
+          // user sees progress without token-by-token repaints.
+          const { ready, rest } =
+            mode === "paragraph"
+              ? splitBufferedAssistantText(nextText)
+              : { ready: "", rest: nextText };
+          const lastDeliveredAt = Option.getOrUndefined(
+            yield* Cache.getOption(lastAssistantDeliveryAtByMessageId, messageId),
+          );
+          const paced =
+            lastDeliveredAt === undefined ||
+            atMillis - lastDeliveredAt >= MIN_ASSISTANT_DELIVERY_INTERVAL_MS;
+          if (
+            paced &&
+            hasRenderableAssistantText(ready) &&
+            rest.length <= MAX_BUFFERED_ASSISTANT_CHARS
+          ) {
+            if (rest.length > 0) {
+              yield* Cache.set(bufferedAssistantTextByMessageId, messageId, rest);
+            } else {
+              yield* Cache.invalidate(bufferedAssistantTextByMessageId, messageId);
+            }
+            yield* Cache.set(lastAssistantDeliveryAtByMessageId, messageId, atMillis);
+            return ready;
+          }
+
           if (nextText.length <= MAX_BUFFERED_ASSISTANT_CHARS) {
             yield* Cache.set(bufferedAssistantTextByMessageId, messageId, nextText);
             return "";
@@ -1137,7 +1241,9 @@ const make = Effect.gen(function* () {
     );
 
   const clearBufferedAssistantText = (messageId: MessageId) =>
-    Cache.invalidate(bufferedAssistantTextByMessageId, messageId);
+    Cache.invalidate(bufferedAssistantTextByMessageId, messageId).pipe(
+      Effect.andThen(Cache.invalidate(lastAssistantDeliveryAtByMessageId, messageId)),
+    );
 
   const appendBufferedProposedPlan = (planId: string, delta: string, createdAt: string) =>
     Cache.getOption(bufferedProposedPlanById, planId).pipe(
@@ -1719,18 +1825,37 @@ const make = Effect.gen(function* () {
           yield* rememberAssistantMessageId(thread.id, turnId, assistantMessageId);
         }
 
-        const spillChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
-        if (spillChunk.length > 0) {
+        const streamingMode = yield* resolveResponseStreamingMode;
+        if (streamingMode === "token") {
           yield* orchestrationEngine.dispatch({
             type: "thread.message.assistant.delta",
-            commandId: yield* providerCommandId(event, "assistant-delta-buffer-spill"),
+            commandId: yield* providerCommandId(event, "assistant-delta"),
             threadId: thread.id,
             messageId: assistantMessageId,
-            delta: spillChunk,
+            delta: assistantDelta,
             ...(turnId ? { turnId } : {}),
             ...assistantAttributionFromEvent(event),
             createdAt: now,
           });
+        } else {
+          const spillChunk = yield* appendBufferedAssistantText(
+            assistantMessageId,
+            assistantDelta,
+            streamingMode,
+            yield* Clock.currentTimeMillis,
+          );
+          if (spillChunk.length > 0) {
+            yield* orchestrationEngine.dispatch({
+              type: "thread.message.assistant.delta",
+              commandId: yield* providerCommandId(event, "assistant-delta-buffer-spill"),
+              threadId: thread.id,
+              messageId: assistantMessageId,
+              delta: spillChunk,
+              ...(turnId ? { turnId } : {}),
+              ...assistantAttributionFromEvent(event),
+              createdAt: now,
+            });
+          }
         }
       }
 
@@ -1745,16 +1870,20 @@ const make = Effect.gen(function* () {
           turnId: pauseForUserTurnId,
           streamingOnly: true,
         });
-        const flushedMessageIds = yield* flushBufferedAssistantMessagesForTurn({
-          event,
-          threadId: thread.id,
-          turnId: pauseForUserTurnId,
-          createdAt: now,
-          commandTag:
-            event.type === "request.opened"
-              ? "assistant-delta-flush-on-request-opened"
-              : "assistant-delta-flush-on-user-input-requested",
-        });
+        const streamingMode = yield* resolveResponseStreamingMode;
+        const flushedMessageIds =
+          streamingMode !== "token"
+            ? yield* flushBufferedAssistantMessagesForTurn({
+                event,
+                threadId: thread.id,
+                turnId: pauseForUserTurnId,
+                createdAt: now,
+                commandTag:
+                  event.type === "request.opened"
+                    ? "assistant-delta-flush-on-request-opened"
+                    : "assistant-delta-flush-on-user-input-requested",
+              })
+            : new Set<MessageId>();
         yield* finalizeActiveAssistantSegmentForTurn({
           event,
           threadId: thread.id,

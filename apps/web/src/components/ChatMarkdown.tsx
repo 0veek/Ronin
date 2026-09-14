@@ -58,7 +58,11 @@ import React, {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
+import type {
+  Components,
+  ExtraProps as ReactMarkdownExtraProps,
+  Options as ReactMarkdownOptions,
+} from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import { toHtml } from "hast-util-to-html";
 import { defaultUrlTransform } from "react-markdown";
@@ -189,6 +193,8 @@ interface ChatMarkdownProps {
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   /** Renders a `t3-context://` link as a chip; without it the link shows its label as text. */
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
+  /** Offset exposed heading levels without changing their visual tags. */
+  headingLevelOffset?: number | undefined;
 }
 
 export interface ChatMarkdownContextReference {
@@ -1932,6 +1938,7 @@ function ChatMarkdown({
   imageBaseDir,
   onImageExpand,
   renderContextReference,
+  headingLevelOffset = 0,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
@@ -2168,6 +2175,22 @@ function ChatMarkdown({
    * renderers that close over this message's metadata. useMemo keeps them stable until that
    * metadata changes. */
   const markdownComponents = useMemo<Components>(() => {
+    const heading = (level: 1 | 2 | 3 | 4 | 5 | 6) => {
+      const Tag = `h${level}` as const;
+      return function MarkdownHeading({
+        node: _node,
+        ...props
+      }: React.ComponentProps<typeof Tag> & ReactMarkdownExtraProps) {
+        return (
+          <Tag
+            {...props}
+            aria-level={
+              headingLevelOffset > 0 ? Math.min(level + headingLevelOffset, 6) : undefined
+            }
+          />
+        );
+      };
+    };
     const fileLinkChip = (
       fileLinkMeta: MarkdownFileLinkMeta,
       copyMarkdown: string,
@@ -2220,6 +2243,12 @@ function ChatMarkdown({
     };
 
     return {
+      h1: heading(1),
+      h2: heading(2),
+      h3: heading(3),
+      h4: heading(4),
+      h5: heading(5),
+      h6: heading(6),
       div({ node, children, ...props }) {
         const artifactTemplate = artifactTemplateFromHastProperties(node?.properties);
         if (artifactTemplate) {
@@ -2546,7 +2575,13 @@ function ChatMarkdown({
             theme={resolvedTheme}
           >
             <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
-              <Suspense fallback={<pre {...props}>{children}</pre>}>
+              <Suspense
+                fallback={
+                  <pre {...props} className="invisible" aria-hidden>
+                    {children}
+                  </pre>
+                }
+              >
                 <SuspenseShikiCodeBlock
                   className={codeBlock.className}
                   code={codeBlock.code}
@@ -2564,6 +2599,7 @@ function ChatMarkdown({
     cwd,
     diffThemeName,
     fileLinkParentSuffixByPath,
+    headingLevelOffset,
     imageBaseDir,
     inlineCodeFileLinkMetaByText,
     isStreaming,
@@ -2611,6 +2647,7 @@ function ChatMarkdown({
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80",
         className,
       )}
+      data-streaming={isStreaming ? "" : undefined}
       onCopy={handleCopy}
     >
       <ReactMarkdown

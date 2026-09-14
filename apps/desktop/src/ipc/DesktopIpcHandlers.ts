@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
+import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import {
   checkAppUpdate,
   downloadAppUpdate,
@@ -13,6 +14,10 @@ import {
   getConnectionCatalog,
   setConnectionCatalog,
 } from "./methods/connectionCatalog.ts";
+import {
+  getLocalEnvironmentEnabled,
+  setLocalEnvironmentEnabled,
+} from "./methods/localEnvironment.ts";
 import {
   getAdvertisedEndpoints,
   getServerExposureState,
@@ -41,6 +46,7 @@ import {
   getLocalEnvironmentBearerToken,
   getWindowFullscreenState,
   openExternal,
+  pasteAsText,
   pickFolder,
   pickProjectFavicon,
   pickThemeFiles,
@@ -66,6 +72,7 @@ import {
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
+  yield* installNotificationBadge();
   yield* PreviewIpc.installPreviewEventForwarding();
 
   yield* ipc.handleSync(getAppBranding);
@@ -74,6 +81,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getTitlebarContentInset);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
+  yield* ipc.handleSync(getLocalEnvironmentEnabled);
+  yield* ipc.handle(setLocalEnvironmentEnabled);
   yield* ipc.handle(getLocalEnvironmentBearerToken);
 
   yield* ipc.handle(getAppUpdateState);
@@ -120,6 +129,7 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(setTheme);
   yield* ipc.handle(showContextMenu);
   yield* ipc.handle(openExternal);
+  yield* ipc.handle(pasteAsText);
   yield* ipc.handle(probeRemoteEditors);
   yield* ipc.handle(focusWindow);
   yield* ipc.handle(setBadgeCount);

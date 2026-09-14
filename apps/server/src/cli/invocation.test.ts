@@ -41,8 +41,10 @@ it("treats stable installs as direct invocations", () => {
   assert.isNull(detectCliRunner(""));
 });
 
-it("re-suggests the nightly channel only for nightly builds", () => {
+it("re-suggests the prerelease channel only for prerelease builds", () => {
   assert.equal(suggestedPackageSpec("0.0.31-nightly.20260729"), "t3@nightly");
+  assert.equal(suggestedPackageSpec("0.0.31-preview.20260729.1"), "t3@preview");
+  assert.equal(suggestedPackageSpec("0.0.31-foo-preview.20260729.1"), "t3");
   assert.equal(suggestedPackageSpec("0.0.31"), "t3");
 });
 

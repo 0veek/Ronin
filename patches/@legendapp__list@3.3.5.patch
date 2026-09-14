@@ -1045,6 +1045,72 @@ index f1265fad74189591b5aae86cf2e3a31f9c0fdb02..16dcef04a6591d500c724635df272274
        ref: refView,
        style: viewStyle,
        ...rest
+diff --git a/react.js b/react.js
+index 914d2da..0c2917d 100644
+--- a/react.js
++++ b/react.js
+@@ -5653,4 +5653,16 @@ var ContainerSlot = typedMemo(function ContainerSlot2(props) {
+ // src/utils/reordering.ts
++// Element.moveBefore keeps the moved subtree's state and does not count as an
++// insertion, so CSS @starting-style transitions and iframes inside a row do not
++// restart when the list reorders its containers. insertBefore is the fallback.
++function moveChildBefore(container, element, reference) {
++  if (typeof container.moveBefore === "function") {
++    container.moveBefore(element, reference);
++  } else if (reference) {
++    container.insertBefore(element, reference);
++  } else {
++    container.appendChild(element);
++  }
++}
+ function sortDOMElements(container, indexByElement) {
+   const elements = Array.from(container.children);
+   if (elements.length <= 1) return elements;
+@@ -5690,9 +5702,9 @@ function sortDOMElements(container, indexByElement) {
+         }
+       }
+       if (nextStableElement) {
+-        container.insertBefore(element, nextStableElement);
++        moveChildBefore(container, element, nextStableElement);
+       } else {
+-        container.appendChild(element);
++        moveChildBefore(container, element, null);
+       }
+     }
+   }
+diff --git a/react.mjs b/react.mjs
+index 95465f2..b73bfdf 100644
+--- a/react.mjs
++++ b/react.mjs
+@@ -5632,4 +5632,16 @@ var ContainerSlot = typedMemo(function ContainerSlot2(props) {
+ // src/utils/reordering.ts
++// Element.moveBefore keeps the moved subtree's state and does not count as an
++// insertion, so CSS @starting-style transitions and iframes inside a row do not
++// restart when the list reorders its containers. insertBefore is the fallback.
++function moveChildBefore(container, element, reference) {
++  if (typeof container.moveBefore === "function") {
++    container.moveBefore(element, reference);
++  } else if (reference) {
++    container.insertBefore(element, reference);
++  } else {
++    container.appendChild(element);
++  }
++}
+ function sortDOMElements(container, indexByElement) {
+   const elements = Array.from(container.children);
+   if (elements.length <= 1) return elements;
+@@ -5669,9 +5681,9 @@ function sortDOMElements(container, indexByElement) {
+         }
+       }
+       if (nextStableElement) {
+-        container.insertBefore(element, nextStableElement);
++        moveChildBefore(container, element, nextStableElement);
+       } else {
+-        container.appendChild(element);
++        moveChildBefore(container, element, null);
+       }
+     }
+   }
 diff --git a/reanimated.mjs b/reanimated.mjs
 index 29a00d5dc084fd408a0e0a0a4d64e856d0ed1525..9c25ec5dd79fb137c073adc24643ad8a2996bf56 100644
 --- a/reanimated.mjs

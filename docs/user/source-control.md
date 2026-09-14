@@ -8,6 +8,7 @@ Ronin works with the platforms your team already uses:
 
 - **GitHub** – Pull requests, repository creation, and clone integration
 - **GitLab** – Merge requests, repository publishing, and hosted clones
+- **Forgejo and Gitea** – Pull requests and repository workflows through `fj` or `tea`
 - **Bitbucket** – Pull request workflows (via API token authentication)
 - **Azure DevOps** – Pull request support for Microsoft-hosted repositories
 
@@ -18,13 +19,13 @@ Ronin works with the platforms your team already uses:
 **Clone repositories directly**
 
 - Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**
-- Choose **GitHub repository**, **GitLab repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
+- Choose **GitHub repository**, **GitLab repository**, **Forgejo / Gitea repository**, **Bitbucket repository**, **Azure DevOps repository**, or paste any **Git URL**
 - Enter the repository path (`owner/repo`, `group/project`, `workspace/repository`, or `project/repository`) or a full Git URL, pick a destination, and start coding
 
 **Publish local projects to the cloud**
 
 - Have a local Git repository without a remote?
-- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Bitbucket, or Azure DevOps), add it as your origin remote, and push, in one flow
+- Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Forgejo, Gitea, Bitbucket, or Azure DevOps), add it as your origin remote, and push, in one flow
 - If the local repository has no commits yet, publishing creates the remote and wires it up but does not push. Make a commit, then push normally.
 
 ### Manage Code Reviews Without Context Switching
@@ -94,6 +95,20 @@ The **Source Control settings** page shows you exactly what's connected:
 
 Run a quick **Rescan** after setting up a new machine or changing credentials.
 
+GitHub sharing is off by default. In **Settings → Connections → GitHub sharing**, choose **Read PRs** or **Read and
+act** for each environment you trust to share GitHub access. Enable both the original environment
+and the environment answering its requests on this client. **Read and act** can use broader GitHub
+permissions than the original environment's credential; only enable it for environments you
+control and trust. Changing a saved endpoint or removing an environment clears its permission.
+
+GitHub review details, linked PR status, and permitted review actions can then use another
+connected environment signed in to the same GitHub account. Each needs a project on that host.
+A connected local environment is preferred for actions and can answer slow or failed reads.
+Credentials stay on their machines. Previously verified credentials remain usable for routing for
+ten minutes during a GitHub outage; new credentials must be verified first. An action with an
+uncertain result is never automatically retried elsewhere. Listings, diffs, and checkout or PR
+creation from Git actions continue to use the project's environment.
+
 ## Getting Started
 
 ### For GitHub (Recommended for most users)
@@ -109,6 +124,18 @@ Run a quick **Rescan** after setting up a new machine or changing credentials.
 3. Open **Settings → Source Control** in Ronin and verify GitHub shows as authenticated
 
 You can now clone, publish, and create pull requests.
+
+### For Forgejo and Gitea
+
+Install [Forgejo CLI (`fj`)](https://codeberg.org/forgejo-contrib/forgejo-cli) or
+[Gitea CLI (`tea`)](https://gitea.com/gitea/tea) 0.16 or later on the machine running Ronin. Sign
+in with `fj --host https://your-server auth add-token` or `tea login add`, then rescan **Settings →
+Source Control**. Repeat for each server you use, including Codeberg.
+
+Ronin prefers a matching `fj` login and falls back to `tea`. Servers hosted under a URL subpath use
+`tea`, because `fj` 0.6 does not preserve that subpath during account checks. Use a full repository
+URL when more than one server is configured; Git pushes and clones also need normal Git credentials
+or an SSH key for that server.
 
 ### For GitLab
 

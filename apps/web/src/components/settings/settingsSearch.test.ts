@@ -127,6 +127,10 @@ describe("searchSettings", () => {
     expect(searchableSetting("word-wrap")).toEqual({ id: "word-wrap", title: "Word wrap" });
     expect(searchableSetting("archive")).toEqual({ id: "archive", title: "Archived threads" });
     expect(searchableSetting("automations")).toEqual({ id: "automations", title: "Automations" });
+    expect(searchableSetting("response-streaming")).toEqual({
+      id: "response-streaming",
+      title: "Response streaming",
+    });
   });
 
   it("routes appearance settings to their current section", () => {

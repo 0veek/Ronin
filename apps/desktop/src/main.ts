@@ -16,7 +16,6 @@ import * as Electron from "electron";
 
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveRemoteT3CliPackageSpec } from "@t3tools/ssh/command";
 import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
@@ -89,20 +88,14 @@ const resolveDesktopSshCliRunner = (
       nodeEngineRange: serverPackageJson.engines.node,
     };
   }
-  return {
-    packageSpec: resolveRemoteT3CliPackageSpec({
-      appVersion: environment.appVersion,
-      isDevelopment: environment.isDevelopment,
-    }),
-    nodeEngineRange: serverPackageJson.engines.node,
-  };
+  return { archiveVersion: environment.appVersion };
 };
 
 const desktopSshEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     return DesktopSshEnvironment.layer({
-      resolveCliRunner: Effect.sync(() => resolveDesktopSshCliRunner(environment)),
+      resolveCliRunner: Effect.succeed(resolveDesktopSshCliRunner(environment)),
     });
   }),
 );
@@ -156,7 +149,7 @@ const electronLayer = Layer.mergeAll(
   ElectronDialog.layer,
   ElectronMenu.layer,
   ElectronPowerMonitor.layer,
-  ElectronProtocol.layer,
+  ElectronProtocol.layer.pipe(Layer.provide(NodeServices.layer)),
   ElectronSafeStorage.layer,
   ElectronShell.layer,
   ElectronTheme.layer,

@@ -13,7 +13,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { Code2, Eye, FolderTree, Globe2 } from "lucide-react";
+import { Code2, Eye, FolderTree, Globe2, WrapTextIcon } from "lucide-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -21,7 +21,7 @@ import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPre
 import { useAssetUrlState } from "~/assets/assetUrls";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { useRemoteOpenState } from "~/remoteOpen";
-import { useClientSettings } from "~/hooks/useSettings";
+import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
@@ -895,6 +895,12 @@ export default function FilePreviewPanel({
   const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
   const renderBrowserFile = isPdf || (isHtml && renderBrowserFilePreferred && revealHandled);
   const canToggleRendered = isMarkdown || isHtml;
+  const updateClientSettings = useUpdateClientSettings();
+  const showsRawText =
+    relativePath !== null &&
+    file.data !== null &&
+    !(isMarkdown && renderMarkdown) &&
+    !renderBrowserFile;
   const rendered = isMarkdown ? renderMarkdown : renderBrowserFile;
   const setRenderedPreferred = isMarkdown
     ? setRenderMarkdownPreferred
@@ -1010,6 +1016,25 @@ export default function FilePreviewPanel({
                 }
               />
               <TooltipPopup>{renderedToggleLabel(isMarkdown, rendered)}</TooltipPopup>
+            </Tooltip>
+          ) : null}
+          {showsRawText ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Toggle
+                    className="shrink-0"
+                    pressed={wordWrap}
+                    onPressedChange={() => updateClientSettings({ wordWrap: !wordWrap })}
+                    aria-label={wordWrap ? "Disable word wrap" : "Enable word wrap"}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    <WrapTextIcon className="size-3.5" />
+                  </Toggle>
+                }
+              />
+              <TooltipPopup>{wordWrap ? "Disable word wrap" : "Enable word wrap"}</TooltipPopup>
             </Tooltip>
           ) : null}
           {canOpenInBrowser ? (

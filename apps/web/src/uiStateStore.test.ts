@@ -26,6 +26,7 @@ function makeUiState(overrides: Partial<UiState> = {}): UiState {
     pullRequestMergeMethod: "merge",
     defaultAdvertisedEndpointKey: null,
     agentNotificationsEnabled: true,
+    agentInAppNotificationsEnabled: false,
     agentSoundsEnabled: false,
     digestSeenAt: null,
     ...overrides,
@@ -197,6 +198,7 @@ describe("parsePersistedState", () => {
         },
       },
       agentNotificationsEnabled: true,
+      agentInAppNotificationsEnabled: false,
       agentSoundsEnabled: false,
       digestSeenAt: null,
       pullRequestMergeMethod: "merge",
@@ -208,6 +210,13 @@ describe("parsePersistedState", () => {
     // default, including for users whose state predates the setting.
     expect(parsePersistedState({}).agentSoundsEnabled).toBe(false);
     expect(parsePersistedState({ agentSoundsEnabled: true }).agentSoundsEnabled).toBe(true);
+  });
+
+  it("keeps in-app agent notifications opt-in", () => {
+    expect(parsePersistedState({}).agentInAppNotificationsEnabled).toBe(false);
+    expect(
+      parsePersistedState({ agentInAppNotificationsEnabled: true }).agentInAppNotificationsEnabled,
+    ).toBe(true);
   });
 
   it.each([undefined, 1])("ignores changed-file expansion version %s", (version) => {
@@ -329,6 +338,7 @@ describe("uiStateStore persistence", () => {
         },
       },
       agentNotificationsEnabled: true,
+      agentInAppNotificationsEnabled: false,
       agentSoundsEnabled: false,
       digestSeenAt: null,
       pullRequestMergeMethod: "merge",

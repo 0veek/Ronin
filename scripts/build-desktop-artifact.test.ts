@@ -28,6 +28,7 @@ import {
   DESKTOP_FILE_EXCLUSIONS,
   DESKTOP_EXTRA_RESOURCES,
   LINUX_CAPTURE_EXTRA_RESOURCES,
+  LINUX_FILE_EXCLUSIONS,
   MAC_FILE_EXCLUSIONS,
   InvalidMockUpdateServerPortError,
   UnsupportedDesktopBuildArchitectureError,
@@ -51,6 +52,7 @@ import {
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
+import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 function mockProcess(exitCode: number, stdout = "") {
@@ -162,7 +164,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
-  it("omits bundled workspace packages from staged desktop dependencies", () => {
+  it("omits bundled JavaScript and workspace packages from staged desktop dependencies", () => {
     assert.deepStrictEqual(
       resolveDesktopRuntimeDependencies(
         {
@@ -179,10 +181,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           effect: "4.0.0-beta.59",
         },
       ),
-      {
-        "@effect/platform-node": "4.0.0-beta.59",
-        effect: "4.0.0-beta.59",
-      },
+      {},
     );
   });
 
@@ -316,6 +315,8 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.deepStrictEqual(DESKTOP_ELECTRON_LANGUAGES, ["en-US"]);
     assert.deepStrictEqual(DESKTOP_FILE_EXCLUSIONS, [
       "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+      "!**/*.map",
+      "!**/*.d.cts",
       "!apps/desktop/gnome-extension",
       "!apps/desktop/gnome-extension/**/*",
     ]);
@@ -342,19 +343,39 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       ]);
       assert.deepStrictEqual(mac.files, [...DESKTOP_FILE_EXCLUSIONS, ...MAC_FILE_EXCLUSIONS]);
       assert.notProperty(mac.mac as Record<string, unknown>, "sign");
-      for (const config of [linux, win]) {
-        assert.deepStrictEqual(config.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
-        assert.deepStrictEqual(config.files, DESKTOP_FILE_EXCLUSIONS);
-      }
+      assert.deepStrictEqual(linux.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
+      assert.deepStrictEqual(linux.files, [...DESKTOP_FILE_EXCLUSIONS, ...LINUX_FILE_EXCLUSIONS]);
+      assert.deepStrictEqual(win.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
+      assert.deepStrictEqual(win.files, DESKTOP_FILE_EXCLUSIONS);
       assert.deepStrictEqual(mac.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
     }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
   );
 
-  it("excludes Windows terminal binaries only from macOS packages", () => {
+  it("excludes foreign node-pty prebuilds from macOS and Linux packages", () => {
     assert.deepStrictEqual(MAC_FILE_EXCLUSIONS, [
       "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
       "!**/node_modules/node-pty/third_party/conpty/**/*",
     ]);
+    assert.deepStrictEqual(LINUX_FILE_EXCLUSIONS, [
+      ...MAC_FILE_EXCLUSIONS,
+      "!**/node_modules/node-pty/prebuilds/darwin-*/**/*",
+    ]);
+  });
+
+  it("stages only desktop dependencies left external by the main-process bundle", () => {
+    assert.deepStrictEqual(
+      selectDesktopRuntimeExternalDependencies({
+        "@napi-rs/keyring": "1.0.0",
+        "@t3tools/contracts": "workspace:*",
+        electron: "41.5.0",
+        effect: "4.0.0-beta.103",
+        "playwright-core": "1.0.0",
+      }),
+      {
+        "@napi-rs/keyring": "1.0.0",
+        "playwright-core": "1.0.0",
+      },
+    );
   });
 
   it("unpacks native binaries while keeping their JavaScript and metadata archived", () => {

@@ -15,6 +15,9 @@
 import * as NodeOS from "node:os";
 
 import {
+  ClaudeSettings,
+  CodexSettings,
+  type ProviderInstanceConfig,
   USAGE_CONTRACT_VERSION,
   type UsageProviderKind,
   type UsageSource,
@@ -23,6 +26,7 @@ import {
   type UsageSummaryInput,
   UsageReadError,
 } from "@t3tools/contracts";
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -38,10 +42,10 @@ import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import { ServerConfig } from "../config.ts";
+import { expandHomePath } from "../pathExpansion.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { resolveClaudeHomePath } from "../provider/Drivers/ClaudeHome.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
-import { resolveGrokHome } from "../rateLimits/providerRateLimitSources.ts";
+import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
 import { parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
@@ -77,6 +81,9 @@ const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Longest window the UI offers, plus slack. Older entries are pruned. */
 const CACHE_RETENTION_DAYS = 90;
+
+const decodeCodexSettings = Schema.decodeOption(CodexSettings);
+const decodeClaudeSettings = Schema.decodeOption(ClaudeSettings);
 
 /** On-disk shape of the rate snapshot. */
 const RatesCacheFile = Schema.Struct({
@@ -137,6 +144,7 @@ export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
+  const hostEnvironment = yield* HostProcessEnvironment;
 
   const fileCache: ScanCache = new Map();
   let cacheDirty = false;
@@ -219,19 +227,6 @@ export const make = Effect.gen(function* () {
   );
 
   /**
-   * Claude's config dir is the home itself when overridden, but a default
-   * install nests transcripts under `~/.claude/projects`. Probe both.
-   */
-  const resolveClaudeTranscriptDir = (homePath: string) =>
-    Effect.gen(function* () {
-      const nested = path.join(homePath, ".claude", "projects");
-      const nestedExists = yield* fileSystem
-        .exists(nested)
-        .pipe(Effect.catchCause(() => Effect.succeed(false)));
-      return nestedExists ? nested : path.join(homePath, "projects");
-    });
-
-  /**
    * Resolves the transcript directory for each provider.
    *
    * `fileName` narrows a provider whose session directory holds more than one
@@ -254,24 +249,55 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-    const claudeHome = yield* resolveClaudeHomePath(settings.providers.claudeAgent);
-    const claudeDir = yield* resolveClaudeTranscriptDir(claudeHome);
-    const codexLayout = yield* resolveCodexHomeLayout(settings.providers.codex);
+    const dirs: Array<{ provider: UsageProviderKind; dir: string; fileName?: string }> = [];
+    const seen = new Set<string>();
+    for (const driver of ["claudeAgent", "codex", "grok"] as const) {
+      // Disabled accounts still have history. Explicit default slots replace
+      // legacy provider settings, matching provider-registry precedence.
+      const instances: Array<Pick<ProviderInstanceConfig, "config" | "environment">> =
+        Object.values(settings.providerInstances).filter((instance) => instance.driver === driver);
+      if (!Object.hasOwn(settings.providerInstances, driver)) {
+        instances.push({ config: settings.providers[driver] });
+      }
+      for (const instance of instances) {
+        const environment = mergeProviderInstanceEnvironment(instance.environment, hostEnvironment);
+        const provider = driver === "claudeAgent" ? "claude" : driver;
+        let home: string;
+        if (driver === "codex") {
+          const decoded = decodeCodexSettings(instance.config ?? {});
+          if (Option.isNone(decoded)) continue;
+          const config = decoded.value;
+          const environmentHome = environment.CODEX_HOME?.trim();
+          const layout = yield* resolveCodexHomeLayout(
+            !config.homePath.trim() && !config.shadowHomePath.trim() && environmentHome
+              ? { ...config, homePath: environmentHome }
+              : config,
+          );
+          home = layout.sharedHomePath;
+        } else if (driver === "claudeAgent") {
+          const decoded = decodeClaudeSettings(instance.config ?? {});
+          if (Option.isNone(decoded)) continue;
+          const configured = decoded.value.homePath.trim();
+          home = configured
+            ? expandHomePath(configured)
+            : environment.CLAUDE_CONFIG_DIR?.trim() || path.join(NodeOS.homedir(), ".claude");
+        } else {
+          home = expandHomePath(
+            environment.GROK_HOME?.trim() || path.join(NodeOS.homedir(), ".grok"),
+          );
+        }
+        const directory = path.resolve(home, provider === "claude" ? "projects" : "sessions");
+        const dir = yield* fileSystem
+          .realPath(directory)
+          .pipe(Effect.orElseSucceed(() => directory));
+        const key = `${provider}\0${dir}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        dirs.push({ provider, dir, ...(provider === "grok" ? { fileName: "updates.jsonl" } : {}) });
+      }
+    }
 
-    return [
-      { provider: "claude" as const, dir: claudeDir, fileName: undefined },
-      {
-        provider: "codex" as const,
-        dir: path.join(codexLayout.sharedHomePath, "sessions"),
-        fileName: undefined,
-      },
-      // Grok has no configurable home in Ronin's settings, so this mirrors the
-      // CLI the same way the rate-limit reader does.
-      {
-        provider: "grok" as const,
-        dir: path.join(resolveGrokHome(), ".grok", "sessions"),
-        fileName: "updates.jsonl",
-      },
+    dirs.push(
       // Antigravity keeps two stores side by side under one home: `agy` writes
       // to `antigravity-cli`, the editor to `antigravity`. Both are the same
       // format on the same account's quota, so both are walked. Records carry a
@@ -280,14 +306,13 @@ export const make = Effect.gen(function* () {
       {
         provider: "antigravity" as const,
         dir: path.join(NodeOS.homedir(), ".gemini", "antigravity-cli", "conversations"),
-        fileName: undefined,
       },
       {
         provider: "antigravity" as const,
         dir: path.join(NodeOS.homedir(), ".gemini", "antigravity", "conversations"),
-        fileName: undefined,
       },
-    ];
+    );
+    return dirs;
   });
 
   /**

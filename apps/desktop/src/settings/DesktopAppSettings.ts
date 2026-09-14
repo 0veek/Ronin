@@ -21,6 +21,7 @@ import {
 } from "../linuxSecretStorage.ts";
 
 export interface DesktopSettings {
+  readonly localEnvironmentEnabled: boolean;
   readonly linuxPasswordStore: LinuxPasswordStorePreference;
   readonly mainWindowBounds: DesktopWindowBounds | null;
   readonly mainWindowMaximized: boolean;
@@ -52,6 +53,7 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 } as const;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  localEnvironmentEnabled: true,
   linuxPasswordStore: DEFAULT_LINUX_PASSWORD_STORE,
   mainWindowBounds: null,
   mainWindowMaximized: false,
@@ -71,6 +73,7 @@ const DesktopWindowBoundsDocument = Schema.Struct({
 // failing decode. They are ignored on normalize and never re-exported into
 // runtime settings or rewritten on save.
 const DesktopSettingsDocument = Schema.Struct({
+  localEnvironmentEnabled: Schema.optionalKey(Schema.Boolean),
   linuxPasswordStore: Schema.optionalKey(Schema.Unknown),
   mainWindowBounds: Schema.optionalKey(Schema.NullOr(DesktopWindowBoundsDocument)),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
@@ -124,6 +127,9 @@ export class DesktopAppSettings extends Context.Service<
   {
     readonly load: Effect.Effect<DesktopSettings>;
     readonly get: Effect.Effect<DesktopSettings>;
+    readonly setLocalEnvironmentEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setMainWindowBounds: (
       bounds: DesktopWindowBounds,
       isMaximized: boolean,
@@ -161,6 +167,7 @@ function normalizeDesktopSettingsDocument(parsed: DesktopSettingsDocument): Desk
   const mainWindowBounds = normalizeMainWindowBounds(parsed.mainWindowBounds);
 
   return {
+    localEnvironmentEnabled: parsed.localEnvironmentEnabled !== false,
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
     mainWindowMaximized: mainWindowBounds !== null && parsed.mainWindowMaximized === true,
@@ -176,6 +183,10 @@ function toDesktopSettingsDocument(
   defaults: DesktopSettings,
 ): DesktopSettingsDocument {
   const document: Mutable<DesktopSettingsDocument> = {};
+
+  if (settings.localEnvironmentEnabled !== defaults.localEnvironmentEnabled) {
+    document.localEnvironmentEnabled = settings.localEnvironmentEnabled;
+  }
 
   if (settings.linuxPasswordStore !== defaults.linuxPasswordStore) {
     document.linuxPasswordStore = settings.linuxPasswordStore;
@@ -225,6 +236,12 @@ function setMainWindowBounds(
         mainWindowBounds: bounds,
         mainWindowMaximized: isMaximized,
       };
+}
+
+function setLocalEnvironmentEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
+  return settings.localEnvironmentEnabled === enabled
+    ? settings
+    : { ...settings, localEnvironmentEnabled: enabled };
 }
 
 function setTailscaleServe(
@@ -365,6 +382,12 @@ export const make = Effect.gen(function* () {
       const settings = yield* readSettings(fileSystem, environment.desktopSettingsPath);
       return yield* SynchronizedRef.setAndGet(settingsRef, settings);
     }).pipe(Effect.withSpan("desktop.settings.load")),
+    setLocalEnvironmentEnabled: (enabled) =>
+      persist((settings) => setLocalEnvironmentEnabled(settings, enabled)).pipe(
+        Effect.withSpan("desktop.settings.setLocalEnvironmentEnabled", {
+          attributes: { enabled },
+        }),
+      ),
     setMainWindowBounds: (bounds, isMaximized) =>
       persist((settings) => setMainWindowBounds(settings, bounds, isMaximized)).pipe(
         Effect.withSpan("desktop.settings.setMainWindowBounds", {
@@ -410,6 +433,8 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
       return DesktopAppSettings.of({
         get: SynchronizedRef.get(settingsRef),
         load: SynchronizedRef.get(settingsRef),
+        setLocalEnvironmentEnabled: (enabled) =>
+          update((settings) => setLocalEnvironmentEnabled(settings, enabled)),
         setMainWindowBounds: (bounds, isMaximized) =>
           update((settings) => setMainWindowBounds(settings, bounds, isMaximized)),
         setServerExposureMode: (mode) =>

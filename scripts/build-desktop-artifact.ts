@@ -15,6 +15,7 @@ import {
   type WebAssetBrand,
 } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
+import { selectDesktopRuntimeExternalDependencies } from "./lib/desktop-external-packages.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -685,6 +686,8 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   // so the SDK's optional platform packages (each a ~200MB bundled executable)
   // are dead weight. The trailing dash keeps the SDK's own JS package.
   "!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**/*",
+  "!**/*.map",
+  "!**/*.d.cts",
   "!apps/desktop/gnome-extension",
   "!apps/desktop/gnome-extension/**/*",
 ] as const;
@@ -692,6 +695,10 @@ export const DESKTOP_FILE_EXCLUSIONS = [
 export const MAC_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
   "!**/node_modules/node-pty/third_party/conpty/**/*",
+] as const;
+export const LINUX_FILE_EXCLUSIONS = [
+  ...MAC_FILE_EXCLUSIONS,
+  "!**/node_modules/node-pty/prebuilds/darwin-*/**/*",
 ] as const;
 
 // dlopen/spawn need real files, while JavaScript and package metadata should
@@ -1511,6 +1518,11 @@ function validateBundledClientAssets(clientDir: string) {
   });
 }
 
+// The main-process bundle inlines every JS dependency (see
+// apps/desktop/vite.config.ts), so the packaged app only installs the packages
+// that bundle leaves external: native addons and playwright-core. Everything
+// else already lives inside dist-electron and would only duplicate what the
+// server bundle carries too.
 export function resolveDesktopRuntimeDependencies(
   dependencies: Record<string, string> | undefined,
   catalog: Record<string, string>,
@@ -1519,14 +1531,11 @@ export function resolveDesktopRuntimeDependencies(
     return {};
   }
 
-  const runtimeDependencies = Object.fromEntries(
-    Object.entries(dependencies).filter(
-      ([dependencyName, dependencySpec]) =>
-        dependencyName !== "electron" && !dependencySpec.startsWith("workspace:"),
-    ),
+  return resolveCatalogDependencies(
+    selectDesktopRuntimeExternalDependencies(dependencies),
+    catalog,
+    "apps/desktop",
   );
-
-  return resolveCatalogDependencies(runtimeDependencies, catalog, "apps/desktop");
 }
 
 export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
@@ -1620,7 +1629,11 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
-      ...(platform === "mac" ? resolveMacFileExclusions(arch) : []),
+      ...(platform === "mac"
+        ? resolveMacFileExclusions(arch)
+        : platform === "linux"
+          ? LINUX_FILE_EXCLUSIONS
+          : []),
     ],
     directories: {
       buildResources: "apps/desktop/resources",

@@ -15,6 +15,7 @@ import {
   resolveWebAssetBrandForPackageVersion,
   resolveWebIconOverrides,
 } from "../../../scripts/lib/brand-assets.ts";
+import { findEsmImportsOfExternalPackages } from "../../../scripts/lib/cli-external-packages.ts";
 import { resolveCatalogDependencies } from "../../../scripts/lib/resolve-catalog.ts";
 import { fromJsonStringPretty } from "@t3tools/shared/schemaJson";
 import { fromYaml } from "@t3tools/shared/schemaYaml";
@@ -25,6 +26,7 @@ import {
   ServerCliCommandExitError,
   ServerCliDevelopmentIconSourceMissingError,
   ServerCliDevelopmentIconTargetMissingError,
+  ServerCliExecutableImportError,
   ServerCliPublishIconSourceMissingError,
   ServerCliPublishIconTargetMissingError,
 } from "./cliErrors.ts";
@@ -185,6 +187,62 @@ const buildCmd = Command.make(
 ).pipe(Command.withDescription("Build the server package (tsdown + bundle web client)."));
 
 // ---------------------------------------------------------------------------
+// build-exe subcommand
+// ---------------------------------------------------------------------------
+
+const buildExeCmd = Command.make(
+  "build-exe",
+  {
+    verbose: Flag.boolean("verbose").pipe(Flag.withDefault(false)),
+    target: Flag.string("target").pipe(
+      Flag.withDescription(
+        "Cross-build for <platform>-<arch> in nodejs.org naming (for example darwin-x64); defaults to the host.",
+      ),
+      Flag.optional,
+    ),
+  },
+  (config) =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      const repoRoot = yield* RepoRoot;
+      const serverDir = path.join(repoRoot, "apps/server");
+
+      yield* Effect.log("[cli] Building single-executable...");
+      const spawnCommand = yield* resolveSpawnCommand("vp", ["pack"]);
+      yield* runCommand(
+        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+          cwd: serverDir,
+          env: {
+            ...process.env,
+            T3CODE_PACK_EXE: "1",
+            ...Option.match(config.target, {
+              onNone: () => ({}),
+              onSome: (target) => ({ T3CODE_PACK_EXE_TARGET: target }),
+            }),
+          },
+          stdout: config.verbose ? "inherit" : "ignore",
+          stderr: "inherit",
+          shell: spawnCommand.shell,
+        }),
+      );
+
+      const bundlePath = path.join(serverDir, "dist-exe/bin.mjs");
+      const specifiers = findEsmImportsOfExternalPackages(yield* fs.readFileString(bundlePath));
+      if (specifiers.length > 0) {
+        return yield* new ServerCliExecutableImportError({ bundlePath, specifiers });
+      }
+      yield* Effect.log(
+        "[cli] Built dist-exe/t3 (scripts/build-cli-archive.ts assembles its client, skills, resource monitor, and runtime externals)",
+      );
+    }),
+).pipe(
+  Command.withDescription(
+    "Build the server as a Node single-executable (needs a Node 25.7+ host for --build-sea).",
+  ),
+);
+
+// ---------------------------------------------------------------------------
 // publish subcommand
 // ---------------------------------------------------------------------------
 
@@ -232,12 +290,7 @@ const publishCmd = Command.make(
       const packageJsonPath = path.join(serverDir, "package.json");
 
       // Assert build assets exist
-      for (const relPath of [
-        "dist/bin.mjs",
-        "dist/service-launcher.mjs",
-        "dist/client/index.html",
-        "dist/skills",
-      ]) {
+      for (const relPath of ["dist/bin.mjs", "dist/client/index.html", "dist/skills"]) {
         const abs = path.join(serverDir, relPath);
         if (!(yield* fs.exists(abs))) {
           return yield* new ServerCliBuildAssetMissingError({ assetPath: abs });
@@ -318,8 +371,8 @@ const publishCmd = Command.make(
 // ---------------------------------------------------------------------------
 
 const cli = Command.make("cli").pipe(
-  Command.withDescription("T3 server build & publish CLI."),
-  Command.withSubcommands([buildCmd, publishCmd]),
+  Command.withDescription("Ronin server build & publish CLI."),
+  Command.withSubcommands([buildCmd, buildExeCmd, publishCmd]),
 );
 
 Command.run(cli, { version: "0.0.0" }).pipe(

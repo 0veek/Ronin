@@ -20,6 +20,7 @@ import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Electron from "electron";
 
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
@@ -30,6 +31,7 @@ import * as ElectronMenu from "../../electron/ElectronMenu.ts";
 import * as ElectronShell from "../../electron/ElectronShell.ts";
 import * as ElectronTheme from "../../electron/ElectronTheme.ts";
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
+import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import { resolveWindowVibrancy } from "../../window/WindowVibrancy.ts";
@@ -197,6 +199,10 @@ export const pickProjectFavicon = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.window.pickProjectFavicon")(function* (initialPath) {
     const dialog = yield* ElectronDialog.ElectronDialog;
     const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
+    if (!(yield* appSettings.get).localEnvironmentEnabled) {
+      return null;
+    }
     const paths = yield* dialog.pickFiles({
       owner: yield* electronWindow.focusedMainOrFirst,
       defaultPath: Option.fromNullishOr(initialPath),
@@ -312,6 +318,32 @@ export const setBadgeCount = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.window.setBadgeCount")(function* (count: number) {
     const electronApp = yield* ElectronApp.ElectronApp;
     yield* electronApp.setBadgeCount(count);
+  }),
+});
+
+export const pasteAsText = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PASTE_AS_TEXT_CHANNEL,
+  payload: Schema.Undefined,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.pasteAsText")(function* (_input, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.main;
+    if (
+      event?.sender === undefined ||
+      Option.isNone(window) ||
+      window.value.isDestroyed() ||
+      window.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    const focused = Electron.webContents.getFocusedWebContents();
+    if (
+      focused &&
+      !focused.isDestroyed() &&
+      Electron.BrowserWindow.fromWebContents(focused) === window.value
+    ) {
+      focused.paste();
+    }
   }),
 });
 

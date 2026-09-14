@@ -15,6 +15,7 @@ import {
   parseConnectionCatalogDocument,
   registerConnectionInCatalog,
   removeConnectionFromCatalog,
+  setConnectionEnabledInCatalog,
   sanitizeConnectionCatalogDocument,
 } from "./storageDocument.ts";
 
@@ -37,6 +38,43 @@ const BEARER_CREDENTIAL = new BearerConnectionCredential({
 });
 
 describe("ConnectionCatalogDocument", () => {
+  it.effect("defaults the disabled list for older catalog documents", () =>
+    Effect.gen(function* () {
+      const decoded = yield* parseConnectionCatalogDocument({
+        schemaVersion: 1,
+        targets: [],
+        profiles: [],
+        credentials: [],
+      });
+      expect(decoded.disabledEnvironmentIds).toEqual([]);
+    }),
+  );
+
+  it("switches a saved environment off without removing its records", () => {
+    const registered = registerConnectionInCatalog(
+      EMPTY_CONNECTION_CATALOG_DOCUMENT,
+      new BearerConnectionRegistration({
+        target: BEARER_TARGET,
+        profile: BEARER_PROFILE,
+        credential: BEARER_CREDENTIAL,
+      }),
+    );
+    const disabled = setConnectionEnabledInCatalog(registered, ENVIRONMENT_ID, false);
+    expect(disabled.disabledEnvironmentIds).toEqual([ENVIRONMENT_ID]);
+    expect(disabled.targets).toEqual(registered.targets);
+    expect(
+      registerConnectionInCatalog(
+        disabled,
+        new BearerConnectionRegistration({
+          target: BEARER_TARGET,
+          profile: BEARER_PROFILE,
+          credential: BEARER_CREDENTIAL,
+        }),
+      ).disabledEnvironmentIds,
+    ).toEqual([ENVIRONMENT_ID]);
+    expect(removeConnectionFromCatalog(disabled, BEARER_TARGET).disabledEnvironmentIds).toEqual([]);
+  });
+
   it("registers a bearer connection as one catalog mutation", () => {
     const document = registerConnectionInCatalog(
       EMPTY_CONNECTION_CATALOG_DOCUMENT,

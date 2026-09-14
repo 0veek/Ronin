@@ -187,6 +187,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "in-app-notifications",
+    title: "In-app notifications",
+    to: "/settings/general",
+    searchTerms: ["notification toast popup completion input approval failure"],
+  },
+  {
     id: "agent-sounds",
     title: "Agent sounds",
     to: "/settings/general",
@@ -206,10 +212,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "response-streaming",
+    title: "Response streaming",
+    searchTerms: ["output token paragraph buffered wait turn legacy"],
+    to: "/settings/general",
+  },
+  {
     id: "hide-whitespace-changes",
     title: "Hide whitespace changes",
     searchTerms: ["diff ignore spaces edits default"],
     to: "/settings/general",
+  },
+  {
+    id: "default-diff-file-state",
+    title: "Default diff file state",
+    to: "/settings/general",
+    searchTerms: ["collapsed expanded collapse expand files pull request pr code tab"],
   },
   {
     id: "diff-layout",
@@ -398,7 +416,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "device-hosts",
     title: "Device hosts",
     to: "/settings/integrations",
-    searchTerms: ["ssh remote simulator emulator ios android mac mini identity key connection"],
+    searchTerms: ["remote simulator emulator ios android mac mini identity key connection"],
   },
   {
     id: "agent-device-access",
@@ -477,7 +495,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "source-control",
     title: "Source control",
     searchTerms: [
-      "version control git github gitlab bitbucket azure devops hosting integrations credentials scan server environment",
+      "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
     ],
     to: "/settings/source-control",
   },
@@ -488,8 +506,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
   },
   {
+    id: "local-environment",
+    title: "Local environment",
+    to: "/settings/connections",
+    searchTerms: ["turn off on disable enable local server agents remote only restart"],
+    desktopOnly: true,
+  },
+  {
     id: "remote-environments",
-    title: "Remote environments",
+    title: "Environments",
     searchTerms: ["add pair backend host code ssh config agent tunnel saved"],
     to: "/settings/connections",
   },
@@ -500,6 +525,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "automatic machine environment resources cpu memory capacity preference weight shared projects",
     ],
+  },
+  {
+    id: "github-routing",
+    title: "Pull request sharing",
+    to: "/settings/connections",
+    searchTerms: ["pull request trusted environments shared credentials permissions read actions"],
   },
   {
     id: "archive",

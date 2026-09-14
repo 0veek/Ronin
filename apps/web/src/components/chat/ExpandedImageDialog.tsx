@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -69,29 +69,25 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     };
   }, []);
 
-  useEffect(() => {
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (zoomableImageRef.current?.pan(event.key)) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
-      if (preview.images.length <= 1) return;
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        event.stopPropagation();
-        navigateImage(-1);
-        return;
-      }
-      if (event.key !== "ArrowRight") return;
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.defaultPrevented || event.target instanceof HTMLVideoElement) return;
+    if (zoomableImageRef.current?.pan(event.key)) {
       event.preventDefault();
       event.stopPropagation();
-      navigateImage(1);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [navigateImage, preview.images.length]);
+      return;
+    }
+    if (preview.images.length <= 1) return;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      event.stopPropagation();
+      navigateImage(-1);
+      return;
+    }
+    if (event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
+    navigateImage(1);
+  };
 
   const item = preview.images[index];
   if (!item) return null;
@@ -118,8 +114,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
       <DialogPopup
         showCloseButton={false}
         bottomStickOnMobile={false}
-        className="max-h-[92vh] max-w-[92vw] translate-y-0 scale-100 border-0 bg-transparent p-0 shadow-none [-webkit-app-region:no-drag]"
+        className="max-h-[92vh] w-[92vw] max-w-[92vw] translate-y-0 scale-100 items-center border-0 bg-transparent p-0 shadow-none [--media-width:92vw] [--media-height:min(86vh,calc(100vh-160px))] [-webkit-app-region:no-drag] sm:[--media-width:calc(92vw-96px)]"
         aria-label={`Expanded ${mediaLabel} preview`}
+        onKeyDown={onKeyDown}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
       >
         <DialogTitle className="sr-only">{item.name}</DialogTitle>
         {preview.images.length > 1 && (
@@ -127,26 +127,26 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             type="button"
             size="icon"
             variant="ghost"
-            className="absolute left-2 top-1/2 z-20 -translate-y-1/2 text-white/90 hover:bg-white/10 hover:text-white sm:left-6"
+            className="absolute left-0 -bottom-12 z-20 translate-y-0 rounded-full bg-white/10 text-white/90 hover:bg-white/10 hover:text-white sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
             aria-label="Previous image"
             onClick={() => navigateImage(-1)}
           >
             <ChevronLeftIcon className="size-5" />
           </Button>
         )}
-        <div className="relative isolate">
+        <div className="relative isolate max-h-[92vh] max-w-[var(--media-width)]">
           <Button
             type="button"
             size="icon-xs"
             variant="ghost"
-            className="absolute right-2 top-2 z-20"
+            className="absolute right-0 -top-10 z-20"
             onClick={onClose}
             aria-label={`Close ${mediaLabel} preview`}
           >
             <XIcon />
           </Button>
           {item.type === "video" && failedVideoSrc === item.src ? (
-            <div className="flex h-48 w-[min(92vw,32rem)] flex-col items-center justify-center gap-3 rounded-(--radius) border border-border bg-black px-6 text-center text-white">
+            <div className="flex h-48 w-[min(var(--media-width),32rem)] flex-col items-center justify-center gap-3 rounded-(--radius) border border-border bg-black px-6 text-center text-white">
               <p className="text-sm">
                 {videoDownloadFailed
                   ? "Could not download this video."
@@ -174,12 +174,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               controls
               playsInline
               onError={() => setFailedVideoSrc(item.src)}
-              className="max-h-[86vh] max-w-[92vw] rounded-(--radius) border border-border bg-black object-contain"
+              className="max-h-[var(--media-height)] max-w-[var(--media-width)] rounded-(--radius) border border-border bg-black object-contain"
             />
           ) : showingAccessibilityDetails && accessibilityDetails ? (
             <SnapShotAccessibilityData
               details={accessibilityDetails}
-              className="h-[min(86vh,40rem)] w-[min(92vw,42rem)] animate-[snap-shot-contents-enter_140ms_ease-out] rounded-(--radius) border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:animate-none"
+              className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] animate-[snap-shot-contents-enter_140ms_ease-out] rounded-(--radius) border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:animate-none"
             />
           ) : failedImageSrc === item.src ? (
             <MissingMediaBlock
@@ -195,8 +195,8 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               onError={() => setFailedImageSrc(item.src)}
             />
           )}
-          <div className="mt-2 flex max-w-[92vw] items-center justify-center gap-1.5 text-xs text-muted-foreground/80">
-            <span className="truncate">
+          <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-muted-foreground/80">
+            <span className="truncate" aria-live="polite" aria-atomic="true">
               {item.name}
               {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
             </span>
@@ -234,7 +234,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             type="button"
             size="icon"
             variant="ghost"
-            className="absolute right-2 top-1/2 z-20 -translate-y-1/2 text-white/90 hover:bg-white/10 hover:text-white sm:right-6"
+            className="absolute right-0 -bottom-12 z-20 translate-y-0 rounded-full bg-white/10 text-white/90 hover:bg-white/10 hover:text-white sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
             aria-label="Next image"
             onClick={() => navigateImage(1)}
           >

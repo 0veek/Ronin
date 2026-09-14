@@ -247,7 +247,8 @@ const GENERATIONS_QUERY = "select data from gen_metadata";
 function loadConversationReader(): Promise<ConversationReader | null> {
   conversationReader ??= (async (): Promise<ConversationReader> => {
     if (process.versions.bun !== undefined) {
-      const { Database } = await import(/* @vite-ignore */ "bun:sqlite");
+      const bunSqliteModule = "bun:sqlite";
+      const { Database } = await import(/* @vite-ignore */ bunSqliteModule);
       return (filePath: string) => {
         const database = new Database(filePath, { readonly: true });
         try {

@@ -41,7 +41,7 @@ function catalogEntry(
   target: ConnectionTarget,
   profile: Option.Option<ConnectionProfile> = Option.none(),
 ): ConnectionCatalogEntry {
-  return { target, profile };
+  return { target, profile, enabled: true };
 }
 
 const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((options?: {

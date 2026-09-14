@@ -14,6 +14,7 @@ import {
   type ScopedThreadRef,
   type ServerProviderSkill,
   type TurnId,
+  type WorktreeSetupSnapshot,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
@@ -25,10 +26,16 @@ import {
   getQuestionAnswerText,
   hasQuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
-import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
+import type {
+  AgentPanelModel,
+  RuntimeSubagent,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   emptyAgentPanelModel,
+  formatSubagentModelLabel,
   formatSubagentTokenCount,
+  isActiveSubagentStatus,
+  isTerminalSubagentStatus,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
@@ -157,6 +164,7 @@ import {
 } from "./MessagesTimeline.logic";
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { WorkingGlyph } from "./WorkingGlyph";
+import { WorktreeSetupCard } from "./WorktreeSetupCard";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { type ParsedTerminalContextEntry } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
@@ -222,6 +230,7 @@ import { inferEntryKindFromPath } from "../../pierre-icons";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import ReadOnlySourcePreview from "../files/ReadOnlySourcePreview";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
@@ -256,8 +265,13 @@ interface TimelineRowSharedState {
   onReplayTurn: ((turnId: TurnId) => void) | null;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
+  onToggleSpawnRow: (entryId: string, expanded: boolean) => void;
   agentPanelModel: AgentPanelModel;
+  expandedSpawnEntryIds: ReadonlySet<string>;
   onOpenAgents: () => void;
+  onCancelWorktreeSetup: (() => void) | null;
+  onWorktreeSetupWorkLocally: (() => void) | null;
+  onOpenWorktreeSetupTerminal: ((terminalId: string) => void) | null;
 }
 
 interface TimelineRowActivityState {
@@ -315,6 +329,10 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END = {
     layout: true,
   },
 } as const;
+const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
+  ...TIMELINE_MAINTAIN_SCROLL_AT_END,
+  animated: true,
+} as const;
 
 // ---------------------------------------------------------------------------
 // Props (public API)
@@ -334,6 +352,10 @@ interface MessagesTimelineProps {
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
+  worktreeSetup?: WorktreeSetupSnapshot | null;
+  onCancelWorktreeSetup?: () => void;
+  onWorktreeSetupWorkLocally?: () => void;
+  onOpenWorktreeSetupTerminal?: (terminalId: string) => void;
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
   latestTurn: TimelineLatestTurn | null;
@@ -388,11 +410,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   citationHistoryLoading = false,
   onCiteAssistantText,
   isWorking,
+  worktreeSetup = null,
+  onCancelWorktreeSetup,
+  onWorktreeSetupWorkLocally,
+  onOpenWorktreeSetupTerminal,
   isCompacting = false,
   workingStepLabel = null,
   activeTurnInProgress,
   activeTurnStartedAt,
-  agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
+  agentPanelModel,
   onOpenAgents = NOOP_OPEN_AGENTS,
   listRef,
   timelineEntries,
@@ -428,19 +454,37 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 }: MessagesTimelineProps) {
   const [expandedTurnIds, setExpandedTurnIds] = useState<ReadonlySet<TurnId>>(new Set());
   const [expandedWorkGroupIds, setExpandedWorkGroupIds] = useState<ReadonlySet<string>>(new Set());
+  const [expandedSpawnEntryIds, setExpandedSpawnEntryIds] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
+  const prefersReducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
   const listIdentityRef = useRef(listIdentityKey);
   const previousLatestTurnRef = useRef(latestTurn);
+  const [settlingListIdentity, setSettlingListIdentity] = useState<string | null>(null);
   let paintedExpandedTurnIds = expandedTurnIds;
   let paintedExpandedWorkGroupIds = expandedWorkGroupIds;
+  let paintedExpandedSpawnEntryIds = expandedSpawnEntryIds;
   if (listIdentityRef.current !== listIdentityKey) {
     listIdentityRef.current = listIdentityKey;
     previousLatestTurnRef.current = latestTurn;
+    setSettlingListIdentity(listIdentityKey);
     paintedExpandedTurnIds = new Set();
     paintedExpandedWorkGroupIds = new Set();
+    paintedExpandedSpawnEntryIds = new Set();
     setExpandedTurnIds(paintedExpandedTurnIds);
     setExpandedWorkGroupIds(paintedExpandedWorkGroupIds);
+    setExpandedSpawnEntryIds(paintedExpandedSpawnEntryIds);
   }
+  const onToggleSpawnRow = useCallback((entryId: string, expanded: boolean) => {
+    setExpandedSpawnEntryIds((current) => {
+      if (current.has(entryId) === expanded) return current;
+      const next = new Set(current);
+      if (expanded) next.add(entryId);
+      else next.delete(entryId);
+      return next;
+    });
+  }, []);
   const citationThreadRef = useMemo(() => parseScopedThreadKey(routeThreadKey), [routeThreadKey]);
   const expandCitedTurn = useCallback((turnId: TurnId) => {
     setExpandedTurnIds((current) =>
@@ -464,6 +508,20 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (settlingListIdentity === null) return;
+    let second: number | null = null;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        setSettlingListIdentity((current) => (current === settlingListIdentity ? null : current));
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      if (second !== null) cancelAnimationFrame(second);
+    };
+  }, [settlingListIdentity]);
 
   const suspendEndScrollMaintenanceForDisclosure = useCallback((anchorKey: string) => {
     disclosureAnchorKeyRef.current = anchorKey;
@@ -562,6 +620,27 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     workspaceRoot: string | undefined;
     projection: MessagesTimelineRowsProjection;
   } | null>(null);
+  const liveAgentTaskKey = useMemo(() => {
+    if (agentPanelModel === undefined) return undefined;
+    const ids: string[] = [];
+    const consider = (agent: { id: string; status: RuntimeSubagent["status"] }) => {
+      if (isActiveSubagentStatus(agent.status)) ids.push(agent.id);
+    };
+    agentPanelModel.directAgents.forEach(consider);
+    for (const group of agentPanelModel.workflows) {
+      if (!isTerminalSubagentStatus(group.workflow.status)) ids.push(group.workflow.id);
+      group.unphasedMembers.forEach(consider);
+      group.phases.forEach((phase) => phase.members.forEach(consider));
+    }
+    return ids.sort().join("\n");
+  }, [agentPanelModel]);
+  const liveAgentTaskIds = useMemo(
+    () =>
+      liveAgentTaskKey === undefined
+        ? undefined
+        : new Set(liveAgentTaskKey.length > 0 ? liveAgentTaskKey.split("\n") : []),
+    [liveAgentTaskKey],
+  );
   const rawRows = useMemo(() => {
     const previous = rowsProjectionRef.current;
     const projection = deriveMessagesTimelineRowsWithState(
@@ -574,6 +653,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaries,
+        liveAgentTaskIds,
+        worktreeSetup,
       },
       previous?.threadKey === listIdentityKey && previous.workspaceRoot === workspaceRoot
         ? previous.projection
@@ -592,6 +673,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     isWorking,
     activeTurnStartedAt,
     turnDiffSummaries,
+    liveAgentTaskIds,
+    worktreeSetup,
   ]);
   const rows = useStableRows(rawRows, listIdentityKey);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
@@ -736,8 +819,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onReplayTurn: onReplayTurn ?? null,
       onToggleTurnFold,
       onToggleWorkGroup,
-      agentPanelModel,
+      onToggleSpawnRow,
+      agentPanelModel: agentPanelModel ?? EMPTY_AGENT_PANEL_MODEL,
+      expandedSpawnEntryIds: paintedExpandedSpawnEntryIds,
       onOpenAgents,
+      onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
+      onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
+      onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
     }),
     [
       readyCitationRequest,
@@ -760,8 +848,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onReplayTurn,
       onToggleTurnFold,
       onToggleWorkGroup,
+      onToggleSpawnRow,
       agentPanelModel,
+      paintedExpandedSpawnEntryIds,
       onOpenAgents,
+      onCancelWorktreeSetup,
+      onWorktreeSetupWorkLocally,
+      onOpenWorktreeSetupTerminal,
     ],
   );
   const turnStartedAtByTurnId = useMemo(
@@ -851,7 +944,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               !liveFollowEnabled ||
               disclosureToggleSettling
                 ? false
-                : TIMELINE_MAINTAIN_SCROLL_AT_END
+                : isWorking && !prefersReducedMotion && settlingListIdentity === null
+                  ? TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH
+                  : TIMELINE_MAINTAIN_SCROLL_AT_END
             }
             maintainVisibleContentPosition={
               citationPositioning ? false : maintainVisibleContentPosition
@@ -1210,7 +1305,8 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         (row.kind === "message" && row.message.role === "assistant" && !row.showAssistantMeta) ||
           row.kind === "work" ||
           row.kind === "work-toggle" ||
-          row.kind === "turn-plan"
+          row.kind === "turn-plan" ||
+          row.kind === "worktree-setup"
           ? "pb-2"
           : "pb-4",
         row.kind === "message" && row.message.role === "assistant" ? "group/assistant" : null,
@@ -1231,9 +1327,40 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "turn-plan" ? <TurnPlanTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
+      {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
     </div>
   );
 });
+
+function WorktreeSetupTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "worktree-setup" }>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const terminalId = row.snapshot.setupScript?.terminalId ?? null;
+  const openTerminal = ctx.onOpenWorktreeSetupTerminal;
+  const onOpenTerminal = useMemo(
+    () => (openTerminal && terminalId ? () => openTerminal(terminalId) : null),
+    [openTerminal, terminalId],
+  );
+  return (
+    <WorktreeSetupCard
+      snapshot={row.snapshot}
+      onCancel={ctx.onCancelWorktreeSetup}
+      onWorkLocally={row.snapshot.phase === "running" ? ctx.onWorktreeSetupWorkLocally : null}
+      onOpenTerminal={onOpenTerminal}
+    />
+  );
+}
+
+// Expose transcript authors as headings without changing the visual layout or
+// copied text. Markdown headings inside each message nest beneath this level.
+const MESSAGE_HEADING_LEVEL = 3;
+
+function MessageAuthorHeading({ children }: { children: string }) {
+  return <h3 className="sr-only select-none">{children}</h3>;
+}
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
@@ -1381,6 +1508,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   return (
     <div className="group flex flex-col items-end gap-1">
       <div className="instruction-card relative max-w-[80%] px-3.5 py-2.5 text-message-foreground">
+        <MessageAuthorHeading>You</MessageAuthorHeading>
         {(regularImages.length > 0 || userVideos.length > 0) && (
           <div className="mb-2 grid max-w-[420px] grid-cols-2 gap-2">
             {regularImages.map((image) => (
@@ -1389,7 +1517,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 className={cn(
                   "bg-background/70",
                   image.source?.kind === "snap-shot" && image.previewUrl
-                    ? SNAP_SHOT_ATTACHMENT_FRAME_CLASS
+                    ? cn(SNAP_SHOT_ATTACHMENT_FRAME_CLASS, "col-span-2")
                     : "overflow-hidden rounded-lg border border-border/80",
                 )}
               >
@@ -1629,6 +1757,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   return (
     <>
       <div className="relative min-w-0 px-1 py-0.5">
+        <MessageAuthorHeading>Ronin</MessageAuthorHeading>
         {showsSource ? (
           <MessageSourceBlock text={messageText} />
         ) : (
@@ -1646,6 +1775,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               isStreaming={Boolean(row.message.streaming)}
               lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
               skills={ctx.skills}
+              headingLevelOffset={MESSAGE_HEADING_LEVEL}
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
               onImageExpand={ctx.onImageExpand}
             />
@@ -2698,6 +2828,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
             text={props.text}
             terminalContexts={props.terminalContexts}
             renderContextReference={props.renderContextReference}
+            headingLevelOffset={MESSAGE_HEADING_LEVEL}
             skills={props.skills}
             markdownCwd={props.markdownCwd}
           />
@@ -2737,6 +2868,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
   terminalContexts: ParsedTerminalContextEntry[];
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
+  headingLevelOffset: number;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
@@ -2763,6 +2895,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
             lineBreaks
             parseRawHtml={false}
             renderContextReference={props.renderContextReference}
+            headingLevelOffset={props.headingLevelOffset}
           />
         ) : null}
         {trailingWhitespace ? <span aria-hidden="true">{trailingWhitespace}</span> : null}
@@ -2787,6 +2920,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
                   lineBreaks
                   parseRawHtml={false}
                   renderContextReference={props.renderContextReference}
+                  headingLevelOffset={props.headingLevelOffset}
                 />
               </div>
             ) : null
@@ -2877,6 +3011,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
           lineBreaks
           parseRawHtml={false}
           renderContextReference={props.renderContextReference}
+          headingLevelOffset={props.headingLevelOffset}
         />,
       );
     } else if (inlinePrefix.length === 0) {
@@ -2904,6 +3039,7 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       lineBreaks
       parseRawHtml={false}
       renderContextReference={props.renderContextReference}
+      headingLevelOffset={props.headingLevelOffset}
     />
   );
 });
@@ -3251,16 +3387,11 @@ const stopRowToggleWhileSelectingText = (e: MouseEvent<HTMLElement>) => {
   }
 };
 
-/**
- * A1 spawn CTA: one anchored row per workflow run (or per-turn direct-spawn
- * batch). Live status is derived from the shared agent panel model at render
- * time — the row itself never re-renders a roster; the Agents panel is the
- * only roster. Freezes to past tense when every member settles. Static dot,
- * no animation.
- */
-const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: TimelineWorkEntry }) {
+/** One expandable timeline row per subagent spawn batch. */
+const AgentSpawnRow = memo(function AgentSpawnRow(props: { workEntry: TimelineWorkEntry }) {
   const { workEntry } = props;
-  const { agentPanelModel, onOpenAgents } = use(TimelineRowCtx);
+  const { agentPanelModel, expandedSpawnEntryIds, onToggleSpawnRow, onOpenAgents } =
+    use(TimelineRowCtx);
   const spawn = workEntry.agentSpawn;
   if (!spawn) {
     return null;
@@ -3284,6 +3415,7 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
     coordinatorStatus: workflowGroup?.workflow.status,
   });
   const { live, lead } = summary;
+  const expanded = expandedSpawnEntryIds.has(workEntry.id);
   // Same rule as the panel footer: providers may aggregate member usage into
   // the coordinator, so count the coordinator only when no members exist.
   const totalTokens = agents.reduce(
@@ -3305,27 +3437,116 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
     live && livePhase ? `${livePhase.title} · ${livePhase.activeCount} working` : summary.status;
 
   return (
-    <button
-      type="button"
-      onClick={onOpenAgents}
-      className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-sm transition hover:bg-accent/50"
-    >
-      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
-      <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 truncate">
-        <span className="font-medium">{lead}</span>
-        {workflowName ? <span className="text-muted-foreground"> · {workflowName}</span> : null}
-      </span>
-      <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-2xs text-muted-foreground">
-        <span>{status}</span>
-        {totalTokens > 0 ? (
-          <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
-        ) : null}
-        <span className="text-info-foreground">{live ? "Open Agents ▸" : "View ▸"}</span>
-      </span>
-    </button>
+    <div className="flex flex-col">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        onClick={() => onToggleSpawnRow(workEntry.id, !expanded)}
+        className="flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/50 px-2.5 py-1.5 text-left text-sm transition hover:bg-accent/50"
+      >
+        <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dotClass)} />
+        <WorkEntryIconSvg name="bot" className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="min-w-0 truncate">
+          <span className="font-medium">{lead}</span>
+          {workflowName ? <span className="text-muted-foreground"> · {workflowName}</span> : null}
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-2xs text-muted-foreground">
+          <span>{status}</span>
+          {totalTokens > 0 ? (
+            <span className="tabular-nums">Σ {formatSubagentTokenCount(totalTokens)}</span>
+          ) : null}
+          {expanded ? (
+            <ChevronUpIcon className="size-3.5" />
+          ) : (
+            <ChevronDownIcon className="size-3.5" />
+          )}
+        </span>
+      </button>
+      {expanded ? (
+        <div className="ms-6 mt-1 flex flex-col gap-0.5 border-s border-border/60 ps-2">
+          {agents.map((agent) => (
+            <AgentSpawnMemberRow key={agent.id} agent={agent} />
+          ))}
+          <button
+            type="button"
+            onClick={onOpenAgents}
+            className="mt-1 self-start rounded-sm px-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Open Agents panel ›
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 });
+
+const AGENT_MEMBER_STATUS_LABEL: Record<RuntimeSubagent["status"], string> = {
+  pending: "Working",
+  running: "Working",
+  waiting: "Working",
+  idle: "Idle",
+  completed: "Completed",
+  failed: "Failed",
+  cancelled: "Stopped",
+  interrupted: "Stopped",
+};
+
+function AgentSpawnMemberRow({ agent }: { agent: RuntimeSubagent }) {
+  const [open, setOpen] = useState(false);
+  const active = isActiveSubagentStatus(agent.status);
+  const activity = active
+    ? (agent.progress ?? (agent.lastToolName ? `▸ ${agent.lastToolName}` : null))
+    : (agent.error ?? agent.result ?? agent.progress ?? null);
+  const tokens = agent.usage?.totalTokens ?? 0;
+  const status =
+    tokens > 0
+      ? `${AGENT_MEMBER_STATUS_LABEL[agent.status]} · ${formatSubagentTokenCount(tokens)} tok`
+      : AGENT_MEMBER_STATUS_LABEL[agent.status];
+  const role =
+    agent.role && agent.role.trim().toLowerCase() !== agent.title.trim().toLowerCase()
+      ? agent.role
+      : null;
+  const model = formatSubagentModelLabel(agent.model, agent.effort);
+  const body = [activity?.trim() || null, model || null].filter(Boolean).join("\n\n");
+  const canExpand = body.length > 0;
+
+  return (
+    <button
+      type="button"
+      disabled={!canExpand}
+      aria-expanded={canExpand ? open : undefined}
+      onClick={() => setOpen((value) => !value)}
+      className="flex min-w-0 flex-col rounded-md px-1 py-0.5 text-left enabled:hover:bg-accent/20 disabled:cursor-default"
+    >
+      <span className="flex w-full min-w-0 items-baseline gap-1.5">
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-sm",
+            agent.status === "failed" && "text-error-foreground",
+          )}
+        >
+          {agent.title}
+        </span>
+        {role ? (
+          <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
+            {role}
+          </span>
+        ) : null}
+        <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
+          {status}
+        </span>
+      </span>
+      {!open && activity ? (
+        <span className="w-full truncate text-xs text-muted-foreground">{activity}</span>
+      ) : null}
+      {open ? (
+        <pre className="mt-1 max-h-64 w-full cursor-text overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 px-3 py-2 font-mono text-2xs leading-relaxed text-secondary-label select-text">
+          {body}
+        </pre>
+      ) : null}
+    </button>
+  );
+}
 
 function providerBoundaryText(boundary: ProviderBoundaryWorkLogEntry): string {
   if (boundary.event === "switched") {
@@ -3402,10 +3623,10 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
-  // Before any hooks: spawn CTA rows and provider boundaries render their own
+  // Before any hooks: spawn rows and provider boundaries render their own
   // components.
   if (workEntry.agentSpawn) {
-    return <AgentSpawnCtaRow workEntry={workEntry} />;
+    return <AgentSpawnRow workEntry={workEntry} />;
   }
   if (workEntry.providerBoundary) {
     return <ProviderBoundaryRow boundary={workEntry.providerBoundary} />;
@@ -3508,6 +3729,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     <div
       className={cn(
         "flex flex-col rounded-md px-0.5 py-0.5 transition-colors",
+        expanded && "mb-1",
         canExpand &&
           "cursor-pointer hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
       )}

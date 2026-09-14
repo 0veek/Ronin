@@ -277,10 +277,6 @@ export default function DiffPanel({
     ? `${routeThreadRef.environmentId}:${routeThreadRef.threadId}:${reviewSectionId}`
     : null;
   const codeViewMountKey = `${collapseScopeKey ?? reviewSectionId}:${codeViewRevision}`;
-  const collapsedDiffFileKeys =
-    collapsedDiffFiles.scopeKey === collapseScopeKey
-      ? collapsedDiffFiles.fileKeys
-      : EMPTY_COLLAPSED_DIFF_FILE_KEYS;
   const reviewSectionTitle = selectedTurn
     ? `Turn ${selectedCheckpointTurnCount ?? "?"}`
     : GIT_SCOPE_LABELS[selectedGitScope];
@@ -474,6 +470,17 @@ export default function DiffPanel({
       })),
     [renderableFiles],
   );
+  const defaultCollapsedDiffFileKeys = useMemo(
+    () =>
+      settings.diffFilesCollapsed
+        ? new Set(renderableFileEntries.map((file) => file.fileKey))
+        : EMPTY_COLLAPSED_DIFF_FILE_KEYS,
+    [renderableFileEntries, settings.diffFilesCollapsed],
+  );
+  const collapsedDiffFileKeys =
+    collapsedDiffFiles.scopeKey === collapseScopeKey
+      ? collapsedDiffFiles.fileKeys
+      : defaultCollapsedDiffFileKeys;
   const codeViewFiles = useMemo(
     () =>
       renderableFileEntries.map(({ fileDiff, fileKey, fileVersion }) => {
@@ -653,14 +660,16 @@ export default function DiffPanel({
       if (!file) return;
       if (file.collapsed) {
         setCollapsedDiffFiles((current) => {
-          const next = new Set(current.scopeKey === collapseScopeKey ? current.fileKeys : []);
+          const next = new Set(
+            current.scopeKey === collapseScopeKey ? current.fileKeys : defaultCollapsedDiffFileKeys,
+          );
           next.delete(file.fileKey);
           return { scopeKey: collapseScopeKey, fileKeys: next };
         });
       }
       requestTreeReveal(file.fileKey);
     },
-    [codeViewFiles, collapseScopeKey, requestTreeReveal],
+    [codeViewFiles, collapseScopeKey, defaultCollapsedDiffFileKeys, requestTreeReveal],
   );
 
   const openDiffFile = useCallback(
@@ -694,7 +703,9 @@ export default function DiffPanel({
   const toggleDiffFileCollapsed = useCallback(
     (fileKey: string) => {
       setCollapsedDiffFiles((current) => {
-        const next = new Set(current.scopeKey === collapseScopeKey ? current.fileKeys : []);
+        const next = new Set(
+          current.scopeKey === collapseScopeKey ? current.fileKeys : defaultCollapsedDiffFileKeys,
+        );
         if (next.has(fileKey)) {
           next.delete(fileKey);
         } else {
@@ -703,21 +714,21 @@ export default function DiffPanel({
         return { scopeKey: collapseScopeKey, fileKeys: next };
       });
     },
-    [collapseScopeKey],
+    [collapseScopeKey, defaultCollapsedDiffFileKeys],
   );
 
   const toggleDiffFileCollapse = useCallback(() => {
     setCodeViewRevision((current) => current + 1);
     setCollapsedDiffFiles((current) => {
       const currentKeys =
-        current.scopeKey === collapseScopeKey ? current.fileKeys : EMPTY_COLLAPSED_DIFF_FILE_KEYS;
+        current.scopeKey === collapseScopeKey ? current.fileKeys : defaultCollapsedDiffFileKeys;
 
       return {
         scopeKey: collapseScopeKey,
         fileKeys: toggleAllDiffFiles(diffFileKeys, currentKeys),
       };
     });
-  }, [collapseScopeKey, diffFileKeys]);
+  }, [collapseScopeKey, defaultCollapsedDiffFileKeys, diffFileKeys]);
 
   const selectTurn = (turnId: TurnId) => {
     if (!routeThreadRef) return;

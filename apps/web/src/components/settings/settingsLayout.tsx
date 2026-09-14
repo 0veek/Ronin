@@ -73,7 +73,7 @@ export function useSettingsSearchTargetId(): string | null {
   return useContext(SettingsSearchTargetContext).targetId;
 }
 
-function useSettingsSearchTarget<T extends HTMLElement>(id: string | undefined) {
+export function useSettingsSearchTarget<T extends HTMLElement>(id: string | undefined) {
   const { targetId, onTargetHandled } = useContext(SettingsSearchTargetContext);
   const isSearchTarget = id !== undefined && id === targetId;
   const targetRef = useCallback(

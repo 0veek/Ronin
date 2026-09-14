@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 
 import {
@@ -9,7 +9,9 @@ import {
 } from "../lib/agentAttentionNotifications";
 import { playAttentionChime } from "../lib/attentionChime";
 import { useThreadShells } from "../state/entities";
+import { setNotificationBadge } from "../threadNotifications";
 import { useUiStateStore } from "../uiStateStore";
+import { toastManager } from "./ui/toast";
 
 /**
  * System notifications for agents that finished, failed, or stopped to ask.
@@ -27,10 +29,14 @@ import { useUiStateStore } from "../uiStateStore";
 export function AgentAttentionNotifier() {
   const shells = useThreadShells();
   const enabled = useUiStateStore((state) => state.agentNotificationsEnabled);
+  const inAppEnabled = useUiStateStore((state) => state.agentInAppNotificationsEnabled);
   const soundsEnabled = useUiStateStore((state) => state.agentSoundsEnabled);
   const navigate = useNavigate();
+  const { environmentId: activeEnvironmentId, threadId: activeThreadId } = useParams({
+    strict: false,
+  });
   const baselineRef = useRef<ThreadAttentionBaseline | null>(null);
-  const openRef = useRef<readonly Notification[]>([]);
+  const openRef = useRef(new Map<string, Notification>());
 
   useEffect(() => {
     const { events, baseline } = diffAgentAttention(baselineRef.current, shells);
@@ -42,7 +48,40 @@ export function AgentAttentionNotifier() {
     // Attention is only worth stealing while the user is elsewhere. In view,
     // the sidebar's own working indicators already tell this story. Checked
     // before the toggles below because the sound obeys the same rule.
-    if (document.visibilityState === "visible" && document.hasFocus()) return;
+    if (document.visibilityState === "visible" && document.hasFocus()) {
+      if (inAppEnabled) {
+        for (const event of events) {
+          if (event.environmentId === activeEnvironmentId && event.threadId === activeThreadId) {
+            continue;
+          }
+          const toastId = toastManager.add({
+            type:
+              event.kind === "turn-completed"
+                ? "success"
+                : event.kind === "turn-failed"
+                  ? "error"
+                  : "warning",
+            title: event.body,
+            description: event.title,
+            data: { hideCopyButton: true },
+            actionProps: {
+              children: "Open thread",
+              onClick: () => {
+                toastManager.close(toastId);
+                void navigate({
+                  to: "/$environmentId/$threadId",
+                  params: {
+                    environmentId: event.environmentId,
+                    threadId: event.threadId,
+                  },
+                });
+              },
+            },
+          });
+        }
+      }
+      return;
+    }
 
     // Independent of the notification toggle and of the OS permission: audio
     // needs neither, and a user who silenced system notifications may still
@@ -64,7 +103,6 @@ export function AgentAttentionNotifier() {
     };
 
     const summary = summarizeAttention(events);
-    const raised: Notification[] = [];
     if (summary !== null) {
       const notification = new Notification(summary.title, {
         body: summary.body,
@@ -74,7 +112,10 @@ export function AgentAttentionNotifier() {
         reveal();
         notification.close();
       });
-      raised.push(notification);
+      for (const event of events) {
+        openRef.current.get(event.tag)?.close();
+        openRef.current.set(event.tag, notification);
+      }
     } else {
       for (const event of events) {
         const notification = new Notification(event.title, {
@@ -85,27 +126,44 @@ export function AgentAttentionNotifier() {
           reveal(event);
           notification.close();
         });
-        raised.push(notification);
+        openRef.current.get(event.tag)?.close();
+        openRef.current.set(event.tag, notification);
       }
     }
-    openRef.current = [...openRef.current, ...raised];
-  }, [enabled, navigate, shells, soundsEnabled]);
+    setNotificationBadge(openRef.current.size);
+  }, [activeEnvironmentId, activeThreadId, enabled, inAppEnabled, navigate, shells, soundsEnabled]);
 
   // Coming back on your own settles the debt: anything still sitting in the
   // notification tray is now stale chrome, so it is withdrawn.
   useEffect(() => {
     const dismissAll = () => {
       if (document.visibilityState !== "visible") return;
-      for (const notification of openRef.current) notification.close();
-      openRef.current = [];
+      for (const notification of new Set(openRef.current.values())) notification.close();
+      openRef.current.clear();
+      setNotificationBadge(0);
     };
+    const clearFromDesktop = () => {
+      for (const notification of new Set(openRef.current.values())) notification.close();
+      openRef.current.clear();
+      setNotificationBadge(0);
+    };
+    const unsubscribe = window.desktopBridge?.onNotificationBadgeClear?.(clearFromDesktop);
     document.addEventListener("visibilitychange", dismissAll);
     window.addEventListener("focus", dismissAll);
     return () => {
+      unsubscribe?.();
       document.removeEventListener("visibilitychange", dismissAll);
       window.removeEventListener("focus", dismissAll);
+      clearFromDesktop();
     };
   }, []);
+
+  useEffect(() => {
+    if (enabled) return;
+    for (const notification of new Set(openRef.current.values())) notification.close();
+    openRef.current.clear();
+    setNotificationBadge(0);
+  }, [enabled]);
 
   return null;
 }

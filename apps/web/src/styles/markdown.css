@@ -322,6 +322,18 @@
   background: transparent !important;
 }
 
+/* Finished blocks arrive in chunks during a response; fade each insertion without layout work. */
+@media (prefers-reduced-motion: no-preference) {
+  .chat-markdown[data-streaming] > *,
+  .chat-markdown[data-streaming] .chat-markdown-shiki {
+    transition: opacity 600ms ease-out;
+
+    @starting-style {
+      opacity: 0;
+    }
+  }
+}
+
 /* Diagnostics-style tables: row separators only, uppercase headers, and a
    scroll-fade container for horizontal overflow. The root chat-markdown
    wrapping rules (overflow-wrap: anywhere) would let columns shrink to single

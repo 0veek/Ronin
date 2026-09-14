@@ -4,6 +4,7 @@ import { LinkIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { WorkspaceTopbar } from "../components/shell/WorkspaceTopbar";
 import { Button } from "../components/ui/button";
@@ -136,6 +137,8 @@ export const Route = createFileRoute("/_chat/")({
 });
 
 function HostedStaticOnboardingState() {
+  const localEnvironmentOff = isLocalEnvironmentDisabled();
+
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
@@ -153,7 +156,9 @@ function HostedStaticOnboardingState() {
                 Connect an environment to get started
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm leading-relaxed text-muted-foreground/78">
-                Add a reachable backend manually to start working from this browser.
+                {localEnvironmentOff
+                  ? "The local environment is turned off. Connect a remote environment, or turn it back on in Connections."
+                  : "Add a reachable environment manually to start working from this browser."}
               </EmptyDescription>
               <div className="mt-6 flex justify-center">
                 <Button render={<Link to="/settings/connections" />} size="sm">

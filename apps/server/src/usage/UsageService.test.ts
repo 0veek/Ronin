@@ -6,7 +6,13 @@ import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { UsageDay, type UsageSummaryInput } from "@t3tools/contracts";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  UsageDay,
+  type UsageSummaryInput,
+} from "@t3tools/contracts";
+import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -67,10 +73,12 @@ const serviceLayers = (input: {
   readonly onRatesFetch?: () => void;
   /** Defaults to an unparsable document so every scan retries the fetch. */
   readonly ratesDocument?: unknown;
+  readonly environment?: NodeJS.ProcessEnv;
 }) =>
   ServerConfig.layerTest(process.cwd(), { prefix: input.prefix }).pipe(
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(ServerSettings.layerTest(input.settings)),
+    Layer.provideMerge(Layer.succeed(HostProcessEnvironment, input.environment ?? {})),
     Layer.provideMerge(
       Layer.succeed(
         HttpClient.HttpClient,
@@ -91,6 +99,45 @@ function totalOutputTokens(summary: { buckets: readonly { totals: { outputTokens
 }
 
 describe("UsageService", () => {
+  it.live("reads history from disabled configured account homes", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      const accountHome = NodePath.join(home, "claude-account");
+      const transcript = NodePath.join(accountHome, "projects", "session.jsonl");
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(NodePath.dirname(transcript), { recursive: true });
+        await NodeFSP.writeFile(transcript, claudeLine(2, 17));
+      });
+
+      const service = yield* UsageService.make.pipe(
+        Effect.provide(
+          serviceLayers({
+            prefix: "usage-service-account-home-test",
+            environment: { GROK_HOME: NodePath.join(home, "grok") },
+            settings: {
+              ...settings,
+              providerInstances: {
+                [ProviderInstanceId.make("claude-work")]: {
+                  driver: ProviderDriverKind.make("claudeAgent"),
+                  enabled: false,
+                  environment: [
+                    { name: "CLAUDE_CONFIG_DIR", value: accountHome, sensitive: false },
+                  ],
+                },
+              },
+            },
+          }),
+        ),
+      );
+
+      const summary = yield* service.readSummary(WINDOW);
+      assert.include(
+        summary.sources.map((source) => source.fingerprint.resolvedHomePath),
+        NodePath.join(accountHome, "projects"),
+      );
+    }).pipe(Effect.scoped),
+  );
+
   it.live("counts appended usage on a rescan of a grown transcript", () =>
     Effect.gen(function* () {
       const { transcript, settings } = yield* setup;

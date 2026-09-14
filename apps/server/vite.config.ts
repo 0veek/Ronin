@@ -2,17 +2,37 @@ import "vite-plus/test/config";
 import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
+import {
+  isExternalCliDependency,
+  shouldBundleCliDependency,
+} from "../../scripts/lib/cli-external-packages.ts";
 
-const bundledPackagePrefixes = [
-  "@pierre/diffs",
-  "@t3tools/",
-  "effect-acp",
-  "effect-codex-app-server",
-];
+export { shouldBundleCliDependency };
 
-export function shouldBundleCliDependency(id: string): boolean {
-  return bundledPackagePrefixes.some((prefix) => id.startsWith(prefix));
+const packExecutable = process.env.T3CODE_PACK_EXE === "1";
+const SEA_NODE_VERSION = "26.8.2";
+const SEA_TARGETS = {
+  "darwin-arm64": { platform: "darwin", arch: "arm64" },
+  "darwin-x64": { platform: "darwin", arch: "x64" },
+  "linux-arm64": { platform: "linux", arch: "arm64" },
+  "linux-x64": { platform: "linux", arch: "x64" },
+  "win-arm64": { platform: "win", arch: "arm64" },
+  "win-x64": { platform: "win", arch: "x64" },
+} as const;
+const packExecutableTarget = process.env.T3CODE_PACK_EXE_TARGET?.trim();
+if (packExecutableTarget && !Object.hasOwn(SEA_TARGETS, packExecutableTarget)) {
+  throw new Error(
+    `T3CODE_PACK_EXE_TARGET must be one of ${Object.keys(SEA_TARGETS).join(", ")}, got "${packExecutableTarget}".`,
+  );
 }
+const packExecutableTargets = packExecutableTarget
+  ? [
+      {
+        ...SEA_TARGETS[packExecutableTarget as keyof typeof SEA_TARGETS],
+        nodeVersion: SEA_NODE_VERSION,
+      },
+    ]
+  : undefined;
 
 export default mergeConfig(
   baseConfig,
@@ -27,12 +47,23 @@ export default mergeConfig(
       },
     },
     pack: {
-      entry: ["src/bin.ts", "src/claudeHistoryWorker.ts"],
-      outDir: "dist",
-      sourcemap: true,
+      entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claude-history-worker.ts"],
+      outDir: packExecutable ? "dist-exe" : "dist",
+      sourcemap: !packExecutable,
       clean: true,
+      ...(packExecutable
+        ? {
+            exe: {
+              fileName: "t3",
+              outDir: "dist-exe",
+              ...(packExecutableTargets ? { targets: packExecutableTargets } : {}),
+              seaConfig: { useCodeCache: false },
+            },
+          }
+        : {}),
       deps: {
         alwaysBundle: shouldBundleCliDependency,
+        neverBundle: (id: string) => isExternalCliDependency(id),
         onlyBundle: false,
       },
       banner: {

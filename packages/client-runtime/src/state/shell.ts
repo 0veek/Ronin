@@ -24,7 +24,7 @@ import { subscribeDynamic } from "../rpc/client.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { ShellSnapshotLoader } from "./shellSnapshotHttp.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
-import type { EnvironmentCatalogState } from "./connections.ts";
+import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 
 export type EnvironmentShellStatus = "empty" | "cached" | "synchronizing" | "live";
@@ -143,20 +143,25 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
   ) {
     const initial = yield* SubscriptionRef.get(state);
     let waiting = yield* Ref.get(awaitingCompletion);
-    let next = initial;
+    let snapshot = initial.snapshot;
+    let status = initial.status;
+    let error = initial.error;
+    let changed = false;
     let receivedSnapshot = false;
     for (const item of items) {
       if (item.kind === "synchronized") {
         waiting = false;
-        if (Option.isSome(next.snapshot)) {
-          next = { ...next, status: "live", error: Option.none() };
+        if (Option.isSome(snapshot)) {
+          status = "live";
+          error = Option.none();
+          changed = true;
         }
         continue;
       }
       const nextSnapshot =
         item.kind === "snapshot"
           ? item.snapshot
-          : Option.match(next.snapshot, {
+          : Option.match(snapshot, {
               onNone: () => null,
               onSome: (snapshot) =>
                 item.sequence > snapshot.snapshotSequence
@@ -165,14 +170,14 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
             });
       if (nextSnapshot === null) continue;
       receivedSnapshot ||= item.kind === "snapshot";
-      next = {
-        snapshot: Option.some(nextSnapshot),
-        status: waiting ? "synchronizing" : "live",
-        error: Option.none(),
-      };
+      snapshot = Option.some(nextSnapshot);
+      status = waiting ? "synchronizing" : "live";
+      error = Option.none();
+      changed = true;
     }
     yield* Ref.set(awaitingCompletion, waiting);
-    if (next === initial) return;
+    if (!changed) return;
+    const next: EnvironmentShellState = { snapshot, status, error };
     yield* SubscriptionRef.set(state, next);
     if (receivedSnapshot) {
       const session = yield* Ref.get(activeSubscriptionSession);
@@ -342,7 +347,7 @@ export function createEnvironmentShellSummaryAtom(input: {
     let firstError: string | null = null;
     let latestSnapshotUpdatedAt: string | null = null;
 
-    for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
+    for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const state = get(input.shellStateValueAtom(environmentId));
       hasSynchronizingShell ||= state.status === "synchronizing";
       hasCachedShell ||= state.status === "cached";
@@ -383,7 +388,7 @@ export function createEnvironmentServerConfigsAtom(input: {
   let previousServerConfigs = EMPTY_SERVER_CONFIGS;
   return Atom.make((get) => {
     const next = new Map<EnvironmentId, ServerConfig>();
-    for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
+    for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const config = get(input.serverConfigValueAtom(environmentId));
       if (config !== null) {
         next.set(environmentId, config);

@@ -30,6 +30,7 @@ export interface PersistedUiState {
   threadChangedFilesExpansionVersion?: number;
   threadChangedFilesExpandedById?: Record<string, Record<string, boolean>>;
   agentNotificationsEnabled?: boolean;
+  agentInAppNotificationsEnabled?: boolean;
   agentSoundsEnabled?: boolean;
   digestSeenAt?: string | null;
   pullRequestMergeMethod?: string;
@@ -68,6 +69,8 @@ export interface UiNotificationState {
    * choice), and the OS-level notification permission is per-device anyway.
    */
   agentNotificationsEnabled: boolean;
+  /** Show focused-app toasts for activity in a different thread. */
+  agentInAppNotificationsEnabled: boolean;
   /**
    * Whether this device also makes a sound. Off by default and separate from
    * the notification toggle: a visual notification is easy to ignore, a noise
@@ -98,6 +101,7 @@ const initialState: UiState = {
   threadChangedFilesExpandedById: {},
   defaultAdvertisedEndpointKey: null,
   agentNotificationsEnabled: true,
+  agentInAppNotificationsEnabled: false,
   agentSoundsEnabled: false,
   digestSeenAt: null,
   pullRequestMergeMethod: "merge",
@@ -193,6 +197,10 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
       typeof parsed.agentNotificationsEnabled === "boolean"
         ? parsed.agentNotificationsEnabled
         : true,
+    agentInAppNotificationsEnabled:
+      typeof parsed.agentInAppNotificationsEnabled === "boolean"
+        ? parsed.agentInAppNotificationsEnabled
+        : false,
     agentSoundsEnabled:
       typeof parsed.agentSoundsEnabled === "boolean" ? parsed.agentSoundsEnabled : false,
     digestSeenAt: typeof parsed.digestSeenAt === "string" ? parsed.digestSeenAt : null,
@@ -272,6 +280,7 @@ export function persistState(state: UiState): void {
         threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
         threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
         agentNotificationsEnabled: state.agentNotificationsEnabled,
+        agentInAppNotificationsEnabled: state.agentInAppNotificationsEnabled,
         agentSoundsEnabled: state.agentSoundsEnabled,
         digestSeenAt: state.digestSeenAt,
         pullRequestMergeMethod: state.pullRequestMergeMethod,
@@ -462,6 +471,7 @@ interface UiStateStore extends UiState {
   setDefaultAdvertisedEndpointKey: (key: string | null) => void;
   setPullRequestMergeMethod: (method: PullRequestMergeMethod) => void;
   setAgentNotificationsEnabled: (enabled: boolean) => void;
+  setAgentInAppNotificationsEnabled: (enabled: boolean) => void;
   setAgentSoundsEnabled: (enabled: boolean) => void;
   markDigestSeen: (seenAt: string) => void;
   setProjectExpanded: (projectIds: string | readonly string[], expanded: boolean) => void;
@@ -488,6 +498,12 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
       state.agentNotificationsEnabled === enabled
         ? state
         : { ...state, agentNotificationsEnabled: enabled },
+    ),
+  setAgentInAppNotificationsEnabled: (enabled) =>
+    set((state) =>
+      state.agentInAppNotificationsEnabled === enabled
+        ? state
+        : { ...state, agentInAppNotificationsEnabled: enabled },
     ),
   markDigestSeen: (seenAt) => set((state) => ({ ...state, digestSeenAt: seenAt })),
   setAgentSoundsEnabled: (enabled) =>

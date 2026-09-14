@@ -4,7 +4,7 @@ import type {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 
-import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "../Icons";
+import { AzureDevOpsIcon, BitbucketIcon, ForgejoIcon, GitHubIcon, GitLabIcon } from "../Icons";
 
 /**
  * The hosts a repository can be published to, and whether this machine is
@@ -18,10 +18,18 @@ import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "../Icons
 
 export type PublishProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "bitbucket" | "azure-devops"
+  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
 >;
 
 export const PUBLISH_PROVIDER_OPTIONS = [
+  {
+    value: "forgejo",
+    label: "Forgejo / Gitea",
+    description: "Your signed-in server",
+    host: "your server",
+    pathPlaceholder: "owner/repo",
+    Icon: ForgejoIcon,
+  },
   {
     value: "github",
     label: "GitHub",

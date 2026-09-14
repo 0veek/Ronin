@@ -256,7 +256,12 @@ export function resolveDraftHeroState(input: {
   isWorking: boolean;
   draftHeroDockRequested: boolean;
   backgroundSubmissionPending: boolean;
+  /** A worktree setup card is on the timeline, so the timeline must stay visible. */
+  hasWorktreeSetupCard?: boolean;
 }): boolean {
+  if (input.hasWorktreeSetupCard) {
+    return false;
+  }
   if (input.backgroundSubmissionPending) {
     return true;
   }
@@ -1335,6 +1340,8 @@ export function shouldRefocusComposerOnWindowFocus(
     activeElement.tagName === "INPUT" ||
     activeElement.tagName === "TEXTAREA" ||
     activeElement.tagName === "SELECT" ||
+    activeElement.tagName === "IFRAME" ||
+    activeElement.tagName === "WEBVIEW" ||
     activeElement.isContentEditable === true ||
     activeElement.getAttribute("role") === "textbox"
   ) {
