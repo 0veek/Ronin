@@ -10,6 +10,7 @@ import {
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
@@ -101,11 +102,13 @@ const runReconciliation = (input: {
       latestSequence: Effect.succeed(0),
     }),
     Effect.provide(
-      ServerSettings.layerTest({
-        continueThreadsAfterServerUpdate: input.continueAfterRestart === true,
-      }),
+      Layer.merge(
+        ServerSettings.layerTest({
+          continueThreadsAfterServerUpdate: input.continueAfterRestart === true,
+        }),
+        NodeServices.layer,
+      ),
     ),
-    Effect.provide(NodeServices.layer),
   );
 
 it.effect("marks active running sessions that have persisted resume state", () => {
@@ -735,8 +738,7 @@ it.effect("does not fail startup when the live provider session inventory cannot
       subscribeDomainEvents: Effect.succeed(Stream.empty),
       latestSequence: Effect.succeed(0),
     }),
-    Effect.provide(ServerSettings.layerTest()),
-    Effect.provide(NodeServices.layer),
+    Effect.provide(Layer.merge(ServerSettings.layerTest(), NodeServices.layer)),
     Effect.tap(() => Effect.sync(() => assert.equal(queried, false))),
   );
 });

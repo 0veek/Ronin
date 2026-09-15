@@ -690,6 +690,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         command: fileScript.command,
         icon: fileScript.icon ?? "play",
         runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
+        waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
         keybinding: null,
         previewUrl: fileScript.previewUrl ?? null,
         autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
@@ -849,7 +850,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             title="Project icon"
             description={
               projectIcon?.kind === "lucide"
-                ? `${projectIcon.name} · ${projectIcon.color}`
+                ? `${projectIcon.monogram ?? projectIcon.name} · ${projectIcon.color}`
                 : projectIcon?.kind === "emoji"
                   ? projectIcon.emoji
                   : (faviconPath ?? "Automatic")
@@ -1328,6 +1329,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
         <Suspense fallback={null}>
           <ProjectIconPickerDialog
             current={projectIcon}
+            projectName={representative.title}
             open
             onOpenChange={setIconPickerOpen}
             onSelect={(icon) => void setProjectIcon({ faviconPath: null, projectIcon: icon })}

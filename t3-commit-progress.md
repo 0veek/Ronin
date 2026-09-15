@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                              |
-| ----------------------------- | -------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `9375c7797` — `fix(release): preserve updates from npm-based services (#11732)` (2026-09-14) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                              |
-| **Ported on**                 | 2026-09-14                                                                                   |
+|                               |                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
+| **Upstream reviewed through** | `3efdcc529` — `Preserve diff tree order and collapsed folders (#11931)` (2026-09-15) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                      |
+| **Ported on**                 | 2026-09-16                                                                           |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -5817,3 +5817,112 @@ deliberately cut.
   unit, type and static coverage.
 - No signed release archive, updater/uninstaller mutation, real SSH remote, Forgejo/Gitea host,
   provider session or desktop notification was exercised against an external system.
+
+## Batch 34 — reviewed through `3efdcc529` (59 commits)
+
+Reviewed `8b1ea4dd2..3efdcc529`, with upstream snapshotted at
+`3efdcc5296f1754e0f3bf7fee5fc2ada510e0438` for the whole run. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`. No commit needed a product Ask.
+
+### Ported (34)
+
+| Upstream    | Title                                                                                        | Notes                                                                                                       |
+| ----------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `955b787e6` | fix(server): parse CLI versions with a "v" prefix (#11738)                                   | clean                                                                                                       |
+| `494cfac24` | Allow setting T3CODE_OTLP_HEADERS (#11218)                                                   | ported without upstream's WSL environment plumbing                                                          |
+| `47ace9496` | fix(web): use consistent PR section toggles (#11763)                                         | clean                                                                                                       |
+| `33118d9ab` | Add T3CODE_OTLP_PROTOCOL to allow protobuf protocol (#11224)                                 | ported without upstream's WSL environment plumbing                                                          |
+| `9130d932f` | feat(web): add composer and PR number shortcuts (#11615)                                     | adapted to Ronin's composer controls and preserved Ask on the Side by assigning mode to `mod+shift+r`       |
+| `112a7088d` | fix(web): use project monograms for automatic icon fallbacks (#11572)                        | adapted to Ronin's existing favicon API while supporting explicit and automatic monograms                   |
+| `8d7c700c1` | feat(web): clone repositories in the background instead of holding the palette open (#11762) | ported across contracts, server tracking, command palette, composer gating, retry/removal and global toasts |
+| `793122797` | fix(server): stop refreshing providers on every config subscription (#11811)                 | adapted to Ronin's server WebSocket setup                                                                   |
+| `5bf43c9f3` | fix(web): align monogram project icons in menus (#11806)                                     | clean                                                                                                       |
+| `014016a62` | fix(web): make copy PR link discoverable in keybindings (#11826)                             | adapted to Ronin's PR detail panel and command registry                                                     |
+| `3be02ae57` | feat: add custom snooze dates and durations (#11800)                                         | ported for desktop/web and client runtime; mobile hunks omitted                                             |
+| `5ea643981` | feat(web): inline worktree setup rows and async setup scripts (#11832)                       | adapted to Ronin's timeline and project settings; removed upstream settings surface omitted                 |
+| `b5b29e7b8` | fix(server): stream tight list items one at a time in paragraph mode (#11833)                | clean                                                                                                       |
+| `7cafe52bb` | fix(server): keep thread titles tied to user intent (#10720)                                 | adapted across contracts, projection state, migration `060`, generation and refinement workers              |
+| `08abda9dc` | refactor(server): resolve title links through source control providers (#11844)              | adapted to Ronin's source-control provider registry                                                         |
+| `a62e7d670` | refactor(server): align title generation with Effect conventions (#11847)                    | clean                                                                                                       |
+| `5623089ae` | fix(server): disable color probes in worktree setup (#11843)                                 | clean                                                                                                       |
+| `0310cbf9f` | fix: keep worktree setup visible after leaving and reopening the thread (#11836)             | adapted to Ronin's recorded-activity timeline                                                               |
+| `b20d29dc4` | fix(desktop): prevent startup from running twice (#11857)                                    | ported with focused Electron startup coverage                                                               |
+| `2c19283af` | feat(server): persist the worktree setup send and progress on the thread (#11852)            | adapted across setup tracking, startup recovery and timeline rendering                                      |
+| `cc839c42b` | feat(web): queue messages sent client-side while the agent is working (#11673)               | adapted to Ronin's composer, optimistic timeline and turn lifecycle                                         |
+| `5b377e2a0` | fix(server): bound Git process bursts to keep connections responsive (#11405)                | ported through the shared Git workflow semaphore                                                            |
+| `a37b85279` | perf(server): speed up worktree fetch and checkout (#11633)                                  | clean                                                                                                       |
+| `9ea892e3b` | fix(client): show thread state changes before remote replies (#11408)                        | ported in client runtime; mobile hooks omitted                                                              |
+| `3c4c9a125` | fix(web): restore composer focus after closing option menus (#11884)                         | adapted across every composer-owned select, menu, combobox and popover                                      |
+| `bf3be75c4` | fix(web): center refresh devices in the empty state (#11808)                                 | clean                                                                                                       |
+| `ae53072af` | fix(web): keep the composer ready during background worktree setup (#11883)                  | adapted to Ronin's send gate and async setup handoff                                                        |
+| `c1b221041` | fix(desktop): keep the sidebar brand and window buttons aligned (#11906)                     | adapted to Ronin's 44px titlebar and Electron inset handling                                                |
+| `9a6b57be2` | fix(web): drop the filled well behind the sidebar header buttons (#11660)                    | clean                                                                                                       |
+| `2a264adc6` | fix(server): explain how to configure a missing Codex executable (#11345)                    | clean                                                                                                       |
+| `438465d6b` | feat: add customizable soft-tint project monograms (#11845)                                  | ported through contracts, picker, favicon rendering and backwards-compatible encoding                       |
+| `24b711b7f` | fix: multiple UI and server bug fixes (#11593)                                               | adapted Forgejo, z-order, model picker and dialog no-drag fixes; mobile hunks omitted                       |
+| `7235701de` | fix(server): release preview hosts after unanswered requests (#11381)                        | clean                                                                                                       |
+| `3efdcc529` | Preserve diff tree order and collapsed folders (#11931)                                      | adapted to Ronin's diff tree logic and component coverage                                                   |
+
+### Already in the tree (1)
+
+| Upstream    | Title                                                             | Where it lives                                                                                          |
+| ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ec5ede5e6` | fix(web): open video attachment thumbnails in the viewer (#11734) | `MessagesTimeline.tsx` already opens attachments through `ctx.onFileOpen(file)` with an in-flight state |
+
+### Skipped (24)
+
+| Upstream    | Title                                                                                       | Why                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `8b1ea4dd2` | fix(desktop): restore Node discovery for WSL providers (#11741)                             | Ronin deliberately has no WSL backend                                                                          |
+| `ae67c5b81` | fix(release): stop npm from pruning the platform packages' shipped node_modules (#11750)    | depends on the scoped platform npm launcher packages that Ronin intentionally does not publish                 |
+| `05e3bcbc6` | fix(desktop): keep preview releases out of the nightly update changelog (#11753)            | upstream update surface is absent from this fork                                                               |
+| `f328db30d` | chore(server): keep the legacy service entry point to the npm package only (#11770)         | Ronin retains npm-service and archive compatibility                                                            |
+| `549d182aa` | feat(mobile): clone repositories in the background and gate the draft on the clone (#11774) | no mobile app in this repo                                                                                     |
+| `9d4bb550a` | fix(mobile): scale inline pills with Dynamic Type (#11792)                                  | same                                                                                                           |
+| `bcc20249c` | chore(deps): bump the Clerk stack to current releases (#11764)                              | Clerk cut                                                                                                      |
+| `0f21fcbb6` | feat(mobile): add a T3 Connect page to the Clerk profile (#11765)                           | no mobile app and T3 Connect cut                                                                               |
+| `dc0869b60` | feat(server): use Clerk's device authorization grant for headless connect login (#11794)    | Clerk and T3 Connect cut                                                                                       |
+| `84192388b` | Add new GitHub user f-trycua                                                                | upstream governance file                                                                                       |
+| `9a49d6d5a` | ci(desktop): sign fork PR macOS previews without exposing signing secrets (#11760)          | depends on upstream Clerk/relay/WSL release governance; adopting it would require a separate operations design |
+| `ea6af5924` | feat(mobile): redesign the Android agent activity card (#11645)                             | no mobile app in this repo                                                                                     |
+| `6dbea7ed0` | chore(mobile): bump app version to 1.2.0                                                    | same                                                                                                           |
+| `e9b055588` | Remove labels from effect service conventions                                               | Macroscope governance prompt, not product or contributor documentation                                         |
+| `537dc0fe1` | Remove labels from ui-consistency.md                                                        | same                                                                                                           |
+| `970a8730e` | Change conclusion status from failure to neutral                                            | same                                                                                                           |
+| `8b9f6d3d5` | Change conclusion from 'failure' to 'neutral'                                               | same                                                                                                           |
+| `26b8f985d` | feat(mobile): add iPad keyboard shortcuts and command palette (#11679)                      | no mobile app in this repo                                                                                     |
+| `6ecc15fa2` | fix(mobile): restrict row highlighting to pointer input (#11863)                            | same                                                                                                           |
+| `50ff4c371` | fix(mobile): ensure a compatible native client before verification (#11862)                 | same                                                                                                           |
+| `e33b710d5` | fix(mobile): match command palette colors to sheets (#11861)                                | same                                                                                                           |
+| `d1790aa14` | fix(mobile): add missing thread rename action (#11503)                                      | same                                                                                                           |
+| `caf8b5d79` | fix(mobile): wait for thread deep link hydration (#11502)                                   | same                                                                                                           |
+| `d07ffbe35` | fix(mobile): keep iOS chat rows aligned after measurement (#11813)                          | same                                                                                                           |
+
+### Verification
+
+- `vp i --frozen-lockfile` succeeds after adding only the web calendar dependency needed for
+  custom snooze controls.
+- All six applicable scoped typechecks pass: server, web, desktop, client runtime, contracts and
+  shared. Their existing non-blocking Effect suggestions remain informational.
+- `vp test run` over every changed or added test passes: **63 files / 1,957 tests**.
+- Changed-file lint completes with no diagnostics; `vp fmt --check` over **189** matched files and
+  `git diff --check` pass.
+- React Doctor's required changed-scope scan completes at **50/100**. A clean-checkout reference
+  scan scores 8/100 (and falls back to the full 1,146-file surface because it has no changed files),
+  so the port does not regress the audit; the remaining findings are the fork's established large-
+  component/compiler backlog.
+- The 59-commit ledger matches the frozen range: **34 ported, 1 already present and 24 skipped**.
+
+**Hit every applicable surface:** desktop Electron/preload/build, web chat/sidebar/settings/command
+palette/keybindings/pull requests/diffs, server orchestration/projections/persistence/provider/source
+control/preview/CLI, wire contracts, client runtime, shared helpers, local and remote environments,
+reverse clone/snooze/setup states, and user/operations docs. Mobile, WSL, Clerk/T3 Connect, updater,
+scoped npm launchers, Macroscope governance and upstream-only signing infrastructure remain
+deliberately cut.
+
+### Not tested
+
+- No live client or browser automation was run, per `AGENTS.md`; user-visible behavior has focused
+  unit, type, lint, formatting and React static-analysis coverage.
+- No real provider process, remote host, repository clone, preview host, GitHub mutation, signed
+  release or platform accessibility capture was exercised against external systems.

@@ -11,6 +11,7 @@ import {
   type WorkLogEntry,
 } from "../../session-logic";
 import { type ChatMessage, type ProposedPlan, type TurnDiffSummary } from "../../types";
+import type { QueuedComposerMessage } from "../../queuedMessageStore";
 import {
   type MessageId,
   type OrchestrationLatestTurn,
@@ -256,8 +257,18 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string | null;
       snapshot: WorktreeSetupSnapshot;
+      /** The agent already started; render only the script row under the live turn. */
+      embedded: boolean;
     }
-  | { kind: "working"; id: string; createdAt: string | null };
+  | { kind: "working"; id: string; createdAt: string | null }
+  | {
+      kind: "queued-message";
+      id: string;
+      createdAt: string;
+      queuedMessage: QueuedComposerMessage;
+      /** Oldest queued message, the one the next boundary sends. */
+      isNext: boolean;
+    };
 
 export interface StableMessagesTimelineRowsState {
   byId: Map<string, MessagesTimelineRow>;
@@ -606,6 +617,10 @@ export function deriveMessagesTimelineRows(input: {
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   liveAgentTaskIds?: ReadonlySet<string> | undefined;
   worktreeSetup?: WorktreeSetupSnapshot | null;
+  /** Messages sent during the running turn, rendered after the live rows. */
+  queuedMessages?: ReadonlyArray<QueuedComposerMessage>;
+  /** Retained for callers spanning rollback-capability version skew. */
+  supportsConversationRollback?: boolean;
 }): MessagesTimelineRow[] {
   const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>();
   for (const summary of input.turnDiffSummaries) {
@@ -827,12 +842,18 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
-  if (input.worktreeSetup) {
+  const setupHandedOff =
+    input.worktreeSetup !== null &&
+    input.worktreeSetup !== undefined &&
+    worktreeSetupAgentStarted(input.worktreeSetup) &&
+    input.latestTurn?.startedAt != null;
+  if (input.worktreeSetup && !setupHandedOff) {
     const setupRow = {
       kind: "worktree-setup",
       id: WORKTREE_SETUP_ROW_ID,
       createdAt: input.worktreeSetup.startedAt,
       snapshot: input.worktreeSetup,
+      embedded: false,
     } as const;
     const firstUserRowIndex = nextRows.findIndex(
       (row) => row.kind === "message" && row.message.role === "user",
@@ -842,15 +863,7 @@ export function deriveMessagesTimelineRows(input: {
     } else {
       nextRows.push(setupRow);
     }
-    if (input.worktreeSetup.phase === "running") return nextRows;
-    if (input.isWorking) {
-      nextRows.splice(firstUserRowIndex >= 0 ? firstUserRowIndex + 2 : nextRows.length, 0, {
-        kind: "working",
-        id: "working-indicator-row",
-        createdAt: input.activeTurnStartedAt,
-      });
-      return nextRows;
-    }
+    return nextRows;
   }
 
   if (input.isWorking) {
@@ -861,10 +874,46 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
+  const setupScriptStage = input.worktreeSetup?.stages.find((stage) => stage.id === "setup-script");
+  if (
+    input.worktreeSetup &&
+    setupHandedOff &&
+    (setupScriptStage?.status === "running" || setupScriptStage?.status === "failed")
+  ) {
+    const setupRow = {
+      kind: "worktree-setup",
+      id: WORKTREE_SETUP_ROW_ID,
+      createdAt: input.worktreeSetup.startedAt,
+      snapshot: input.worktreeSetup,
+      embedded: true,
+    } as const;
+    const workingRowIndex = nextRows.findIndex((row) => row.kind === "working");
+    if (workingRowIndex >= 0) {
+      nextRows.splice(workingRowIndex + 1, 0, setupRow);
+    } else {
+      nextRows.push(setupRow);
+    }
+  }
+
+  input.queuedMessages?.forEach((queuedMessage, index) => {
+    nextRows.push({
+      kind: "queued-message",
+      id: `queued-message:${queuedMessage.id}`,
+      createdAt: queuedMessage.createdAt,
+      queuedMessage,
+      isNext: index === 0,
+    });
+  });
+
   return nextRows;
 }
 
 export const WORKTREE_SETUP_ROW_ID = "worktree-setup-row";
+
+/** True once the bootstrap handed off to the agent (async setup script may still run). */
+export function worktreeSetupAgentStarted(snapshot: WorktreeSetupSnapshot): boolean {
+  return snapshot.stages.some((stage) => stage.id === "agent" && stage.status === "done");
+}
 
 type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
 
@@ -969,7 +1018,12 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return a.createdAt === (b as typeof a).createdAt;
 
     case "worktree-setup":
-      return a.snapshot === (b as typeof a).snapshot;
+      return a.snapshot === (b as typeof a).snapshot && a.embedded === (b as typeof a).embedded;
+
+    case "queued-message": {
+      const bq = b as typeof a;
+      return a.queuedMessage === bq.queuedMessage && a.isNext === bq.isNext;
+    }
 
     case "turn-fold": {
       const bf = b as typeof a;

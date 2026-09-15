@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { useComposerMenuProps } from "./chat/composerEventScope";
 
 export const PREVIOUS_WORKTREE_SELECT_VALUE = "previous-worktree";
 
@@ -36,6 +37,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
   previousWorktreeLabel,
   onUsePreviousWorktree,
 }: BranchToolbarEnvModeSelectorProps) {
+  const composerFloatingLayerProps = useComposerMenuProps();
   const showPreviousWorktree = Boolean(previousWorktreeLabel && onUsePreviousWorktree);
   const envModeItems = useMemo(
     () => [
@@ -92,6 +94,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
         size="xs"
         className="min-w-0 shrink font-medium"
         aria-label="Workspace"
+        data-composer-shortcut="composer.workspace"
         data-composer-context-control
       >
         {effectiveEnvMode === "worktree" ? (
@@ -113,7 +116,7 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
           </span>
         </span>
       </SelectTrigger>
-      <SelectPopup>
+      <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
         <SelectGroup>
           <SelectGroupLabel>Workspace</SelectGroupLabel>
           <SelectItem value="local">

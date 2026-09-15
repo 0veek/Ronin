@@ -30,8 +30,7 @@ interface ComposerPrimaryActionsProps {
   isPreparingWorktree: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
-  /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
-   * be the only primary action and a running turn could not be steered. */
+  /** Enter-to-send is disabled on mobile, so a running turn still needs a send control. */
   showSendWhileRunning?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
@@ -255,7 +254,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                 ? "Preparing worktree"
                 : isSendBusy
                   ? "Sending"
-                  : "Send message"
+                  : isRunning
+                    ? "Queue message"
+                    : "Send message"
       }
     >
       {stageBackdropVariant ? (
@@ -319,6 +320,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
+  // While a turn runs, a sendable draft queues for the next tool boundary, so
+  // the send button stays next to Stop on every viewport.
   return (
     // The mic stays through a running turn. Dictation composes the *next*
     // message, which is exactly what people do while an agent works, and a

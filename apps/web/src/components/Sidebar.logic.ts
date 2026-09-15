@@ -10,6 +10,10 @@ import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/c
 import type { AsyncResult } from "effect/unstable/reactivity";
 import { planPinnedReorder } from "@t3tools/client-runtime/state/thread-sort";
 import {
+  effectiveSnoozed,
+  type ThreadSnoozeShell,
+} from "@t3tools/client-runtime/state/thread-settled";
+import {
   getThreadSortTimestamp,
   resolveSettledThreadTimestamp,
   sortThreads,
@@ -34,6 +38,22 @@ export const SIDEBAR_THREAD_PREWARM_LIMIT = 3;
 // A small buffer keeps the next few rows warm without leasing every row that
 // content-visibility leaves mounted below the scroll viewport.
 export const SIDEBAR_ROW_SUBSCRIPTION_OVERSCAN_PX = 160;
+
+export function shouldNavigateAfterThreadPark(input: {
+  readonly threadKey: string;
+  readonly currentThreadKey: string | null;
+  readonly action: "settle" | "snooze";
+  readonly now: string;
+  readonly thread: (ThreadSnoozeShell & Pick<SidebarThreadSummary, "settledOverride">) | null;
+}): boolean {
+  return (
+    input.threadKey === input.currentThreadKey &&
+    input.thread !== null &&
+    (input.action === "settle"
+      ? input.thread.settledOverride === "settled"
+      : effectiveSnoozed(input.thread, { now: input.now }))
+  );
+}
 
 export function useSidebarRowSubscriptionLease(isActive: boolean): {
   readonly leaseLiveStatus: boolean;

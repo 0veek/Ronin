@@ -1,4 +1,5 @@
 import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -18,6 +19,7 @@ import {
   ArrowUpRightIcon,
   BookOpenIcon,
   CircleDotIcon,
+  CopyIcon,
   ChevronDownIcon,
   ExternalLinkIcon,
   FileDiffIcon,
@@ -46,6 +48,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -55,7 +58,14 @@ import {
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useClientSettings } from "~/hooks/useSettings";
-import { useCopyToClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { isCommandPaletteOpen } from "~/commandPaletteBus";
+import {
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+  type ShortcutMatchContext,
+} from "~/keybindings";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 import { changeRequestRepositoryUrl, gitHubPullRequestBrowserUrl } from "~/lib/openPullRequestLink";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -99,6 +109,7 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
+  MenuShortcut,
   MenuTrigger,
 } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -451,6 +462,8 @@ function PullRequestBaseFreshnessWarning({
 
 export function PullRequestDetailPanel({
   environmentId,
+  shortcutsEnabled,
+  getShortcutContext,
   threadRef = null,
   reference: requestedReference,
   refreshToken: forcedRefreshToken = 0,
@@ -464,6 +477,8 @@ export function PullRequestDetailPanel({
   onSelectPullRequest,
 }: {
   environmentId: EnvironmentId;
+  shortcutsEnabled: boolean;
+  getShortcutContext: () => ShortcutMatchContext;
   onSelectPullRequest?: ((reference: PullRequestRef) => void) | undefined;
   /**
    * The thread this panel sits beside, if any. Links that are not the pull
@@ -716,6 +731,32 @@ export function PullRequestDetailPanel({
           },
     [activity, coreDetail],
   );
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const { copyToClipboard: copyReference } = useCopyToClipboard<string>({
+    target: "pull request reference",
+    onCopy: (label) => toastManager.add({ type: "success", title: `${label} copied` }),
+    onError: (error, label) =>
+      toastManager.add({
+        type: "error",
+        title: `Failed to copy ${label}`,
+        description: error.message,
+      }),
+  });
+  const copyFromShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (!shortcutsEnabled || event.defaultPrevented || isCommandPaletteOpen()) return;
+    const command = resolveShortcutCommand(event, keybindings, {
+      context: getShortcutContext(),
+    });
+    if (command !== "pullRequest.copyNumber") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) copyReference(`#${reference.number}`, "PR number");
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => copyFromShortcut(event);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
   useEffect(() => {
     if (detail?.autoMergeMethod !== undefined) setMergeMethod(detail.autoMergeMethod);
   }, [detail?.autoMergeMethod, pullRequestKey]);
@@ -2059,9 +2100,19 @@ export function PullRequestDetailPanel({
                     <ArrowUpRightIcon className="size-3.5" />
                     {openOnHostLabel(detail.provider)}
                   </MenuItem>
-                  <MenuItem onClick={() => void writeTextToClipboard(detail.url)}>
+                  <MenuItem onClick={() => copyReference(detail.url, "PR link")}>
                     <LinkIcon className="size-3.5" />
                     Copy link
+                    <MenuShortcut>
+                      {shortcutLabelForCommand(keybindings, "thread.copyReference")}
+                    </MenuShortcut>
+                  </MenuItem>
+                  <MenuItem onClick={() => copyReference(`#${reference.number}`, "PR number")}>
+                    <CopyIcon className="size-3.5" />
+                    Copy PR number
+                    <MenuShortcut>
+                      {shortcutLabelForCommand(keybindings, "pullRequest.copyNumber")}
+                    </MenuShortcut>
                   </MenuItem>
                   {/* Only where the button row could not take it, so it is never offered twice. */}
                   {conflicting && primaryAction !== "resolve" ? (

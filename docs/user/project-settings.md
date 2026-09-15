@@ -20,6 +20,12 @@ each checkout in the project group and appears on your connected clients.
 
 To use automatic detection again, select **Automatic**.
 
+Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
+
+When no image is found, web and desktop show a two-character monogram with a color
+from the icon palette, derived from the saved project name. For example, `Nebula` becomes `NA`,
+`Silver Orchard` becomes `SO`, and `M7 Forge` becomes `M7`.
+
 ## Keep the default branch current
 
 Turn on **Automatically pull** in a project's settings to keep its default-branch checkout current.

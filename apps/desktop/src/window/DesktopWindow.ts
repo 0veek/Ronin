@@ -238,6 +238,16 @@ export const MACOS_TITLEBAR_CONTENT_INSET =
   TRAFFIC_LIGHT_BUTTON_SIZE +
   TRAFFIC_LIGHT_CONTENT_GAP;
 
+function syncMacosWindowButtons(window: Electron.BrowserWindow): void {
+  if (window.isDestroyed() || window.isFullScreen()) return;
+  window.setWindowButtonPosition({
+    x: TRAFFIC_LIGHT_INSET_X,
+    y: Math.round(
+      (TITLEBAR_HEIGHT * window.webContents.getZoomFactor() - TRAFFIC_LIGHT_BUTTON_SIZE - 4) / 2,
+    ),
+  });
+}
+
 export function concealPendingQuitWindow(
   window: Pick<
     Electron.BrowserWindow,
@@ -713,6 +723,7 @@ export const make = Effect.gen(function* () {
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, true);
       });
       window.on("leave-full-screen", () => {
+        syncMacosWindowButtons(window);
         window.webContents.send(WINDOW_FULLSCREEN_STATE_CHANNEL, false);
       });
     }
@@ -782,6 +793,7 @@ export const make = Effect.gen(function* () {
       loadRetryIndex = 0;
       rendererLoadFailed = false;
       window.setTitle(environment.displayName);
+      if (environment.platform === "darwin") syncMacosWindowButtons(window);
     });
     window.webContents.on(
       "did-fail-load",
@@ -1053,6 +1065,7 @@ export const make = Effect.gen(function* () {
       webContents.setZoomLevel(
         direction === "reset" ? 0 : webContents.getZoomLevel() + (direction === "in" ? 0.5 : -0.5),
       );
+      if (environment.platform === "darwin") syncMacosWindowButtons(window.value);
       // Chromium pushes the new level down to embedded guests, which would zoom
       // the previewed page along with the app UI. The preview browser keeps its
       // own zoom, so put each guest back where the preview left it.

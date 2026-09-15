@@ -1,4 +1,5 @@
 import { formatAppDisplayName } from "@t3tools/shared/appDisplayName";
+import type { OtlpProtocol } from "@t3tools/shared/observability";
 import type {
   DesktopAppBranding,
   DesktopAppStageLabel,
@@ -65,6 +66,8 @@ export class DesktopEnvironment extends Context.Service<
     readonly commitHashOverride: Option.Option<string>;
     readonly otlpTracesUrl: Option.Option<string>;
     readonly otlpExportIntervalMs: number;
+    readonly otlpHeaders: Option.Option<Record<string, string>>;
+    readonly otlpProtocol: OtlpProtocol;
     readonly branding: DesktopAppBranding;
     readonly displayName: string;
     readonly appUserModelId: string;
@@ -228,6 +231,8 @@ const make = Effect.fn("desktop.environment.make")(function* (
     commitHashOverride: config.commitHashOverride,
     otlpTracesUrl: config.otlpTracesUrl,
     otlpExportIntervalMs: config.otlpExportIntervalMs,
+    otlpHeaders: config.otlpHeaders,
+    otlpProtocol: config.otlpProtocol,
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>

@@ -28,6 +28,9 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
             variant="ghost"
             className="shrink-0 px-2 text-muted-foreground/70 hover:text-foreground/80"
             aria-label="More composer controls"
+            data-composer-shortcut={
+              props.traitsMenuContent ? "composer.mode composer.effort" : "composer.mode"
+            }
           />
         }
       >

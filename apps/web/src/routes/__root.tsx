@@ -18,6 +18,7 @@ import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL, APP_VERSION } from ".
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
 import { WorkspaceShell } from "../components/shell/WorkspaceShell";
 import { CommandPalette } from "../components/CommandPalette";
+import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
@@ -28,6 +29,7 @@ import { AppUpdateNotification } from "../components/AppUpdateNotification";
 import { AppUpdateProvider } from "../components/AppUpdateProvider";
 import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
+import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useDefaultThemeAdoption } from "../hooks/useDefaultTheme";
@@ -182,7 +184,9 @@ function RootRouteView() {
           <SshPasswordPromptDialog />
           <SnapShotCoordinator />
           <ConfirmDialogHost />
+          <CustomSnoozeDialogHost />
           <SlowRpcRequestToastCoordinator />
+          <ProjectCloneToastCoordinator />
           <HostedStaticEnvironmentBootstrap />
           {primaryEnvironmentAuthenticated ? <EventRouter /> : null}
           {primaryEnvironmentAuthenticated ? <PlanAgentSelectionHeal /> : null}

@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
+import { useComposerMenuProps } from "./chat/composerEventScope";
 
 interface BranchToolbarEnvironmentSelectorProps {
   autoEnvironmentLabel?: string | undefined;
@@ -33,6 +34,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   availableEnvironments,
   onEnvironmentChange,
 }: BranchToolbarEnvironmentSelectorProps) {
+  const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment = useMemo(() => {
     return availableEnvironments.find((env) => env.environmentId === environmentId) ?? null;
   }, [availableEnvironments, environmentId]);
@@ -94,6 +96,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
         size="xs"
         className="min-w-0 max-w-full font-medium"
         aria-label="Run on"
+        data-composer-shortcut="composer.host"
         data-composer-context-control
       >
         {autoEnvironmentLabel ? (
@@ -116,7 +119,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
           </span>
         </span>
       </SelectTrigger>
-      <SelectPopup>
+      <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>
         <SelectGroup>
           <SelectGroupLabel>Run on</SelectGroupLabel>
           {onAutoEnvironment && (

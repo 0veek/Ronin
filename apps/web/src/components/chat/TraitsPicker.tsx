@@ -274,6 +274,7 @@ export interface TraitsMenuContentProps {
   planModeEnabled: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
+  isComposerOwned?: boolean;
 }
 
 export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
@@ -540,6 +541,7 @@ export const TraitsPicker = memo(function TraitsPicker({
   planModeEnabled,
   triggerVariant,
   triggerClassName,
+  isComposerOwned,
   ...persistence
 }: TraitsMenuContentProps & TraitsPersistence) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -598,6 +600,7 @@ export const TraitsPicker = memo(function TraitsPicker({
       <MenuTrigger
         render={
           <ComposerControl
+            data-composer-shortcut={isComposerOwned ? "composer.effort" : undefined}
             variant={triggerVariant ?? "ghost"}
             className={cn(
               isCodexStyle

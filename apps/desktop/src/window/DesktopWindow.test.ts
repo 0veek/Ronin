@@ -67,6 +67,7 @@ function makeFakeBrowserWindow() {
   const webContents = {
     copyImageAt: vi.fn(),
     getURL: vi.fn(() => "t3code-dev://app/"),
+    getZoomFactor: vi.fn(() => 1.2 ** zoomLevel),
     getZoomLevel: vi.fn(() => zoomLevel),
     setZoomLevel: vi.fn((level: number) => {
       zoomLevel = level;
@@ -113,6 +114,7 @@ function makeFakeBrowserWindow() {
     setOpacity: vi.fn(),
     setTitle: vi.fn(),
     setTitleBarOverlay: vi.fn(),
+    setWindowButtonPosition: vi.fn(),
     show: vi.fn(),
     webContents,
   };
@@ -135,6 +137,7 @@ function makeFakeBrowserWindow() {
     setAutoHideCursor: window.setAutoHideCursor,
     setFullScreen: window.setFullScreen,
     setOpacity: window.setOpacity,
+    setWindowButtonPosition: window.setWindowButtonPosition,
     webContentsListeners,
     windowListeners,
   };

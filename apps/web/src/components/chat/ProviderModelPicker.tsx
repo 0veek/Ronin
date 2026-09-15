@@ -19,6 +19,8 @@ import {
 } from "./providerIconUtils";
 import { shouldShowInstanceBadge, type ProviderInstanceEntry } from "../../providerInstances";
 import { ComposerControl, ComposerControlChevron } from "./ComposerControl";
+import { useComposerMenuProps } from "./composerEventScope";
+import { shortcutLabelForCommand } from "../../keybindings";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
@@ -40,11 +42,14 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   open?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
+  /** Aggregate settings can show a neutral value without claiming one model is selected. */
+  triggerLabel?: string;
   triggerAriaLabel?: string;
   onOpenChange?: (open: boolean) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
 }) {
+  const composerFloatingLayerProps = useComposerMenuProps();
   const [uncontrolledIsMenuOpen, setUncontrolledIsMenuOpen] = useState(false);
   const isMenuOpen = props.open ?? uncontrolledIsMenuOpen;
 
@@ -132,6 +137,13 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     setIsMenuOpen(false);
   };
 
+  const shortcutLabel = props.keybindings
+    ? shortcutLabelForCommand(props.keybindings, "modelPicker.toggle")
+    : null;
+  const triggerTooltipContent = shortcutLabel
+    ? `${props.triggerLabel ?? triggerLabel} · ${shortcutLabel}`
+    : (props.triggerLabel ?? triggerLabel);
+
   return (
     <Popover
       open={isMenuOpen}
@@ -178,7 +190,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             <TooltipTrigger render={<span className="min-w-0 flex-1 overflow-hidden truncate" />}>
               {triggerTitle}
             </TooltipTrigger>
-            <TooltipPopup side="top">{triggerLabel}</TooltipPopup>
+            <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>
           </Tooltip>
           {selectedModel?.isUnavailable ? (
             <Badge variant="outline" size="sm">
@@ -191,6 +203,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         </span>
       </PopoverTrigger>
       <PopoverPopup
+        {...(props.isComposerOwned ? composerFloatingLayerProps : {})}
         align="start"
         // ModelPickerContent draws its own frame, so the popover's
         // `surface-menu` fill, hairline and shadow all have to be stripped or

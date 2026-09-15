@@ -4,7 +4,7 @@ import type {
   DesktopPreviewTabState,
   DesktopSnapShotEvent,
 } from "@t3tools/contracts";
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webFrame } from "electron";
 
 import * as IpcChannels from "./ipc/channels.ts";
 
@@ -66,7 +66,9 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   getTitlebarContentInset: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_TITLEBAR_CONTENT_INSET_CHANNEL);
-    return typeof result === "number" ? result : null;
+    if (typeof result !== "number") return null;
+    const zoomFactor = webFrame.getZoomFactor();
+    return zoomFactor > 0 ? result / zoomFactor : result;
   },
   getLocalEnvironmentBootstraps: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_LOCAL_ENVIRONMENT_BOOTSTRAPS_CHANNEL);

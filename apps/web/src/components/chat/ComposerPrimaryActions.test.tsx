@@ -292,18 +292,11 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain("bg-message-action text-message-action-foreground");
   });
 
-  it("only renders stop while running when Enter-to-send is available", () => {
-    const markup = renderRunningActions(false, true);
-
-    expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
-  });
-
-  it("renders send alongside stop while running when Enter-to-send is unavailable", () => {
+  it("renders a queue action alongside stop while running with a sendable draft", () => {
     const markup = renderRunningActions(true, true);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).toContain('aria-label="Send message"');
+    expect(markup).toContain('aria-label="Queue message"');
     expect(markup).toContain('type="submit"');
     expect(markup).toContain("size-9 sm:size-8");
   });
@@ -312,7 +305,7 @@ describe("ComposerPrimaryActions", () => {
     const markup = renderRunningActions(true, false);
 
     expect(markup).toContain('aria-label="Stop generation"');
-    expect(markup).not.toContain('aria-label="Send message"');
+    expect(markup).not.toContain('aria-label="Queue message"');
   });
 });
 
