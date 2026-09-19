@@ -1,25 +1,19 @@
 import { ProjectId, type PullRequestSummary, type VcsStatusResult } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import {
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestDraftIcon,
-  GitPullRequestIcon,
-} from "lucide-react";
-
-import {
   ChangeRequestStatusIcon,
   prStatusIndicator,
-  settledPrHoverColorClass,
+  resolveThreadPullRequestBadgePresentation,
 } from "./ThreadStatusIndicators";
 import { newestPullRequestSummary } from "../state/pullRequests";
+import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
 
 describe("ChangeRequestStatusIcon", () => {
   it.each([
-    ["open", "open", false, GitPullRequestIcon],
-    ["draft", "open", true, GitPullRequestDraftIcon],
-    ["closed", "closed", false, GitPullRequestClosedIcon],
-    ["merged", "merged", false, GitMergeIcon],
+    ["open", "open", false, PullRequestGlyph.pullRequest],
+    ["draft", "open", true, PullRequestGlyph.draft],
+    ["closed", "closed", false, PullRequestGlyph.closed],
+    ["merged", "merged", false, PullRequestGlyph.merged],
   ] as const)("uses the %s pull request glyph", (_label, state, isDraft, expectedIcon) => {
     expect(ChangeRequestStatusIcon({ state, isDraft }).type).toBe(expectedIcon);
   });
@@ -119,18 +113,34 @@ describe("prStatusIndicator", () => {
   });
 });
 
-describe("settledPrHoverColorClass", () => {
-  it.each([
-    ["open", "text-vcs-open-foreground"],
-    ["merged", "text-vcs-merged-foreground"],
-    ["closed", "text-vcs-closed-foreground"],
-  ] as const)("restores the %s pull request color on row hover", (state, colorClass) => {
-    expect(settledPrHoverColorClass(state)).toContain(`group-hover/sidebar-row:${colorClass}`);
+describe("resolveThreadPullRequestBadgePresentation", () => {
+  it("returns the pending pull-request badge when no snapshot is available", () => {
+    expect(
+      resolveThreadPullRequestBadgePresentation({
+        badge: null,
+        number: 42,
+        url: "https://github.com/pingdotgg/t3code/pull/42",
+        status: null,
+      }),
+    ).toEqual({
+      Icon: PullRequestGlyph.pullRequest,
+      toneClassName: "text-muted-foreground",
+      label: "PR #42, status pending",
+      text: 42,
+    });
   });
 
-  it("keeps draft pull requests gray on row hover", () => {
-    expect(settledPrHoverColorClass("open", true)).toContain(
-      "group-hover/sidebar-row:text-vcs-draft-foreground",
-    );
+  it("uses the aggregate state for a pull request stack", () => {
+    expect(
+      resolveThreadPullRequestBadgePresentation({
+        badge: { kind: "stack", layers: 3, state: "merged" },
+        status: null,
+      }),
+    ).toEqual({
+      Icon: PullRequestGlyph.stack,
+      toneClassName: "text-vcs-merged-foreground",
+      label: "Stack of 3 pull requests, merged",
+      text: 3,
+    });
   });
 });

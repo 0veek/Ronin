@@ -12,14 +12,9 @@ import {
   CircleDashedIcon,
   CircleDotIcon,
   CircleXIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestDraftIcon,
-  GitPullRequestIcon,
-  TriangleAlertIcon,
   UserCheckIcon,
 } from "lucide-react";
-import { Children, isValidElement, type ReactNode } from "react";
+import { Children, isValidElement, type ReactNode, useState } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -27,12 +22,12 @@ import { DiffStatLabel } from "../chat/DiffStatLabel";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { PullRequestReviewOutcome } from "./pullRequestDetail.logic";
-
-interface StatePresentation {
-  readonly label: string;
-  readonly toneClassName: string;
-  readonly Icon: typeof GitPullRequestIcon;
-}
+import {
+  PULL_REQUEST_STATE_PRESENTATION,
+  PullRequestGlyph,
+  type PullRequestGlyphIcon,
+  type PullRequestStatePresentation,
+} from "./pullRequestIcons";
 
 export function PullRequestApprovalGlyph() {
   return (
@@ -60,47 +55,58 @@ export function PullRequestApprovalGlyph() {
 export function resolvePullRequestState(input: {
   readonly state: PullRequestState;
   readonly isDraft: boolean;
+}): PullRequestStatePresentation {
+  const key = input.state === "open" && input.isDraft ? "draft" : input.state;
+  return PULL_REQUEST_STATE_PRESENTATION[key];
+}
+
+export interface PullRequestConflictPresentation {
+  readonly label: string;
+  readonly toneClassName: string;
+  readonly Icon: PullRequestGlyphIcon;
+}
+
+export function resolvePullRequestConflict(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
   readonly mergeability?: PullRequestMergeability;
   readonly baseBranch?: string;
-}): StatePresentation {
-  if (input.state === "merged") {
-    return {
-      label: "Merged",
-      toneClassName: "text-vcs-merged-foreground",
-      Icon: GitMergeIcon,
-    };
-  }
-  if (input.state === "closed") {
-    return {
-      label: "Closed",
-      toneClassName: "text-vcs-closed-foreground",
-      Icon: GitPullRequestClosedIcon,
-    };
-  }
-  if (input.isDraft) {
-    return {
-      label: "Draft",
-      toneClassName: "text-vcs-draft-foreground",
-      Icon: GitPullRequestDraftIcon,
-    };
-  }
-  if (input.mergeability === "conflicting") {
-    return {
-      // "Has conflicts" leaves out the one thing a reader wants when the warning triangle catches
-      // their eye, so name the branch it collides with wherever the caller knows it.
-      label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
-      toneClassName: "text-destructive",
-      Icon: TriangleAlertIcon,
-    };
-  }
+}): PullRequestConflictPresentation | null {
+  if (input.state !== "open" || input.isDraft || input.mergeability !== "conflicting") return null;
   return {
-    label: "Open",
-    toneClassName: "text-vcs-open-foreground",
-    Icon: GitPullRequestIcon,
+    label: input.baseBranch ? `Conflicts with ${input.baseBranch}` : "Has conflicts",
+    toneClassName: "text-destructive",
+    Icon: PullRequestGlyph.conflicting,
   };
 }
 
 export function PullRequestStateGlyph({
+  state,
+  isDraft,
+  className,
+}: {
+  state: PullRequestState;
+  isDraft: boolean;
+  className?: string;
+}) {
+  const presentation = resolvePullRequestState({ state, isDraft });
+  return (
+    <Tooltip>
+      {/* The list row is itself a button, so the trigger stays a span: an interactive one would
+          nest a control inside that button and steal the row's click target. */}
+      <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
+        <presentation.Icon
+          role="img"
+          aria-label={presentation.label}
+          className={cn("size-4 shrink-0", presentation.toneClassName, className)}
+        />
+      </TooltipTrigger>
+      <TooltipPopup>{presentation.label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+export function PullRequestConflictGlyph({
   state,
   isDraft,
   mergeability,
@@ -113,16 +119,15 @@ export function PullRequestStateGlyph({
   baseBranch?: string;
   className?: string;
 }) {
-  const presentation = resolvePullRequestState({
+  const presentation = resolvePullRequestConflict({
     state,
     isDraft,
-    ...(mergeability ? { mergeability } : {}),
-    ...(baseBranch ? { baseBranch } : {}),
+    ...(mergeability === undefined ? {} : { mergeability }),
+    ...(baseBranch === undefined ? {} : { baseBranch }),
   });
+  if (presentation === null) return null;
   return (
     <Tooltip>
-      {/* The list row is itself a button, so the trigger stays a span: an interactive one would
-          nest a control inside that button and steal the row's click target. */}
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
         <presentation.Icon
           role="img"
@@ -351,8 +356,9 @@ export function PullRequestActorAvatar({
 }) {
   const login = actor?.login ?? "ghost";
   const avatarUrl = actor?.avatarUrl ?? null;
-  return avatarUrl === null ? (
-    // Not every host reports an avatar, so the initial stands in where none arrives.
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  return avatarUrl === null || failedAvatarUrl === avatarUrl ? (
+    // Not every host reports an avatar, and a private host may refuse the browser's request.
     <span
       aria-hidden
       className={cn(
@@ -369,6 +375,7 @@ export function PullRequestActorAvatar({
       src={avatarUrl}
       loading="lazy"
       className={cn("size-4 shrink-0 rounded-full bg-muted object-cover", className)}
+      onError={() => setFailedAvatarUrl(avatarUrl)}
     />
   );
 }

@@ -850,10 +850,12 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
             title="Project icon"
             description={
               projectIcon?.kind === "lucide"
-                ? `${projectIcon.monogram ?? projectIcon.name} · ${projectIcon.color}`
-                : projectIcon?.kind === "emoji"
-                  ? projectIcon.emoji
-                  : (faviconPath ?? "Automatic")
+                ? `${projectIcon.name} · ${projectIcon.color}`
+                : projectIcon?.kind === "monogram"
+                  ? `${projectIcon.text} · ${projectIcon.color}`
+                  : projectIcon?.kind === "emoji"
+                    ? projectIcon.emoji
+                    : (faviconPath ?? "Automatic")
             }
             resetAction={
               faviconPath !== null || projectIcon !== null ? (

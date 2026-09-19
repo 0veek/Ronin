@@ -350,6 +350,7 @@ export const make = (
     const activePromptFiberRef = yield* Ref.make<
       Option.Option<Fiber.Fiber<EffectAcpSchema.PromptResponse, EffectAcpErrors.AcpError>>
     >(Option.none());
+    const assistantUpdatesOpenRef = yield* Ref.make(true);
     const sessionLoadGateRef = yield* Ref.make<Option.Option<SessionLoadGate>>(Option.none());
 
     const logRequest = (event: AcpSessionRequestLogEvent) =>
@@ -448,6 +449,13 @@ export const make = (
         if (
           startState._tag !== "Started" ||
           notification.sessionId !== startState.result.sessionId
+        ) {
+          return;
+        }
+        if (
+          !(yield* Ref.get(assistantUpdatesOpenRef)) &&
+          (notification.update.sessionUpdate === "agent_message_chunk" ||
+            notification.update.sessionUpdate === "agent_thought_chunk")
         ) {
           return;
         }
@@ -781,6 +789,13 @@ export const make = (
       getEvents: () => Stream.fromQueue(eventQueue),
       drainEvents: Effect.gen(function* () {
         const acknowledge = yield* Deferred.make<void>();
+        if (Option.isNone(yield* Ref.get(activePromptFiberRef))) {
+          yield* Ref.set(assistantUpdatesOpenRef, false);
+          yield* closeActiveAssistantSegment({
+            queue: eventQueue,
+            assistantSegmentRef,
+          });
+        }
         yield* Queue.offer(eventQueue, {
           _tag: "EventStreamBarrier",
           acknowledge,
@@ -793,6 +808,7 @@ export const make = (
         promptSerializationSemaphore.withPermit(
           Effect.gen(function* () {
             const started = yield* getStartedState;
+            yield* Ref.set(assistantUpdatesOpenRef, true);
             yield* closeActiveAssistantSegment({
               queue: eventQueue,
               assistantSegmentRef,

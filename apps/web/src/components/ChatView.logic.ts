@@ -84,7 +84,8 @@ export function resolveVisibleWorktreeSetup(input: {
   live: WorktreeSetupSnapshot | null;
   recorded: WorktreeSetupSnapshot | null;
   turnStarted: boolean;
-  isWorking: boolean;
+  /** The user sent a message after the one that created the worktree. */
+  followUpSent: boolean;
 }): WorktreeSetupSnapshot | null {
   const snapshot =
     input.live && (!input.recorded || input.live.sequence >= input.recorded.sequence)
@@ -92,10 +93,10 @@ export function resolveVisibleWorktreeSetup(input: {
       : input.recorded;
   if (!snapshot) return null;
   if (snapshot.phase === "running") return snapshot;
+  if (input.followUpSent) return null;
   if (snapshot.phase !== "done") return snapshot;
   if (!input.turnStarted) return snapshot;
-  const stageFailed = snapshot.stages.some((stage) => stage.status === "failed");
-  return stageFailed && input.isWorking ? snapshot : null;
+  return snapshot.stages.some((stage) => stage.status === "failed") ? snapshot : null;
 }
 
 export function agentControlledBrowserCloseConfirmation(

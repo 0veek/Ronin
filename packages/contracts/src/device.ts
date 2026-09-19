@@ -340,6 +340,7 @@ export class DeviceHostUnavailableError extends Schema.TaggedErrorClass<DeviceHo
   {
     hostId: DeviceHostId,
     reason: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {
@@ -527,6 +528,7 @@ export class DeviceToolUnavailableError extends Schema.TaggedErrorClass<DeviceTo
   "DeviceToolUnavailableError",
   {
     reason: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {

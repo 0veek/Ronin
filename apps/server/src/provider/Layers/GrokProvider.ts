@@ -16,9 +16,10 @@ import {
   ProviderDriverKind,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
 import type * as EffectAcpErrors from "effect-acp/errors";
-import type * as EffectAcpSchema from "effect-acp/schema";
+import * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -26,6 +27,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { HttpClient } from "effect/unstable/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
@@ -54,6 +56,35 @@ import {
   resolveGrokAcpBaseModelId,
 } from "../acp/GrokAcpSupport.ts";
 import { discoverGrokSkills } from "../Drivers/GrokSkills.ts";
+
+const decodeAvailableCommands = Schema.decodeUnknownOption(Schema.Array(Schema.Unknown));
+const decodeAvailableCommand = Schema.decodeUnknownOption(EffectAcpSchema.AvailableCommand);
+
+export function grokSlashCommandsFromInitialize(
+  initialized: EffectAcpSchema.InitializeResponse,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const commands = decodeAvailableCommands(initialized._meta?.availableCommands);
+  const byName = new Map<string, ServerProviderSlashCommand>([
+    [COMPACT_SLASH_COMMAND.name, COMPACT_SLASH_COMMAND],
+  ]);
+  for (const entry of Option.getOrElse(commands, () => [])) {
+    const decoded = decodeAvailableCommand(entry);
+    if (Option.isNone(decoded)) continue;
+    const command = decoded.value;
+    const name = command.name.trim();
+    if (!name || name.toLowerCase() === "always-approve" || name.toLowerCase() === "context") {
+      continue;
+    }
+    const description = command.description.trim();
+    const hint = command.input?.hint.trim();
+    byName.set(name, {
+      name,
+      ...(description ? { description } : {}),
+      ...(hint ? { input: { hint } } : {}),
+    });
+  }
+  return [...byName.values()];
+}
 
 const GROK_DRIVER_KIND = ProviderDriverKind.make("grok");
 
@@ -285,6 +316,7 @@ type GrokAcpProbe =
   | {
       readonly _tag: "ready";
       readonly models: ReadonlyArray<ServerProviderModel>;
+      readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
       readonly authLabel: string | undefined;
     }
   | { readonly _tag: "unauthenticated"; readonly detail: string };
@@ -317,6 +349,7 @@ const probeGrokViaAcp = (
     return {
       _tag: "ready",
       models: buildGrokDiscoveredModelsFromSessionModelState(started.sessionSetupResult.models),
+      slashCommands: grokSlashCommandsFromInitialize(started.initializeResult),
       authLabel: authMethodId ? describeGrokAuthMethod(authMethodId) : undefined,
     } as const;
   }).pipe(
@@ -512,7 +545,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     checkedAt,
     models,
     skills,
-    slashCommands: [COMPACT_SLASH_COMMAND],
+    slashCommands: probe.slashCommands,
     probe: {
       installed: true,
       version,

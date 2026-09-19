@@ -14,7 +14,6 @@ import {
   CircleXIcon,
   EyeOffIcon,
   FolderGit2Icon,
-  GitPullRequestDraftIcon,
   LayersIcon,
   ListFilterIcon,
   LoaderIcon,
@@ -52,6 +51,7 @@ import {
   type PullRequestLabelFacet,
 } from "./pullRequestList.logic";
 import { PullRequestActorAvatar } from "./pullRequestPresentation";
+import { PullRequestGlyph } from "./pullRequestIcons";
 
 export interface PullRequestFilterOption<Value extends string> {
   readonly value: Value;
@@ -159,7 +159,7 @@ const ALL_SERVERS_VALUE = "";
 const UNFILTERED_VALUE = "all";
 const DRAFT_OPTIONS = [
   { value: UNFILTERED_VALUE, label: "All", Icon: LayersIcon },
-  { value: "only", label: "Drafts only", Icon: GitPullRequestDraftIcon },
+  { value: "only", label: "Drafts only", Icon: PullRequestGlyph.draft },
   { value: "hide", label: "Hide drafts", Icon: EyeOffIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<string>>;
 

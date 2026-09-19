@@ -2,6 +2,41 @@ import "vite-plus/test/config";
 import { defineConfig } from "vite-plus";
 import * as NodeURL from "node:url";
 
+const RESTRICTED_IMPORT_PATHS = [
+  {
+    name: "@t3tools/client-runtime",
+    message:
+      "Import from an explicit @t3tools/client-runtime/* subpath. The package has no root export.",
+  },
+  {
+    name: "@pierre/diffs/react",
+    importNames: ["CodeView"],
+    message: "Use StyledDiffCodeView so web diff surfaces share styling and virtualized geometry.",
+  },
+];
+
+const RESTRICTED_PULL_REQUEST_GLYPH_IMPORTS = {
+  name: "lucide-react",
+  importNames: [
+    "GitMerge",
+    "GitMergeIcon",
+    "GitPullRequest",
+    "GitPullRequestIcon",
+    "GitPullRequestArrow",
+    "GitPullRequestArrowIcon",
+    "GitPullRequestClosed",
+    "GitPullRequestClosedIcon",
+    "GitPullRequestDraft",
+    "GitPullRequestDraftIcon",
+    "GitPullRequestCreate",
+    "GitPullRequestCreateIcon",
+    "GitPullRequestCreateArrow",
+    "GitPullRequestCreateArrowIcon",
+  ],
+  message:
+    "Pick a glyph by meaning from PullRequestGlyph in apps/web/src/components/pullRequest/pullRequestIcons.tsx.",
+};
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -103,21 +138,7 @@ export default defineConfig({
       "typescript/unbound-method": "off",
       "eslint/no-restricted-imports": [
         "error",
-        {
-          paths: [
-            {
-              name: "@t3tools/client-runtime",
-              message:
-                "Import from an explicit @t3tools/client-runtime/* subpath. The package has no root export.",
-            },
-            {
-              name: "@pierre/diffs/react",
-              importNames: ["CodeView"],
-              message:
-                "Use StyledDiffCodeView so web diff surfaces share styling and virtualized geometry.",
-            },
-          ],
-        },
+        { paths: [...RESTRICTED_IMPORT_PATHS, RESTRICTED_PULL_REQUEST_GLYPH_IMPORTS] },
       ],
       "t3code/no-global-process-runtime": "error",
       "t3code/no-inline-schema-compile": "warn",
@@ -130,6 +151,10 @@ export default defineConfig({
         // The one place that reads the host platform to seed the injected references.
         files: ["packages/shared/src/hostProcess.ts"],
         rules: { "t3code/no-global-process-runtime": "off" },
+      },
+      {
+        files: ["apps/web/src/components/pullRequest/pullRequestIcons.tsx"],
+        rules: { "eslint/no-restricted-imports": ["error", { paths: RESTRICTED_IMPORT_PATHS }] },
       },
       // Legacy manual Effect runners tracked as debt: no net-new occurrences.
       // Lower a ceiling when you migrate a file, and delete its entry at zero.

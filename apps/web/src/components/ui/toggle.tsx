@@ -32,6 +32,7 @@ const toggleVariants = cva(
       },
       variant: {
         default: "border-transparent",
+        pill: "rounded-full border-transparent px-3 font-normal text-muted-foreground data-pressed:text-foreground",
         ghost:
           "border-transparent text-foreground data-pressed:bg-accent data-pressed:text-accent-foreground disabled:opacity-100 disabled:text-muted-foreground disabled:[&_svg]:opacity-100",
         outline: "border-input bg-transparent dark:data-pressed:bg-input dark:hover:bg-input/64",

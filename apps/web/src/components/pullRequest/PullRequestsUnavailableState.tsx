@@ -1,6 +1,7 @@
-import { ExternalLinkIcon, GitPullRequestIcon, RefreshCwIcon } from "lucide-react";
+import { ExternalLinkIcon, RefreshCwIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
+import { PullRequestGlyph } from "./pullRequestIcons";
 import {
   Empty,
   EmptyContent,
@@ -24,7 +25,7 @@ export function PullRequestsUnavailableState({
   return (
     <Empty className="min-h-0 justify-center-safe overflow-y-auto px-4 py-16 md:px-4 [&>*]:shrink-0">
       <EmptyMedia variant="icon">
-        <GitPullRequestIcon />
+        <PullRequestGlyph.pullRequest />
       </EmptyMedia>
       <EmptyHeader>
         <EmptyTitle>{title}</EmptyTitle>

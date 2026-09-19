@@ -222,11 +222,14 @@ export function SettingsRow({
             // Focusable so keyboard users can still reach the explanation.
             <span
               tabIndex={0}
-              className="flex w-full items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring sm:w-auto"
+              className="flex w-full items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring @min-[32rem]/settings-row:w-auto"
             />
           }
         >
-          <div inert className="flex w-full items-center gap-2 opacity-50 sm:w-auto">
+          <div
+            inert
+            className="flex w-full items-center gap-2 opacity-50 @min-[32rem]/settings-row:w-auto"
+          >
             {control}
           </div>
         </TooltipTrigger>

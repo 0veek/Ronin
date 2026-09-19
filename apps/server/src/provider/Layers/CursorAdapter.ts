@@ -982,8 +982,9 @@ export function makeCursorAdapter(
           }
 
           const promptParts: Array<EffectAcpSchema.ContentBlock> = [];
-          if (input.input?.trim()) {
-            promptParts.push({ type: "text", text: input.input.trim() });
+          const rawPrompt = input.input?.trim() ?? "";
+          if (rawPrompt) {
+            promptParts.push({ type: "text", text: rawPrompt });
           }
           if (input.attachments && input.attachments.length > 0) {
             for (const attachment of input.attachments) {
@@ -1030,16 +1031,19 @@ export function makeCursorAdapter(
             });
           }
 
-          // ACP has no system-message field; keep runtime context separate from the user's text.
+          // ACP commands parse the complete text. Extra context can turn an exact
+          // command into an ordinary model prompt or change its arguments.
           const result = yield* ctx.acp
             .prompt({
-              prompt: [
-                ...promptParts,
-                {
-                  type: "text",
-                  text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
-                },
-              ],
+              prompt: /^\/[^\s/]+(?:\s|$)/.test(rawPrompt)
+                ? promptParts
+                : [
+                    ...promptParts,
+                    {
+                      type: "text",
+                      text: buildRuntimeInstructions({ harness: "Cursor", model: resolvedModel }),
+                    },
+                  ],
             })
             .pipe(
               Effect.mapError((error) =>

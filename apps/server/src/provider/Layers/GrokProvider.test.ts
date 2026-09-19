@@ -16,12 +16,36 @@ import {
   buildGrokDiscoveredModelsFromSessionModelState,
   buildInitialGrokProviderSnapshot,
   checkGrokProviderStatus,
+  grokSlashCommandsFromInitialize,
 } from "./GrokProvider.ts";
 
 const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const mockAgentPath = NodePath.join(__dirname, "../../../scripts/acp-mock-agent.ts");
+
+describe("grokSlashCommandsFromInitialize", () => {
+  it("publishes native commands while excluding permission and broken context overrides", () => {
+    const commands = grokSlashCommandsFromInitialize({
+      protocolVersion: 1,
+      _meta: {
+        availableCommands: [
+          { name: "compact", description: "Compress history", input: { hint: "what to preserve" } },
+          { name: "always-approve", description: "Skip permission prompts" },
+          { name: "context", description: "Show context usage", input: null },
+          { name: "deep-research", description: "Research", input: { hint: "<query>" } },
+        ],
+      },
+    });
+    expect(commands.map((command) => command.name)).toEqual(["compact", "deep-research"]);
+    expect(commands[0]?.input).toEqual({ hint: "what to preserve" });
+    expect(commands[1]).toEqual({
+      name: "deep-research",
+      description: "Research",
+      input: { hint: "<query>" },
+    });
+  });
+});
 
 /**
  * A `grok` stand-in that answers `--version` and `inspect` itself and hands

@@ -257,7 +257,7 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string | null;
       snapshot: WorktreeSetupSnapshot;
-      /** The agent already started; render only the script row under the live turn. */
+      /** The agent's turn is live, so the card drops its own header and settle-time actions. */
       embedded: boolean;
     }
   | { kind: "working"; id: string; createdAt: string | null }
@@ -847,52 +847,41 @@ export function deriveMessagesTimelineRows(input: {
     input.worktreeSetup !== undefined &&
     worktreeSetupAgentStarted(input.worktreeSetup) &&
     input.latestTurn?.startedAt != null;
-  if (input.worktreeSetup && !setupHandedOff) {
+  const setupRunning = !setupHandedOff && input.worktreeSetup?.phase === "running";
+  if (input.worktreeSetup && (!setupHandedOff || input.worktreeSetup.phase !== "running")) {
     const setupRow = {
       kind: "worktree-setup",
       id: WORKTREE_SETUP_ROW_ID,
       createdAt: input.worktreeSetup.startedAt,
       snapshot: input.worktreeSetup,
-      embedded: false,
+      embedded: setupHandedOff,
     } as const;
     const firstUserRowIndex = nextRows.findIndex(
       (row) => row.kind === "message" && row.message.role === "user",
     );
-    if (firstUserRowIndex >= 0) {
-      nextRows.splice(firstUserRowIndex + 1, 0, setupRow);
-    } else {
-      nextRows.push(setupRow);
-    }
-    return nextRows;
+    const insertAt = firstUserRowIndex >= 0 ? firstUserRowIndex + 1 : nextRows.length;
+    nextRows.splice(
+      insertAt,
+      0,
+      ...(setupRunning
+        ? [
+            {
+              kind: "working",
+              id: "working-indicator-row",
+              createdAt: input.worktreeSetup.startedAt,
+            } as const,
+            setupRow,
+          ]
+        : [setupRow]),
+    );
   }
 
-  if (input.isWorking) {
+  if (input.isWorking && !nextRows.some((row) => row.kind === "working")) {
     nextRows.push({
       kind: "working",
       id: "working-indicator-row",
       createdAt: input.activeTurnStartedAt,
     });
-  }
-
-  const setupScriptStage = input.worktreeSetup?.stages.find((stage) => stage.id === "setup-script");
-  if (
-    input.worktreeSetup &&
-    setupHandedOff &&
-    (setupScriptStage?.status === "running" || setupScriptStage?.status === "failed")
-  ) {
-    const setupRow = {
-      kind: "worktree-setup",
-      id: WORKTREE_SETUP_ROW_ID,
-      createdAt: input.worktreeSetup.startedAt,
-      snapshot: input.worktreeSetup,
-      embedded: true,
-    } as const;
-    const workingRowIndex = nextRows.findIndex((row) => row.kind === "working");
-    if (workingRowIndex >= 0) {
-      nextRows.splice(workingRowIndex + 1, 0, setupRow);
-    } else {
-      nextRows.push(setupRow);
-    }
   }
 
   input.queuedMessages?.forEach((queuedMessage, index) => {

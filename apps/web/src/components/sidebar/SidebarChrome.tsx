@@ -1,5 +1,6 @@
-import { ChartSplineIcon, GitPullRequestIcon, Settings2Icon, SquareKanbanIcon } from "lucide-react";
+import { ChartSplineIcon, Settings2Icon, SquareKanbanIcon } from "lucide-react";
 import { memo, useCallback, type ReactNode } from "react";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
@@ -240,7 +241,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
               label="Pull Requests"
               onClick={handlePullRequestsClick}
             >
-              <GitPullRequestIcon />
+              <PullRequestGlyph.pullRequest />
             </SidebarFooterIconButton>
           ) : null}
           <SidebarFooterIconButton

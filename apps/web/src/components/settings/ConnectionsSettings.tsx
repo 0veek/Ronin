@@ -1384,8 +1384,9 @@ function SavedBackendListRow({
   onRemove,
 }: SavedBackendListRowProps) {
   const environmentId = environment.environmentId;
-  const enabled = environment.entry.enabled;
   const connectionState = environment.connection.phase;
+  const unsupported = connectionState === "unsupported";
+  const enabled = environment.entry.enabled && !unsupported;
   const isConnected = connectionState === "connected";
   const stateDotClassName = !enabled
     ? "bg-muted-foreground/40"
@@ -1396,7 +1397,8 @@ function SavedBackendListRow({
         : connectionState === "error"
           ? "bg-destructive"
           : "bg-muted-foreground/40";
-  const statusTooltip = enabled ? connectionStatusText(environment.connection) : "Off";
+  const statusTooltip =
+    enabled || unsupported ? connectionStatusText(environment.connection) : "Off";
   const errorTraceId = environment.connection.traceId;
   const { copyToClipboard: copyTraceIdToClipboard } = useCopyToClipboard<{ traceId: string }>({
     target: "trace ID",
@@ -1435,11 +1437,11 @@ function SavedBackendListRow({
       : null;
   const metadataBits = [
     sshTarget ? `SSH ${formatDesktopSshTarget(sshTarget)}` : null,
-    enabled ? null : "Off",
+    unsupported ? "Client not supported" : enabled ? null : "Off",
   ].filter((value): value is string => value !== null);
 
   return (
-    <div className={cn(ITEM_ROW_CLASSNAME, !enabled && "opacity-60")}>
+    <div className={cn(ITEM_ROW_CLASSNAME, !enabled && !unsupported && "opacity-60")}>
       <div className={ITEM_ROW_INNER_CLASSNAME}>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-h-5 items-center gap-1.5">
@@ -1495,7 +1497,7 @@ function SavedBackendListRow({
               </TooltipPopup>
             </Tooltip>
           ) : null}
-          {enabled && environment.connection.error && !resumingServerUpdate ? (
+          {(enabled || unsupported) && environment.connection.error && !resumingServerUpdate ? (
             <p className="flex min-w-0 items-center gap-2 text-destructive text-xs">
               <span className="truncate">{connectionStatusText(environment.connection)}</span>
               {errorTraceId ? (
@@ -1525,8 +1527,8 @@ function SavedBackendListRow({
           ) : null}
           <Switch
             checked={enabled}
-            disabled={removingEnvironmentId === environmentId}
-            aria-label={`${enabled ? "Switch off" : "Switch on"} ${environment.label}`}
+            disabled={removingEnvironmentId === environmentId || unsupported}
+            aria-label={`${unsupported ? "Client not supported on" : enabled ? "Switch off" : "Switch on"} ${environment.label}`}
             onCheckedChange={(checked) => onSetEnabled(environmentId, checked)}
           />
           <Button

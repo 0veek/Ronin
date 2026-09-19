@@ -8,6 +8,17 @@ server, if you prefer editing it directly. Ronin writes the built-in defaults in
 first run, and adds any new defaults on later startups unless a rule of yours already claims the
 command or the shortcut.
 
+## Composer controls
+
+In **Settings → General → Send shortcut**, choose whether Enter sends, requires
+`mod+Enter` for multiline prompts, or always requires `mod+Enter`. `Shift+Enter`
+inserts a new line. This applies to the web and desktop composer at desktop widths.
+
+**Follow-up behavior** chooses Queue or Steer while the agent runs. Use
+`mod+Enter` to do the opposite for one message. When sending requires `mod+Enter`,
+use `mod+Shift+Enter` for the opposite action. In a new thread, `mod+Enter` keeps
+starting the thread in the background.
+
 The file is a JSON array of rules.
 
 ```json

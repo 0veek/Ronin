@@ -292,7 +292,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
     );
   }
 
-  it.effect("sends runtime context with the current model without changing saved prompts", () =>
+  it.effect("keeps runtime context out of native command arguments", () =>
     Effect.gen(function* () {
       const threadId = ThreadId.make("grok-runtime-context");
       const tempDir = yield* Effect.promise(() =>
@@ -337,6 +337,14 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           ],
         ],
       );
+      const permissionError = yield* adapter
+        .sendTurn({ threadId, input: "/always-approve on" })
+        .pipe(Effect.flip);
+      if (permissionError._tag !== "ProviderAdapterRequestError") {
+        assert.fail(`Unexpected error: ${permissionError._tag}`);
+      }
+      assert.include(permissionError.detail, "permission selector");
+      yield* adapter.sendTurn({ threadId, input: "/goal status" });
       yield* adapter.stopSession(threadId);
       const requests = yield* Effect.promise(() => readJsonLines(requestLogPath));
       const prompts = requests
@@ -344,7 +352,8 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
         .map(
           (request) => (request.params as { prompt: Array<{ type: string; text: string }> }).prompt,
         );
-      assert.equal(prompts.length, 2);
+      assert.equal(prompts.length, 3);
+      assert.deepEqual(prompts[2], [{ type: "text", text: "/goal status" }]);
       assert.deepEqual(prompts[0]?.[0], { type: "text", text: "First prompt" });
       assert.include(prompts[0]?.[1]?.text, "Grok harness, as grok-mock-alt");
       assert.deepEqual(prompts[1]?.[0], { type: "text", text: "Second prompt" });
@@ -1669,6 +1678,7 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
       const runtimeEvents: ProviderRuntimeEvent[] = [];
       const activeTurnIdRef = yield* Ref.make<TurnId | undefined>(undefined);
       const trailingChunkTurnId = yield* Deferred.make<TurnId>();
+      let receivedText = "";
       const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
         Effect.gen(function* () {
           runtimeEvents.push(event);
@@ -1678,7 +1688,11 @@ it.layer(grokAdapterTestLayer)("GrokAdapterLive", (it) => {
           if (event.type === "turn.started") {
             yield* Ref.set(activeTurnIdRef, event.turnId);
           }
-          if (event.type !== "content.delta" || event.payload.delta !== "mock") {
+          if (event.type !== "content.delta") {
+            return;
+          }
+          receivedText += event.payload.delta;
+          if (receivedText !== "hello from mock") {
             return;
           }
           const turnId = event.turnId ?? (yield* Ref.get(activeTurnIdRef));

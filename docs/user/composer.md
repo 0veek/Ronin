@@ -14,6 +14,22 @@ the background. Ronin opens another new thread and shows an **Open** action for 
 started. The new thread keeps the selected workspace mode and base branch. If **New worktree** is
 selected, each background thread creates its own worktree.
 
+## Send while the agent is working
+
+On web and desktop, a message sent during a running turn waits at the end of the conversation as a
+dashed bubble. It goes out on its own when the agent finishes its next tool call, or when the turn
+ends. Use the arrow under the bubble to send it right away, or the X to move it back into the
+composer. Stop returns every queued message to the composer.
+
+In **Settings → General → Follow-up behavior**, choose **Queue** to keep this behavior or **Steer**
+to send new messages immediately. This setting applies to the current client. Messages already
+queued keep their place.
+
+Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send the oldest queued
+message now. Change `thread.steerQueuedMessage` in **Settings → Keybindings** to use another
+shortcut. It leaves the current draft in the composer and waits if the agent needs an approval or
+an answer.
+
 ## Attachments
 
 You can attach images up to 10 MB. On environments that support file uploads, you can also attach

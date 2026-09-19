@@ -1520,6 +1520,13 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
 
     const sendTurn: GrokAdapterShape["sendTurn"] = (input) =>
       Effect.gen(function* () {
+        if (/^\/always-approve(?:\s|$)/i.test(input.input?.trim() ?? "")) {
+          return yield* new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "session/prompt",
+            detail: "Change permissions with T3's permission selector instead of /always-approve.",
+          });
+        }
         const prepared = yield* withThreadLock(
           input.threadId,
           Effect.gen(function* () {
@@ -1624,13 +1631,16 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               const displayModel = currentModelId
                 ? resolveGrokAcpBaseModelId(currentModelId)
                 : undefined;
-              const runtimeInstructions = buildRuntimeInstructions({
-                harness: "Grok",
-                model: displayModel,
-                ...(requestedTurnReasoningEffort
-                  ? { reasoningEffort: requestedTurnReasoningEffort }
-                  : {}),
-              });
+              const runtimeInstructions =
+                text && /^\/[^\s/]+(?:\s|$)/.test(text)
+                  ? undefined
+                  : buildRuntimeInstructions({
+                      harness: "Grok",
+                      model: displayModel,
+                      ...(requestedTurnReasoningEffort
+                        ? { reasoningEffort: requestedTurnReasoningEffort }
+                        : {}),
+                    });
               for (let yieldAttempt = 0; yieldAttempt < 8; yieldAttempt += 1) {
                 yield* Effect.yieldNow;
               }
@@ -1747,7 +1757,9 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   {
                     prompt: [
                       ...prepared.promptParts,
-                      { type: "text", text: prepared.runtimeInstructions },
+                      ...(prepared.runtimeInstructions
+                        ? [{ type: "text" as const, text: prepared.runtimeInstructions }]
+                        : []),
                     ],
                   },
                   { dispatched },
