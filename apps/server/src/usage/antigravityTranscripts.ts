@@ -283,6 +283,7 @@ export function parseAntigravityConversation(
       totals,
       // Antigravity records no cost of its own; the rate table prices it.
       reportedCostUsd: null,
+      fast: false,
       // A step is unique within its conversation, which is what makes this
       // stable across a store being copied and across the CLI and the editor
       // both holding a copy of the same conversation.

@@ -152,18 +152,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         env: processEnv,
       });
 
-      // `makeCodexAdapter` and `makeCodexTextGeneration` have `never` error
-      // channels at construction time — their failure modes are all on the
-      // per-operation closures they return. No `mapError` wrapper is needed
-      // here; the registry only has to worry about snapshot-build and
-      // spawner-availability failures surfaced from `checkCodexProviderStatus`
-      // below.
-      const adapter = yield* makeCodexAdapter(effectiveConfig, {
-        instanceId,
-        environment: processEnv,
-        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
-      });
-
       // Build a managed snapshot whose settings never change — mutations come
       // in as instance rebuilds from the registry rather than in-place
       // updates. Pre-provide `ChildProcessSpawner` so the check fits
@@ -215,11 +203,14 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
         ),
       );
-      const textGeneration = yield* makeCodexTextGeneration(
-        effectiveConfig,
-        processEnv,
-        snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
-      );
+      const models = snapshot.getSnapshot.pipe(Effect.map((value) => value.models));
+      const adapter = yield* makeCodexAdapter(effectiveConfig, {
+        instanceId,
+        environment: processEnv,
+        models,
+        ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
+      });
+      const textGeneration = yield* makeCodexTextGeneration(effectiveConfig, processEnv, models);
 
       return {
         instanceId,

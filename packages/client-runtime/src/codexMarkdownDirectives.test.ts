@@ -37,6 +37,12 @@ function parseOrdinaryMarkdown(markdown: string): TestNode {
   return unified().use(remarkParse).parse(markdown) as TestNode;
 }
 
+function parseRenderedFileLink(url: string): { path: string; line: number } | null {
+  const match = url.match(/^(.*)#L(\d+)$/);
+  if (!match) return null;
+  return { path: decodeURIComponent(match[1] ?? ""), line: Number(match[2]) };
+}
+
 describe("remarkCodexDirectives", () => {
   it("renders a file citation as a link without changing its source position", () => {
     const markdown = `Created ${FILE_CITATION}.`;
@@ -86,6 +92,24 @@ describe("remarkCodexDirectives", () => {
     '::artifact-template{skill_name="artifact-template-hello-world"}',
   ])("keeps malformed supported directives literal: %s", (markdown) => {
     expect(parse(markdown)).toEqual(parseOrdinaryMarkdown(markdown));
+  });
+});
+
+describe.each([
+  { name: "renderCodexDirectivesForCopy", render: renderCodexDirectivesForCopy },
+  { name: "renderCodexFileCitationsAsMarkdown", render: renderCodexFileCitationsAsMarkdown },
+])("$name file citation round trips", ({ render }) => {
+  it.each([
+    "C:\\Users\\test\\[draft]\\report.md",
+    "\\\\server\\share\\report.md",
+    "outputs/report.md",
+    "/tmp/report%5C.md",
+  ])("preserves the literal path and line: %s", (path) => {
+    const markdown = render(`:codex-file-citation{path="${path}" line_range_start="7"}`);
+    const link = parseOrdinaryMarkdown(markdown).children?.[0]?.children?.[0];
+
+    expect(link?.type).toBe("link");
+    expect(parseRenderedFileLink(link?.url ?? "")).toEqual({ path, line: 7 });
   });
 });
 

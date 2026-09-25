@@ -4,6 +4,7 @@ import {
   makeTraceSink,
   otlpSerializationLayer,
 } from "@t3tools/shared/observability";
+import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as References from "effect/References";
@@ -20,7 +21,12 @@ import * as BrowserTraceCollector from "../BrowserTraceCollector.ts";
 export const ObservabilityLive = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
-    const serializationLayer = otlpSerializationLayer(config.otlpProtocol);
+    const traces = config.otlpTracesExport ?? {
+      protocol: config.otlpProtocol,
+      headers: config.otlpHeaders,
+      exportIntervalMs: config.otlpExportIntervalMs,
+    };
+    const metrics = config.otlpMetricsExport ?? traces;
     const attribution = yield* ResourceAttribution.ResourceAttribution;
 
     const traceReferencesLayer = Layer.mergeAll(
@@ -50,8 +56,8 @@ export const ObservabilityLive = Layer.unwrap(
             ? undefined
             : yield* OtlpTracer.make({
                 url: config.otlpTracesUrl,
-                exportInterval: `${config.otlpExportIntervalMs} millis`,
-                headers: config.otlpHeaders,
+                exportInterval: `${traces.exportIntervalMs} millis`,
+                headers: traces.headers,
                 resource: {
                   serviceName: config.otlpServiceName,
                   attributes: {
@@ -75,15 +81,18 @@ export const ObservabilityLive = Layer.unwrap(
           BrowserTraceCollector.layer(sink),
         );
       }),
-    ).pipe(Layer.provide(OtlpExporter.layerFlusher), Layer.provideMerge(serializationLayer));
+    ).pipe(
+      Layer.provide(OtlpExporter.layerFlusher),
+      Layer.provideMerge(otlpSerializationLayer(traces.protocol)),
+    );
 
     const metricsLayer =
       config.otlpMetricsUrl === undefined
         ? Layer.empty
         : OtlpMetrics.layer({
             url: config.otlpMetricsUrl,
-            exportInterval: `${config.otlpExportIntervalMs} millis`,
-            headers: config.otlpHeaders,
+            exportInterval: `${metrics.exportIntervalMs} millis`,
+            headers: metrics.headers,
             resource: {
               serviceName: config.otlpServiceName,
               attributes: {
@@ -91,8 +100,17 @@ export const ObservabilityLive = Layer.unwrap(
                 "service.mode": config.mode,
               },
             },
-          }).pipe(Layer.provideMerge(serializationLayer));
+          }).pipe(Layer.provideMerge(otlpSerializationLayer(metrics.protocol)));
 
-    return Layer.mergeAll(ServerLoggerLive, traceReferencesLayer, tracerLayer, metricsLayer);
+    const otel = config.otelEnvironment ?? OtelEnvironment.none;
+    const warningsLayer = Layer.effectDiscard(
+      Effect.forEach(otel.warnings, (warning) => Effect.logWarning(warning)),
+    );
+    return warningsLayer.pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(ServerLoggerLive, traceReferencesLayer, tracerLayer, metricsLayer),
+      ),
+      Layer.provide(OtelEnvironment.layerResourceAttributes(otel.resourceAttributes)),
+    );
   }),
 );

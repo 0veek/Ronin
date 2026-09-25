@@ -1,5 +1,6 @@
 import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
 import type { ProviderInteractionMode } from "@t3tools/contracts";
+import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
 
 const RONIN_BROWSER_TOOL_INSTRUCTIONS = `
 
@@ -36,11 +37,14 @@ const normalizeAvailability = (
  * from Playwright, agent-browser, and raw simctl/adb, so leaving them in would
  * talk it out of the only automation it still has.
  */
-const browserToolInstructions = (availability: boolean | RoninToolAvailability): string => {
+const toolInstructions = (availability: boolean | RoninToolAvailability): string => {
   const tools = normalizeAvailability(availability);
-  return `${tools.browser ? RONIN_BROWSER_TOOL_INSTRUCTIONS : ""}${
-    tools.device ? RONIN_DEVICE_TOOL_INSTRUCTIONS : ""
-  }`;
+  return [
+    tools.browser ? RONIN_BROWSER_TOOL_INSTRUCTIONS.trim() : "",
+    tools.device ? RONIN_DEVICE_TOOL_INSTRUCTIONS.trim() : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 };
 
 export const codexPlanModeDeveloperInstructions = (
@@ -173,7 +177,7 @@ Do not ask "should I proceed?" in the final output. The user can easily switch o
 Only produce at most one \`<proposed_plan>\` block per turn, and only when you are presenting a complete spec.
 
 If the user stays in Plan mode and asks for revisions after a prior \`<proposed_plan>\`, any new \`<proposed_plan>\` must be a complete replacement. If the user indicates that the prior plan is not acceptable but does not provide enough information to produce a complete replacement, address the concern and continue planning without producing a \`<proposed_plan>\` block. If the follow-up neither requires changes nor calls the plan into question (e.g. clarifying question), answer it before the block, then reproduce the prior \`<proposed_plan>\` unchanged.
-${browserToolInstructions(browserToolsAvailable)}
+${toolInstructions(browserToolsAvailable)}
 </collaboration_mode>`;
 
 export const codexDefaultModeDeveloperInstructions = (
@@ -189,29 +193,41 @@ Your active mode changes only when new developer instructions with a different \
 Use the \`request_user_input\` tool only when it is listed in the available tools for this turn.
 
 In Default mode, strongly prefer making reasonable assumptions and executing the user's request rather than stopping to ask questions. If you absolutely must ask a question because the answer cannot be discovered from local context and a reasonable assumption would be risky, ask the user directly with a concise plain-text question. Never write a multiple choice question as a textual assistant message.
-${browserToolInstructions(browserToolsAvailable)}
+${toolInstructions(browserToolsAvailable)}
 </collaboration_mode>`;
 
 export interface CodexRuntimeInfo {
   readonly model: string;
+  readonly modelName?: string | undefined;
   readonly reasoningEffort: string;
 }
 
 export function buildCodexDeveloperInstructions(
   interactionMode: ProviderInteractionMode,
-  runtime: CodexRuntimeInfo,
+  _runtime?: CodexRuntimeInfo,
   /**
    * Whether the `ronin` MCP server is attached to this turn. Callers derive it
    * from the session's actual MCP configuration rather than re-reading the
    * setting, so the prompt cannot claim tools the turn doesn't have.
    */
-  browserToolsAvailable: boolean | RoninToolAvailability = true,
+  _browserToolsAvailable: boolean | RoninToolAvailability = true,
 ): string {
-  const base =
-    interactionMode === "plan"
-      ? codexPlanModeDeveloperInstructions(browserToolsAvailable)
-      : codexDefaultModeDeveloperInstructions(browserToolsAvailable);
-  return `${base}
+  return interactionMode === "plan"
+    ? codexPlanModeDeveloperInstructions(false)
+    : codexDefaultModeDeveloperInstructions(false);
+}
 
-${buildRuntimeInstructions({ harness: "Codex", ...runtime })}`;
+/** Ronin context that Codex preserves even when a model supplies its own mode prompt. */
+export function buildCodexAdditionalContext(
+  runtime: CodexRuntimeInfo,
+  toolsAvailable: boolean | RoninToolAvailability = true,
+): Record<string, V2TurnStartParams__AdditionalContextEntry> {
+  const tools = toolInstructions(toolsAvailable);
+  return {
+    ronin_runtime: {
+      kind: "application",
+      value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
+    },
+    ...(tools ? { ronin_tools: { kind: "application", value: tools } } : {}),
+  };
 }

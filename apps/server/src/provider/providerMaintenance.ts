@@ -49,6 +49,7 @@ export interface ProviderMaintenanceCommandAction {
   readonly executable: string;
   readonly args: ReadonlyArray<string>;
   readonly lockKey: string;
+  readonly env?: NodeJS.ProcessEnv;
 }
 
 export interface ProviderMaintenanceCapabilityResolutionOptions {
@@ -118,6 +119,7 @@ export function makeProviderMaintenanceCapabilities(input: {
   readonly updateArgs: ReadonlyArray<string>;
   readonly updateLockKey: string | null;
   readonly platform?: NodeJS.Platform;
+  readonly env?: NodeJS.ProcessEnv;
 }): ProviderMaintenanceCapabilities {
   const update =
     input.updateExecutable === null || input.updateLockKey === null
@@ -133,12 +135,40 @@ export function makeProviderMaintenanceCapabilities(input: {
           executable: input.updateExecutable,
           args: input.updateArgs,
           lockKey: input.updateLockKey,
+          ...(input.env ? { env: input.env } : {}),
         };
   return {
     provider: input.provider,
     packageName: input.packageName,
     update,
   };
+}
+
+/** Pin only package-manager actions we own, preserving prefix, scripts, env and lock. */
+export function makeTargetedProviderUpdateAction(
+  capabilities: ProviderMaintenanceCapabilities,
+  version: string,
+): ProviderMaintenanceCommandAction | null {
+  if (!/^\d+\.\d+\.\d+$/.test(version)) return null;
+  const update = capabilities.update;
+  const packageName = capabilities.packageName;
+  if (!update || !packageName) return null;
+  if (!/^(?:npm-global:|bun-global$|pnpm-global$|vite-plus-global$)/.test(update.lockKey))
+    return null;
+  const packageIndex = update.args.findIndex(
+    (arg) => arg === `${packageName}@latest` || arg === packageName,
+  );
+  if (packageIndex < 0) return null;
+  const args = update.args.map((arg, index) =>
+    index === packageIndex ? `${packageName}@${version}` : arg,
+  );
+  const previous = update.args[packageIndex]!;
+  const commandIndex = update.command.lastIndexOf(previous);
+  const command =
+    commandIndex < 0
+      ? update.command
+      : `${update.command.slice(0, commandIndex)}${packageName}@${version}${update.command.slice(commandIndex + previous.length)}`;
+  return { ...update, args, command };
 }
 
 export function makeManualOnlyProviderMaintenanceCapabilities(input: {
@@ -465,6 +495,7 @@ export function createProviderVersionAdvisory(input: {
     latestVersion,
     updateCommand: capabilities.update?.command ?? null,
     canUpdate: capabilities.update !== null,
+    canInstallVersion: makeTargetedProviderUpdateAction(capabilities, "0.0.0") !== null,
     checkedAt: input.checkedAt ?? null,
     message: advisory.message,
   };

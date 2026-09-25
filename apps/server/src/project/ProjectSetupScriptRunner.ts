@@ -362,6 +362,14 @@ export const make = Effect.gen(function* () {
         Effect.tapError(() => Effect.sync(() => observed?.unsubscribe())),
       );
 
+    const completion = observed?.completion.pipe(
+      Effect.tap(({ exitCode }) =>
+        exitCode === 0
+          ? terminalManager.closeIdle({ threadId: input.threadId, terminalId })
+          : Effect.void,
+      ),
+    );
+
     return {
       status: "started",
       scriptId: script.id,
@@ -370,7 +378,7 @@ export const make = Effect.gen(function* () {
       terminalId,
       cwd,
       async: script.async !== false,
-      ...(observed ? { completion: observed.completion } : {}),
+      ...(completion ? { completion } : {}),
     } as const;
   });
 

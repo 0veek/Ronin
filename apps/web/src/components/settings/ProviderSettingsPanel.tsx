@@ -66,6 +66,7 @@ import {
   NumberFieldInput,
 } from "../ui/number-field";
 import { ScrollArea } from "../ui/scroll-area";
+import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
@@ -380,6 +381,7 @@ function AccessGatedProviderSettings({
     <EnvironmentProviderSettings
       environmentId={environment.environmentId}
       environmentLabel={environment.label}
+      showCursorKeychainUsage={environment.serverConfig?.environment.platform.os === "darwin"}
       readOnly={access.kind === "read-only"}
       deviceTabs={deviceTabs}
     />
@@ -389,11 +391,13 @@ function AccessGatedProviderSettings({
 export function EnvironmentProviderSettings({
   environmentId,
   environmentLabel,
+  showCursorKeychainUsage = false,
   readOnly = false,
   deviceTabs,
 }: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
+  readonly showCursorKeychainUsage?: boolean;
   readonly deviceTabs?: ReactNode;
   /**
    * Grey out and freeze every write control when this session's credential
@@ -470,7 +474,7 @@ export function EnvironmentProviderSettings({
     void (async () => {
       const result = await refreshServerProviders({
         environmentId,
-        input: {},
+        input: { refreshModels: true },
       });
       refreshingRef.current = false;
       setIsRefreshingProviders(false);
@@ -485,7 +489,10 @@ export function EnvironmentProviderSettings({
   }, [environmentId, refreshServerProviders]);
 
   const runProviderUpdate = useCallback(
-    async (candidate: ProviderUpdateCandidate) => {
+    async (
+      candidate: Pick<ProviderUpdateCandidate, "driver" | "instanceId">,
+      targetVersion?: string,
+    ) => {
       // Ref-based re-entry guard, mirroring refreshProviders: a state updater
       // may run after this function returns, so it cannot gate the dispatch.
       if (updatingDriversRef.current.has(candidate.driver)) {
@@ -499,6 +506,7 @@ export function EnvironmentProviderSettings({
         input: {
           provider: candidate.driver,
           instanceId: candidate.instanceId,
+          ...(targetVersion ? { targetVersion } : {}),
         },
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -719,12 +727,10 @@ export function EnvironmentProviderSettings({
       ? providerUpdateCandidateByInstanceId.get(liveProvider.instanceId)
       : undefined;
     const isDriverUpdateRunning =
-      updateCandidate !== undefined &&
-      (updatingProviderDrivers.has(updateCandidate.driver) ||
-        serverProviders.some(
-          (provider) =>
-            provider.driver === updateCandidate.driver && isProviderUpdateActive(provider),
-        ));
+      updatingProviderDrivers.has(row.driver) ||
+      serverProviders.some(
+        (provider) => provider.driver === row.driver && isProviderUpdateActive(provider),
+      );
     const showInlineUpdateButton =
       updateCandidate !== undefined &&
       hasOneClickUpdateProviderCandidate(updateCandidate, serverProviders);
@@ -803,7 +809,20 @@ export function EnvironmentProviderSettings({
               }
             : undefined
         }
-        isUpdating={mode === "editor" && showInlineUpdateButton ? isDriverUpdateRunning : undefined}
+        onInstallRecommended={
+          mode === "editor" &&
+          liveProvider?.compatibilityAdvisory?.message &&
+          liveProvider.compatibilityAdvisory.recommendedVersion &&
+          liveProvider.versionAdvisory?.canInstallVersion
+            ? () => {
+                void runProviderUpdate(
+                  liveProvider,
+                  liveProvider.compatibilityAdvisory?.recommendedVersion ?? undefined,
+                );
+              }
+            : undefined
+        }
+        isUpdating={mode === "editor" ? isDriverUpdateRunning : undefined}
       />
     );
   };
@@ -910,6 +929,21 @@ export function EnvironmentProviderSettings({
                 aria-disabled={readOnly || undefined}
                 className={readOnly ? "opacity-50 select-none" : undefined}
               >
+                {showCursorKeychainUsage ? (
+                  <SettingsRow
+                    title="Cursor account usage"
+                    description="Allow this environment to read the Cursor CLI login from macOS Keychain for account-wide usage history."
+                    control={
+                      <Switch
+                        checked={settings.cursorKeychainUsageEnabled}
+                        onCheckedChange={(checked) =>
+                          updateSettings({ cursorKeychainUsageEnabled: checked })
+                        }
+                        aria-label="Cursor account usage"
+                      />
+                    }
+                  />
+                ) : null}
                 <SettingsRow
                   title={
                     <span className="inline-flex items-center gap-1.5">

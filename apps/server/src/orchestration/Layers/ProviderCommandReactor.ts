@@ -58,6 +58,7 @@ import {
 import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ServerConfig } from "../../config.ts";
 import {
+  ProviderAdapterProcessError,
   ProviderAdapterRequestError,
   ProviderAdapterValidationError,
 } from "../../provider/Errors.ts";
@@ -99,6 +100,8 @@ import {
 } from "../../serverSettings.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import * as TerminalManager from "../../terminal/Manager.ts";
+const isProviderAdapterProcessError = Schema.is(ProviderAdapterProcessError);
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderAdapterValidationError = Schema.is(ProviderAdapterValidationError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
@@ -299,6 +302,7 @@ const make = Effect.gen(function* () {
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
+  const terminalManager = yield* TerminalManager.TerminalManager;
   const config = yield* ServerConfig;
   const serverCommandId = (tag: string) =>
     crypto.randomUUIDv4.pipe(Effect.map((uuid) => CommandId.make(`server:${tag}:${uuid}`)));
@@ -467,6 +471,9 @@ const make = Effect.gen(function* () {
   const formatFailureDetail = (cause: Cause.Cause<unknown>): string => {
     const failReason = cause.reasons.find(Cause.isFailReason);
     if (isProviderAdapterRequestError(failReason?.error)) {
+      return failReason.error.detail;
+    }
+    if (isProviderAdapterProcessError(failReason?.error)) {
       return failReason.error.detail;
     }
     if (isProviderAdapterValidationError(failReason?.error)) {
@@ -2297,13 +2304,13 @@ const make = Effect.gen(function* () {
         return;
       case "thread.settled": {
         const thread = yield* projectionSnapshotQuery.getThreadShellById(event.payload.threadId);
-        if (
-          Option.isNone(thread) ||
-          thread.value.session == null ||
-          thread.value.session.status === "stopped"
-        ) {
+        // A thread can be re-engaged before this event reaches the reactor. In
+        // that case its shells and provider session must remain alive.
+        if (Option.isNone(thread) || thread.value.settledOverride !== "settled") {
           return;
         }
+        yield* terminalManager.closeIdle({ threadId: event.payload.threadId });
+        if (thread.value.session == null || thread.value.session.status === "stopped") return;
         yield* orchestrationEngine.dispatch({
           type: "thread.session.stop",
           commandId: CommandId.make(`session-stop-for-settle:${event.commandId ?? event.eventId}`),

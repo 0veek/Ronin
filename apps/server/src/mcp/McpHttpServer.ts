@@ -13,6 +13,7 @@ import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
 import { McpProtocol, McpSchema, McpServer, Tool } from "effect/unstable/ai";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { PreviewAutomationError } from "@t3tools/contracts";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
@@ -121,7 +122,7 @@ const McpAuthMiddlewareLive = HttpRouter.middleware<{
  * full accessibility tree and 20 KB of page text loses its locators too. Keep
  * the text under that ceiling and tell the agent what was cut.
  */
-export const MAX_SNAPSHOT_TEXT_BYTES = 60_000;
+export const MAX_SNAPSHOT_TEXT_BYTES = 20_000;
 const MAX_SNAPSHOT_VISIBLE_TEXT_CHARS = 8_000;
 const MAX_SNAPSHOT_ELEMENT_NAME_CHARS = 200;
 const MAX_SNAPSHOT_LOG_ENTRIES = 40;
@@ -169,9 +170,7 @@ type SnapshotMetadata = {
  * interactive elements until the JSON fits. Returns the text plus notes on
  * what is missing so the agent can reach for preview_evaluate.
  */
-const boundSnapshotMetadata = (
-  metadata: SnapshotMetadata,
-): { readonly text: string; readonly omitted: ReadonlyArray<string> } => {
+const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
   const omitted: Array<string> = [];
   const { accessibilityTree, ...withoutTree } = metadata;
   if (accessibilityTree !== undefined) {
@@ -200,16 +199,10 @@ const boundSnapshotMetadata = (
   ) {
     omitted.push(`element names longer than ${MAX_SNAPSHOT_ELEMENT_NAME_CHARS} characters`);
   }
-  if (metadata.visibleText.length > MAX_SNAPSHOT_VISIBLE_TEXT_CHARS) {
-    omitted.push(
-      `visibleText after ${MAX_SNAPSHOT_VISIBLE_TEXT_CHARS} characters (use preview_evaluate for more)`,
-    );
-  }
   const bounded = {
     ...withoutTree,
     url: cutText(metadata.url, MAX_SNAPSHOT_IDENTIFIER_CHARS),
     title: cutText(metadata.title, MAX_SNAPSHOT_IDENTIFIER_CHARS),
-    visibleText: cutText(metadata.visibleText, MAX_SNAPSHOT_VISIBLE_TEXT_CHARS),
     interactiveElements: metadata.interactiveElements.map((element) => ({
       ...element,
       name: cutText(element.name, MAX_SNAPSHOT_ELEMENT_NAME_CHARS),
@@ -237,27 +230,47 @@ const boundSnapshotMetadata = (
     networkEntries: 0,
     actionTimeline: 0,
   };
-  let text = encodeJsonText({ ...bounded, ...lists });
+  let visibleTextChars = Math.min(metadata.visibleText.length, MAX_SNAPSHOT_VISIBLE_TEXT_CHARS);
+  const value = () => ({
+    ...bounded,
+    visibleText: cutText(metadata.visibleText, visibleTextChars),
+    ...lists,
+  });
+  let text = encodeJsonText(value());
   while (utf8Length(text) > MAX_SNAPSHOT_TEXT_BYTES) {
     const key =
       shedOrder.find(
         (candidate) => candidate !== "interactiveElements" && lists[candidate].length > 0,
-      ) ?? (lists.interactiveElements.length > 0 ? "interactiveElements" : undefined);
+      ) ??
+      (visibleTextChars > 0
+        ? "visibleText"
+        : lists.interactiveElements.length > 0
+          ? "interactiveElements"
+          : undefined);
     if (key === undefined) break;
-    const keep = Math.floor(lists[key].length / 2);
-    dropped[key] += lists[key].length - keep;
-    lists[key] =
-      keep === 0
-        ? []
-        : key === "interactiveElements"
-          ? lists[key].slice(0, keep)
-          : lists[key].slice(-keep);
-    text = encodeJsonText({ ...bounded, ...lists });
+    if (key === "visibleText") {
+      visibleTextChars = Math.floor(visibleTextChars / 2);
+    } else {
+      const keep = Math.floor(lists[key].length / 2);
+      dropped[key] += lists[key].length - keep;
+      lists[key] =
+        keep === 0
+          ? []
+          : key === "interactiveElements"
+            ? lists[key].slice(0, keep)
+            : lists[key].slice(-keep);
+    }
+    text = encodeJsonText(value());
+  }
+  if (visibleTextChars < metadata.visibleText.length) {
+    omitted.push(
+      `visibleText after ${visibleTextChars} characters (use preview_evaluate for more)`,
+    );
   }
   for (const key of shedOrder) {
     if (dropped[key] > 0) omitted.push(`${dropped[key]} of ${bounded[key].length} ${key}`);
   }
-  return { text, omitted };
+  return { value: value(), text, omitted };
 };
 
 export class PreviewScreenshotSaveError extends Schema.TaggedErrorClass<PreviewScreenshotSaveError>()(
@@ -302,6 +315,8 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   return screenshotPath;
 });
 
+const isPreviewAutomationError = Schema.is(PreviewAutomationError);
+
 const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
   if (Cause.hasInterrupts(cause) || cause.reasons.some(Cause.isDieReason)) {
     return Effect.failCause(cause).pipe(Effect.orDie);
@@ -315,6 +330,7 @@ const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
     typeof firstFailure._tag === "string"
       ? firstFailure._tag
       : "PreviewSnapshotError";
+  const message = isPreviewAutomationError(firstFailure) ? firstFailure.message : undefined;
   const result = new McpSchema.CallToolResult({
     isError: true,
     structuredContent: {
@@ -322,9 +338,10 @@ const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
         _tag: errorTag,
         operation: "snapshot",
         failureCount: failures.length,
+        ...(message === undefined ? {} : { message }),
       },
     },
-    content: [{ type: "text", text: `Preview snapshot failed: ${errorTag}.` }],
+    content: [{ type: "text", text: `Preview snapshot failed: ${message ?? `${errorTag}.`}` }],
   });
   return Effect.logWarning("preview snapshot failed", {
     operation: "snapshot",
@@ -386,6 +403,17 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
               const png = new Uint8Array(Buffer.from(screenshot.data, "base64"));
               const screenshotPath =
                 payload?.save === true ? yield* saveScreenshot(snapshot.url, png) : undefined;
+              if (screenshotPath !== undefined && payload?.includeImage === false) {
+                const saved = {
+                  url: cutText(snapshot.url, MAX_SNAPSHOT_IDENTIFIER_CHARS),
+                  screenshotPath,
+                };
+                return new McpSchema.CallToolResult({
+                  isError: false,
+                  structuredContent: saved,
+                  content: [{ type: "text", text: encodeJsonText(saved) }],
+                });
+              }
               const metadata = {
                 ...page,
                 screenshot: {
@@ -398,7 +426,10 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
               const bounded = boundSnapshotMetadata(metadata);
               return new McpSchema.CallToolResult({
                 isError: false,
-                structuredContent: metadata,
+                structuredContent:
+                  bounded.omitted.length === 0
+                    ? bounded.value
+                    : { ...bounded.value, omitted: bounded.omitted },
                 content: [
                   // Keep the page identity readable even if a provider truncates the snapshot.
                   {

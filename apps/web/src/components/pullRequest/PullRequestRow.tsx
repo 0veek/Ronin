@@ -15,7 +15,7 @@ import {
   PullRequestConflictGlyph,
   PullRequestDiffStat,
   PullRequestMetaLine,
-  PullRequestApprovalGlyph,
+  PullRequestReviewDecisionGlyph,
   PullRequestStateGlyph,
 } from "./pullRequestPresentation";
 
@@ -113,7 +113,7 @@ function PullRequestRowImpl({
         selected ? "bg-accent" : "hover:bg-accent/60",
       )}
     >
-      <span className="relative inline-flex shrink-0">
+      <span className="relative mt-0.75 inline-flex shrink-0 self-start">
         <PullRequestStateGlyph state={entry.state} isDraft={entry.isDraft} />
         <span className="absolute -right-1 -bottom-1 inline-flex">
           <PullRequestConflictGlyph
@@ -148,7 +148,7 @@ function PullRequestRowImpl({
           {/* Only a verdict somebody has actually given: "review required" is the absence of
               one, and saying so on every unreviewed row would say nothing. */}
           {entry.reviewDecision === "approved" ? (
-            <PullRequestApprovalGlyph />
+            <PullRequestReviewDecisionGlyph decision="approved" />
           ) : entry.reviewDecision === "changes-requested" ? (
             <span className="min-w-0 truncate text-amber-600/90 dark:text-amber-400/80">
               Changes requested

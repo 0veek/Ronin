@@ -21,6 +21,7 @@ import type * as EffectAcpSchema from "effect-acp/schema";
 import type * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand, terminateProcessTree } from "@t3tools/shared/shell";
 
+import { appendAcpStderrTail, sanitizeAcpStderrExcerpt } from "./AcpStderr.ts";
 import {
   collectSessionConfigOptionValues,
   decideToolCallUpdateEmission,
@@ -37,6 +38,8 @@ import {
   type AcpSessionModeState,
   type AcpToolCallState,
 } from "./AcpRuntimeModel.ts";
+
+const MAX_SHOWN_TOOL_CALL_IDS = 256;
 
 interface AcpToolCallTrackedState {
   readonly state: AcpToolCallState;
@@ -334,6 +337,7 @@ export const make = (
     const eventQueue = yield* Queue.unbounded<AcpSessionRuntimeEvent>();
     const modeStateRef = yield* Ref.make<AcpSessionModeState | undefined>(undefined);
     const toolCallsRef = yield* Ref.make(new Map<string, AcpToolCallTrackedState>());
+    const shownToolCallIds = new Set<string>();
     const assistantItemRuntimeId = yield* crypto.randomUUIDv4.pipe(
       Effect.mapError(
         (cause) =>
@@ -352,6 +356,41 @@ export const make = (
     >(Option.none());
     const assistantUpdatesOpenRef = yield* Ref.make(true);
     const sessionLoadGateRef = yield* Ref.make<Option.Option<SessionLoadGate>>(Option.none());
+    const stderrTailRef = yield* Ref.make("");
+    const stderrDrained = yield* Deferred.make<void>();
+
+    const enrichProcessExitWithStderr = (
+      error: EffectAcpErrors.AcpError,
+    ): Effect.Effect<EffectAcpErrors.AcpError> => {
+      const isClosedRequest = error._tag === "AcpRequestError" && /closed/i.test(error.message);
+      const isTerminatedRpc = error._tag === "AcpTransportError" && error.operation === "call-rpc";
+      return (error._tag !== "AcpProcessExitedError" &&
+        error._tag !== "AcpInputStreamEndedError" &&
+        !isClosedRequest &&
+        !isTerminatedRpc) ||
+        (error._tag === "AcpProcessExitedError" && (error.stderr?.trim().length ?? 0) > 0)
+        ? Effect.succeed(error)
+        : Deferred.await(stderrDrained).pipe(
+            Effect.timeout("250 millis"),
+            Effect.ignore,
+            Effect.andThen(Ref.get(stderrTailRef)),
+            Effect.map((tail) => {
+              const stderr = sanitizeAcpStderrExcerpt(tail);
+              return stderr.length === 0
+                ? error
+                : new EffectAcpErrors.AcpProcessExitedError({
+                    ...(error._tag === "AcpProcessExitedError" && error.code !== undefined
+                      ? { code: error.code }
+                      : {}),
+                    ...(error._tag === "AcpProcessExitedError" && error.pid !== undefined
+                      ? { pid: error.pid }
+                      : {}),
+                    stderr,
+                    cause: error,
+                  });
+            }),
+          );
+    };
 
     const logRequest = (event: AcpSessionRequestLogEvent) =>
       options.requestLogger ? options.requestLogger(event) : Effect.void;
@@ -364,6 +403,9 @@ export const make = (
       logRequest({ method, payload, status: "started" }).pipe(
         Effect.flatMap(() =>
           effect.pipe(
+            Effect.catch((error) =>
+              enrichProcessExitWithStderr(error).pipe(Effect.flatMap(Effect.fail)),
+            ),
             Effect.tap((result) =>
               logRequest({
                 method,
@@ -411,6 +453,16 @@ export const make = (
     // On Windows the spawner's handle is the `.cmd` shim's, so its kill would
     // leave the agent process running past the session it belongs to.
     yield* Scope.addFinalizer(runtimeScope, terminateProcessTree(child.pid));
+
+    yield* child.stderr.pipe(
+      Stream.decodeText(),
+      Stream.runForEach((chunk) =>
+        Ref.update(stderrTailRef, (current) => appendAcpStderrTail(current, chunk)),
+      ),
+      Effect.ensuring(Deferred.succeed(stderrDrained, undefined)),
+      Effect.ignore,
+      Effect.forkIn(runtimeScope),
+    );
 
     const acpContext = yield* Layer.build(
       EffectAcpClient.layerChildProcess(child, {
@@ -463,6 +515,7 @@ export const make = (
           queue: eventQueue,
           modeStateRef,
           toolCallsRef,
+          shownToolCallIds,
           assistantSegmentRef,
           assistantItemRuntimeId,
           params: notification,
@@ -937,6 +990,7 @@ const handleSessionUpdate = ({
   queue,
   modeStateRef,
   toolCallsRef,
+  shownToolCallIds,
   assistantSegmentRef,
   assistantItemRuntimeId,
   params,
@@ -944,6 +998,7 @@ const handleSessionUpdate = ({
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly modeStateRef: Ref.Ref<AcpSessionModeState | undefined>;
   readonly toolCallsRef: Ref.Ref<Map<string, AcpToolCallTrackedState>>;
+  readonly shownToolCallIds: Set<string>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly assistantItemRuntimeId: string;
   readonly params: EffectAcpSchema.SessionNotification;
@@ -957,11 +1012,7 @@ const handleSessionUpdate = ({
     }
     for (const event of parsed.events) {
       if (event._tag === "ToolCallUpdated") {
-        yield* closeActiveAssistantSegment({
-          queue,
-          assistantSegmentRef,
-        });
-        const { merged, decision } = yield* Ref.modify(toolCallsRef, (current) => {
+        const { merged, decision, active } = yield* Ref.modify(toolCallsRef, (current) => {
           const tracked = current.get(event.toolCall.toolCallId);
           const previous = tracked?.state;
           const nextToolCall = mergeToolCallState(previous, event.toolCall);
@@ -983,10 +1034,19 @@ const handleSessionUpdate = ({
               skippedSinceEmit: decision.skippedSinceEmit,
             });
           }
-          return [{ merged: nextToolCall, decision }, next] as const;
+          return [{ merged: nextToolCall, decision, active: tracked !== undefined }, next] as const;
         });
         if (!decision.emit) {
           continue;
+        }
+        if (!shownToolCallIds.has(merged.toolCallId)) {
+          shownToolCallIds.add(merged.toolCallId);
+          if (shownToolCallIds.size > MAX_SHOWN_TOOL_CALL_IDS) {
+            shownToolCallIds.delete(shownToolCallIds.values().next().value!);
+          }
+          if (!active) {
+            yield* closeActiveAssistantSegment({ queue, assistantSegmentRef });
+          }
         }
         yield* Queue.offer(queue, {
           _tag: "ToolCallUpdated",

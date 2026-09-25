@@ -1,4 +1,4 @@
-import type { UsageProviderKind } from "@t3tools/contracts";
+import type { EnvironmentId, UsageProviderKind } from "@t3tools/contracts";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import { ArrowLeftIcon, CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -12,6 +12,7 @@ import {
 } from "@t3tools/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
+import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
 import {
   enumerateDays,
@@ -145,6 +146,7 @@ function providerRows(providers: readonly ProviderTotals[]): readonly ProviderTo
         costUsd: 0,
         totalTokens: 0,
         records: 0,
+        sessions: 0,
         costShare: 0,
         tokenShare: 0,
       },
@@ -166,6 +168,25 @@ export function UsagePage() {
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const cursorAccessEnvironments = environments.filter((environment) =>
+    environment.summary?.sources.some((source) => source.action === "enableCursorKeychain"),
+  );
+  const sourceMessages = [
+    ...new Set(
+      environments.flatMap(
+        (environment) =>
+          environment.summary?.sources.flatMap((source) =>
+            source.message &&
+            !source.action &&
+            (source.status === "partial" ||
+              source.status === "failed" ||
+              source.fingerprint.provider === "cursor")
+              ? [source.message]
+              : [],
+          ) ?? [],
+      ),
+    ),
+  ];
   const navigate = useNavigate();
   const canGoBack = useCanGoBack();
 
@@ -318,6 +339,18 @@ export function UsagePage() {
               </>
             ) : (
               <>
+                {cursorAccessEnvironments.map((environment) => (
+                  <CursorUsagePrompt
+                    key={environment.environmentId}
+                    environmentId={environment.environmentId}
+                    label={environment.label}
+                  />
+                ))}
+                {sourceMessages.map((message) => (
+                  <p key={message} className="text-sm text-muted-foreground">
+                    {message}
+                  </p>
+                ))}
                 <UsageCoverageNotice
                   environments={environments}
                   duplicateSources={merged.duplicateSources}
@@ -478,6 +511,34 @@ export function UsagePage() {
         </ScrollArea>
       </div>
     </SidebarInset>
+  );
+}
+
+function CursorUsagePrompt({
+  environmentId,
+  label,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+}) {
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  return (
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-card px-4 py-3">
+      <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+        <ProviderMark provider="cursor" className="size-4" tinted />
+        <span>
+          Include Cursor account usage from {label}. This requires access to the Cursor login in
+          macOS Keychain.
+        </span>
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => updateSettings({ cursorKeychainUsageEnabled: true })}
+      >
+        Enable
+      </Button>
+    </section>
   );
 }
 

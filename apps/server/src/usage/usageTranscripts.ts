@@ -15,6 +15,8 @@ export interface UsageRecord {
   readonly sessionId: string;
   readonly totals: UsageTokenTotals;
   readonly reportedCostUsd: number | null;
+  /** Whether this request used a provider's fast billing tier. */
+  readonly fast: boolean;
   /**
    * Key for cross-file de-duplication, or `null` when the record is inherently
    * unique and needs no dedup.
@@ -144,6 +146,7 @@ export function parseClaudeLine(line: string): UsageRecord | null {
     sessionId: typeof record["sessionId"] === "string" ? record["sessionId"] : "",
     totals,
     reportedCostUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
+    fast: usageRecord["speed"] === "fast",
     dedupeKey,
   };
 }
@@ -303,6 +306,7 @@ export function parseCodexLine(line: string, state: CodexScanState): UsageRecord
     totals,
     // Codex does not report cost in the rollout.
     reportedCostUsd: null,
+    fast: false,
     // Events surviving the fork-copy suppression above are unique to this
     // rollout, so they need no global dedup.
     dedupeKey: null,
@@ -454,6 +458,7 @@ export function parseGrokLine(line: string): readonly UsageRecord[] {
       sessionId,
       totals,
       reportedCostUsd,
+      fast: false,
       dedupeKey: promptId === "" ? null : `${sessionId}:${promptId}:${model}`,
     });
   }

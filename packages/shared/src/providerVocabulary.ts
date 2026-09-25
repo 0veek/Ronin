@@ -26,6 +26,8 @@ export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
   "claude",
   "codex",
   "grok",
+  "cursor",
+  "opencode",
   "antigravity",
 ];
 
@@ -38,6 +40,8 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude Code",
   codex: "Codex",
   grok: "Grok",
+  cursor: "Cursor",
+  opencode: "OpenCode",
   antigravity: "Antigravity",
 };
 
@@ -57,6 +61,8 @@ export const PROVIDER_SHORT_LABEL: Record<UsageProviderKind, string> = {
   claude: "Claude",
   codex: "Codex",
   grok: "Grok",
+  cursor: "Cursor",
+  opencode: "OpenCode",
   antigravity: "Antigravity",
 };
 

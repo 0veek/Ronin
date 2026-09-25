@@ -136,9 +136,12 @@ function formatThreadError(cause: Cause.Cause<unknown>): string {
     : "Could not synchronize the thread.";
 }
 
+export function isThreadSessionRunning(session: OrchestrationThread["session"]): boolean {
+  return session?.status === "starting" || session?.status === "running";
+}
+
 function shouldPersistThread(thread: OrchestrationThread): boolean {
-  const status = thread.session?.status;
-  return status !== "starting" && status !== "running";
+  return !isThreadSessionRunning(thread.session);
 }
 
 interface ThreadResumeSnapshot {

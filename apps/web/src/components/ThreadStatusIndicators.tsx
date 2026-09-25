@@ -15,7 +15,7 @@ import {
   type ThreadPullRequestBadge,
 } from "@t3tools/shared/threadPullRequests";
 import { FolderGit2Icon, TerminalIcon } from "lucide-react";
-import { useMemo, type MouseEvent } from "react";
+import { useMemo, type AnimationEvent, type MouseEvent } from "react";
 import { buttonVariants, InlineButton } from "./ui/button";
 import { cn } from "../lib/utils";
 import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
@@ -76,15 +76,24 @@ export function useLinkedThreadPullRequest(
   );
   const fallback =
     current === null ? ((!supportsLinks ? linkedPullRequest : null) ?? branchPullRequest) : null;
-  const host = fallback == null ? undefined : parseChangeRequestUrl(fallback.url)?.host;
-  const reference =
-    fallback == null ? null : { ...fallback, ...(host === undefined ? {} : { host }) };
+  // Stable per link: the shared summary effect keys on this object, and a sidebar row must not
+  // touch the cache on every render.
+  const reference = useMemo(() => {
+    if (fallback == null) return null;
+    const host = parseChangeRequestUrl(fallback.url)?.host;
+    return { ...fallback, ...(host === undefined ? {} : { host }) };
+  }, [fallback]);
   const queried = useEnvironmentQuery(
     !enabled || environmentId === null || reference === null
       ? null
       : linkedPullRequestDetailAtom({ environmentId, input: reference }),
-  ).data;
-  const detail = useSharedPullRequestSummary(environmentId, reference, queried);
+  );
+  const detail = useSharedPullRequestSummary(
+    environmentId,
+    reference,
+    queried.data,
+    queried.dataUpdatedAt,
+  );
 
   return useMemo(() => {
     if (current !== null) return linkedPullRequestSnapshotStatus(current);
@@ -360,6 +369,16 @@ export function terminalStatusFromRunningIds(
   };
 }
 
+/** Align newly started pulses with the document clock without a timer or frame loop. */
+export function synchronizeTerminalPulse(event: AnimationEvent<SVGSVGElement>) {
+  if (event.animationName !== "status-pulse") return;
+  for (const animation of event.currentTarget.getAnimations()) {
+    if ("animationName" in animation && animation.animationName === "status-pulse") {
+      animation.startTime = 0;
+    }
+  }
+}
+
 export function ThreadWorktreeIndicator({
   thread,
 }: {
@@ -548,7 +567,8 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
             }
           >
             <TerminalIcon
-              className={`size-3 ${terminalStatus.pulse ? "animate-status-pulse" : ""}`}
+              className={`size-3 ${terminalStatus.pulse ? "motion-safe:animate-status-pulse" : ""}`}
+              onAnimationStart={synchronizeTerminalPulse}
             />
           </TooltipTrigger>
           <TooltipPopup side="top">{terminalStatus.label}</TooltipPopup>

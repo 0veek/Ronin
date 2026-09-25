@@ -51,6 +51,7 @@ export const ProjectionThread = Schema.Struct({
   pinnedAt: Schema.NullOr(IsoDateTime),
   pinOrderKey: Schema.optional(Schema.NullOr(Schema.String)),
   activeOrderKey: Schema.optional(Schema.NullOr(Schema.String)),
+  autoSettleDisabledAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   // Flattened rather than a JSON blob so the sidebar can group by parent with
   // an index instead of parsing every row it reads.
   sideChatParentThreadId: Schema.optional(Schema.NullOr(ThreadId)),

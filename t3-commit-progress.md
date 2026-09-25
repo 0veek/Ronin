@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                               |
-| ----------------------------- | --------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `dfbb11bdd` — `fix(web): show plain text in collapsed thought previews (#12377)` (2026-09-19) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                               |
-| **Ported on**                 | 2026-09-19                                                                                    |
+|                               |                                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Upstream reviewed through** | `4293433ec` — `perf(server): avoid rereading unchanged files in review previews (#13395)` (2026-09-26) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                        |
+| **Ported on**                 | 2026-09-26                                                                                             |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -22,12 +22,12 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ```bash
 git fetch upstream
-git log --oneline dfbb11bdd..upstream/main          # the new commits
+git log --oneline 4293433ec..upstream/main          # the new commits
 
 # For each commit: which files does it touch that this fork still has,
 # and have we already diverged on them?
 MB=$(git merge-base HEAD upstream/main)
-git log --reverse --format='%h|%s' dfbb11bdd..upstream/main | while IFS='|' read -r h s; do
+git log --reverse --format='%h|%s' 4293433ec..upstream/main | while IFS='|' read -r h s; do
   shared=0; forked=0
   while read -r st f; do
     [ "$st" = A ] && continue
@@ -6145,3 +6145,326 @@ cut.
   unit, type, formatting and React static-analysis coverage.
 - No real provider process, remote host, GitHub mutation, signed release, updater, telemetry
   collector or platform accessibility capture was exercised against an external system.
+
+## Batch 36 — reviewed through `f5ef0ddb9` (147 commits)
+
+Reviewed `dfbb11bdd..f5ef0ddb9`, with upstream snapshotted at
+`f5ef0ddb90a8c36584e181b1913e7b8a5df30ffc` for the whole run. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`. No commit needed a product Ask.
+
+### Ported (78)
+
+| Upstream    | Title                                                                                                   | Notes                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `9accc5676` | fix(web): wrap long titles in confirmation dialogs (#12571)                                             | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `8dd02470b` | fix(web): restore providers settings heading (#12552)                                                   | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `dcf894230` | fix(web): keep desktop annotation screenshots under CSP (#12636)                                        | Applied to Ronin's desktop/Electron architecture with the relevant regression coverage.                    |
+| `e36725682` | fix(web): keep typed text when a question option is clicked (#12577)                                    | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `63ff33756` | fix(server): empty Claude homePath shares continuation with ~/.claude (#12624)                          | Applied to Ronin's current server architecture with focused regression coverage.                           |
+| `52d08a14b` | fix(desktop): include SnapShot app text for Flatpak and GTK4 (#12635)                                   | Applied to Ronin's desktop/Electron architecture with the relevant regression coverage.                    |
+| `d6f291303` | fix(server): surface ACP stderr when cursor-agent exits at session start (#12625)                       | Adapted stderr-first startup failure reporting to Ronin's ACP transport error shape.                       |
+| `599c9776e` | fix(web): align pull request state glyph to top of row (#11268)                                         | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `7445aa733` | fix(web): align menu item icons in pull request detail panel (#11263)                                   | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `4a560b4e4` | fix(web): honor whitespace settings in pull request diffs (#12438)                                      | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `0ff87f251` | fix(web): keep citation comment when popover is dismissed (#10831)                                      | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `c14f6015b` | fix(web): keep narrow chat headers readable and aligned (#12453)                                        | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `fa1e17155` | refactor(observability): hold OTLP export settings per signal (#12657)                                  | Ported per-signal OTLP settings while preserving Ronin's existing telemetry configuration.                 |
+| `ead1dee22` | fix(web): explain what enabling network access means in its confirmation (#10098)                       | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `9f0c9f725` | fix(web): reuse current PR status in the sidebar (#12545)                                               | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `6a699f0f2` | fix(web): stabilize pull request loading layout (#12721)                                                | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `55c24273a` | fix(desktop): align preview recording cursors and show input feedback (#12779)                          | Ported recording input/cursor feedback through Ronin's Electron preload and preview manager.               |
+| `7ade2d2c6` | fix(web): the Run on / Workspace menu closes after a pick (#12685)                                      | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `3cfebf4aa` | fix(web): keep portaled menus clickable over Electron drag regions (#12527)                             | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `5d9e27a59` | fix(web): render citations in queued messages (#12403)                                                  | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `2d8f9a8f5` | fix(web): keep the timeline still when the resting composer expands (#12771)                            | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `45e06f48a` | fix: composer hero reads project name to screen readers (#12397)                                        | Applied the compatible behavior across Ronin's existing shared and desktop-first surfaces.                 |
+| `adcd90858` | fix(web): allow full contrast in assistant replies (#12405)                                             | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `584450a1f` | fix(web): compact the worktree setup glass popover (#12802)                                             | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `67285e4b8` | fix(web): route keyboard submit through the primary worktree action (#12526)                            | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `c789cd174` | fix(web): skip image inline chip when composer is empty (#12528)                                        | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `f4d979a6c` | fix(web): only show notice details when text is clipped (#12760)                                        | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `9f73ca367` | fix(devices): recover simulator streams after failures (#12639)                                         | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `1ba471a37` | chore(server): bump device tooling versions (#12809)                                                    | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `2b178231e` | fix: allow more attachments without raising the image payload budget (#12620)                           | Applied the compatible behavior across Ronin's existing shared and desktop-first surfaces.                 |
+| `051a4057a` | fix(web): device Reconnect starts one stream instead of two (#12808)                                    | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `58f89818e` | fix(server): tolerate shutting down an iOS simulator that is already off (#12807)                       | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `411da2a73` | feat(web): use the linked pull request row layout on the pull requests page (#12536)                    | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `2efb8178d` | fix(clients): keep backslashes in copied Codex citations (#12243)                                       | Ported Codex citation escaping and its regression test.                                                    |
+| `f7efb5354` | feat(web): truncate branch names and paths in the middle (#12805)                                       | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `dca84efb5` | fix(web): paste markdown with inline code inside bold, italic, or strikethrough (#12290)                | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `a9ab9049b` | feat(web): show the pull request refresh spinning in the detail header (#12833)                         | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `a4bc7deb9` | fix(web): dismiss composer suggestions with Escape (#12836)                                             | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `6cc7f7006` | fix(web): keep composer controls visible while they fit (#12837)                                        | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `5c5fa5ffb` | feat(devices): show installed and running tool versions per host (#12816)                               | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `3b836f994` | feat(devices): show automatic update progress and host retry (#12817)                                   | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `61b25b88d` | feat(devices): add read-only update discovery and remote ownership (#12818)                             | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `790be6d75` | fix(devices): safely reclaim obsolete managed tool versions (#12819)                                    | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `30e3649c3` | fix(web): match thread notification icons to sidebar status (#12806)                                    | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `f391b88c3` | fix(web): move sidebar shelves as one block (#11772)                                                    | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `6b0a04ade` | fix(web): offer undo after unpinning a thread (#10744)                                                  | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `5781b5240` | feat(web): undo settle, snooze and archive, with a mod+z shortcut (#12848)                              | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `b379b5b14` | test(web): remove redundant favicon test (#12856)                                                       | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `1de563c14` | feat(devices): offer manual updates in tool version details (#12877)                                    | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `371b52d9d` | feat(web): answer pull request actions on the row at once (#12843)                                      | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `2c2fa8cd7` | fix(web): pull request embed chip shows the state icon (#12951)                                         | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `2d377bfb1` | fix(web): dismiss selection actions when pressing buttons (#12950)                                      | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `d2a90b921` | fix(web): name message copy actions accurately (#12865)                                                 | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `80d9c181d` | fix(contracts): old message-sent events without turnId no longer stop the server from starting (#12763) | Ported backward-compatible contract decoding for legacy message-sent events.                               |
+| `e1cbb7052` | fix(web): the custom snooze calendar starts the week where the locale does (#12745)                     | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `1262d2f3a` | feat(server): let t3.json limit or disable submodule init in new worktrees (#12953)                     | Ported the t3.json submodule-init policy without adding project-scoped settings inheritance.               |
+| `9a609a4e4` | fix(web): show thread undo notice in the sidebar (#12972)                                               | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `5423ba0fd` | feat(web): merge the comment and review buttons into one composer (#12945)                              | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `e65bc1c73` | fix(web): allow text selection when renaming threads (#12935)                                           | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `438bf466f` | fix(web): close menus when clicking into the browser tab (#11148)                                       | Ported browser-tab menu dismissal to Ronin's hosted browser surface.                                       |
+| `aff9318bf` | fix(web): retry failed attachment uploads after reconnect (#10338)                                      | Ported reconnect-aware attachment retry behavior and tests.                                                |
+| `da6a85b13` | fix(web): respect panel motion in composer transitions (#11064)                                         | Adapted composer motion behavior to Ronin's existing panel-animation model.                                |
+| `7c2702d68` | fix(web): read panel animation settings in the composer (#13098)                                        | Adapted composer motion behavior to Ronin's existing panel-animation model.                                |
+| `f25a8e4b7` | feat(models): add opus 5.5 without changing existing aliases (#13094)                                   | Updated the model manifest/capabilities while preserving Ronin's aliases and compatibility policy.         |
+| `17e34773b` | Update model manifest with new timestamps and models                                                    | Updated the model manifest/capabilities while preserving Ronin's aliases and compatibility policy.         |
+| `f193a6863` | fix(server): bypass owned caches on explicit provider refresh (#13109)                                  | Ported explicit provider refresh cache invalidation through contracts, web, and server.                    |
+| `d7819c188` | chore(devices): bump agent-device to 0.21.12 (#13124)                                                   | Ported through the device contracts, server/host lifecycle, and desktop/web status surfaces as applicable. |
+| `f22331240` | fix(server): generate PR diffs from branch changes (#13170)                                             | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `68607c5a9` | fix(web): preserve nested scroll behavior in chat timeline (#13167)                                     | Applied or adapted to Ronin's current web architecture and retained visual system.                         |
+| `b954af60c` | test(web): cover usage model ordering without static markup (#13104)                                    | Ported the non-static usage ordering coverage and supporting helper.                                       |
+| `ca864a25b` | chore(models): use GPT-6 Luna for text generation (#13115)                                              | Updated Ronin's text-generation default to GPT-6 Luna.                                                     |
+| `96c4bfa0a` | feat(providers): check remote compatibility ranges (#13130)                                             | Ported remote provider compatibility ranges, advisories, maintenance gating, and tests.                    |
+| `219c1d265` | fix(web): align provider emails without clipping (#13174)                                               | Applied the provider-email alignment fix without importing the skipped auth surface.                       |
+| `5975ec78b` | fix(server): background PR checks spend less GitHub quota (#13189)                                      | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `18de6bb32` | fix(server): background PR sync reads summaries in batches (#13198)                                     | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `eafb4a934` | fix(server): GitHub PR lookups stop probing owner-qualified heads (#13200)                              | Adapted to Ronin's current pull-request service and UI architecture, with focused regression coverage.     |
+| `829af7b73` | feat(web): navigate back and forward with mod+[ and mod+] (#13212)                                      | Ported desktop history navigation keybindings and routing behavior.                                        |
+| `b21c54565` | fix(web): sort title matches by recent activity (#13219)                                                | Ported recent-activity tie-breaking for command-palette title matches.                                     |
+
+### Already in the tree (2)
+
+| Upstream    | Title                                                                  | Notes                                                                                    |
+| ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `6975efd3d` | fix(web): the pull request badge reads at the meta size again (#13175) | The pull-request badge already uses Ronin's meta-size treatment.                         |
+| `eb6c170c4` | test(desktop): remove redundant keyring module-load test (#13220)      | Equivalent cleanup is already present: the redundant keyring module-load test is absent. |
+
+### Skipped (67)
+
+| Upstream    | Title                                                                                                                | Notes                                                                                                           |
+| ----------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `b44c1ce5d` | fix(mobile): keep the Android composer placeholder on one line (#12605)                                              | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `7810fb263` | Add new GitHub user 'yordis' to VOUCHED.td (#12546)                                                                  | Upstream contributor-governance data is not part of the fork.                                                   |
+| `f9e8f578f` | chore: vouch cestercian (#12638)                                                                                     | Upstream contributor-governance data is not part of the fork.                                                   |
+| `f6cc6bc7e` | fix(mobile): respect word wrap in diffs (#12590)                                                                     | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `933492470` | fix(web): pull request chips share the link hover preview (#12719)                                                   | Ronin deliberately removed the pull-request link-hover preview in an earlier batch.                             |
+| `a6cb1dd20` | fix(mobile): keep the source worktree when starting a thread on a branch (#12623)                                    | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `1eeeabb26` | fix(mobile): use a proper pull request icon on iOS (#12855)                                                          | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `33cb911ce` | fix(mobile): stop iOS autocorrect from rewriting search queries (#12949)                                             | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `76cc9b08f` | chore(mobile): bump app version to 1.3.0                                                                             | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `742173a13` | feat(settings): resolve t3.json inside the project settings resolver (#12954)                                        | Project-scoped settings inheritance remains a deliberate Ronin cut.                                             |
+| `0141bc2bf` | feat(settings): choose how new worktrees initialize submodules (#12955)                                              | Project-scoped settings inheritance remains a deliberate Ronin cut.                                             |
+| `5a61f50cc` | chore(lint): report className restyling of components/ui exports (#12982)                                            | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `c26119ada` | refactor(web): drop className overrides that repeat the base styles (#12984)                                         | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `b5a0f8101` | refactor(web): give Spinner and RefreshIcon a size prop (#12985)                                                     | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `c0490e9d0` | refactor(web): use ghost-muted where ghost buttons restyled to muted (#13020)                                        | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `1a81ea8c1` | refactor(web): fold repeated overrides into ui defaults (#13021)                                                     | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `ce98d4107` | refactor(web): mark the current menu value with MenuRadioGroup (#13022)                                              | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `ed856946c` | refactor(web): add an active prop to CommandItem (#13023)                                                            | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `bbd5cc032` | chore(lint): exempt CollapsibleTrigger from no-restyle (#13024)                                                      | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `951501616` | refactor(web): use icon-xs where icon buttons were forced to size-6 (#13025)                                         | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `b4f1f18b7` | refactor(web): add radius="none" to ScrollArea (#13026)                                                              | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `7b54af90f` | refactor(web): add font="mono" to Input (#13027)                                                                     | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `be80e3693` | refactor(web): add SidebarInput (#13028)                                                                             | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `8d02447c3` | refactor(web): add a label variant to Badge (#13029)                                                                 | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `7d658c24d` | refactor(web): give Skeleton three shapes (#13030)                                                                   | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `aa2b25d29` | refactor(web): one wrap width for tooltips, plus a code variant (#13031)                                             | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `f3d3fe456` | refactor(web): one vertical rhythm for dialog bodies (#13032)                                                        | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `18aa70367` | refactor(web): ghost-muted icons follow the text; add ghost-destructive (#13033)                                     | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `4c9fbf1f6` | refactor(web): InlineButton underlines on hover and takes a tone (#13034)                                            | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `d7736e06b` | refactor(web): one minimum width for menus, three widths for popovers (#13035)                                       | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `da89e102f` | refactor(web): every textarea caps its growth; the diff comment box is a Textarea (#13036)                           | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `016cdb962` | refactor(web): stacked sidebar groups share one inset (#13037)                                                       | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `e420ef983` | refactor(web): Collapsible stays a plain container (#13038)                                                          | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `0fa4a859f` | refactor(web): show more / show less are ordinary sidebar sub-rows (#13039)                                          | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `0ee02ebf2` | refactor(web): Empty has three sizes (#13040)                                                                        | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `4321aa24f` | refactor(web): one row height for select, combobox and radio items (#13041)                                          | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `1c2f93389` | refactor(web): render menu and popover triggers through Button (#13042)                                              | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `83bbfa7e8` | refactor(web): sidebar alerts use the standard variants; one keycap (#13043)                                         | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `bed0b4cda` | chore(mobile): drop dead nitro-markdown tgz override and @expo/metro-runtime (#13148)                                | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `242816af8` | feat(web): show settings scope as a sentence at the top of the page (#13139)                                         | Project-scoped settings inheritance remains a deliberate Ronin cut.                                             |
+| `db9a0671b` | refactor(web): move settings scope pickers into breadcrumbs (#13165)                                                 | Project-scoped settings inheritance remains a deliberate Ronin cut.                                             |
+| `7e65b226e` | feat(auth): share provider sign-in flows and credential bindings (#12983)                                            | The shared provider sign-in/credential-binding surface is deliberately excluded.                                |
+| `ec28eefa0` | refactor(mobile): git sheets use uniwind platform variants instead of className ternaries (#13161)                   | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `340965191` | chore(mobile): name the two project favicon caches by their job (#13160)                                             | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `6dcde218a` | revert(mobile): git sheets back to Platform.OS ternaries (un-guarded uniwind variants broke both platforms) (#13169) | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `5d493d67c` | docs(mobile): document the two mobile routes that intentionally skip deep links (#13164)                             | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `5821b778f` | refactor(mobile): break module cycles with focused extractions (#13151)                                              | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `e4422eec7` | fix(desktop): find linuxbrew node for the WSL backend (#7827)                                                        | No WSL backend in this repo.                                                                                    |
+| `a493946bb` | fix(mobile): keep ordinary offline outbox failures out of console.warn (#13144)                                      | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `2eaff0824` | chore(lint): keep mobile theme escape-hatch allowlist honest (#13146)                                                | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `b9199617d` | fix(mobile): uniwind platform variants stay guarded on both platforms (#13172)                                       | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `21be723ad` | refactor(mobile): git sheets use uniwind platform variants instead of className ternaries (#13185)                   | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `db898a306` | refactor(mobile): remaining className platform ternaries become class variants (#13188)                              | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `151324b2c` | perf(mobile): recycle the default v2 home list and scope the snooze minute tick (#13149)                             | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `0c91f687d` | refactor(mobile): retire the legacy grouped thread list (#13183)                                                     | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `aca3c87cd` | chore(mobile): clear the legacy-list deletion fallout (#13203)                                                       | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `29931dd3a` | hatch/variant functions (#13191)                                                                                     | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `266d70cc4` | refactor(web): context chips render through one ContextChip component (#13192)                                       | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `361b047f5` | refactor(web): ui components drop their secondary className props (#13193)                                           | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `866fc9075` | refactor(web): menu triggers and items stop restyling ui/menu (#13205)                                               | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `21079391c` | refactor(web): field controls stop restyling Input, Select, Combobox and Command (#13206)                            | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `f46522777` | refactor(web): app code stops restyling sidebar, popover, table and misc ui exports (#13207)                         | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `71c9b6931` | refactor(web): Button consumers outside the composer stop restyling it (#13208)                                      | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `0e512db34` | refactor(web): composer controls own their look instead of restyling ui components (#13209)                          | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `10882bea7` | chore(web): no-restyle fails lint, and the ceiling gate goes (#13210)                                                | Superseded by Ronin's intentional UI/no-restyle architecture; importing it would undo the fork's design system. |
+| `23c7ab901` | fix(mobile): recover from screen render errors (#13197)                                                              | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+| `f5ef0ddb9` | chore(mobile): bump app version to 1.3.1                                                                             | No mobile app in this repo; no shared non-mobile hunk remained.                                                 |
+
+### Verification
+
+- Full test suites pass for server (**328 files / 4,316 tests**, plus 2 files / 9 tests skipped),
+  web (**387 / 4,820**), desktop (**85 / 1,012**), contracts (**25 / 407**), shared
+  (**58 / 740**), and effect-acp (**5 / 32**).
+- The changed client-runtime citation suite passes (**1 file / 28 tests**). Its full suite still has
+  one verified pre-existing failure in `src/state/sharedSettings.test.ts`: the old assertion omits
+  `textGenerationModelSelection`, while both the current HEAD implementation and this batch leave
+  that field in shared settings.
+- Typechecks pass for server, web, desktop, client runtime, contracts, and shared. Server output
+  contains only non-blocking Effect suggestions.
+- `vp lint --report-unused-disable-directives` completes with no errors and five existing warnings;
+  `vp fmt --check` and `git diff --check` pass.
+- The 147-commit ledger matches the frozen range: **78 Port, 2 Already in tree, 67 Skip, 0 Ask**.
+
+**Hit every applicable surface:** desktop Electron/preload and accessibility capture, web chat/
+composer/sidebar/settings/pull requests/device controls, server provider/ACP/device/git/pull-request
+services, wire contracts, client runtime, shared helpers, local and SSH hosts, and user docs. Mobile,
+WSL, provider auth bindings, project-scoped settings inheritance, and upstream's no-restyle design
+migration remain deliberately cut.
+
+### Not tested
+
+- No live browser/client automation was run, per `AGENTS.md`.
+- No real provider process, remote host, simulator, GitHub mutation, or telemetry collector was
+  exercised against an external system.
+
+## Batch 37 — reviewed through `4293433ec` (80 commits)
+
+Reviewed `f5ef0ddb9..4293433ec`, with upstream snapshotted at
+`4293433eccbe6c6661acd020e584ae5d2234bf1e` for the whole run. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`. No commit needed a product Ask.
+
+### Ported (47)
+
+| Upstream    | Title                                                                                           | Notes                                                                                          |
+| ----------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `e407f9bb0` | fix(ci): shard release tests like pull request CI (#13321)                                      | Split release verification into non-server and sharded server jobs.                            |
+| `effaab94e` | fix(web): show previous worktree branch on second line (#13314)                                 | Preserved the previous branch as secondary worktree context.                                   |
+| `d4cd7d5c3` | fix(providers): restore compatibility ranges for every harness (#13328)                         | Reconciled provider compatibility ranges and maintenance coverage.                             |
+| `894d33419` | fix(preview): use the visible browser for new agent sessions (#13064)                           | Routed new agent browser sessions to the visible preview surface.                              |
+| `6b4b19096` | fix(desktop): SnapShot shortcut helper no longer adds a Dock icon on macOS (#13286)             | Applied the activation-policy fix to the desktop helper.                                       |
+| `9030a60ea` | fix(web): composer chip rings no longer clip at the editor edge (#13301)                        | Ported the composer chip spacing correction.                                                   |
+| `f1add18ae` | fix(shared): preserve final quoted empty CSV records (#11425)                                   | Fixed delimited parsing and added regression coverage.                                         |
+| `78af372cf` | feat(web): add an interactive 3D device workspace (#12787)                                      | Ported the device workspace, models, controls, streaming, server support, contracts, and docs. |
+| `e67abcf79` | feat(observability): honor the OpenTelemetry kill switch (#13355)                               | Added the standard SDK-disable switch to server and desktop telemetry.                         |
+| `b2b43bef7` | fix(server): preserve racy edits in review diff previews (#12613)                               | Reconciled preview snapshots with concurrent working-tree edits.                               |
+| `cb1a3f346` | fix(web): show repository names on linked pull requests (#13061)                                | Added repository identity to linked pull-request presentation.                                 |
+| `87d842801` | fix(observability): a malformed OTEL_RESOURCE_ATTRIBUTES no longer stops startup (#13469)       | Made malformed resource attributes non-fatal.                                                  |
+| `e759847f9` | fix(acp): keep one answer when a running tool reports progress (#13386)                         | Kept the final ACP answer stable across progress updates.                                      |
+| `66129c6fd` | feat(web): run shell commands from chat in the thread terminal (#13060)                         | Added chat command execution through the thread terminal.                                      |
+| `567783ecd` | fix(codex): the protocol generator runs again on Effect rc.115 (#13480)                         | Updated the generator for the current Effect schema APIs.                                      |
+| `d5d48742c` | feat(codex): require Codex 0.156 and regenerate its protocol (#13481)                           | Regenerated the Codex protocol and raised the compatibility floor.                             |
+| `010967041` | feat(threads): add per-thread auto-settle switch (#11846)                                       | Added contracts, persistence, orchestration, menus, shortcuts, migration 061, tests, and docs. |
+| `8251c8de7` | fix(web): working and monitoring threads fade in the sidebar again (#13506)                     | Restored the sidebar transition without adding continuous animation.                           |
+| `a36af0637` | fix(server): streamed section titles wait for the text under them (#13504)                      | Delayed streamed headings until their content is available.                                    |
+| `9a91177c3` | fix(web): sidebar Back always returns to the main app (#13516)                                  | Tracks the last main-app location for Settings and sidebar Back actions.                       |
+| `fd4651005` | fix(web): keep sidebar terminal pulses in sync (#12962)                                         | Reconciled terminal activity indicators with current thread state.                             |
+| `46f3c2ca2` | feat(web): add iPhone Duo 3D controls (#12813)                                                  | Added Duo viewport and control support to the 3D device workspace.                             |
+| `3e2370fbb` | feat(web): add usage page keybinding (#9434)                                                    | Added the Stats-page keybinding and command surface.                                           |
+| `ebdcda135` | fix(web): selected text stays visible on a revealed file line (#13548)                          | Preserved selection highlighting when revealing cited file lines.                              |
+| `29abbf9b4` | fix(web): collapsed composer bar stops flipping its labels while you scroll (#13555)            | Stabilized collapsed-composer label measurement.                                               |
+| `6391be272` | fix(server): newer Codex models get T3 Code's instructions again (#13547)                       | Adapted the newer-model instruction gate to Ronin branding and runtime context.                |
+| `9957349c0` | feat(web): control Android foldables in the Device panel (#13534)                               | Added fold-state contracts, proxy routing, controls, and tests.                                |
+| `4f27a8463` | fix(mcp): preview snapshots fit in the agent's tool output again (#13558)                       | Bounded text and structured snapshot output while retaining locators and omission guidance.    |
+| `0c84b4289` | fix(web): paste after clicking away from the composer lands in it again (#13553)                | Restored composer focus for paste after focus moves away.                                      |
+| `99641fd09` | feat(desktop): keep running threads synced in the background (#13554)                           | Added the desktop-only running-thread keep-alive, tests, and architecture docs.                |
+| `1e192b255` | fix(mcp): preview errors tell agents what to do instead (#13559)                                | Added actionable preview failure details to MCP results.                                       |
+| `df9826f08` | feat(web): agents working banner links to the Agents panel (#13572)                             | Added the missing panel-navigation action.                                                     |
+| `7b8443116` | fix(web): size the Android fold model from the inner display (#13574)                           | Corrected foldable geometry and frame sizing.                                                  |
+| `20f0ff178` | fix(web): keep nested task states out of parent bullets (#11477)                                | Limited task-state parsing to the current task level.                                          |
+| `d10bd1360` | perf(desktop): cache compiled JavaScript between launches (#13501)                              | Wired the desktop and packaged backend compile caches through the boot artifact.               |
+| `b3de243d5` | fix(dev): one t3.json setup action that works on every OS (#13589)                              | Replaced platform-specific setup actions with one TypeScript setup script.                     |
+| `13d6b3051` | fix(web): new worktree threads no longer say "checkout" during setup (#13590)                   | Shows worktree preparation instead of an incorrect checkout label.                             |
+| `86054b6df` | fix(desktop): `t3 app` keeps working after a second desktop app quits (#13585)                  | Ported the activation lease lifecycle and regression coverage.                                 |
+| `e3e7cc3fc` | fix(usage): price Claude fast-mode requests at the fast rate (#13599)                           | Added fast-mode records and rate multipliers to usage pricing.                                 |
+| `e55e7315e` | fix: update OpenAI logo to current brand asset (#13611)                                         | Updated the web provider icon; absent marketing/mobile assets were omitted.                    |
+| `e5a46d6c5` | feat(usage): read cursor, opencode, and antigravity history (#10409)                            | Added readers, dedupe/source metadata, Cursor Keychain opt-in, UI notices, tests, and docs.    |
+| `d06f0ff10` | fix(sqlite): retry failed statement preparations (#10584)                                       | Failed preparations no longer poison the statement cache.                                      |
+| `a4f6078be` | fix(web): return focus to the composer after saving a citation note (#13450)                    | Restores the Lexical selection and editor focus after citation editing.                        |
+| `fd996d15e` | feat(observability): honor the standard OTLP endpoint, headers, and protocol variables (#13492) | Added standard per-signal OTLP resolution, validation, tests, and operations docs.             |
+| `1a0c915c4` | fix(terminal): settling a thread closes its idle shells (#13673)                                | Closes only prompt-idle shells on settle and after successful setup scripts.                   |
+| `f5bd2fddb` | fix(server): load Cursor keyring with createRequire (#13678)                                    | Loads the native keyring safely from ESM.                                                      |
+| `4293433ec` | perf(server): avoid rereading unchanged files in review previews (#13395)                       | Added mtime-aware review-file reuse with focused tests.                                        |
+
+### Already in the tree (4)
+
+| Upstream    | Title                                                                      | Notes                                                                                   |
+| ----------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `21e2b7de0` | fix(web): switches announce their real state to screen readers (#11580)    | Ronin's switch already exposes checked state through its native semantics.              |
+| `cdb26fe63` | fix(antigravity): let Stop end commands that outlived their turn (#13388)  | Ronin runs Antigravity per turn, and Stop already kills the active child process.       |
+| `f61f979c7` | fix(web,mobile): drop the baked-in tile from the Antigravity icon (#13373) | Ronin already uses a newer tile-free vector icon.                                       |
+| `72447f23d` | feat(grok): offer one-click updates through `grok update` (#13523)         | Equivalent Grok update behavior already exists in the fork's provider maintenance flow. |
+
+### Skipped (29)
+
+| Upstream    | Title                                                                                          | Notes                                                                                       |
+| ----------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `11e91f126` | feat(mobile): capture Live Activities and agent notifications in showcase screenshots (#13316) | No mobile app in this repo.                                                                 |
+| `68fb7f4b8` | feat(mobile): manage environment and provider updates (#13302)                                 | No mobile app in this repo.                                                                 |
+| `e4eb9977f` | fix(server): stop replaying old agent alerts on restart (#13340)                               | Hosted relay and its agent-alert replay are deliberately cut.                               |
+| `c0912debc` | fix(web): use a brain icon for the effort dropdown (#13309)                                    | Superseded by Ronin's provider-control visual language.                                     |
+| `9383f4ad7` | chore: add scratchyone to vouched list (#13353)                                                | Upstream contributor-governance data is not part of the fork.                               |
+| `80fc23ac3` | lint/unknown and static (#13366)                                                               | Cleanup-only lint churn was not imported across the diverged tree.                          |
+| `315fcca10` | fix(web): web colors come from theme tokens (#13371)                                           | Superseded by Ronin's theme and component system.                                           |
+| `f26ee083f` | fix(web): appearance classes use theme tokens and scale values (#13397)                        | Superseded by Ronin's appearance implementation.                                            |
+| `ffb5fcce7` | fix(server): keep Codex's reset answer when the re-probe fails (#13363)                        | Depends on the deliberately omitted Limits/reset-credit surface.                            |
+| `84c436bcf` | fix(mobile): branch search finds remote and space-typed branches (#13454)                      | No mobile app in this repo.                                                                 |
+| `7cfb4987f` | chore(ci): use GPT 6 Sol Max for check agents (#13473)                                         | Upstream CI-agent model governance is not inherited by the fork.                            |
+| `3412097bf` | feat(server): show and redeem Claude banked resets (#13118)                                    | The upstream Limits/reset-credit product surface is deliberately omitted.                   |
+| `53456bc01` | fix(marketing): use the official OpenCode and Antigravity logos (#13365)                       | No marketing app in this repo.                                                              |
+| `f3cb2a1fe` | fix(antigravity): keep Windows runtime unpacking under MAX_PATH (#13389)                       | Ronin's per-turn `agy` adapter does not unpack that upstream runtime.                       |
+| `720490adc` | fix(web): normalize disabled control opacity (#11441)                                          | Superseded by Ronin's component styling.                                                    |
+| `d4a33457c` | fix(desktop): desktop updates reconnect in seconds, not minutes (#12006)                       | Targets the newer upstream updater architecture, which the fork does not have.              |
+| `8d7b5e998` | fix(connect): remove tunnels after hosts go offline (#9386)                                    | T3 Connect is deliberately cut.                                                             |
+| `9c524d577` | fix(mobile): capture a lit 6.9-inch lock screen in the agent-activity showcase (#13522)        | No mobile app in this repo.                                                                 |
+| `59abcd67a` | fix(mobile): make Android subscription usage widgets scrollable (#13474)                       | No mobile app in this repo.                                                                 |
+| `d23eab13d` | fix(relay): export tunnel cleanup counters to Axiom (#13528)                                   | Hosted relay is deliberately cut.                                                           |
+| `0cab7d5ab` | fix(server): Grok accounts with no usage yet no longer vanish from Limits (#12799)             | Depends on the omitted Limits surface.                                                      |
+| `91e53e501` | fix(server): report the Grok account email so usage limits merge across environments (#12588)  | Depends on the omitted Limits surface.                                                      |
+| `568c9bc4d` | chore: clear Effect language service suggestions (#13536)                                      | Cleanup-only churn was not imported.                                                        |
+| `fc46b8c3d` | ci(relay): add a forced manual relay deploy (#13550)                                           | Hosted relay is deliberately cut.                                                           |
+| `ab70c8943` | fix(clients): sync status no longer flickers when opening running threads (#13551)             | Ronin has no matching sync-status UI; the underlying background sync was ported separately. |
+| `a107f8a07` | fix(clients): a preview app no longer knocks the desktop's own server offline (#13577)         | Targets an upstream discovery-compatibility layer absent from Ronin.                        |
+| `c13f7d93f` | feat(release): ship a Linux .deb that updates itself (#13575)                                  | Ronin's current updater and release path is AppImage-only.                                  |
+| `1c1270663` | fix(mobile): render assigned project icons in chat list (#12810)                               | No mobile app in this repo.                                                                 |
+| `7a12aff47` | fix(mobile): scale Android controls with appearance text size (#13356)                         | No mobile app in this repo.                                                                 |
+
+### Verification
+
+- Typechecks pass for contracts, shared, effect-codex-app-server, client runtime, server, web, and
+  desktop. Server and client-runtime output contains only non-blocking Effect suggestions.
+- Focused tests pass across contracts/shared parsing, provider compatibility and protocol generation,
+  usage readers/pricing/merge, auto-settle and terminal cleanup, device streaming/folding, desktop
+  activation/compile cache, MCP snapshot bounds, review-preview reuse, and changed web logic.
+- All changed text files pass targeted formatting validation, including the release workflow;
+  `git diff --check` passes.
+- React Doctor completed its changed-scope scan at **38/100** across the cumulative uncommitted sync
+  delta. Its findings are the existing/upstream large-component and React Compiler backlog; the one
+  cleanup warning points at an effect that already removes all listeners and clears its timer.
+- The 80-commit ledger matches the frozen range: **47 Port, 4 Already in tree, 29 Skip, 0 Ask**.
+
+**Hit every applicable surface:** desktop Electron startup/activation/preview/SnapShot, web chat/
+composer/sidebar/settings/usage/device/pull requests, server orchestration/providers/terminal/
+usage/device/MCP/SQLite/review previews, wire contracts, client runtime, shared helpers, CI setup,
+local and remote device hosts, and user/internals/operations docs. Mobile, T3 Connect, hosted relay,
+marketing, the Limits/reset-credit product, the newer desktop updater, and upstream theme migrations
+remain deliberately cut.
+
+### Not tested
+
+- No live browser/client automation was run, per `AGENTS.md`.
+- No real provider process, simulator, SSH device host, macOS Keychain prompt, telemetry collector,
+  GitHub mutation, packaged release, or self-updater was exercised against an external system.

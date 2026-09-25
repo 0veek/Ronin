@@ -28,10 +28,12 @@ import {
 import * as NodeURL from "node:url";
 
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as PreviewManager from "../../preview/Manager.ts";
+import * as DesktopClientSettings from "../../settings/DesktopClientSettings.ts";
 import { PREVIEW_WEBVIEW_PREFERENCES } from "../../preview/WebviewPreferences.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
@@ -43,6 +45,9 @@ export const installPreviewEventForwarding = Effect.fn(
   const manager = yield* PreviewManager.PreviewManager;
   yield* manager.subscribeStateChanges((tabId, state) =>
     electronWindow.sendAll(IpcChannels.PREVIEW_STATE_CHANGE_CHANNEL, tabId, state),
+  );
+  yield* manager.subscribeRecordingInputs((event) =>
+    electronWindow.sendAll(IpcChannels.PREVIEW_RECORDING_INPUT_CHANNEL, event),
   );
   yield* manager.subscribePointerEvents((event) =>
     electronWindow.sendAll(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, event),
@@ -174,11 +179,21 @@ export const cancelPickElement = tabMethod(
   "desktop.ipc.preview.cancelPickElement",
   (manager, tabId) => manager.cancelPickElement(tabId),
 );
-export const startRecording = tabMethod(
-  IpcChannels.PREVIEW_RECORDING_START_CHANNEL,
-  "desktop.ipc.preview.startRecording",
-  (manager, tabId) => manager.startRecording(tabId),
-);
+export const startRecording = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_RECORDING_START_CHANNEL,
+  payload: DesktopPreviewTabInputSchema,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.preview.startRecording")(function* ({ tabId }) {
+    const manager = yield* PreviewManager.PreviewManager;
+    const store = yield* DesktopClientSettings.DesktopClientSettings;
+    const settings = yield* store.get;
+    const options = Option.map(settings, (value) => ({
+      showKeyPresses: value.browserRecordingShowKeyPresses,
+      showMousePresses: value.browserRecordingShowMousePresses,
+    }));
+    yield* manager.startRecording(tabId, Option.getOrUndefined(options));
+  }),
+});
 export const stopRecording = tabMethod(
   IpcChannels.PREVIEW_RECORDING_STOP_CHANNEL,
   "desktop.ipc.preview.stopRecording",

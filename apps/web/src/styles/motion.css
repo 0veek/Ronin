@@ -109,7 +109,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-new(root) {
 }
 
 html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-composer) {
-  animation-duration: var(--duration-base);
+  animation-duration: var(--mobile-composer-transition-duration);
   animation-timing-function: var(--ease-out);
 }
 
@@ -118,12 +118,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-image-pair(t
 }
 
 html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-composer) {
-  animation: t3-mobile-composer-old var(--duration-base) linear both;
+  animation: t3-mobile-composer-old var(--mobile-composer-transition-duration) linear both;
   mix-blend-mode: normal;
 }
 
 html[data-mobile-composer-route-transition="true"]::view-transition-new(t3-mobile-composer) {
-  animation: t3-mobile-composer-new var(--duration-base) linear both;
+  animation: t3-mobile-composer-new var(--mobile-composer-transition-duration) linear both;
   mix-blend-mode: normal;
 }
 
@@ -153,11 +153,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-new(t3-mobil
 }
 
 html[data-mobile-composer-route-transition="true"]::view-transition-group(t3-mobile-draft-headline) {
-  animation-duration: var(--duration-fast);
+  animation-duration: var(--mobile-composer-transition-duration);
 }
 
 html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobile-draft-headline) {
-  animation: t3-mobile-draft-headline-exit var(--duration-fast) var(--ease-in) both;
+  animation: t3-mobile-draft-headline-exit var(--mobile-composer-transition-duration) var(--ease-in)
+    both;
   mix-blend-mode: normal;
 }
 

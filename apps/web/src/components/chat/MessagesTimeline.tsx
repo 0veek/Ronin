@@ -265,6 +265,7 @@ interface TimelineRowSharedState {
    */
   onAskOnTheSide: ((messageId: MessageId) => void) | null;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
+  onRunShellCommand: ((command: string) => void) | undefined;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
   openingVideoAttachmentId: string | null;
@@ -387,6 +388,7 @@ interface MessagesTimelineProps {
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onAskOnTheSide?: ((messageId: MessageId) => void) | null;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
+  onRunShellCommand?: (command: string) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen?: (attachment: ChatFileAttachment) => void;
@@ -451,6 +453,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onRevertToTurnCount,
   onAskOnTheSide = null,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
+  onRunShellCommand,
   isRevertingCheckpoint,
   onImageExpand,
   onFileOpen = NOOP_OPEN_ATTACHMENT,
@@ -837,6 +840,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertToTurnCount,
       onAskOnTheSide,
       onUseArtifactTemplate,
+      onRunShellCommand,
       onImageExpand,
       onFileOpen,
       openingVideoAttachmentId,
@@ -869,6 +873,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       onRevertToTurnCount,
       onAskOnTheSide,
       onUseArtifactTemplate,
+      onRunShellCommand,
       onImageExpand,
       onFileOpen,
       openingVideoAttachmentId,
@@ -1961,6 +1966,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               skills={ctx.skills}
               headingLevelOffset={MESSAGE_HEADING_LEVEL}
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+              onRunShellCommand={ctx.onRunShellCommand}
               onImageExpand={ctx.onImageExpand}
             />
           </AssistantCitationSource>

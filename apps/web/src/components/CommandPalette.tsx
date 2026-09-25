@@ -43,6 +43,7 @@ import {
   ArrowLeftIcon,
   BoxIcon,
   ClockIcon,
+  ChartNoAxesColumnIcon,
   ColumnsIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
@@ -484,6 +485,7 @@ function overlayModeForCommand(command: string | null): SearchOverlayMode | null
 }
 
 export function CommandPalette({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
     mode: "command",
@@ -558,6 +560,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         setShortcutsOpen((open) => !open);
         return;
       }
+      if (command === "usage.open") {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpen(false);
+        void navigate({ to: "/usage" });
+        return;
+      }
       const mode = overlayModeForCommand(command);
       if (mode === null) {
         return;
@@ -568,7 +577,17 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings, previewOpen, resolvedTheme, terminalOpen, theme, themeHalves, toggleMode]);
+  }, [
+    keybindings,
+    navigate,
+    previewOpen,
+    resolvedTheme,
+    setOpen,
+    terminalOpen,
+    theme,
+    themeHalves,
+    toggleMode,
+  ]);
 
   // The palette's own entry for the cheat sheet arrives the same way the
   // workspace verbs do, so there is one route from a palette row to a command.
@@ -2006,6 +2025,18 @@ function OpenCommandPaletteDialog(props: {
       groups: [{ value: "projects", label: "Projects", items: boardProjectItems }],
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:usage",
+    searchTerms: ["usage", "tokens", "cost", "spend", "stats", "analytics"],
+    title: "Open usage",
+    icon: <ChartNoAxesColumnIcon className={ITEM_ICON_CLASS} />,
+    shortcutCommand: "usage.open",
+    run: async () => {
+      await navigate({ to: "/usage" });
+    },
+  });
 
   actionItems.push({
     kind: "action",

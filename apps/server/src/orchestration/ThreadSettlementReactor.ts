@@ -155,9 +155,29 @@ export const make = Effect.gen(function* () {
     };
     const groups = Map.groupBy(lookupCandidates, lookupKey);
 
-    const pullRequestFor = Effect.fn("ThreadSettlementReactor.pullRequestFor")(function* (
-      thread: (typeof candidates)[number],
+    const wouldSettle = Effect.fn("ThreadSettlementReactor.wouldSettle")(function* (
+      group: ReadonlyArray<(typeof candidates)[number]>,
+      pullRequest: SettlementPullRequest,
     ) {
+      const settings = yield* settingsService.getSettings;
+      const decisionNow = DateTime.formatIso(yield* DateTime.now);
+      return group.some((thread) => {
+        return (
+          resolveAutoSettlementAt({
+            thread,
+            pullRequest,
+            now: decisionNow,
+            autoSettleAfterDays: settings.sidebarAutoSettleAfterDays,
+            autoSettleOnMerge: settings.sidebarAutoSettleOnMerge,
+          }) !== null
+        );
+      });
+    });
+
+    const pullRequestFor = Effect.fn("ThreadSettlementReactor.pullRequestFor")(function* (
+      group: ReadonlyArray<(typeof candidates)[number]>,
+    ) {
+      const thread = group[0]!;
       const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
       if (reference != null) {
         const matchesMerge =
@@ -182,10 +202,21 @@ export const make = Effect.gen(function* () {
               },
               { recoverTransientFailure: false },
             );
+        const terminal = {
+          state: summary.state,
+          closedAt: summary.closedAt ?? null,
+          mergedAt: summary.mergedAt ?? null,
+        } satisfies SettlementPullRequest;
         const cwd = lookupCwdByThreadId.get(thread.id);
         if (summary.state !== "open" && thread.branch !== null && cwd !== undefined) {
           // A reused branch can already have a new open PR while discovery
           // is replacing its old link. Do not let settlement win that race.
+          // Only pay for the uncached lookup when this sweep would otherwise
+          // settle: a terminal link that settles nothing (resumed thread,
+          // settle-on-merge off) would re-query the host every minute. A
+          // group that becomes eligible after this check waits for the next
+          // sweep rather than settling on the unverified link.
+          if (!(yield* wouldSettle(group, terminal))) return undefined;
           const current = yield* git.branchPullRequest(
             { cwd, branch: thread.branch },
             { refresh: true },
@@ -199,11 +230,7 @@ export const make = Effect.gen(function* () {
             return current;
           }
         }
-        return {
-          state: summary.state,
-          closedAt: summary.closedAt ?? null,
-          mergedAt: summary.mergedAt ?? null,
-        } satisfies SettlementPullRequest;
+        return terminal;
       }
       if (thread.branch === null) return null;
       const cwd = lookupCwdByThreadId.get(thread.id);
@@ -217,7 +244,8 @@ export const make = Effect.gen(function* () {
       groups.values(),
       (group) =>
         Effect.gen(function* () {
-          const pullRequest = yield* pullRequestFor(group[0]!);
+          const pullRequest = yield* pullRequestFor(group);
+          if (pullRequest === undefined) return;
           yield* Effect.forEach(group, (thread) => settleThread(thread, pullRequest), {
             discard: true,
           });

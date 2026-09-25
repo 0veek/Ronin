@@ -116,7 +116,7 @@ export const PreviewSetAppearanceTool = safeBrowserTool(
 export const PreviewSnapshotTool = readonlyBrowserTool(
   Tool.make("preview_snapshot", {
     description:
-      "Inspect a page before interacting. Pass tabId to inspect a specific tab; omit it to use this agent session's current tab. Returns bounded page state, semantic elements, diagnostics, action history, and a PNG screenshot. Set includeImage=false for text-only output. Set save=true to write the PNG into this agent's environment and return screenshotPath.",
+      "Inspect a page before interacting. Pass tabId to inspect a specific tab; omit it to use this agent session's current tab. Returns bounded page state, semantic elements, diagnostics, action history, and a PNG screenshot. The text is capped near 20 KB and lists what it omitted; use preview_evaluate to read more. Set includeImage=false for text-only output. Set save=true to write the PNG into this agent's environment and return screenshotPath; with includeImage=false, save=true returns only the url and screenshotPath.",
     parameters: Schema.Struct({
       ...PreviewAutomationTabTargetInput.fields,
       includeImage: Schema.optional(
@@ -128,7 +128,7 @@ export const PreviewSnapshotTool = readonlyBrowserTool(
       save: Schema.optional(
         Schema.Boolean.annotate({
           description:
-            "Save the full-resolution PNG into this agent's environment and return its absolute screenshotPath. Defaults to false.",
+            "Save the full-resolution PNG into this agent's environment and return its absolute screenshotPath. With includeImage=false, return only the url and screenshotPath. Defaults to false.",
         }),
       ),
     }),

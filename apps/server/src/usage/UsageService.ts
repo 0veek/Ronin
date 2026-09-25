@@ -26,7 +26,7 @@ import {
   type UsageSummaryInput,
   UsageReadError,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -46,6 +46,9 @@ import { expandHomePath } from "../pathExpansion.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
+import { readOpenCodeUsage } from "./opencodeUsageReader.ts";
+import { readAntigravityUsage } from "./antigravityUsageReader.ts";
+import { readCursorAccountUsage } from "./cursorUsageReader.ts";
 import { UsageAggregator } from "./usageAggregation.ts";
 import { parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
@@ -145,6 +148,7 @@ export const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const httpClient = yield* HttpClient.HttpClient;
   const hostEnvironment = yield* HostProcessEnvironment;
+  const platform = yield* HostProcessPlatform;
 
   const fileCache: ScanCache = new Map();
   let cacheDirty = false;
@@ -226,6 +230,19 @@ export const make = Effect.gen(function* () {
     Effect.withSpan("UsageService.refreshRates"),
   );
 
+  // A settings failure must surface as an error: swallowing it would present
+  // zero usage from every provider as a valid answer.
+  const readSettings = settingsService.getSettings.pipe(
+    Effect.catchCause(
+      (cause) =>
+        new UsageReadError({
+          reason: "scanFailed",
+          detail: "Server settings could not be read.",
+          cause: Cause.squash(cause),
+        }),
+    ),
+  );
+
   /**
    * Resolves the transcript directory for each provider.
    *
@@ -233,21 +250,7 @@ export const make = Effect.gen(function* () {
    * `.jsonl`; without it the walk would stream files that can never carry usage.
    */
   const resolveTranscriptDirs = Effect.fn("UsageService.resolveTranscriptDirs")(function* () {
-    // A settings failure must surface as an error: swallowing it here would
-    // present "zero usage from every provider" as a valid answer.
-    const settings = yield* settingsService.getSettings.pipe(
-      Effect.catchCause(
-        (cause) =>
-          new UsageReadError({
-            reason: "scanFailed",
-            // Bounded description; the squashed failure travels as the cause.
-            // Squashed, not the Cause tree: a full tree in a Defect field is
-            // the unbounded wire payload the bounded detail exists to avoid.
-            detail: "Server settings could not be read.",
-            cause: Cause.squash(cause),
-          }),
-      ),
-    );
+    const settings = yield* readSettings;
 
     const dirs: Array<{ provider: UsageProviderKind; dir: string; fileName?: string }> = [];
     const seen = new Set<string>();
@@ -297,21 +300,6 @@ export const make = Effect.gen(function* () {
       }
     }
 
-    dirs.push(
-      // Antigravity keeps two stores side by side under one home: `agy` writes
-      // to `antigravity-cli`, the editor to `antigravity`. Both are the same
-      // format on the same account's quota, so both are walked. Records carry a
-      // conversation-scoped dedupe key, so a conversation visible to both is
-      // still counted once.
-      {
-        provider: "antigravity" as const,
-        dir: path.join(NodeOS.homedir(), ".gemini", "antigravity-cli", "conversations"),
-      },
-      {
-        provider: "antigravity" as const,
-        dir: path.join(NodeOS.homedir(), ".gemini", "antigravity", "conversations"),
-      },
-    );
     return dirs;
   });
 
@@ -416,6 +404,10 @@ export const make = Effect.gen(function* () {
     readonly provider: UsageProviderKind;
     readonly dir: string;
     readonly volumeId: string;
+    readonly hostId?: string;
+    readonly status?: UsageSource["status"];
+    readonly message?: string;
+    readonly action?: UsageSource["action"];
     /** Parsed records per file, or `null` when the directory does not exist. */
     readonly files:
       | readonly { readonly path: string; readonly records: readonly UsageRecord[] }[]
@@ -448,6 +440,147 @@ export const make = Effect.gen(function* () {
       }
       scanned.push({ provider, dir, volumeId, files: parsedFiles });
     }
+
+    const home = NodeOS.homedir();
+    const envRoots = Effect.fnUntraced(function* (key: string, defaults: readonly string[]) {
+      const configured = hostEnvironment[key]
+        ?.split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      const canonical = new Set<string>();
+      for (const root of configured?.length ? configured : defaults) {
+        const resolved = path.resolve(expandHomePath(root));
+        canonical.add(
+          yield* fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved)),
+        );
+      }
+      return [...canonical];
+    });
+
+    const dataHome = hostEnvironment["XDG_DATA_HOME"]?.trim();
+    for (const dir of yield* envRoots("OPENCODE_DATA_DIR", [
+      path.join(
+        dataHome && path.isAbsolute(dataHome) ? dataHome : path.join(home, ".local", "share"),
+        "opencode",
+      ),
+    ])) {
+      const result = yield* Effect.promise(() => readOpenCodeUsage(dir, windowStartMs));
+      scanned.push({
+        provider: "opencode",
+        dir,
+        volumeId: yield* Effect.promise(() => readDirectoryVolumeId(dir)),
+        files: result.missing && !result.error ? null : result.files,
+        status: result.error ? "partial" : "ok",
+        ...(result.error ? { message: "Some OpenCode history could not be read." } : {}),
+      });
+    }
+
+    const antigravityRoots = yield* envRoots("ANTIGRAVITY_DATA_DIR", [
+      path.join(home, ".gemini", "antigravity-cli"),
+      path.join(home, ".gemini", "antigravity"),
+      path.join(home, ".gemini", "antigravity-ide"),
+      path.join(home, ".config", "antigravity"),
+    ]);
+    const antigravityDirs = new Set<string>();
+    for (const root of antigravityRoots) {
+      const nested = path.join(root, "conversations");
+      const dir = (yield* fileSystem.exists(nested).pipe(Effect.orElseSucceed(() => false)))
+        ? nested
+        : root;
+      antigravityDirs.add(yield* fileSystem.realPath(dir).pipe(Effect.orElseSucceed(() => dir)));
+    }
+    const antigravity = yield* Effect.promise(() =>
+      readAntigravityUsage([...antigravityDirs], windowStartMs),
+    );
+    for (const dir of antigravityDirs) {
+      const exists = yield* fileSystem.exists(dir).pipe(Effect.orElseSucceed(() => false));
+      const failed = antigravity.errors.some(
+        (error) => error === dir || error.startsWith(`${dir}${path.sep}`),
+      );
+      scanned.push({
+        provider: "antigravity",
+        dir,
+        volumeId: yield* Effect.promise(() => readDirectoryVolumeId(dir)),
+        files: !exists && !failed ? null : antigravity.files.filter((file) => file.root === dir),
+        status: failed ? "partial" : "ok",
+        ...(failed ? { message: "Some Antigravity history could not be read." } : {}),
+      });
+    }
+
+    const settings = yield* readSettings;
+    const userHome =
+      (platform === "win32" ? hostEnvironment["USERPROFILE"] : hostEnvironment["HOME"]) || home;
+    const configHome = hostEnvironment["XDG_CONFIG_HOME"]?.trim();
+    const cursorHome =
+      platform === "darwin"
+        ? path.join(userHome, "Library", "Application Support")
+        : platform === "win32"
+          ? hostEnvironment["APPDATA"] || path.join(userHome, "AppData", "Roaming")
+          : configHome && path.isAbsolute(configHome)
+            ? configHome
+            : path.join(userHome, ".config");
+    const cursorAuthPath =
+      platform === "darwin"
+        ? path.join(userHome, ".cursor", "auth.json")
+        : path.join(cursorHome, platform === "win32" ? "Cursor" : "cursor", "auth.json");
+    const credentialStore = hostEnvironment["AGENT_CLI_CREDENTIAL_STORE"];
+    const loginUnavailable =
+      Boolean(hostEnvironment["CURSOR_AUTH_TOKEN"]?.trim()) ||
+      Boolean(hostEnvironment["CURSOR_API_KEY"]?.trim()) ||
+      credentialStore === "memory";
+    if (
+      platform === "darwin" &&
+      credentialStore !== "file" &&
+      !loginUnavailable &&
+      !settings.cursorKeychainUsageEnabled
+    ) {
+      scanned.push({
+        provider: "cursor",
+        dir: cursorAuthPath,
+        volumeId: "",
+        files: null,
+        message: "Cursor account usage is off on this environment.",
+        action: "enableCursorKeychain",
+      });
+      return scanned;
+    }
+    const cursorUntilMs = yield* Clock.currentTimeMillis;
+    const account = loginUnavailable
+      ? {
+          accountKey: null,
+          records: [] as readonly UsageRecord[],
+          missing: true,
+          error: "Cursor account history needs a Cursor CLI login on this server.",
+        }
+      : yield* Effect.promise(() =>
+          readCursorAccountUsage(
+            platform === "darwin" && credentialStore !== "file"
+              ? { kind: "keychain" }
+              : cursorAuthPath,
+            windowStartMs,
+            cursorUntilMs,
+          ),
+        );
+    if (account.accountKey !== null && account.error === null && !account.missing) {
+      const source = `cursor-account:${account.accountKey}`;
+      scanned.push({
+        provider: "cursor",
+        dir: source,
+        hostId: "cursor.com",
+        volumeId: account.accountKey,
+        files: [{ path: source, records: account.records }],
+        status: "ok",
+      });
+      return scanned;
+    }
+    scanned.push({
+      provider: "cursor",
+      dir: cursorAuthPath,
+      volumeId: yield* Effect.promise(() => readDirectoryVolumeId(cursorAuthPath)),
+      files: null,
+      message:
+        account.error ?? "Cursor account history needs a Cursor CLI login saved on this server.",
+    });
     return scanned;
   });
 
@@ -517,16 +650,31 @@ export const make = Effect.gen(function* () {
     const livePaths = new Set<string>();
     const walkedRoots: string[] = [];
 
-    for (const { provider, dir, volumeId, files } of scannedDirs) {
+    for (const {
+      provider,
+      dir,
+      volumeId,
+      files,
+      status,
+      message,
+      action,
+      hostId: sourceHostId,
+    } of scannedDirs) {
       if (files === null) {
         sources.push({
-          fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
+          fingerprint: {
+            hostId: sourceHostId ?? hostId,
+            provider,
+            resolvedHomePath: dir,
+            volumeId,
+          },
           status: "missing",
           scannedFiles: 0,
           skippedFiles: 0,
           malformedRecords: 0,
           distinctSessions: 0,
-          message: "No transcript directory on this environment.",
+          message: message ?? "No transcript directory on this environment.",
+          ...(action ? { action } : {}),
         });
         continue;
       }
@@ -548,20 +696,21 @@ export const make = Effect.gen(function* () {
         for (const record of file.records) {
           // Only sessions that contributed in-window count: the mtime slack
           // admits boundary files whose records fall outside the range.
-          if (aggregator.add(record) && record.sessionId.length > 0) {
+          if (aggregator.add(record, dir) && record.sessionId.length > 0) {
             sessionIds.add(record.sessionId);
           }
         }
       }
 
       sources.push({
-        fingerprint: { hostId, provider, resolvedHomePath: dir, volumeId },
-        status: "ok",
+        fingerprint: { hostId: sourceHostId ?? hostId, provider, resolvedHomePath: dir, volumeId },
+        status: status ?? "ok",
         scannedFiles,
         skippedFiles,
         malformedRecords: 0,
         distinctSessions: sessionIds.size,
-        message: null,
+        message: message ?? null,
+        ...(action ? { action } : {}),
       });
     }
 
@@ -598,7 +747,7 @@ export const make = Effect.gen(function* () {
    */
   const inflightScans = new Map<string, Deferred.Deferred<UsageSummary, UsageReadError>>();
 
-  const scanKey = (input: UsageSummaryInput): string =>
+  const scanKey = (input: UsageSummaryInput, cursorKeychainUsageEnabled: boolean): string =>
     JSON.stringify([
       input.timeZone,
       input.sinceDay,
@@ -606,10 +755,12 @@ export const make = Effect.gen(function* () {
       input.resolution ?? "day",
       input.sinceTime ?? null,
       input.untilTime ?? null,
+      cursorKeychainUsageEnabled,
     ]);
 
   const readSummary = Effect.fn("UsageService.readSummary")(function* (input: UsageSummaryInput) {
-    const key = scanKey(input);
+    const settings = yield* readSettings;
+    const key = scanKey(input, settings.cursorKeychainUsageEnabled);
     const deferred = yield* Effect.uninterruptible(
       Effect.gen(function* () {
         const existing = inflightScans.get(key);

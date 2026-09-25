@@ -20,6 +20,10 @@ background work keep the thread active. Ronin settles from a closed or merged pu
 its timestamp is not older than the user's latest activity. If that timestamp is not available, the
 inactivity rule still applies. A manual un-settle also keeps the thread active.
 
+To keep one thread active no matter how long it sits idle, open its menu, choose **Auto-settle
+behavior**, and pick **Disabled**. Pick **Enabled** to return to the usual rules. Manual settle,
+snooze, and archive still work while automatic settlement is disabled.
+
 **Settled** lists threads by when their work finished, newest first. A thread you settle yourself
 sorts by the moment you settled it. A thread that settled on its own sorts by its last message or
 turn, not by when the server noticed it was inactive.
@@ -32,7 +36,9 @@ the new-thread workspace mode and the source control writing style.
 
 A settings change affects future settlement and does not reopen a settled thread. Settings saved by
 older clients on one device no longer control this behavior. Manually settling an idle thread
-dismisses unanswered async questions without sending an answer or restarting the agent.
+dismisses unanswered async questions without sending an answer or restarting the agent. Settling
+also closes terminals waiting at an idle prompt while preserving their output. A terminal running a
+command, such as a dev server, stays open.
 
 When you un-settle a thread, it returns to the top of the active list so you can find it right
 away. Its timestamps do not change. Other threads keep their positions.

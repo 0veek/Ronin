@@ -1,10 +1,15 @@
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Request from "effect/Request";
+import * as RequestResolver from "effect/RequestResolver";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -49,6 +54,7 @@ import {
   decodePullRequestSearchJson,
   decodePullRequestStacksJson,
   decodePullRequestStatsJson,
+  decodePullRequestSummariesJson,
   decodeReactionSubjectScopeJson,
   decodeRepositoryAccessJson,
   decodeReviewerCandidatesJson,
@@ -59,6 +65,7 @@ import {
   decodeReviewThreadCommentsJson,
   decodeReviewThreadsJson,
   buildPullRequestStatsGraphQlQuery,
+  buildPullRequestSummariesGraphQlQuery,
   buildPullRequestStackMembershipsGraphQlQuery,
   decodePullRequestStackMembershipsJson,
   encodeGraphQlRequestJson,
@@ -93,6 +100,7 @@ import {
   type GitHubPullRequestDetail,
   type GitHubPullRequestActivity,
   type GitHubPullRequestHead,
+  type GitHubPullRequestSummary,
   type GitHubPullRequestListItem,
   type GitHubPullRequestSearchItem,
   type GitHubPullRequestStack,
@@ -399,6 +407,18 @@ export interface GitHubPullRequestStat {
  */
 const STAT_ALIASES_PER_REQUEST = 25;
 const STAT_REQUEST_CONCURRENCY = 4;
+const SUMMARY_BATCH_WINDOW = "10 millis";
+
+class PullRequestSummaryRead extends Request.Class<
+  {
+    readonly cwd: string;
+    readonly repository: string;
+    readonly host: string;
+    readonly number: number;
+  },
+  ProviderChangeRequestSummary,
+  GitHubPullRequestCliError
+> {}
 
 export interface GitHubPullRequestSearchBatch {
   /** Rows across every repository asked for, newest update first, each naming its own. */
@@ -1594,6 +1614,122 @@ export const make = Effect.gen(function* () {
           ),
         );
 
+  const viewPullRequestSummary = (input: PullRequestSummaryRead) =>
+    github
+      .execute({
+        cwd: input.cwd,
+        args: [
+          "pr",
+          "view",
+          String(input.number),
+          ...repositoryArgs(input),
+          "--json",
+          PULL_REQUEST_DETAIL_JSON_FIELDS,
+        ],
+      })
+      .pipe(
+        Effect.flatMap((result) => {
+          const decoded = decodePullRequestDetailJson(result.stdout.trim());
+          if (!Result.isSuccess(decoded)) {
+            return Effect.fail(
+              new GitHubPullRequestReadError({
+                command: "gh",
+                cwd: input.cwd,
+                operation: "getPullRequestSummary",
+                cause: decoded.failure,
+              }),
+            );
+          }
+          const detail = decoded.success;
+          return Effect.succeed({
+            number: detail.number,
+            title: detail.title,
+            url: detail.url,
+            headBranch: detail.headBranch,
+            baseBranch: detail.baseBranch,
+            state: detail.state,
+            updatedAt: detail.updatedAt,
+            closedAt: detail.closedAt ?? null,
+            mergedAt: detail.mergedAt ?? null,
+            isDraft: detail.isDraft,
+            author: detail.author,
+            additions: detail.additions,
+            deletions: detail.deletions,
+            changedFiles: detail.changedFiles,
+            reviewDecision: detail.reviewDecision,
+            checksState: detail.checksState,
+            mergeability: detail.mergeability,
+          });
+        }),
+      );
+
+  const summaryResolver = RequestResolver.makeGrouped<PullRequestSummaryRead, string>({
+    key: ({ request, context }) =>
+      JSON.stringify([
+        request.host.toLowerCase(),
+        Context.getOrElse(context, GitHubCli.PinnedGitHubCredential, () => null)
+          ?.credentialFingerprint ?? null,
+        Context.getOrElse(context, SourceControlRateLimit.CredentialScope, () => ""),
+      ]),
+    resolver: (entries) => {
+      const [first] = entries;
+      const batchable = entries.filter(
+        (entry) => buildPullRequestSummariesGraphQlQuery([entry.request]) !== null,
+      );
+      const query = buildPullRequestSummariesGraphQlQuery(batchable.map((entry) => entry.request));
+      const batched =
+        query === null
+          ? Effect.succeed(new Map<number, GitHubPullRequestSummary>())
+          : graphqlRead({
+              cwd: first.request.cwd,
+              host: first.request.host,
+              operation: "getPullRequestSummary",
+              query,
+              decode: decodePullRequestSummariesJson,
+            });
+      return batched.pipe(
+        Effect.catchCauseIf(
+          (cause) =>
+            !Cause.hasInterruptsOnly(cause) &&
+            !Cause.findErrorOption(cause).pipe(
+              Option.exists((error) => error._tag === "SourceControlRateLimitPausedError"),
+            ),
+          (cause) =>
+            Effect.logDebug("batched pull request summary read failed", { cause }).pipe(
+              Effect.as(new Map<number, GitHubPullRequestSummary>()),
+            ),
+        ),
+        Effect.flatMap((summaries) => {
+          const unanswered = entries.filter((entry) => {
+            const summary = summaries.get(batchable.indexOf(entry));
+            if (summary === undefined) return true;
+            entry.completeUnsafe(Exit.succeed(summary));
+            return false;
+          });
+          return Effect.forEach(
+            unanswered,
+            (entry) =>
+              viewPullRequestSummary(entry.request).pipe(
+                Effect.exit,
+                Effect.map((exit) => entry.completeUnsafe(exit)),
+              ),
+            { concurrency: STAT_REQUEST_CONCURRENCY, discard: true },
+          );
+        }),
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            for (const entry of entries) entry.completeUnsafe(Exit.failCause(cause));
+          }),
+        ),
+      );
+    },
+  }).pipe(
+    RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
+    RequestResolver.batchN(STAT_ALIASES_PER_REQUEST),
+  );
+  const getPullRequestSummary: GitHubPullRequestCli["Service"]["getPullRequestSummary"] = (input) =>
+    Effect.request(new PullRequestSummaryRead(input), summaryResolver);
+
   return GitHubPullRequestCli.of({
     withVerifiedCredential,
     getRoutingIdentity,
@@ -1800,56 +1936,7 @@ export const make = Effect.gen(function* () {
       ).pipe(Effect.map((results) => results.flat()));
     },
 
-    // One `gh pr view` either way; asking for the detail fields costs nothing extra and hands
-    // the thread overview its author, diff stat, review decision and checks in the same read.
-    getPullRequestSummary: (input) =>
-      github
-        .execute({
-          cwd: input.cwd,
-          args: [
-            "pr",
-            "view",
-            String(input.number),
-            ...repositoryArgs(input),
-            "--json",
-            PULL_REQUEST_DETAIL_JSON_FIELDS,
-          ],
-        })
-        .pipe(
-          Effect.flatMap((result) => {
-            const decoded = decodePullRequestDetailJson(result.stdout.trim());
-            if (!Result.isSuccess(decoded)) {
-              return Effect.fail(
-                new GitHubPullRequestReadError({
-                  command: "gh",
-                  cwd: input.cwd,
-                  operation: "getPullRequestSummary",
-                  cause: decoded.failure,
-                }),
-              );
-            }
-            const detail = decoded.success;
-            return Effect.succeed({
-              number: detail.number,
-              title: detail.title,
-              url: detail.url,
-              headBranch: detail.headBranch,
-              baseBranch: detail.baseBranch,
-              state: detail.state,
-              updatedAt: detail.updatedAt,
-              closedAt: detail.closedAt ?? null,
-              mergedAt: detail.mergedAt ?? null,
-              isDraft: detail.isDraft,
-              author: detail.author,
-              additions: detail.additions,
-              deletions: detail.deletions,
-              changedFiles: detail.changedFiles,
-              reviewDecision: detail.reviewDecision,
-              checksState: detail.checksState,
-              mergeability: detail.mergeability,
-            });
-          }),
-        ),
+    getPullRequestSummary,
 
     getPullRequestDetail,
     listWorkflowRunsRequiringApproval,

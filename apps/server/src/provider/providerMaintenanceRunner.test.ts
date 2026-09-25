@@ -21,6 +21,7 @@ import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hos
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import { ProviderRegistry, type ProviderRegistryShape } from "./Services/ProviderRegistry.ts";
+import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
 import {
   makeProviderMaintenanceCapabilities,
@@ -202,13 +203,28 @@ function makeRegistry(
   });
 }
 
-const makeTestRunner = (registry: ProviderRegistryShape) =>
+const makeTestRunner = (
+  registry: ProviderRegistryShape,
+  // Generic updater fixtures use synthetic versions. Keep their compatibility
+  // unknown so real harness minimums do not bypass the command under test.
+  manifest: ModelManifest.ModelManifestData = {
+    version: 1,
+    currentModels: {},
+    compatibility: [{ driver: CODEX_DRIVER, t3CodeRange: ">=0.0.42", ranges: [] }],
+  },
+) =>
   Effect.service(ProviderMaintenanceRunner.ProviderMaintenanceRunner).pipe(
     Effect.provide(
       ProviderMaintenanceRunner.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(ProviderRegistry, registry),
+            Layer.succeed(ModelManifest.ModelManifest, {
+              current: Effect.succeed(manifest),
+              refresh: Effect.succeed(manifest),
+              forceRefresh: Effect.succeed(manifest),
+              refreshInBackground: Effect.void,
+            }),
             Layer.succeed(ProviderVersionCache, new Map()),
           ),
         ),
@@ -560,7 +576,7 @@ describe("providerMaintenanceRunner", () => {
       Effect.provide(
         Layer.mergeAll(
           NonWindowsPlatform,
-          latestVersionHttpClient("0.0.0"),
+          latestVersionHttpClient("2.0.0"),
           mockSpawnerLayer((_command, args) => {
             calls.push(args.join(" "));
             if (calls.length === 1) {

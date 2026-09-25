@@ -3,6 +3,7 @@ import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 
 import {
   PullRequestDetail,
+  pullRequestHostOf,
   type PullRequestAction,
   type PullRequestActor,
   type PullRequestBaseComparison,
@@ -14,10 +15,12 @@ import {
   type PullRequestDetailView,
   type PullRequestMergeability,
   type PullRequestMergeMethod,
+  type PullRequestRef,
   type PullRequestReaction,
   type PullRequestReviewThread,
   type PullRequestState,
   type PullRequestUpdateMethod,
+  type RepositoryIdentity,
   type SourceControlProviderKind,
 } from "@t3tools/contracts";
 
@@ -129,6 +132,22 @@ export function pullRequestCheckoutCommand(
     case "unknown":
       return null;
   }
+}
+
+/** Build a checkout command from identity metadata while the detail request is still pending. */
+export function loadingPullRequestCheckoutCommand(
+  reference: PullRequestRef,
+  identity: RepositoryIdentity | null | undefined,
+): string | null {
+  const host = reference.host?.trim().toLowerCase();
+  const provider =
+    identity?.provider ??
+    (host === "github.com" ? "github" : host === "gitlab.com" ? "gitlab" : null);
+  if (provider !== "github" && provider !== "gitlab" && provider !== "azure-devops") return null;
+  if (identity?.provider !== undefined && host && pullRequestHostOf(identity, provider) !== host) {
+    return null;
+  }
+  return pullRequestCheckoutCommand(provider, reference.number, "");
 }
 
 /** Activity changes only when the same host resource reports a newer revision. */

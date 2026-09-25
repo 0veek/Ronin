@@ -103,7 +103,7 @@ describe("ElectronProtocol", () => {
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
-            "connect-src 'self' http: https: ws: wss:",
+            "connect-src 'self' blob: http: https: ws: wss:",
           );
           assert.include(
             response.headers.get("content-security-policy") ?? "",
@@ -285,7 +285,14 @@ describe("ElectronProtocol", () => {
     );
 
     assert.deepEqual(directives["script-src"], ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"]);
-    assert.deepEqual(directives["connect-src"], ["'self'", "http:", "https:", "ws:", "wss:"]);
+    assert.deepEqual(directives["connect-src"], [
+      "'self'",
+      "blob:",
+      "http:",
+      "https:",
+      "ws:",
+      "wss:",
+    ]);
     assert.deepEqual(directives["img-src"], [
       "'self'",
       "t3code:",

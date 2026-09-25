@@ -6,13 +6,20 @@ const baseState: ThreadActionMenuState = {
   branch: null,
   isPinned: false,
   isSettled: false,
+  autoSettleEnabled: true,
   isSnoozed: false,
   canSnoozeNow: true,
   isRegeneratingTitle: false,
   isRunning: false,
   canExport: true,
   hasQueuedTask: false,
-  supports: { settlement: true, snooze: true, pinning: true, titleRegeneration: true },
+  supports: {
+    settlement: true,
+    autoSettleOptOut: true,
+    snooze: true,
+    pinning: true,
+    titleRegeneration: true,
+  },
   snoozePresets: [
     { id: "hour", label: "In 1 hour", whenLabel: "3:00 PM", snoozedUntil: "2026-08-07T15:00:00Z" },
   ],
@@ -33,7 +40,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       ids({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          autoSettleOptOut: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+        },
       }),
     ).toEqual(["rename", "mark-unread", "copy", "project-settings", "export", "archive", "delete"]);
   });
@@ -99,7 +112,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(
       ids({
         ...baseState,
-        supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
+        supports: {
+          settlement: false,
+          autoSettleOptOut: false,
+          snooze: false,
+          pinning: false,
+          titleRegeneration: false,
+        },
       }),
     ).toContain("archive");
   });

@@ -1,10 +1,16 @@
-import { runViewTransition } from "~/lib/viewTransition";
-
 export const DRAFT_HERO_TRANSITION_ANIMATION_ID = "t3-draft-hero-transition";
-export const DRAFT_HERO_TRANSITION_DURATION_MS = 180;
 export const DRAFT_HERO_TRANSITION_EASING = "cubic-bezier(0.4, 0, 0.2, 1)";
 export const MOBILE_COMPOSER_VIEW_TRANSITION_NAME = "t3-mobile-composer";
 export const MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME = "t3-mobile-draft-headline";
+const MOBILE_COMPOSER_TRANSITION_DURATION_PROPERTY = "--mobile-composer-transition-duration";
+
+type ComposerViewTransition = {
+  readonly finished: Promise<void>;
+};
+
+type ComposerTransitionDocument = Document & {
+  startViewTransition?: (update: () => void | Promise<void>) => ComposerViewTransition;
+};
 
 let activeMobileComposerTransition: Promise<void> | null = null;
 
@@ -33,28 +39,52 @@ export async function waitForDraftHeroTransition(): Promise<void> {
 
 export async function runMobileComposerTransition(
   update: () => void | Promise<void>,
+  options: { active: boolean; durationMs: number },
 ): Promise<void> {
-  // The morph only exists on mobile, where the hero and docked composers are
-  // two different layouts of the same element. On desktop both are on screen in
-  // their final positions already, so there is nothing to morph between.
-  const mobileViewport =
-    typeof window === "undefined"
-      ? false
-      : (window.matchMedia?.("(max-width: 639px)").matches ?? false);
+  if (typeof document === "undefined" || typeof window === "undefined") {
+    await update();
+    return;
+  }
+  const transitionDocument = document as ComposerTransitionDocument;
+  const mobileViewport = window.matchMedia?.("(max-width: 639px)").matches ?? false;
+  const prefersReducedMotion =
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  if (
+    !options.active ||
+    !mobileViewport ||
+    prefersReducedMotion ||
+    !transitionDocument.startViewTransition
+  ) {
+    await update();
+    return;
+  }
 
-  const running = runViewTransition(update, {
-    flag: "mobileComposerRouteTransition",
-    enabled: mobileViewport,
-  });
-  // Handed to waitForDraftHeroTransition, which only cares that the animation
-  // has settled -- a failed update is the caller's problem, not the waiter's.
-  const settled = running.catch(() => undefined);
-  activeMobileComposerTransition = settled;
+  let updateStarted = false;
+  const runUpdate = async () => {
+    if (updateStarted) return;
+    updateStarted = true;
+    await update();
+  };
+  let transitionFinished: Promise<void> | null = null;
+  transitionDocument.documentElement.style.setProperty(
+    MOBILE_COMPOSER_TRANSITION_DURATION_PROPERTY,
+    `${String(options.durationMs)}ms`,
+  );
+  transitionDocument.documentElement.dataset.mobileComposerRouteTransition = "true";
   try {
-    await running;
+    const transition = transitionDocument.startViewTransition(runUpdate);
+    transitionFinished = transition.finished.catch(async () => runUpdate());
+    activeMobileComposerTransition = transitionFinished;
+    await transitionFinished;
+  } catch {
+    await runUpdate();
   } finally {
-    if (activeMobileComposerTransition === settled) {
+    if (activeMobileComposerTransition === transitionFinished) {
       activeMobileComposerTransition = null;
     }
+    delete transitionDocument.documentElement.dataset.mobileComposerRouteTransition;
+    transitionDocument.documentElement.style.removeProperty(
+      MOBILE_COMPOSER_TRANSITION_DURATION_PROPERTY,
+    );
   }
 }

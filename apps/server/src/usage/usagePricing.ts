@@ -7,7 +7,9 @@
  *
  * @module usagePricing
  */
-import type { UsageCostSource, UsageTokenTotals } from "@t3tools/contracts";
+import type { UsageCostSource } from "@t3tools/contracts";
+
+import type { UsageRecord } from "./usageTranscripts.ts";
 
 /**
  * The subset of a LiteLLM entry we price against. All values are USD per token.
@@ -22,6 +24,7 @@ export interface ModelRate {
   readonly outputCostPerToken: number;
   readonly cacheReadCostPerToken: number;
   readonly cacheCreationCostPerToken: number;
+  readonly fastMultiplier: number;
 }
 
 export type RateTable = ReadonlyMap<string, ModelRate>;
@@ -32,10 +35,18 @@ interface LiteLlmEntry {
   readonly output_cost_per_token?: unknown;
   readonly cache_read_input_token_cost?: unknown;
   readonly cache_creation_input_token_cost?: unknown;
+  readonly provider_specific_entry?: unknown;
 }
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function fastMultiplier(entry: LiteLlmEntry): number {
+  const specific = entry.provider_specific_entry;
+  if (typeof specific !== "object" || specific === null) return 1;
+  const fast = finiteNumber((specific as Record<string, unknown>)["fast"]);
+  return fast !== null && fast > 0 ? fast : 1;
 }
 
 /**
@@ -69,6 +80,7 @@ export function parseRateTable(document: unknown): RateTable {
       // input rather than as free.
       cacheReadCostPerToken: finiteNumber(entry.cache_read_input_token_cost) ?? input,
       cacheCreationCostPerToken: finiteNumber(entry.cache_creation_input_token_cost) ?? input,
+      fastMultiplier: fastMultiplier(entry),
     });
   }
 
@@ -96,7 +108,8 @@ function sameRate(a: ModelRate, b: ModelRate): boolean {
     a.inputCostPerToken === b.inputCostPerToken &&
     a.outputCostPerToken === b.outputCostPerToken &&
     a.cacheReadCostPerToken === b.cacheReadCostPerToken &&
-    a.cacheCreationCostPerToken === b.cacheCreationCostPerToken
+    a.cacheCreationCostPerToken === b.cacheCreationCostPerToken &&
+    a.fastMultiplier === b.fastMultiplier
   );
 }
 
@@ -185,18 +198,16 @@ export interface PricedUsage {
   readonly costSource: UsageCostSource;
 }
 
+export type PricedRecord = Pick<UsageRecord, "model" | "totals" | "fast" | "reportedCostUsd">;
+
 /**
  * Prices a bucket's tokens.
  *
  * `reasoningTokens` is intentionally not charged separately: it is already
  * counted inside `outputTokens`.
  */
-export function priceUsage(
-  table: RateTable,
-  model: string,
-  totals: UsageTokenTotals,
-  reportedCostUsd: number | null,
-): PricedUsage {
+export function priceUsage(table: RateTable, record: PricedRecord): PricedUsage {
+  const { model, totals, reportedCostUsd } = record;
   if (reportedCostUsd !== null && Number.isFinite(reportedCostUsd)) {
     return { costUsd: reportedCostUsd, costSource: "providerReported" };
   }
@@ -204,21 +215,28 @@ export function priceUsage(
   const rate = lookupRate(table, model);
   if (rate === null) return { costUsd: 0, costSource: "unpriced" };
 
-  const costUsd =
+  const standardCostUsd =
     totals.uncachedInputTokens * rate.inputCostPerToken +
     totals.cachedInputTokens * rate.cacheReadCostPerToken +
     totals.cacheCreationTokens * rate.cacheCreationCostPerToken +
     totals.outputTokens * rate.outputCostPerToken;
 
-  return { costUsd, costSource: "modelPriced" };
+  return {
+    costUsd: standardCostUsd * (record.fast ? rate.fastMultiplier : 1),
+    costSource: "modelPriced",
+  };
 }
 
 /**
  * What the cached input would have cost at full input rates, minus what it
  * actually cost. Drives the "cache savings" figure.
  */
-export function cacheSavingsUsd(table: RateTable, model: string, totals: UsageTokenTotals): number {
-  const rate = lookupRate(table, model);
+export function cacheSavingsUsd(table: RateTable, record: PricedRecord): number {
+  const rate = lookupRate(table, record.model);
   if (rate === null) return 0;
-  return totals.cachedInputTokens * (rate.inputCostPerToken - rate.cacheReadCostPerToken);
+  return (
+    record.totals.cachedInputTokens *
+    (rate.inputCostPerToken - rate.cacheReadCostPerToken) *
+    (record.fast ? rate.fastMultiplier : 1)
+  );
 }

@@ -168,6 +168,12 @@ An ownership token prevents an old scope from replacing its successor's cache.
 Closing a thread skips snapshots that were already saved. Changed snapshots and
 failed background writes still get a final save attempt.
 
+The desktop app adds one consumer: a keep-alive in `apps/web/src/state/threads.ts` mounts every
+thread whose session is starting or running in each enabled environment. Opening a running thread
+then needs no replay. The shell and detail streams are independent, so a stopped thread remains
+mounted until its own stream is live and shows the stop; the stream then closes and saves the
+settled state. Web and mobile do not keep threads alive.
+
 ## Verification
 
 Core state-machine tests use `@effect/vitest` and deterministic service layers.

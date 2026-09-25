@@ -4,6 +4,7 @@ import {
   makeTraceSink,
   otlpSerializationLayer,
 } from "@t3tools/shared/observability";
+import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -342,12 +343,25 @@ const readPersistedOtlpTracesUrl: Effect.Effect<
   return Option.fromNullishOr(parsed.otlpTracesUrl);
 });
 
-const resolveOtlpTracesUrl = Effect.gen(function* () {
+const resolveOtlpTraces = Effect.gen(function* () {
+  const otel = yield* OtelEnvironment.load;
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
-  if (Option.isSome(environment.otlpTracesUrl)) {
-    return environment.otlpTracesUrl;
-  }
-  return yield* readPersistedOtlpTracesUrl;
+  const persisted = yield* readPersistedOtlpTracesUrl;
+  const signalExport = {
+    protocol: environment.otlpProtocol,
+    headers: Option.getOrUndefined(environment.otlpHeaders),
+    exportIntervalMs: environment.otlpExportIntervalMs,
+  } as const;
+  return {
+    endpoint: OtelEnvironment.resolveSignalEndpoint(
+      otel,
+      "traces",
+      { url: Option.getOrUndefined(environment.otlpTracesUrl), export: signalExport },
+      Option.getOrUndefined(persisted),
+    ),
+    warnings: otel.warnings,
+    resourceAttributes: otel.resourceAttributes,
+  };
 });
 
 const writeDevelopmentConsoleOutput = (
@@ -575,7 +589,7 @@ const desktopLoggerLayer = Layer.mergeAll(
 const tracerLayer = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    const otlpTracesUrl = yield* resolveOtlpTracesUrl;
+    const otlp = yield* resolveOtlpTraces;
     const tracePath = environment.path.join(environment.logDir, "desktop.trace.ndjson");
     const sink = yield* makeTraceSink({
       filePath: tracePath,
@@ -583,20 +597,21 @@ const tracerLayer = Layer.unwrap(
       maxFiles: DESKTOP_LOG_FILE_MAX_FILES,
       batchWindowMs: DESKTOP_TRACE_BATCH_WINDOW_MS,
     });
-    const delegate = Option.isNone(otlpTracesUrl)
-      ? undefined
-      : yield* OtlpTracer.make({
-          url: otlpTracesUrl.value,
-          exportInterval: `${environment.otlpExportIntervalMs} millis`,
-          headers: Option.getOrUndefined(environment.otlpHeaders),
-          resource: {
-            serviceName: "desktop",
-            attributes: {
-              "service.runtime": "desktop",
-              "service.mode": environment.isDevelopment ? "development" : "packaged",
+    const delegate =
+      otlp.endpoint === undefined
+        ? undefined
+        : yield* OtlpTracer.make({
+            url: otlp.endpoint.url,
+            exportInterval: `${otlp.endpoint.export.exportIntervalMs} millis`,
+            headers: otlp.endpoint.export.headers,
+            resource: {
+              serviceName: "desktop",
+              attributes: {
+                "service.runtime": "desktop",
+                "service.mode": environment.isDevelopment ? "development" : "packaged",
+              },
             },
-          },
-        }).pipe(Effect.provide(otlpSerializationLayer(environment.otlpProtocol)));
+          }).pipe(Effect.provide(otlpSerializationLayer(otlp.endpoint.export.protocol)));
     const tracer = yield* makeLocalFileTracer({
       filePath: tracePath,
       maxBytes: DESKTOP_LOG_FILE_MAX_BYTES,
@@ -606,7 +621,13 @@ const tracerLayer = Layer.unwrap(
       ...(delegate ? { delegate } : {}),
     });
 
-    return Layer.succeed(Tracer.Tracer, tracer);
+    const warningsLayer = Layer.effectDiscard(
+      Effect.forEach(otlp.warnings, (warning) => Effect.logWarning(warning)),
+    );
+    return warningsLayer.pipe(
+      Layer.provideMerge(Layer.succeed(Tracer.Tracer, tracer)),
+      Layer.provide(OtelEnvironment.layerResourceAttributes(otlp.resourceAttributes)),
+    );
   }),
 ).pipe(Layer.provide(OtlpExporter.layerFlusher));
 

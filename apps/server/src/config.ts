@@ -17,7 +17,12 @@ import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import { sweepStalePendingAttachments } from "./attachmentStore.ts";
-import { OtlpProtocol } from "@t3tools/shared/observability";
+import {
+  DEFAULT_SIGNAL_EXPORT,
+  OtlpProtocol,
+  type SignalExport,
+} from "@t3tools/shared/observability";
+import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
 
 export const DEFAULT_PORT = 3773;
 
@@ -75,6 +80,9 @@ export class ServerConfig extends Context.Service<
     readonly otlpServiceName: string;
     readonly otlpHeaders: Readonly<Record<string, string>> | undefined;
     readonly otlpProtocol: OtlpProtocol;
+    readonly otlpTracesExport?: SignalExport;
+    readonly otlpMetricsExport?: SignalExport;
+    readonly otelEnvironment?: OtelEnvironment.OtelEnvironment;
     readonly mode: RuntimeMode;
     readonly port: number;
     readonly host: string | undefined;
@@ -199,6 +207,9 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     otlpServiceName: "t3-server",
     otlpHeaders: undefined,
     otlpProtocol: "http/json",
+    otlpTracesExport: DEFAULT_SIGNAL_EXPORT,
+    otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
+    otelEnvironment: OtelEnvironment.none,
     cwd,
     baseDir,
     ...derivedPaths,

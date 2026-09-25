@@ -2,6 +2,7 @@
 
 import { Spinner } from "~/components/ui/spinner";
 import {
+  AlertTriangleIcon,
   ArrowUpCircleIcon,
   CopyIcon,
   DownloadIcon,
@@ -388,6 +389,7 @@ interface ProviderInstanceCardProps {
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
   readonly onRunUpdate?: (() => void) | undefined;
+  readonly onInstallRecommended?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
 }
 
@@ -429,6 +431,7 @@ export function ProviderInstanceCard({
   onFavoriteModelsChange,
   onModelOrderChange,
   onRunUpdate,
+  onInstallRecommended,
   isUpdating = false,
 }: ProviderInstanceCardProps) {
   const [activeTab, setActiveTab] = useState<"configuration" | "models">("configuration");
@@ -452,8 +455,19 @@ export function ProviderInstanceCard({
       ? (liveProvider.auth.label ?? liveProvider.auth.type ?? null)
       : null;
   const versionLabel = getProviderVersionLabel(liveProvider?.version);
-  const versionAdvisory = getProviderVersionAdvisoryPresentation(liveProvider?.versionAdvisory);
+  const compatibility = enabled ? liveProvider?.compatibilityAdvisory : undefined;
+  const versionAdvisory = getProviderVersionAdvisoryPresentation(
+    liveProvider?.versionAdvisory,
+    compatibility,
+    enabled,
+  );
   const updateCommand = versionAdvisory?.updateCommand ?? null;
+  const hasCompatibilityWarning =
+    compatibility !== undefined &&
+    compatibility.status !== "supported" &&
+    compatibility.status !== "unknown";
+  const VersionAdvisoryIcon = hasCompatibilityWarning ? AlertTriangleIcon : ArrowUpCircleIcon;
+  const onRunVersionAction = versionAdvisory?.targetVersion ? onInstallRecommended : onRunUpdate;
   const FallbackIconComponent = driverOption?.icon;
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
@@ -634,6 +648,13 @@ export function ProviderInstanceCard({
   // home entry that is not a symlink, a missing binary). Show it wherever the
   // headline shows so the user can act without opening the editor.
   const needsAttention = statusKey === "warning" || statusKey === "error";
+  const inlineStatusDetail = hasCompatibilityWarning
+    ? compatibility?.status === "broken"
+      ? "Incompatible"
+      : compatibility?.status === "unsupported"
+        ? "Unsupported"
+        : "Limited support"
+    : summary.detail;
   const statusLineClassName =
     "flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm leading-[1.45] text-muted-foreground/80";
 
@@ -672,7 +693,23 @@ export function ProviderInstanceCard({
               ) : null}
               {versionCodeNode}
               {versionAdvisory ? (
-                updateCommand ? (
+                hasCompatibilityWarning ? (
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span
+                          tabIndex={0}
+                          role="img"
+                          aria-label={versionAdvisory.title}
+                          className="pointer-events-auto inline-flex shrink-0 text-warning"
+                        >
+                          <VersionAdvisoryIcon className="size-3.5" />
+                        </span>
+                      }
+                    />
+                    <TooltipPopup side="top">{versionAdvisory.detail}</TooltipPopup>
+                  </Tooltip>
+                ) : updateCommand ? (
                   <Tooltip>
                     <TooltipTrigger
                       render={
@@ -686,7 +723,7 @@ export function ProviderInstanceCard({
                             copyToClipboard(updateCommand, { providerName: displayName })
                           }
                         >
-                          <ArrowUpCircleIcon className="size-3.5" />
+                          <VersionAdvisoryIcon className="size-3.5" />
                         </Button>
                       }
                     />
@@ -694,7 +731,7 @@ export function ProviderInstanceCard({
                   </Tooltip>
                 ) : (
                   <span role="img" aria-label="Update available" className="inline-flex shrink-0">
-                    <ArrowUpCircleIcon className="size-3.5 text-update-foreground" />
+                    <VersionAdvisoryIcon className="size-3.5 text-update-foreground" />
                   </span>
                 )
               ) : null}
@@ -705,7 +742,9 @@ export function ProviderInstanceCard({
               ) : null}
               <span className="line-clamp-2 [overflow-wrap:anywhere]">
                 {summary.headline}
-                {needsAttention && summary.detail ? ` · ${summary.detail}` : null}
+                {(needsAttention || hasCompatibilityWarning) && inlineStatusDetail
+                  ? ` · ${inlineStatusDetail}`
+                  : null}
               </span>
             </span>
           </span>
@@ -752,9 +791,9 @@ export function ProviderInstanceCard({
                             ? "text-warning hover:text-warning"
                             : "text-update-foreground hover:text-update-foreground",
                         )}
-                        aria-label="Update available — view details"
+                        aria-label={`${versionAdvisory.title} — view details`}
                       >
-                        <ArrowUpCircleIcon className="size-3.5" />
+                        <VersionAdvisoryIcon className="size-3.5" />
                       </Button>
                     }
                   />
@@ -766,7 +805,7 @@ export function ProviderInstanceCard({
                     <div className="grid min-w-0 gap-3">
                       <div className="grid gap-0.5">
                         <p className="text-sm font-semibold leading-tight text-foreground">
-                          Update available
+                          {versionAdvisory.title}
                         </p>
                         <p
                           className={cn(
@@ -779,20 +818,24 @@ export function ProviderInstanceCard({
                           {versionAdvisory.detail}
                         </p>
                       </div>
-                      {onRunUpdate ? (
+                      {onRunVersionAction ? (
                         <Button
                           type="button"
                           size="xs"
                           variant="outline"
                           className="w-full"
                           disabled={isUpdating}
-                          onClick={onRunUpdate}
+                          onClick={onRunVersionAction}
                         >
                           {isUpdating ? <Spinner /> : <DownloadIcon />}
-                          {isUpdating ? "Updating" : "Update now"}
+                          {isUpdating
+                            ? "Updating"
+                            : versionAdvisory.targetVersion
+                              ? `Install ${getProviderVersionLabel(versionAdvisory.targetVersion)}`
+                              : "Update now"}
                         </Button>
                       ) : null}
-                      {onRunUpdate && updateCommand ? (
+                      {onRunVersionAction && updateCommand ? (
                         <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
                           <span aria-hidden className="h-px flex-1 bg-border" />
                           or, update manually using

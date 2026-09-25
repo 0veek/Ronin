@@ -1,7 +1,7 @@
 import { ChartSplineIcon, Settings2Icon, SquareKanbanIcon } from "lucide-react";
 import { memo, useCallback, type ReactNode } from "react";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
-import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
@@ -19,6 +19,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { SidebarProviderUpdatePill } from "./SidebarProviderUpdatePill";
 import { SidebarUsageMeter } from "./SidebarUsageMeter";
+import { useNavigateToMainApp } from "./mainAppLocation";
 
 type SidebarFooterPage = "board" | "usage" | "pull-requests" | "settings";
 
@@ -160,7 +161,7 @@ function SidebarFooterIconButton({
 export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
-  const canGoBack = useCanGoBack();
+  const navigateToMainApp = useNavigateToMainApp();
   const currentFooterPage = useLocation({
     select: (location): SidebarFooterPage | null =>
       location.pathname === "/board"
@@ -188,16 +189,12 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     (page: SidebarFooterPage, open: () => void) => {
       closeMobileSidebar();
       if (currentFooterPage === page) {
-        if (canGoBack) {
-          window.history.back();
-          return;
-        }
-        void navigate({ to: "/" });
+        void navigateToMainApp();
         return;
       }
       open();
     },
-    [canGoBack, closeMobileSidebar, currentFooterPage, navigate],
+    [closeMobileSidebar, currentFooterPage, navigateToMainApp],
   );
   const handleBoardClick = useCallback(() => {
     leaveOrOpen("board", () => {

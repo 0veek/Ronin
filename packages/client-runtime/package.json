@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./device/stream": {
+      "types": "./src/device/stream.ts",
+      "default": "./src/device/stream.ts"
+    },
     "./load-balancing": {
       "types": "./src/load-balancing.ts",
       "default": "./src/load-balancing.ts"
@@ -210,6 +214,38 @@
     "./media-reference": {
       "types": "./src/mediaReference.ts",
       "default": "./src/mediaReference.ts"
+    },
+    "./device/frame": {
+      "types": "./src/device/frame.ts",
+      "default": "./src/device/frame.ts"
+    },
+    "./device/phone-viewer": {
+      "types": "./src/device/phoneViewer.ts",
+      "default": "./src/device/phoneViewer.ts"
+    },
+    "./device/phone-interaction": {
+      "types": "./src/device/phoneInteraction.ts",
+      "default": "./src/device/phoneInteraction.ts"
+    },
+    "./device/shape-profile": {
+      "types": "./src/device/shapeProfile.ts",
+      "default": "./src/device/shapeProfile.ts"
+    },
+    "./device/screenshot": {
+      "types": "./src/device/screenshot.ts",
+      "default": "./src/device/screenshot.ts"
+    },
+    "./device/model": {
+      "types": "./src/device/model.ts",
+      "default": "./src/device/model.ts"
+    },
+    "./device/duo-viewer": {
+      "types": "./src/device/duoViewer.ts",
+      "default": "./src/device/duoViewer.ts"
+    },
+    "./device/duo-control": {
+      "types": "./src/device/duoControl.ts",
+      "default": "./src/device/duoControl.ts"
     }
   },
   "scripts": {
@@ -224,10 +260,12 @@
     "micromark-extension-directive": "^4.0.0",
     "micromark-util-character": "^2.1.1",
     "remark-parse": "^11.0.0",
+    "three": "0.180.0",
     "unified": "^11.0.5"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
+    "@types/three": "0.180.0",
     "micromark-util-types": "^2.0.2",
     "vite-plus": "catalog:"
   }

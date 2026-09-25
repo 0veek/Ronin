@@ -98,6 +98,14 @@ function ComposerCitationDecorator(props: { citation: AssistantCitation; nodeKey
     );
     return accepted;
   };
+  const onRestoreFocus = () => {
+    if (!editor.isEditable()) return;
+    editor.update(() => {
+      const node = $getNodeByKey(props.nodeKey);
+      if (node instanceof ComposerCitationNode && node.isAttached()) node.selectNext();
+    });
+    editor.getRootElement()?.focus({ preventScroll: true });
+  };
   /** Cancelling a comment on a just-created citation removes the chip the cite action added. */
   const onRemove = () => {
     if (!editor.isEditable()) return;
@@ -132,6 +140,7 @@ function ComposerCitationDecorator(props: { citation: AssistantCitation; nodeKey
           },
           ...(commentTarget?.removeOnCancel ? { onCancel: onRemove } : {}),
           onSave: onSaveComment,
+          onRestoreFocus,
         }}
       />
     </span>

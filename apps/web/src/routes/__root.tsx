@@ -23,6 +23,8 @@ import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
 import { SnapShotCoordinator } from "../components/desktop/SnapShotCoordinator";
 import { DesktopAppActivationCoordinator } from "../components/desktop/DesktopAppActivationCoordinator";
+import { RunningThreadKeepAlive } from "../components/desktop/RunningThreadKeepAlive";
+import { MainAppLocationTracker } from "../components/sidebar/mainAppLocation";
 import { AgentAttentionNotifier } from "../components/AgentAttentionNotifier";
 import { DockAttentionBadge } from "../components/DockAttentionBadge";
 import { AppUpdateNotification } from "../components/AppUpdateNotification";
@@ -43,6 +45,7 @@ import {
 } from "../components/ui/toast";
 import { resolveAndPersistPreferredEditor } from "../editorPreferences";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
+import { isElectron } from "../env";
 import { getChatWidthCssVariables, normalizeChatWidthMode } from "~/lib/chatWidth";
 import { applyAppearanceContrast } from "~/appearanceContrast";
 import { useClientSettings } from "../hooks/useSettings";
@@ -176,11 +179,13 @@ function RootRouteView() {
       <AnchoredToastProvider>
         <AppUpdateProvider>
           <DocumentTitleSync />
+          <MainAppLocationTracker />
           <ContrastAppearanceSync />
           <EnvironmentThemeSync />
           <FontAppearanceSync />
           {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
           {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+          {isElectron ? <RunningThreadKeepAlive /> : null}
           <SshPasswordPromptDialog />
           <SnapShotCoordinator />
           <ConfirmDialogHost />
