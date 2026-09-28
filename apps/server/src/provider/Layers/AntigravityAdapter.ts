@@ -283,16 +283,10 @@ export function makeAntigravityAdapter(
             issue: "A prompt is required.",
           });
         }
-        // Print mode has no native attachment input. Folded clipboard text is
-        // the exception: ProviderService has already placed its on-disk path
-        // in the prompt, so keeping the attachment path-only is intentional.
+        // Print mode has no native attachment input. ProviderService places
+        // saved file paths in the prompt so the agent can inspect them.
         const unsupportedAttachment = input.attachments?.some(
-          (attachment) =>
-            !(
-              attachment.type === "file" &&
-              "source" in attachment &&
-              attachment.source?._tag === "pasted-text"
-            ),
+          (attachment) => attachment.type !== "file",
         );
         if (unsupportedAttachment) {
           return yield* new ProviderAdapterValidationError({

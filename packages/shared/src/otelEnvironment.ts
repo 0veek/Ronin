@@ -166,10 +166,11 @@ const endpoint = (name: string) =>
   readOrWarn(name, parseHttpUrl, `${name} is not an http or https URL, ${NOT_EXPORTED}`);
 
 // The specification reads enum values case-insensitively.
+const decodeOtlpProtocol = Schema.decodeUnknownOption(OtlpProtocol);
 const protocol = (name: string) =>
   readOrWarn(
     name,
-    (raw) => Schema.decodeUnknownOption(OtlpProtocol)(raw.toLowerCase()),
+    (raw) => decodeOtlpProtocol(raw.toLowerCase()),
     `${name} is not http/protobuf or http/json, ${NOT_EXPORTED}`,
   );
 
@@ -178,6 +179,31 @@ const headers = (name: string) =>
     name,
     Schema.decodeUnknownOption(OtlpHeadersFromString),
     `${name} is not a list of key=value pairs with percent-encoded values, ${NOT_EXPORTED}`,
+  );
+
+type Exporter = "otlp" | "none";
+
+const exporter = (name: string): Config.Config<Setting<Exporter>> =>
+  Config.string(name).pipe(
+    Config.option,
+    Config.map((option): Setting<Exporter> => {
+      const entries = (Option.getOrUndefined(option) ?? "")
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean);
+      const ignored = [...new Set(entries.filter((entry) => entry !== "otlp" && entry !== "none"))];
+      const value = entries.includes("otlp")
+        ? "otlp"
+        : entries.includes("none")
+          ? "none"
+          : undefined;
+      return ignored.length === 0
+        ? { value }
+        : {
+            value,
+            warning: `${name} names ${ignored.join(", ")}, which Ronin does not export to, so ${ignored.length === 1 ? "it was" : "they were"} ignored`,
+          };
+    }),
   );
 
 interface Settings {
@@ -218,7 +244,7 @@ interface ResolvedSignal {
  * rather than sent somewhere, in a format, or without the credentials its
  * collector expects.
  */
-const signal = (name: OtlpSignalName, own: Settings, generic: Settings): ResolvedSignal => {
+const endpointSignal = (name: OtlpSignalName, own: Settings, generic: Settings): ResolvedSignal => {
   const ownEndpoint = isClaimed(own.endpoint);
   const endpoint = ownEndpoint ? own.endpoint : generic.endpoint;
   if (endpoint.value === undefined) {
@@ -240,6 +266,19 @@ const signal = (name: OtlpSignalName, own: Settings, generic: Settings): Resolve
     }),
     used,
   };
+};
+
+const signal = (
+  name: OtlpSignalName,
+  exporter: Setting<Exporter>,
+  own: Settings,
+  generic: Settings,
+): ResolvedSignal => {
+  if (exporter.value === "none") {
+    return { signal: OtelSignal.Off(), used: [exporter] };
+  }
+  const resolved = endpointSignal(name, own, generic);
+  return { signal: resolved.signal, used: [exporter, ...resolved.used] };
 };
 
 export const load: Effect.Effect<OtelEnvironment> = Config.all({
@@ -264,16 +303,21 @@ export const load: Effect.Effect<OtelEnvironment> = Config.all({
   traces: settings("OTEL_EXPORTER_OTLP_TRACES_"),
   metrics: settings("OTEL_EXPORTER_OTLP_METRICS_"),
   logs: settings("OTEL_EXPORTER_OTLP_LOGS_"),
+  exporters: Config.all({
+    traces: exporter("OTEL_TRACES_EXPORTER"),
+    metrics: exporter("OTEL_METRICS_EXPORTER"),
+    logs: exporter("OTEL_LOGS_EXPORTER"),
+  }),
 }).pipe(
-  Effect.map(({ t3, spec, resource, generic, ...own }) => {
+  Effect.map(({ t3, spec, resource, generic, exporters, ...own }) => {
     const disabled = t3.value ?? spec.value ?? false;
     // The kill switch wins outright, so the signals say nothing once it is set.
     const signals = disabled
       ? undefined
       : {
-          traces: signal("TRACES", own.traces, generic),
-          metrics: signal("METRICS", own.metrics, generic),
-          logs: signal("LOGS", own.logs, generic),
+          traces: signal("TRACES", exporters.traces, own.traces, generic),
+          metrics: signal("METRICS", exporters.metrics, own.metrics, generic),
+          logs: signal("LOGS", exporters.logs, own.logs, generic),
         };
     // A generic variable read by several signals warns once.
     const used = new Set(

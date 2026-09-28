@@ -99,6 +99,12 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "board.toggle",
   "digest.show",
   "editor.openFavorite",
+  "usage.cost",
+  "usage.tokens",
+  "usage.period.day",
+  "usage.period.week",
+  "usage.period.month",
+  "usage.period.quarter",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
 ] as const;

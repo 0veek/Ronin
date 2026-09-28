@@ -478,6 +478,68 @@ it.effect("ProviderServiceLive catches stopAll failures during shutdown", () =>
   }),
 );
 
+it.effect("ProviderServiceLive shutdown leaves settled session rows untouched", () =>
+  Effect.gen(function* () {
+    const codex = makeFakeCodexAdapter();
+    const directory = yield* Layer.build(
+      ProviderSessionDirectoryLive.pipe(
+        Layer.provide(makeSessionRepositoriesLayer(SqlitePersistenceMemory)),
+      ),
+    ).pipe(
+      Effect.flatMap((context) =>
+        ProviderSessionDirectory.ProviderSessionDirectory.pipe(Effect.provide(context)),
+      ),
+    );
+    const settledId = asThreadId("shutdown-settled");
+    const activeId = asThreadId("shutdown-active");
+    for (const [threadId, status, activeTurnId] of [
+      [settledId, "stopped", null],
+      [activeId, "running", asTurnId("active-turn")],
+    ] as const) {
+      yield* directory.upsert({
+        threadId,
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        status,
+        runtimePayload: { cwd: "/repo", activeTurnId },
+      });
+    }
+    const before = (yield* directory.listBindings()).find(
+      (binding) => binding.threadId === settledId,
+    );
+    assert.isDefined(before);
+
+    const scope = yield* Scope.make();
+    yield* Layer.build(
+      makeProviderServiceLive().pipe(
+        Layer.provide(
+          Layer.succeed(
+            ProviderAdapterRegistry.ProviderAdapterRegistry,
+            makeAdapterRegistryMock({ [CODEX_DRIVER]: codex.adapter }),
+          ),
+        ),
+        Layer.provide(Layer.succeed(ProviderSessionDirectory.ProviderSessionDirectory, directory)),
+        Layer.provide(defaultServerSettingsLayer),
+        Layer.provide(serverConfigTestLayer),
+        Layer.provide(
+          Layer.succeed(
+            ProviderEventLoggers.ProviderEventLoggers,
+            ProviderEventLoggers.NoOpProviderEventLoggers,
+          ),
+        ),
+      ),
+    ).pipe(Scope.provide(scope));
+    yield* Scope.close(scope, Exit.void);
+
+    const after = new Map(
+      (yield* directory.listBindings()).map((binding) => [binding.threadId, binding]),
+    );
+    assert.deepStrictEqual(after.get(settledId), before);
+    assert.equal(after.get(activeId)?.status, "stopped");
+    assert.propertyVal(after.get(activeId)?.runtimePayload, "activeTurnId", null);
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("ProviderServiceLive rejects new sessions for disabled providers", () =>
   Effect.gen(function* () {
     const codex = makeFakeCodexAdapter();
@@ -3013,6 +3075,31 @@ citations.layer("ProviderServiceLive assistant citations", (it) => {
 
 const validation = makeProviderServiceLayer();
 validation.layer("ProviderServiceLive validation", (it) => {
+  it.effect("rejects a file when its path context cannot fit", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      validation.codex.sendTurn.mockClear();
+      const failure = yield* provider
+        .sendTurn({
+          threadId: asThreadId("thread-file-context-limit"),
+          input: "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS),
+          attachments: [
+            {
+              type: "file",
+              id: "thread-attach-12345678-1234-1234-1234-123456789abc-pdf",
+              name: "report.pdf",
+              mimeType: "application/pdf",
+              sizeBytes: 1024,
+            },
+          ],
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(failure, ProviderValidationError);
+      assert.include(failure.issue, "attachment context exceeds");
+      assert.equal(validation.codex.sendTurn.mock.calls.length, 0);
+    }),
+  );
+
   it.effect("rejects input that leaves no room for pasted-text attachment context", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

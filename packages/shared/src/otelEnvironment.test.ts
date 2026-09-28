@@ -204,6 +204,22 @@ describe("OtelEnvironment", () => {
         logs: "Unset",
         warnings: [T3_OFF],
       },
+      {
+        name: "none disables one signal despite a generic endpoint",
+        env: { OTEL_EXPORTER_OTLP_ENDPOINT: "https://collector:4318", OTEL_LOGS_EXPORTER: "none" },
+        traces: "https://collector:4318/v1/traces",
+        metrics: "https://collector:4318/v1/metrics",
+        logs: "Off",
+        warnings: [],
+      },
+      {
+        name: "none suppresses an invalid endpoint warning for that signal",
+        env: { OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "not-a-url", OTEL_TRACES_EXPORTER: " NONE " },
+        traces: "Off",
+        metrics: "Unset",
+        logs: "Unset",
+        warnings: [],
+      },
     ])("$name", ({ env, traces, metrics, logs, warnings }) =>
       Effect.gen(function* () {
         const resolved = yield* load(env);

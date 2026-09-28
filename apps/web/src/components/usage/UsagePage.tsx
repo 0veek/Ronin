@@ -1,19 +1,29 @@
 import type { EnvironmentId, UsageProviderKind } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, CheckIcon, RefreshCwIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowLeftIcon, CheckIcon, InfoIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import {
   isModelCostUnknown,
   type DailyTotals,
   type HourlyTotals,
   type ModelTotals,
+  type MergedUsage,
   type ProviderTotals,
 } from "@t3tools/shared/usageMerge";
 
 import { cn } from "../../lib/utils";
+import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { isModelPickerOpen } from "../../modelPickerVisibility";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
-import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import {
+  cursorKeychainAccessEnvironments,
+  useUsage,
+  type EnvironmentUsageStatus,
+} from "../../state/usage";
 import {
   enumerateDays,
   enumerateHourStarts,
@@ -23,17 +33,20 @@ import {
   formatHourShort,
   formatPercent,
   formatTokens,
+  formatUsageContractMismatch,
   formatUsd,
   makeWindow,
 } from "@t3tools/shared/usageFormat";
-import { Button } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspaceTopbar } from "../shell/WorkspaceTopbar";
 import { ProviderMark } from "./ProviderMark";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
+import { METRIC_OPTIONS, WINDOW_OPTIONS, resolveUsageShortcut } from "./usageShortcuts";
 import {
   readUsagePagePreferences,
   saveUsagePagePreferences,
@@ -45,13 +58,6 @@ import {
   PROVIDER_ORDER,
   providersWithUsage,
 } from "./usageProviders";
-
-const WINDOW_OPTIONS = [
-  { days: 1, label: "24h" },
-  { days: 7, label: "7 days" },
-  { days: 30, label: "30 days" },
-  { days: 90, label: "90 days" },
-] as const;
 
 function isUsageWindowDays(value: number): value is UsagePagePreferences["windowDays"] {
   return WINDOW_OPTIONS.some((option) => option.days === value);
@@ -92,7 +98,11 @@ function Segmented<Value extends string>({
   onChange,
 }: {
   readonly ariaLabel: string;
-  readonly options: readonly { readonly value: Value; readonly label: string }[];
+  readonly options: readonly {
+    readonly value: Value;
+    readonly label: string;
+    readonly title?: string;
+  }[];
   readonly value: Value;
   readonly onChange: (value: Value) => void;
 }) {
@@ -102,22 +112,31 @@ function Segmented<Value extends string>({
       aria-label={ariaLabel}
       className="flex shrink-0 rounded-md border border-border bg-card p-0.5"
     >
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            "cursor-pointer rounded-sm px-2.5 py-1 text-xs whitespace-nowrap outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card",
-            option.value === value
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
+      {options.map((option) => {
+        const button = (
+          <button
+            type="button"
+            aria-pressed={option.value === value}
+            onClick={() => onChange(option.value)}
+            className={cn(
+              "cursor-pointer rounded-sm px-2.5 py-1 text-xs whitespace-nowrap outline-none transition-colors duration-(--duration-fast) focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card",
+              option.value === value
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+        return option.title ? (
+          <Tooltip key={option.value}>
+            <TooltipTrigger render={button} />
+            <TooltipPopup>{option.title}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          <span key={option.value}>{button}</span>
+        );
+      })}
     </div>
   );
 }
@@ -154,6 +173,15 @@ function providerRows(providers: readonly ProviderTotals[]): readonly ProviderTo
 }
 
 export function UsagePage() {
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const shortcutTitle = (
+    option: (typeof METRIC_OPTIONS)[number] | (typeof WINDOW_OPTIONS)[number],
+  ) => {
+    const shortcut = shortcutLabelForCommand(keybindings, option.command, {
+      context: { usagePageOpen: true },
+    });
+    return shortcut ? `${option.label} (${shortcut})` : option.label;
+  };
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
   const [windowSelection, setWindowSelection] = useState(() => ({
     days: preferences.windowDays,
@@ -168,9 +196,7 @@ export function UsagePage() {
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
-  const cursorAccessEnvironments = environments.filter((environment) =>
-    environment.summary?.sources.some((source) => source.action === "enableCursorKeychain"),
-  );
+  const cursorAccessEnvironments = cursorKeychainAccessEnvironments(environments);
   const sourceMessages = [
     ...new Set(
       environments.flatMap(
@@ -273,6 +299,28 @@ export function UsagePage() {
     setPreferences(nextPreferences);
     saveUsagePagePreferences(nextPreferences);
   };
+  const onUsageKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (
+      event.defaultPrevented ||
+      event.repeat ||
+      event.isComposing ||
+      isCommandPaletteOpen() ||
+      isModelPickerOpen()
+    )
+      return;
+    const command = resolveUsageShortcut(event, keybindings);
+    const metricOption = METRIC_OPTIONS.find((option) => option.command === command);
+    const periodOption = WINDOW_OPTIONS.find((option) => option.command === command);
+    if (!metricOption && !periodOption) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (metricOption) selectMetric(metricOption.value);
+    if (periodOption) selectWindow(periodOption.days);
+  });
+  useEffect(() => {
+    globalThis.addEventListener("keydown", onUsageKeyDown, true);
+    return () => globalThis.removeEventListener("keydown", onUsageKeyDown, true);
+  }, []);
   const refreshWindow = () => {
     const nextWindow = makeWindow(windowDays, undefined, isPast24Hours ? "hour" : "day");
     if (
@@ -319,6 +367,7 @@ export function UsagePage() {
                   options={WINDOW_OPTIONS.map((option) => ({
                     value: String(option.days),
                     label: option.label,
+                    title: shortcutTitle(option),
                   }))}
                 />
                 <button
@@ -354,7 +403,7 @@ export function UsagePage() {
                 <UsageCoverageNotice
                   environments={environments}
                   duplicateSources={merged.duplicateSources}
-                  staleEnvironments={merged.staleEnvironments}
+                  contractMismatches={merged.contractMismatches}
                 />
 
                 {/* The headline answers "what did this cost", full width and on
@@ -378,22 +427,37 @@ export function UsagePage() {
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {metric === "cost"
-                        ? `* if billed at full API rate · ${formatTokens(merged.totalTokens)} tokens across ${formatCount(merged.sessions)} sessions${
-                            merged.costQuality.unpricedShare > 0
-                              ? ` · excludes ${formatPercent(merged.costQuality.unpricedShare)} unpriced records`
-                              : ""
-                          }`
+                        ? `* if billed at full API rate · ${formatTokens(merged.totalTokens)} tokens across ${formatCount(merged.sessions)} sessions`
                         : `Input, cache reads and output across ${formatCount(merged.sessions)} sessions`}
+                      {metric === "cost" && merged.costQuality.unpricedShare > 0 ? (
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={
+                              <InlineButton
+                                className="ml-1 align-middle"
+                                aria-label="Unpriced usage details"
+                              />
+                            }
+                          >
+                            <InfoIcon className="size-3" aria-hidden />
+                          </TooltipTrigger>
+                          <TooltipPopup>
+                            Excludes {formatPercent(merged.costQuality.unpricedShare)} unpriced
+                            records.
+                          </TooltipPopup>
+                        </Tooltip>
+                      ) : null}
                     </span>
                   </div>
                   <Segmented
                     ariaLabel="Metric"
                     value={metric}
                     onChange={selectMetric}
-                    options={[
-                      { value: "cost", label: "Cost" },
-                      { value: "tokens", label: "Tokens" },
-                    ]}
+                    options={METRIC_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                      title: shortcutTitle(option),
+                    }))}
                   />
                 </section>
 
@@ -828,17 +892,21 @@ function Metric({
 function UsageCoverageNotice({
   environments,
   duplicateSources,
-  staleEnvironments,
+  contractMismatches,
 }: {
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly duplicateSources: readonly string[];
-  readonly staleEnvironments: readonly string[];
+  readonly contractMismatches: MergedUsage["contractMismatches"];
 }) {
   const failed = environments.filter((environment) => environment.error !== null);
-  const stale = environments.filter((environment) =>
-    staleEnvironments.includes(environment.environmentId),
+  const mismatchByEnvironment = new Map(
+    contractMismatches.map((mismatch) => [mismatch.environmentId, mismatch]),
   );
-  if (failed.length === 0 && stale.length === 0 && duplicateSources.length === 0) {
+  const incompatible = environments.flatMap((environment) => {
+    const mismatch = mismatchByEnvironment.get(environment.environmentId);
+    return mismatch === undefined ? [] : [{ environment, mismatch }];
+  });
+  if (failed.length === 0 && incompatible.length === 0 && duplicateSources.length === 0) {
     return null;
   }
 
@@ -847,9 +915,9 @@ function UsageCoverageNotice({
       {failed.map((environment) => (
         <span key={environment.label}>{environment.label} could not report usage.</span>
       ))}
-      {stale.map((environment) => (
-        <span key={environment.label}>
-          {environment.label} runs an older server version and is excluded from totals.
+      {incompatible.map(({ environment, mismatch }) => (
+        <span key={environment.environmentId}>
+          {formatUsageContractMismatch(environment.label, mismatch)}
         </span>
       ))}
       {duplicateSources.length > 0 ? (

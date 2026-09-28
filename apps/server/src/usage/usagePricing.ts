@@ -198,7 +198,10 @@ export interface PricedUsage {
   readonly costSource: UsageCostSource;
 }
 
-export type PricedRecord = Pick<UsageRecord, "model" | "totals" | "fast" | "reportedCostUsd">;
+export type PricedRecord = Pick<
+  UsageRecord,
+  "model" | "rateModel" | "totals" | "fast" | "reportedCostUsd"
+>;
 
 /**
  * Prices a bucket's tokens.
@@ -212,7 +215,7 @@ export function priceUsage(table: RateTable, record: PricedRecord): PricedUsage 
     return { costUsd: reportedCostUsd, costSource: "providerReported" };
   }
 
-  const rate = lookupRate(table, model);
+  const rate = lookupRate(table, record.rateModel ?? model);
   if (rate === null) return { costUsd: 0, costSource: "unpriced" };
 
   const standardCostUsd =
@@ -232,7 +235,7 @@ export function priceUsage(table: RateTable, record: PricedRecord): PricedUsage 
  * actually cost. Drives the "cache savings" figure.
  */
 export function cacheSavingsUsd(table: RateTable, record: PricedRecord): number {
-  const rate = lookupRate(table, record.model);
+  const rate = lookupRate(table, record.rateModel ?? record.model);
   if (rate === null) return 0;
   return (
     record.totals.cachedInputTokens *

@@ -605,8 +605,9 @@ const tracerLayer = Layer.unwrap(
             exportInterval: `${otlp.endpoint.export.exportIntervalMs} millis`,
             headers: otlp.endpoint.export.headers,
             resource: {
-              serviceName: "desktop",
+              serviceName: "ronin-desktop",
               attributes: {
+                "service.namespace": "ronin",
                 "service.runtime": "desktop",
                 "service.mode": environment.isDevelopment ? "development" : "packaged",
               },

@@ -126,7 +126,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(resolverLayer));
   });
 
-  it.effect("retries Git root discovery after a failed lookup", () => {
+  it.effect("retries Git root discovery after the negative cache expires", () => {
     const calls: Array<ReadonlyArray<string>> = [];
     let rootAttempts = 0;
     const processRunner = Layer.succeed(ProcessRunner.ProcessRunner, {
@@ -159,6 +159,8 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     return Effect.gen(function* () {
       const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       expect(yield* resolver.resolve("/repo/packages/web")).toBeNull();
+      expect(yield* resolver.resolve("/repo/packages/web")).toBeNull();
+      yield* TestClock.adjust(Duration.minutes(1));
 
       const recovered = yield* resolver.resolve("/repo/packages/web");
       expect(recovered?.rootPath).toBe("/repo");
@@ -167,7 +169,7 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
         ["-C", "/repo/packages/web", "rev-parse", "--show-toplevel"],
         ["-C", "/repo", "remote", "-v"],
       ]);
-    }).pipe(Effect.provide(resolverLayer));
+    }).pipe(Effect.provide(Layer.merge(TestClock.layer(), resolverLayer)));
   });
 
   it.effect("normalizes equivalent GitHub remotes into a stable repository identity", () =>

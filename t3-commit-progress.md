@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Upstream reviewed through** | `4293433ec` — `perf(server): avoid rereading unchanged files in review previews (#13395)` (2026-09-26) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                        |
-| **Ported on**                 | 2026-09-26                                                                                             |
+|                               |                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Upstream reviewed through** | `d15210cd3` — `fix(web): prevent usage summary shift for unpriced records (#13991)` (2026-09-27) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                  |
+| **Ported on**                 | 2026-09-28                                                                                       |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -22,12 +22,12 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ```bash
 git fetch upstream
-git log --oneline 4293433ec..upstream/main          # the new commits
+git log --oneline d15210cd3..upstream/main          # the new commits
 
 # For each commit: which files does it touch that this fork still has,
 # and have we already diverged on them?
 MB=$(git merge-base HEAD upstream/main)
-git log --reverse --format='%h|%s' 4293433ec..upstream/main | while IFS='|' read -r h s; do
+git log --reverse --format='%h|%s' d15210cd3..upstream/main | while IFS='|' read -r h s; do
   shared=0; forked=0
   while read -r st f; do
     [ "$st" = A ] && continue
@@ -6468,3 +6468,121 @@ remain deliberately cut.
 - No live browser/client automation was run, per `AGENTS.md`.
 - No real provider process, simulator, SSH device host, macOS Keychain prompt, telemetry collector,
   GitHub mutation, packaged release, or self-updater was exercised against an external system.
+
+## Batch 38 — reviewed through `d15210cd3` (66 commits)
+
+Reviewed `4293433ec..d15210cd3`, with upstream snapshotted at
+`d15210cd3da79f9a1a495a6309d912d76362a046` for the whole run. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`. The OTLP naming Ask was resolved by using fixed
+Ronin service names.
+
+### Ported (49)
+
+| Upstream    | Title                                                                                              | Notes                                                                               |
+| ----------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `aade3a69a` | fix(usage): price Cursor cache savings by base model (#13731)                                      | Priced Cursor cache savings by base model.                                          |
+| `2a9832b80` | refactor(observability): name each service after its application (#13699)                          | Removed the OTLP service-name override; fixed Ronin server, desktop, and web names. |
+| `c216ba4da` | perf(server): stop remapping every thread on each thread event (#13720)                            | Avoided remapping the full thread list on each event.                               |
+| `5660ab5cb` | Remove unused items tracking from Claude adapter state (#13718)                                    | Stopped retaining unused Claude SDK items in adapter state.                         |
+| `20885cecf` | feat(observability): name the command on subprocess spans (#13701)                                 | Added subprocess command names to spans.                                            |
+| `8aa5be2f0` | fix(server): the SQLite WAL file shrinks back after large writes (#13684)                          | Bounded SQLite WAL growth after large writes.                                       |
+| `75bf92e65` | feat(cli): summarize the server trace file from the command line (#13698)                          | Added a server trace summary CLI and operations guidance.                           |
+| `6530de033` | perf(server): pull request sync reads only threads with linked pull requests (#13704)              | Limited PR sync reads to threads with linked pull requests.                         |
+| `1dc8cbe6d` | feat(observability): write a server heap snapshot on SIGUSR2 (#13694)                              | Added SIGUSR2 heap snapshots for the server.                                        |
+| `574b18090` | perf(server): shutdown no longer rewrites every stopped session row (#13688)                       | Skipped settled session bindings during shutdown.                                   |
+| `b6eefc926` | perf(server): build the thread list snapshot without decoding it twice (#13693)                    | Avoided double decoding the shell snapshot.                                         |
+| `b2577d6ef` | fix(client): slow servers finish loading the thread list instead of loading it twice (#13683)      | Raised shell and thread snapshot HTTP timeouts for slow servers.                    |
+| `6989856aa` | perf(web): hidden terminal drawers no longer keep full thread history in memory (#13686)           | Unsubscribed hidden terminal drawers from full thread history.                      |
+| `3b0a495b0` | perf(server): per-thread settlement and PR checks no longer rebuild the whole thread list (#13691) | Used per-thread PR reads; Ronin's settlement path did not need the other hunk.      |
+| `ee18e56f9` | feat(observability): record event loop stalls in the server trace (#13697)                         | Recorded event loop stalls in the server trace.                                     |
+| `999161ef8` | perf(server): stop re-running git for every project each minute (#13689)                           | Cached positive and negative repository identity lookups with invalidation.         |
+| `94c42162b` | fix(usage): hide the Cursor keychain prompt when Cursor isn't set up (#13714)                      | Gated Cursor Keychain access on Cursor setup in Ronin's web usage state.            |
+| `4408bf5a4` | fix(opencode): accept v2 serve ready line when spawning server (#13651)                            | Accepted OpenCode v2 server ready output while retaining Kilo compatibility.        |
+| `1e844a3d0` | fix(editors): stop treating the agy CLI as the Antigravity IDE (#7079)                             | Separated Antigravity IDE commands from the `agy` CLI in editor discovery.          |
+| `eeea71a88` | fix(web): make the empty workspace draggable on desktop (#13713)                                   | Made empty workspace states draggable in Electron.                                  |
+| `dd8332da5` | fix(server): installed editors no longer vanish when discovery is slow (#13669)                    | Cached PATH listings for editor discovery, with safe direct-probe fallback.         |
+| `29a32660d` | fix(git): exclude SSH ports from provider URLs (#12537)                                            | Removed SSH ports from provider URLs.                                               |
+| `8bc9b78f8` | fix(web): terminal links drop a trailing colon (#13408)                                            | Dropped trailing colons from terminal links.                                        |
+| `4923ff417` | fix(server): bump node-pty to 1.2.0-beta.15 for linux-arm64 prebuild (#13748)                      | Bumped node-pty to the Linux arm64 prebuild release.                                |
+| `92f0af24a` | Show a focus ring on sidebar thread and draft rows (#13344)                                        | Added visible keyboard focus rings to sidebar rows.                                 |
+| `2679d279c` | fix(server): let OpenCode generate session titles (#13368)                                         | Let OpenCode title new sessions unless a manual title was supplied.                 |
+| `def34c28b` | fix(server): let Antigravity inspect unsupported files by path (#13339)                            | Passed unsupported file paths to Antigravity; image restrictions remain.            |
+| `daafcc4a9` | feat(web): add keyboard navigation for usage (#10158)                                              | Added Stats shortcuts for Ronin's Cost, Tokens, and time-window controls.           |
+| `99efaeab5` | perf(observability): stop writing empty spans on spawns, projected events, and idle polls (#13756) | Removed empty spans from spawn, projection, and idle polling paths.                 |
+| `8b873eab0` | perf(server): opening Diagnostics no longer loads the whole trace ring into memory (#13763)        | Streamed trace diagnostics instead of loading the whole ring.                       |
+| `6f97b0f66` | perf(clients): sort projects and settled threads without re-parsing dates per comparison (#13759)  | Precomputed project and settled-thread sort keys.                                   |
+| `294dd1234` | fix(observability): the renderer trace proxy stops tracing itself (#13761)                         | Kept browser OTLP proxy exports out of server traces.                               |
+| `1d6f23b51` | perf(server): background sweeps only read threads that can still settle (#13765)                   | Filtered settlement sweeps to unsettled threads.                                    |
+| `9151ea407` | perf(clients): saving the thread list cache no longer freezes the UI (#13767)                      | Encoded the shell cache off the UI path and handled aborted writes.                 |
+| `887266695` | perf(server): cut idle wakeups from the Connect relay and session reaper (#13774)                  | Reduced stopped-session reaper wakeups; Connect relay hunk omitted.                 |
+| `295d7cba0` | fix(web): queued messages send while their thread is not open (#13764)                             | Mounted an app-level queue sender so closed threads dispatch due messages.          |
+| `95030dc67` | fix(server): background git status fetches no longer fill the disk with failed repacks (#13812)    | Disabled automatic GC during background Git fetches.                                |
+| `393d59598` | fix(accessibility): correct control announcements and sidebar traversal (#13491)                   | Improved sidebar traversal and control announcements; mobile hunk omitted.          |
+| `10bb59bf0` | fix(usage): tolerate newer provider variants (#10076)                                              | Accepted forward-compatible usage provider variants.                                |
+| `d6802b4ac` | fix(usage): omit Cursor warning when no login is saved (#13820)                                    | Omitted Cursor warnings without a saved login.                                      |
+| `3dae78f33` | fix(usage): identify client version mismatches (#8208)                                             | Identified usage contract version mismatches in the UI.                             |
+| `dd582dee3` | fix(web): stop mistaking offline servers for updates (#13083)                                      | Removed the incorrect offline-server update assumption.                             |
+| `d110f9867` | test(usage): assert contract mismatch details (#13861)                                             | Added regression assertions for usage contract mismatch details.                    |
+| `679c34c09` | fix(clients): hide duplicate Cursor Keychain prompts (#13870)                                      | Deduplicated Cursor Keychain prompts in service and web state.                      |
+| `74ee5153e` | feat(observability): honor OTEL_*_EXPORTER=none per signal (#13736)                                | Honored per-signal OTEL exporter disabling; WSL hunk omitted.                       |
+| `cb9741594` | fix(server): let agents use simctl and adb alongside device tools (#13908)                         | Allowed simctl and adb beside device tools and updated agent guidance.              |
+| `ab099178a` | fix(web): environment status tooltip resizes when the status changes (#13845)                      | Let the environment status tooltip resize with its content.                         |
+| `94f92a7a3` | fix(server): let Claude abort turns before closing sessions (#13999)                               | Aborted Claude turns before closing sessions.                                       |
+| `d15210cd3` | fix(web): prevent usage summary shift for unpriced records (#13991)                                | Kept the Stats summary stable for unpriced records.                                 |
+
+### Already in the tree (3)
+
+| Upstream    | Title                                                                                          | Notes                                                               |
+| ----------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `2598ce7a5` | feat(desktop): honor the standard OTLP variables in the main process and WSL backends (#13641) | Ronin already resolves standard desktop OTLP variables; WSL is cut. |
+| `ed809f7ad` | fix(web): restore compact provider instance badges (#13700)                                    | Ronin already has equivalent compact provider badges.               |
+| `04c15f34b` | feat(web): add chat width setting for wide screens (#11594)                                    | Chat width setting and controls already exist in Ronin.             |
+
+### Skipped (14)
+
+| Upstream    | Title                                                                                  | Notes                                          |
+| ----------- | -------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `525af2d1a` | perf(mobile): lighter Home rows away from the viewport (#13702)                        | Mobile app is absent.                          |
+| `595a1e1f5` | perf(mobile): render Home rows further ahead while scrolling (#13705)                  | Mobile app is absent.                          |
+| `7c901a37c` | fix(cli): t3 triage points agents at log files that exist (#13685)                     | The upstream `t3 triage` CLI is absent.        |
+| `ecd3237b1` | fix(mobile): running threads open at the latest message (#13530)                       | Mobile app is absent.                          |
+| `5d707bb71` | fix(web): Mod+B bolds on non-Latin layouts (#13409)                                    | The rich-text bold shortcut surface is absent. |
+| `a21b42cec` | fix(server): prune expired replay-protection files from the secrets directory (#13695) | Hosted cloud replay protection is absent.      |
+| `dab9561ca` | fix(mobile): keep composer within folded screen after resume (#13310)                  | Mobile app is absent.                          |
+| `fe6388f01` | fix(mobile): link URLs with ports and single-label hosts (#13795)                      | Mobile app is absent.                          |
+| `81e0491d2` | fix(mobile): keep trailing underscores and tildes in autolinked URLs (#13807)          | Mobile app is absent.                          |
+| `75d63d64c` | fix(mobile): thread list shows the pull request icon instead of # (#13742)             | Mobile app is absent.                          |
+| `ea7d46ac1` | fix(build): validate Linux node-pty prebuilds in Windows artifacts (#13867)            | WSL payload validation is absent.              |
+| `c9a0e8a11` | fix(web): align reasoning arrows with tool calls (#13850)                              | Ronin has no matching reasoning trace block.   |
+| `a727d1d97` | test(relay): remove constant-restating database mode test (#13932)                     | Hosted relay is cut.                           |
+| `de251fc29` | fix(web): continue onboarding after incomplete history imports (#13935)                | The upstream onboarding flow is absent.        |
+
+### Verification
+
+- Targeted typechecks passed for server, web, shared, client runtime, contracts, and desktop; server
+  emitted only non-blocking Effect suggestions.
+- Typecheck commands: `vp run --filter t3 typecheck`, `vp run --filter @t3tools/web typecheck`,
+  `vp run --filter @t3tools/shared typecheck`, `vp run --filter @t3tools/client-runtime typecheck`,
+  `vp run --filter @t3tools/contracts typecheck`, and
+  `vp run --filter @t3tools/desktop typecheck`.
+- Focused tests passed for queue dispatch, usage, OTLP and tracing, provider adapters, editor
+  discovery, project identity, projection, Git, CLI, desktop observability, and shared helpers.
+- Commands included `vp test run apps/web/src/components/QueuedMessageSender.test.tsx
+apps/web/src/queuedMessageStore.test.ts apps/web/src/components/chat/MessagesTimeline.logic.test.ts`,
+  `vp test run apps/server/src/process/externalLauncher.test.ts`,
+  `vp test run apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts`,
+  `vp test run apps/server/src/vcs/GitVcsDriverCore.test.ts`, and
+  `vp test run apps/desktop/src/app/DesktopObservability.test.ts`.
+- Changed-file `vp lint --report-unused-disable-directives`, `vp fmt --check`, and
+  `git diff --check` passed. `npx react-doctor@latest --verbose --scope changed` scored **65/100**;
+  it reported 78 issues, mainly in large existing components and prior React Compiler patterns.
+- The full `ProjectionSnapshotQuery.test.ts` suite has one verified pre-existing failure: its
+  expected snapshot omits the existing `autoSettleDisabledAt: null` field. The new targeted query
+  test passed.
+- The 66-commit ledger matches the frozen range: **49 Port, 3 Already in tree, 14 Skip, 0 Ask**.
+
+### Not tested
+
+- No live browser/client automation was run, per `AGENTS.md`.
+- No real provider process, telemetry collector, Keychain prompt, simulator, or packaged build was
+  exercised against an external system.

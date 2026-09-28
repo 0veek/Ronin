@@ -63,6 +63,11 @@ export interface ProjectionFullThreadDiffContext {
   readonly toCheckpointRef: CheckpointRef | null;
 }
 
+export type ProjectionThreadPullRequests = Pick<
+  OrchestrationThreadShell,
+  "id" | "projectId" | "settledOverride" | "settledAt" | "pullRequests"
+>;
+
 export interface ProjectionThreadDetailQuery {
   /**
    * Limit activities before SQLite returns and decodes their payloads.
@@ -114,8 +119,13 @@ export interface ProjectionSnapshotQueryShape {
    * Returns only projects and thread shell summaries so clients can bootstrap
    * lightweight navigation state without hydrating every thread body.
    */
-  readonly getShellSnapshot: () => Effect.Effect<
-    OrchestrationShellSnapshot,
+  readonly getShellSnapshot: (options?: {
+    readonly unsettledOnly?: boolean;
+  }) => Effect.Effect<OrchestrationShellSnapshot, ProjectionRepositoryError>;
+
+  /** Read active threads with linked pull requests without hydrating the full shell. */
+  readonly listThreadsWithPullRequests: () => Effect.Effect<
+    ReadonlyArray<ProjectionThreadPullRequests>,
     ProjectionRepositoryError
   >;
 

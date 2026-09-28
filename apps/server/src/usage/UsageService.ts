@@ -561,6 +561,7 @@ export const make = Effect.gen(function* () {
             cursorUntilMs,
           ),
         );
+    if (account.missing && account.error === null) return scanned;
     if (account.accountKey !== null && account.error === null && !account.missing) {
       const source = `cursor-account:${account.accountKey}`;
       scanned.push({

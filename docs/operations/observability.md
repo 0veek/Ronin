@@ -49,6 +49,19 @@ records instead carry OTLP resource, scope, and optional status fields.
 The `TraceRecord`, `EffectTraceRecord`, and `OtlpTraceRecord` schemas live in
 `packages/shared/src/observability.ts`.
 
+#### Summarize the trace file
+
+`t3 trace summary` reads the trace file and its rotated backups directly, so it works while the
+server is stalled or stopped. It prints counts, rates, and latency percentiles per span name.
+
+```bash
+t3 trace summary --since 30m --limit 40
+```
+
+It reads `T3CODE_TRACE_FILE` if set, or `<home>/userdata/logs/server.trace.ndjson` for
+`--base-dir` or `T3CODE_HOME`, plus the `T3CODE_TRACE_MAX_FILES` rotated backups. For a dev run or
+a copied file, set `T3CODE_TRACE_FILE`.
+
 ### Metrics
 
 Metrics are not written to a local file.
@@ -71,6 +84,24 @@ There are two useful modes:
 - full local observability: stdout + local trace file + OTLP export to Grafana/Tempo/Prometheus
 
 The local trace file is always on. OTLP export is opt-in.
+
+### Heap snapshots
+
+On macOS or Linux, send `SIGUSR2` to the Ronin server process to write a V8 heap snapshot in its
+logs directory. The file is named `server-<pid>-<timestamp>.heapsnapshot` and can be opened in the
+Memory tab of Chrome DevTools. Check the process identity before signaling it, especially if its
+runtime state file may contain a stale PID.
+
+A snapshot pauses the server while V8 writes it and can use substantial memory. The file contains
+secrets and thread content; keep it private and delete it when finished. Windows does not support
+this signal.
+
+### Event loop stalls
+
+The server samples event loop delay every 30 seconds and records a `server.eventLoop.stall` warning
+span when it detects a stall over two seconds. The first sample after startup is skipped. Delay
+measurements can undercount a stall by up to one second; system sleep can also appear as delay,
+so use the span's CPU and page-fault attributes to interpret it.
 
 ### Option 1: Local Traces Only
 
@@ -115,7 +146,6 @@ Default Grafana login:
 ```bash
 export T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces
 export T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics
-export T3CODE_OTLP_SERVICE_NAME=t3-local
 ```
 
 Optional:
@@ -154,7 +184,6 @@ macOS app bundle example:
 ```bash
 T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
 T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
 "/Applications/Ronin.app/Contents/MacOS/Ronin"
 ```
 
@@ -163,7 +192,6 @@ Direct binary example:
 ```bash
 T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
 T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
-T3CODE_OTLP_SERVICE_NAME=t3-desktop \
 ./path/to/your/desktop-app-binary
 ```
 
@@ -295,11 +323,11 @@ Recommended flow in Grafana:
 2. Pick the `Tempo` data source.
 3. Set the time range to something recent like `Last 15 minutes`.
 4. Start broad. Do not begin with a very narrow query.
-5. Look for spans from your configured service name, then narrow by span name or attributes.
+5. Look for spans from the `ronin-server`, `ronin-desktop`, or `ronin-web` service, then narrow by span name or attributes.
 
 Good first searches:
 
-- service name such as `t3-local`, `t3-dev`, or `t3-desktop`
+- service name `ronin-server`, `ronin-desktop`, or `ronin-web`
 - span names like `sendTurn` or a Git operation such as `GitVcsDriver.statusDetails.status`
 - Git spans whose `git.operation` attribute identifies the operation
 - orchestration spans with attributes like `orchestration.command_type`
@@ -521,10 +549,14 @@ OTLP export:
 - `T3CODE_OTLP_TRACES_URL`: OTLP trace endpoint
 - `T3CODE_OTLP_METRICS_URL`: OTLP metric endpoint
 - `T3CODE_OTLP_EXPORT_INTERVAL_MS`: export interval, default `10000`
-- `T3CODE_OTLP_SERVICE_NAME`: service name, default `t3-server`
 - `T3CODE_OTLP_HEADERS`: extra headers for both exporters, same format as
   `OTEL_EXPORTER_OTLP_HEADERS`: comma-separated `key=value` pairs with percent-encoded values.
 - `T3CODE_OTLP_PROTOCOL`: `http/json` (default) or `http/protobuf`
+
+Service names are fixed as `ronin-server`, `ronin-desktop`, and `ronin-web`, with
+`service.namespace` set to `ronin`. `T3CODE_OTLP_SERVICE_NAME` and `OTEL_SERVICE_NAME` do not
+override them. Distinguish installations with other resource attributes, such as
+`OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=development`.
 
 The server also reads the standard `OTEL_EXPORTER_OTLP_{TRACES,METRICS,LOGS}_ENDPOINT` and generic
 `OTEL_EXPORTER_OTLP_ENDPOINT` variables. For the generic endpoint it appends `/v1/traces`,
@@ -535,6 +567,10 @@ per-signal headers and protocol taking precedence. Invalid URLs, headers, or pro
 that signal with a startup warning.
 
 If the OTLP URLs are unset, local tracing still works and metrics stay in-process only.
+
+`OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, or `OTEL_LOGS_EXPORTER` set to `none` turns off
+just that signal, overriding an OTEL endpoint and the Settings endpoint. A `T3CODE_OTLP_*_URL` still
+wins for its signal. `otlp` is the default; unsupported exporter names are ignored with a warning.
 
 ### What Is Instrumented Today
 

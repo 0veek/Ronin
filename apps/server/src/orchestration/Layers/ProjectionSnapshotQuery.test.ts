@@ -108,6 +108,89 @@ const projectionSnapshotLayer = it.layer(
   ),
 );
 
+it.effect("reads only linked active threads for pull request sync", () => {
+  const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
+    Layer.provide(ThreadBackgroundLiveness.layer),
+    Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: () => Effect.die("repository identities must not be resolved"),
+      }),
+    ),
+    Layer.provideMerge(SqlitePersistenceMemory),
+  );
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const query = yield* ProjectionSnapshotQuery;
+    yield* sql`INSERT INTO projection_projects
+      (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+      VALUES ('p1', 'One', '/one', '[]', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')`;
+    yield* sql`INSERT INTO projection_threads
+      (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode,
+       created_at, updated_at, archived_at)
+      VALUES
+      ('linked', 'p1', 'Linked', '{"provider":"codex","model":"gpt-5"}', 'full-access', 'default',
+       '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', NULL),
+      ('plain', 'p1', 'Plain', '{"provider":"codex","model":"gpt-5"}', 'full-access', 'default',
+       '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', NULL),
+      ('archived', 'p1', 'Archived', '{"provider":"codex","model":"gpt-5"}', 'full-access', 'default',
+       '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', '2026-09-02T00:00:00Z')`;
+    yield* sql`INSERT INTO projection_thread_pull_requests
+      (thread_id, host, repository, number, url, source, linked_at)
+      VALUES
+      ('linked', 'github.com', 'acme/repo', 1, 'https://github.com/acme/repo/pull/1', 'manual', '2026-09-01T00:00:00Z'),
+      ('archived', 'github.com', 'acme/repo', 2, 'https://github.com/acme/repo/pull/2', 'manual', '2026-09-01T00:00:00Z')`;
+
+    const counter = makeSqlStatementCounter();
+    const linked = yield* query
+      .listThreadsWithPullRequests()
+      .pipe(Effect.withTracer(counter.tracer));
+    assert.strictEqual(linked.length, 1);
+    assert.strictEqual(linked[0]?.id, "linked");
+    assert.strictEqual(linked[0]?.pullRequests[0]?.number, 1);
+    assert.strictEqual(counter.count(), 1);
+  }).pipe(Effect.provide(layer));
+});
+
+it.effect("limits background shell reads to unsettled threads", () => {
+  const layer = OrchestrationProjectionSnapshotQueryLive.pipe(
+    Layer.provide(ThreadBackgroundLiveness.layer),
+    Layer.provide(ThreadPlanProgress.layer),
+    Layer.provide(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: () => Effect.succeed(null),
+      }),
+    ),
+    Layer.provideMerge(SqlitePersistenceMemory),
+  );
+  return Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const query = yield* ProjectionSnapshotQuery;
+    yield* sql`INSERT INTO projection_projects
+      (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+      VALUES ('p1', 'One', '/one', '[]', '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z')`;
+    yield* sql`INSERT INTO projection_threads
+      (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode,
+       created_at, updated_at, archived_at, settled_override, settled_at)
+      VALUES
+      ('open', 'p1', 'Open', '{"provider":"codex","model":"gpt-5"}', 'full-access', 'default',
+       '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', NULL, NULL, NULL),
+      ('settled', 'p1', 'Settled', '{"provider":"codex","model":"gpt-5"}', 'full-access', 'default',
+       '2026-09-01T00:00:00Z', '2026-09-01T00:00:00Z', NULL, 'settled', '2026-09-02T00:00:00Z')`;
+    const full = yield* query.getShellSnapshot();
+    const sweep = yield* query.getShellSnapshot({ unsettledOnly: true });
+    assert.deepStrictEqual(
+      full.threads.map((thread) => thread.id),
+      ["open", "settled"],
+    );
+    assert.deepStrictEqual(
+      sweep.threads.map((thread) => thread.id),
+      ["open"],
+    );
+    assert.strictEqual(sweep.projects.length, 1);
+  }).pipe(Effect.provide(layer));
+});
+
 projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
   it.effect("hydrates read model from projection tables and computes snapshot sequence", () =>
     Effect.gen(function* () {

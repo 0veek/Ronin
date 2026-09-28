@@ -77,7 +77,6 @@ export class ServerConfig extends Context.Service<
     readonly otlpTracesUrl: string | undefined;
     readonly otlpMetricsUrl: string | undefined;
     readonly otlpExportIntervalMs: number;
-    readonly otlpServiceName: string;
     readonly otlpHeaders: Readonly<Record<string, string>> | undefined;
     readonly otlpProtocol: OtlpProtocol;
     readonly otlpTracesExport?: SignalExport;
@@ -204,7 +203,6 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     otlpTracesUrl: undefined,
     otlpMetricsUrl: undefined,
     otlpExportIntervalMs: 10_000,
-    otlpServiceName: "t3-server",
     otlpHeaders: undefined,
     otlpProtocol: "http/json",
     otlpTracesExport: DEFAULT_SIGNAL_EXPORT,

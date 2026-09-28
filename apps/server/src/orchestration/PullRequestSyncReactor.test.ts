@@ -201,6 +201,21 @@ const makeHarness = Effect.fn("makePullRequestSyncHarness")(function* (options: 
 
   const dependencies = Layer.mergeAll(
     Layer.mock(ProjectionSnapshotQuery)({
+      listThreadsWithPullRequests: () =>
+        Queue.offer(snapshotReads, undefined).pipe(
+          Effect.andThen(Ref.get(snapshots)),
+          Effect.map((snapshot) =>
+            snapshot.threads
+              .filter((thread) => thread.archivedAt === null && thread.pullRequests.length > 0)
+              .map(({ id, projectId, settledOverride, settledAt, pullRequests }) => ({
+                id,
+                projectId,
+                settledOverride,
+                settledAt,
+                pullRequests,
+              })),
+          ),
+        ),
       getShellSnapshot: () =>
         Queue.offer(snapshotReads, undefined).pipe(Effect.andThen(Ref.get(snapshots))),
     }),

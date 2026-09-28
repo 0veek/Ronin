@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  OrchestrationProjectShell,
   type OrchestrationShellSnapshot,
   type OrchestrationThreadDetailSnapshot,
   type ServerConfig,
@@ -129,6 +130,15 @@ export class EnvironmentCacheStore extends Context.Service<
     ) => Effect.Effect<void, ConnectionPersistenceError>;
   }
 >()("@t3tools/client-runtime/platform/persistence/EnvironmentCacheStore") {}
+
+const encodeProjectShells = Schema.encodeEffect(Schema.Array(OrchestrationProjectShell));
+
+/** Keep the cache format while avoiding a schema walk over every thread shell. */
+export const encodeShellSnapshotForCache = (snapshot: OrchestrationShellSnapshot) =>
+  Effect.map(
+    encodeProjectShells(snapshot.projects),
+    (projects) => ({ ...snapshot, projects }) satisfies typeof OrchestrationShellSnapshot.Encoded,
+  );
 
 export class EnvironmentOwnedDataCleanup extends Context.Reference<{
   readonly clear: (environmentId: EnvironmentId) => Effect.Effect<void>;

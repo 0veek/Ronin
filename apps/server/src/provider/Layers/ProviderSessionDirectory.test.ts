@@ -199,6 +199,19 @@ it.layer(makeDirectoryLayer(SqlitePersistenceMemory))("ProviderSessionDirectoryL
           },
         },
       ]);
+      yield* runtimeRepository.upsert({
+        threadId: ThreadId.make("thread-runtime-stopped"),
+        providerName: "codex",
+        providerInstanceId: null,
+        adapterKey: "codex",
+        runtimeMode: "full-access",
+        status: "stopped",
+        lastSeenAt: "2026-04-14T12:06:00.000Z",
+        resumeCursor: { opaque: "resume-stopped" },
+        runtimePayload: null,
+      });
+      assert.deepEqual(yield* directory.listBindings({ excludeStopped: true }), bindings);
+      assert.equal((yield* directory.listBindings()).length, 3);
     }));
 
   it("resets adapterKey to the new provider when provider changes without an explicit adapter key", () =>

@@ -1,7 +1,6 @@
 import { siblingPullRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   CommandId,
-  type OrchestrationThreadShell,
   type PullRequestSummary,
   type ThreadPullRequestKey,
   type ThreadPullRequestLink,
@@ -34,7 +33,7 @@ const SLOW_SYNC_INTERVAL_MS = 15 * 60 * 1_000;
 type SnapshotFields = Omit<ThreadPullRequestSnapshot, "syncedAt">;
 
 interface LinkEntry {
-  readonly thread: OrchestrationThreadShell;
+  readonly thread: ProjectionSnapshotQuery.ProjectionThreadPullRequests;
   readonly link: ThreadPullRequestLink;
 }
 
@@ -102,13 +101,13 @@ function stacksEqual(
   );
 }
 
-function isUnsettled(thread: OrchestrationThreadShell): boolean {
+function isUnsettled(thread: ProjectionSnapshotQuery.ProjectionThreadPullRequests): boolean {
   return thread.settledOverride !== "settled" && thread.settledAt === null;
 }
 
 /**
  * Keeps every thread ↔ pull request link's host snapshot current. One sweep a minute reads
- * the shell snapshot, groups visible links by pull request so the host is asked once per PR
+ * only threads with links, groups visible links by pull request so the host is asked once per PR
  * no matter how many threads share it, and writes back only what changed. Native stacks the
  * host reports are auto-linked to the thread as `source: "stack"`.
  */
@@ -151,14 +150,13 @@ export const make = Effect.gen(function* () {
       Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.logWarning(message, fields);
 
   const sweep = Effect.fn("PullRequestSyncReactor.sweep")(function* () {
-    const snapshot = yield* snapshots.getShellSnapshot();
+    const threads = yield* snapshots.listThreadsWithPullRequests();
     const now = yield* DateTime.now;
     const nowMs = DateTime.toEpochMillis(now);
     const nowIso = DateTime.formatIso(now);
 
     const groups = new Map<string, Array<LinkEntry>>();
-    for (const thread of snapshot.threads) {
-      if (thread.archivedAt !== null) continue;
+    for (const thread of threads) {
       for (const link of visibleThreadPullRequests(thread.pullRequests)) {
         const key = threadPullRequestKeyOf(link);
         const entries = groups.get(key) ?? [];

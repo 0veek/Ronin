@@ -21,6 +21,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -154,6 +155,21 @@ const makeHarness = Effect.fn("makeThreadPullRequestHarness")(function* (options
     Layer.mock(ProjectionSnapshotQuery)({
       getShellSnapshot: () =>
         Ref.get(snapshots).pipe(Effect.tap(() => Queue.offer(reads, undefined))),
+      getSnapshotSequence: () =>
+        Ref.get(snapshots).pipe(Effect.map(({ snapshotSequence }) => ({ snapshotSequence }))),
+      getThreadShellById: (threadId) =>
+        Ref.get(snapshots).pipe(
+          Effect.map((snapshot) =>
+            Option.fromNullishOr(snapshot.threads.find((thread) => thread.id === threadId)),
+          ),
+          Effect.tap(() => Queue.offer(reads, undefined)),
+        ),
+      getProjectShells: (projectIds) =>
+        Ref.get(snapshots).pipe(
+          Effect.map((snapshot) =>
+            snapshot.projects.filter((entry) => projectIds?.includes(entry.id) ?? true),
+          ),
+        ),
     }),
     Layer.mock(GitManager)({
       branchPullRequest: (input, readOptions) =>

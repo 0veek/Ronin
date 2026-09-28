@@ -164,6 +164,7 @@ import {
   sidebarMarkerId,
   resolveAdjacentThreadId,
   resolveSidebarThreadStatus,
+  resolveSidebarRowAccessibility,
   searchSidebarThreads,
   shouldRecedeSidebarThread,
   shouldCreateNewThreadInCurrentProject,
@@ -782,6 +783,12 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     promptPreview.length > 0
       ? promptPreview
       : `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`;
+  const accessibility = resolveSidebarRowAccessibility({
+    title: preview,
+    statusLabel: "Unsent draft",
+    projectDisplayName: props.projectTitle,
+    isActive: props.isActive,
+  });
   const handleActivate = useCallback(() => onNavigate(draftId), [draftId, onNavigate]);
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent) => {
@@ -809,10 +816,12 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
       <div
         role="button"
         tabIndex={0}
+        aria-label={accessibility.label}
+        aria-current={accessibility.current}
         data-testid="sidebar-draft-row"
         data-selected={props.isActive}
         className={cn(
-          "sidebar-row group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left text-sidebar-foreground outline-none select-none",
+          "sidebar-row group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left text-sidebar-foreground outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           props.isActive
             ? "bg-status-attention/8 font-medium"
             : "bg-status-attention/4 hover:bg-status-attention/8",
@@ -1411,7 +1420,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // turned a list into a stack of cards. Multi-select still fills, because there
   // it is a selection region rather than a single point of focus.
   const rowSurfaceClassName = cn(
-    "sidebar-row group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left outline-none select-none",
+    "sidebar-row group/sidebar-row relative w-full cursor-pointer overflow-hidden text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" && "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
     props.isActive
       ? "font-medium text-sidebar-foreground"
@@ -1427,6 +1436,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
   );
 
+  const accessibility = resolveSidebarRowAccessibility({
+    title: thread.title,
+    statusLabel: topStatus?.label ?? null,
+    projectDisplayName: props.projectTitle,
+    isActive: props.isActive,
+  });
   const title = isRenaming ? (
     <input
       autoFocus
@@ -1578,6 +1593,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 ref={rowRef}
                 role="button"
                 tabIndex={0}
+                aria-label={accessibility.label}
+                aria-current={accessibility.current}
                 data-testid="sidebar-row-slim"
                 data-selected={props.isActive}
                 aria-busy={isRegeneratingTitle || undefined}
@@ -1741,6 +1758,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ref={rowRef}
               role="button"
               tabIndex={0}
+              aria-label={accessibility.label}
+              aria-current={accessibility.current}
               data-testid="sidebar-row-card"
               data-selected={props.isActive}
               aria-busy={isRegeneratingTitle || undefined}
@@ -4629,7 +4648,10 @@ export default function Sidebar() {
           </SidebarGroup>
         }
       >
-        <SidebarGroup className="flex-1 ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0">
+        <SidebarGroup
+          className="flex-1 ps-[calc(var(--sidebar-content-inset)+1px)] pe-[var(--sidebar-content-inset)] pb-1 pt-0"
+          role="presentation"
+        >
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -4720,7 +4742,7 @@ export default function Sidebar() {
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
                   <ul
                     ref={attachListMotionRef}
-                    role="list"
+                    role="presentation"
                     className={cn(
                       "relative flex flex-col gap-px",
                       sidebarListItems.length > 0 && "flex-1",

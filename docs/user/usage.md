@@ -9,6 +9,10 @@ Use **24h** for an hourly chart covering the exact rolling 24-hour period. The *
 days**, and **90 days** ranges use daily resolution. Cost and token toggles update both the headline
 and chart, and refreshing rescans every connected environment.
 
+On the Stats page, press **C** for cost or **T** for tokens. Use **Mod+Shift+1** through
+**Mod+Shift+4** for 24 hours, 7 days, 30 days, and 90 days. These shortcuts can be changed in
+Settings → Keybindings.
+
 Each provider owns one colour across the whole page — the chart, the split, the share bars, and the
 model rows all key to the same set, in light and dark alike. The brand mark beside every value
 carries the same identity, so nothing on the page depends on telling two hues apart.

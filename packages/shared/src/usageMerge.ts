@@ -75,6 +75,12 @@ export interface CostQuality {
   readonly cacheSavingsUsd: number;
 }
 
+export interface UsageContractMismatch {
+  readonly environmentId: EnvironmentId;
+  readonly direction: "serverBehind" | "clientBehind";
+  readonly contractVersion: number;
+}
+
 export interface MergedUsage {
   readonly costUsd: number;
   readonly uncachedInputTokens: number;
@@ -93,7 +99,7 @@ export interface MergedUsage {
   /** Environments whose data was dropped as a duplicate of another's. */
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
-  readonly staleEnvironments: readonly EnvironmentId[];
+  readonly contractMismatches: readonly UsageContractMismatch[];
 }
 
 /**
@@ -302,7 +308,7 @@ const EMPTY_MERGED: MergedUsage = {
   },
   duplicateSources: [],
   contributingEnvironments: [],
-  staleEnvironments: [],
+  contractMismatches: [],
 };
 
 /**
@@ -321,14 +327,21 @@ export function mergeUsage(
   if (environments.length === 0) return EMPTY_MERGED;
 
   const current: EnvironmentUsage[] = [];
-  const staleEnvironments: EnvironmentId[] = [];
+  const contractMismatches: UsageContractMismatch[] = [];
   for (const environment of environments) {
     if (
       isCompatibleUsageContractVersion(environment.summary.contractVersion, expectedContractVersion)
     ) {
       current.push(environment);
     } else {
-      staleEnvironments.push(environment.environmentId);
+      contractMismatches.push({
+        environmentId: environment.environmentId,
+        direction:
+          environment.summary.contractVersion < expectedContractVersion
+            ? "serverBehind"
+            : "clientBehind",
+        contractVersion: environment.summary.contractVersion,
+      });
     }
   }
 
@@ -543,6 +556,6 @@ export function mergeUsage(
     },
     duplicateSources: duplicates,
     contributingEnvironments,
-    staleEnvironments,
+    contractMismatches,
   };
 }

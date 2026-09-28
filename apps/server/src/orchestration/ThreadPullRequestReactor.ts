@@ -6,6 +6,7 @@ import {
   CommandId,
   type OrchestrationEvent,
   type OrchestrationProjectShell,
+  type OrchestrationShellSnapshot,
   type ThreadId,
   type ThreadLinkedPullRequest,
 } from "@t3tools/contracts";
@@ -16,11 +17,13 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as GitManager from "../git/GitManager.ts";
+import type { ProjectionRepositoryError } from "../persistence/Errors.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -69,6 +72,28 @@ export function pullRequestMatchesProject(
   );
 }
 
+export const readSweepSnapshot = (
+  snapshots: ProjectionSnapshotQuery.ProjectionSnapshotQueryShape,
+  threadId: ThreadId | null,
+): Effect.Effect<
+  Pick<OrchestrationShellSnapshot, "snapshotSequence" | "projects" | "threads">,
+  ProjectionRepositoryError
+> =>
+  threadId === null
+    ? snapshots.getShellSnapshot({ unsettledOnly: true })
+    : Effect.gen(function* () {
+        const { snapshotSequence } = yield* snapshots.getSnapshotSequence();
+        const thread = yield* snapshots.getThreadShellById(threadId);
+        if (Option.isNone(thread)) return { snapshotSequence, projects: [], threads: [] };
+        const reference = thread.value.linkedPullRequest ?? thread.value.branchPullRequest;
+        const projects = yield* snapshots.getProjectShells(
+          reference == null
+            ? [thread.value.projectId]
+            : [thread.value.projectId, reference.projectId],
+        );
+        return { snapshotSequence, projects, threads: [thread.value] };
+      });
+
 export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;
   const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
@@ -96,7 +121,10 @@ export const make = Effect.gen(function* () {
   const synchronize = Effect.fn("ThreadPullRequestReactor.synchronize")(function* (
     request: RefreshRequest,
   ) {
-    const snapshot = yield* snapshots.getShellSnapshot();
+    const snapshot =
+      request.threadId === null && (request.backfill || pendingBackfill.size > 0)
+        ? yield* snapshots.getShellSnapshot()
+        : yield* readSweepSnapshot(snapshots, request.threadId);
     const projects = new Map(snapshot.projects.map((project) => [project.id, project]));
     if (request.backfill) {
       for (const thread of snapshot.threads) {
@@ -108,14 +136,16 @@ export const make = Effect.gen(function* () {
         }
       }
     }
-    const threadIds = new Set(snapshot.threads.map((thread) => thread.id));
-    for (const threadId of pendingBackfill.keys()) {
-      if (!threadIds.has(threadId)) pendingBackfill.delete(threadId);
+    const branchThreadIds = new Set(
+      snapshot.threads.filter((thread) => thread.branch !== null).map((thread) => thread.id),
+    );
+    const checkedIds = request.threadId === null ? pendingBackfill.keys() : [request.threadId];
+    for (const threadId of checkedIds) {
+      if (!branchThreadIds.has(threadId)) pendingBackfill.delete(threadId);
     }
     const threads = snapshot.threads.filter(
       (thread) =>
         thread.archivedAt === null &&
-        (request.threadId === null || thread.id === request.threadId) &&
         ((thread.settledOverride !== "settled" && thread.settledAt === null) ||
           request.threadId !== null ||
           pendingBackfill.has(thread.id)) &&
@@ -130,8 +160,17 @@ export const make = Effect.gen(function* () {
       (group) =>
         Effect.gen(function* () {
           const first = group[0]!;
-          const project = projects.get(first.projectId);
-          if (project === undefined) return finishBackfill(group);
+          const snapshotProject = projects.get(first.projectId);
+          if (snapshotProject === undefined) return finishBackfill(group);
+          const project = request.refresh
+            ? {
+                ...snapshotProject,
+                repositoryIdentity:
+                  (yield* repositoryIdentities.resolve(snapshotProject.workspaceRoot, {
+                    refresh: true,
+                  })) ?? snapshotProject.repositoryIdentity,
+              }
+            : snapshotProject;
           const repository = sourceControlRepositorySelector(project.repositoryIdentity);
           if (first.branch !== null && repository === null) return finishBackfill(group);
           const worktreeExists =

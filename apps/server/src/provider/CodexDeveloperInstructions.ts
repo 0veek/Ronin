@@ -17,7 +17,7 @@ const RONIN_DEVICE_TOOL_INSTRUCTIONS = `
 
 ## Ronin devices
 
-The \`ronin\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For device verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, which is on PATH. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Do not call simctl, adb, xcrun, or serve-sim directly while these tools are present. If \`device_list\` reports a platform as unavailable, say so instead of trying another route.
+The \`ronin\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For device verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, which is on PATH. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Prefer these tools and \`agent-device\` for opening and driving devices. Platform tools such as \`xcrun simctl\` and \`adb\` remain available for anything they do not cover, such as builds, logs, or port forwarding. If \`device_list\` reports a platform as unavailable, say so.
 `;
 
 export interface RoninToolAvailability {
@@ -33,9 +33,8 @@ const normalizeAvailability = (
 /**
  * Each block is omitted entirely when its tools aren't attached. Describing
  * `preview_*` or `device_*` tools that aren't in the turn's tool list would be
- * worse than saying nothing: the instructions actively steer the model away
- * from Playwright, agent-browser, and raw simctl/adb, so leaving them in would
- * talk it out of the only automation it still has.
+ * worse than saying nothing: the instructions steer the model toward these
+ * tools, so leaving them in would point it at unavailable automation.
  */
 const toolInstructions = (availability: boolean | RoninToolAvailability): string => {
   const tools = normalizeAvailability(availability);

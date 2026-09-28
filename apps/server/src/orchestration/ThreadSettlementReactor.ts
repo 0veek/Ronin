@@ -48,7 +48,7 @@ export const make = Effect.gen(function* () {
     if (!settings.sidebarAutoSettleOnMerge && settings.sidebarAutoSettleAfterDays === null) {
       return;
     }
-    const snapshot = yield* snapshots.getShellSnapshot();
+    const snapshot = yield* snapshots.getShellSnapshot({ unsettledOnly: true });
     const now = DateTime.formatIso(yield* DateTime.now);
     const projects = new Map(snapshot.projects.map((project) => [project.id, project]));
     // A merge rechecks all candidates, including branches that discovery has

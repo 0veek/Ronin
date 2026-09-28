@@ -30,7 +30,9 @@ A supervised turn can therefore end with the agent explaining what it was not al
 
 ## Attachments
 
-Antigravity's print mode takes text prompts only. Attaching an image to an Antigravity thread is refused rather than sent, so the agent never answers about a picture it could not see.
+Antigravity's print mode takes text prompts only. Files are saved in the environment and their
+paths are included in the prompt for the agent to inspect. Images are refused rather than sent, so
+the agent never answers about a picture it could not see.
 
 ## When a turn recovers
 

@@ -10,6 +10,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
+  type ServerProvider,
   type UsageSummary,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
@@ -29,6 +30,33 @@ export interface EnvironmentUsageStatus {
   readonly isPending: boolean;
   readonly error: string | null;
   readonly summary: UsageSummary | null;
+  readonly needsCursorKeychainAccess: boolean;
+}
+
+/** Offer Cursor Keychain access only where a working Cursor provider can use it. */
+export function needsCursorKeychainAccess(
+  summary: UsageSummary | null,
+  providers: readonly ServerProvider[] | null,
+): boolean {
+  return (
+    summary?.sources.some((source) => source.action === "enableCursorKeychain") === true &&
+    providers?.some((provider) => provider.driver === "cursor" && provider.status === "ready") ===
+      true
+  );
+}
+
+export function cursorKeychainAccessEnvironments<
+  E extends { readonly summary: UsageSummary | null; readonly needsCursorKeychainAccess: boolean },
+>(environments: readonly E[]): readonly E[] {
+  const hasCursorAccount = environments.some((environment) =>
+    environment.summary?.sources.some(
+      (source) =>
+        source.fingerprint.provider === "cursor" && source.fingerprint.hostId === "cursor.com",
+    ),
+  );
+  return hasCursorAccount
+    ? []
+    : environments.filter((environment) => environment.needsCursorKeychainAccess);
 }
 
 /**
@@ -46,12 +74,17 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
     const statuses: EnvironmentUsageStatus[] = [];
     for (const [environmentId, presentation] of presentations) {
       const result = get(serverEnvironment.usageSummary({ environmentId, input }));
+      const summary = Option.getOrNull(AsyncResult.value(result));
       statuses.push({
         environmentId,
         label: presentation.entry.target.label,
         isPending: result.waiting,
         error: result._tag === "Failure" ? "This environment could not report usage." : null,
-        summary: Option.getOrNull(AsyncResult.value(result)),
+        summary,
+        needsCursorKeychainAccess: needsCursorKeychainAccess(
+          summary,
+          get(serverEnvironment.providersValueAtom(environmentId)),
+        ),
       });
     }
     return statuses;

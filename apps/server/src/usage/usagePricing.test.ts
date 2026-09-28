@@ -1,6 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { lookupRate, normalizeModelName, parseRateTable } from "./usagePricing.ts";
+import { cursorRateModel } from "./cursorUsageReader.ts";
+import {
+  cacheSavingsUsd,
+  lookupRate,
+  normalizeModelName,
+  parseRateTable,
+  priceUsage,
+} from "./usagePricing.ts";
 
 const rate = (input: number, cacheRead?: number) => ({
   input_cost_per_token: input,
@@ -9,6 +16,34 @@ const rate = (input: number, cacheRead?: number) => ({
 });
 
 describe("usage pricing", () => {
+  it("prices Cursor cache savings at the base model rate", () => {
+    const table = parseRateTable({
+      "claude-fable-5-1": rate(10e-6, 1e-6),
+      "xai/grok-4.7": rate(2e-6, 0.5e-6),
+    });
+    const cursorRecord = (model: string) => ({
+      model,
+      rateModel: cursorRateModel(model),
+      totals: {
+        uncachedInputTokens: 0,
+        cachedInputTokens: 1_000_000,
+        cacheCreationTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+      },
+      fast: false,
+      reportedCostUsd: 0.25,
+    });
+
+    expect(cacheSavingsUsd(table, cursorRecord("claude-fable-5-1-thinking-high"))).toBeCloseTo(9);
+    expect(cacheSavingsUsd(table, cursorRecord("cursor-grok-4.7-high-fast"))).toBeCloseTo(1.5);
+    expect(cacheSavingsUsd(table, cursorRecord("default"))).toBe(0);
+    expect(priceUsage(table, cursorRecord("grok-4.7-xhigh-fast"))).toEqual({
+      costUsd: 0.25,
+      costSource: "providerReported",
+    });
+  });
+
   it("keeps the existing model-name normalization contract", () => {
     expect(normalizeModelName(" Anthropic/Claude-Opus-5 ")).toBe("claude-opus-5");
   });

@@ -341,11 +341,11 @@ function parseServerUrlFromOutput(
   readyPrefix: string = OPENCODE_SERVER_READY_PREFIX,
 ): string | null {
   for (const line of output.split("\n")) {
-    if (!line.startsWith(readyPrefix)) {
+    if (!line.toLowerCase().includes(readyPrefix.toLowerCase().replace("opencode ", ""))) {
       continue;
     }
-    const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
-    return match?.[1] ?? null;
+    const match = line.match(/server listening on\s+(https?:\/\/[^\s]+)/i);
+    if (match?.[1]) return match[1];
   }
   return null;
 }

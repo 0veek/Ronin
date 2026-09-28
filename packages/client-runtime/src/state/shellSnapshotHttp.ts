@@ -11,9 +11,9 @@ import { environmentEndpointUrl } from "../environment/endpoint.ts";
 import { executeEnvironmentHttpRequest, makeEnvironmentHttpApiGroupClient } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
 
-// Bounded so a pathologically slow endpoint cannot block the (cheaper) socket
-// fallback for long. The cached shell renders while this runs.
-const DEFAULT_SHELL_SNAPSHOT_TIMEOUT_MS = 6_000;
+// A slow live server should finish its first build. A short timeout only makes
+// the socket request the same full snapshot again; cached shells render meanwhile.
+const DEFAULT_SHELL_SNAPSHOT_TIMEOUT_MS = 20_000;
 
 /**
  * Load the environment shell snapshot (projects + thread shells) over HTTP

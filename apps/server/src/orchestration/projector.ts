@@ -121,8 +121,19 @@ function updateThread(
   threads: ReadonlyArray<OrchestrationThread>,
   threadId: ThreadId,
   patch: ThreadPatch,
-): OrchestrationThread[] {
-  return threads.map((thread) => (thread.id === threadId ? { ...thread, ...patch } : thread));
+): ReadonlyArray<OrchestrationThread> {
+  const index = threads.findIndex((thread) => thread.id === threadId);
+  return index === -1 ? threads : patchThreadAt(threads, index, patch);
+}
+
+function patchThreadAt(
+  threads: ReadonlyArray<OrchestrationThread>,
+  index: number,
+  patch: ThreadPatch,
+): ReadonlyArray<OrchestrationThread> {
+  const next = threads.slice();
+  next[index] = { ...threads[index]!, ...patch };
+  return next;
 }
 
 /** Patch that swaps a thread's links and re-derives the legacy single-PR field from them. */
@@ -779,7 +790,8 @@ export function projectEvent(
           event.type,
           "payload",
         );
-        const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+        const threadIndex = nextBase.threads.findIndex((entry) => entry.id === payload.threadId);
+        const thread = nextBase.threads[threadIndex];
         if (!thread) {
           return nextBase;
         }
@@ -839,7 +851,7 @@ export function projectEvent(
 
         return {
           ...nextBase,
-          threads: updateThread(nextBase.threads, payload.threadId, {
+          threads: patchThreadAt(nextBase.threads, threadIndex, {
             messages: cappedMessages,
             // The user speaking is what retires a queued prompt, whichever
             // surface sent it. Clearing here rather than at the capture's own
@@ -1032,7 +1044,8 @@ export function projectEvent(
     case "thread.reverted":
       return decodeForEvent(ThreadRevertedPayload, event.payload, event.type, "payload").pipe(
         Effect.map((payload) => {
-          const thread = nextBase.threads.find((entry) => entry.id === payload.threadId);
+          const threadIndex = nextBase.threads.findIndex((entry) => entry.id === payload.threadId);
+          const thread = nextBase.threads[threadIndex];
           if (!thread) {
             return nextBase;
           }
@@ -1083,7 +1096,7 @@ export function projectEvent(
 
           return {
             ...nextBase,
-            threads: updateThread(nextBase.threads, payload.threadId, {
+            threads: patchThreadAt(nextBase.threads, threadIndex, {
               checkpoints,
               messages,
               proposedPlans,

@@ -30,6 +30,7 @@ import {
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
   resolveProjectStatusIndicator,
+  resolveSidebarRowAccessibility,
   resolveThreadRowClassName,
   resolveSidebarThreadStatus,
   shouldRecedeSidebarThread,
@@ -74,6 +75,19 @@ import {
 } from "../types";
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
+
+describe("resolveSidebarRowAccessibility", () => {
+  it("names a row with its title, status, and project", () => {
+    expect(
+      resolveSidebarRowAccessibility({
+        title: "Audit the UI",
+        statusLabel: "Working",
+        projectDisplayName: "Ronin",
+        isActive: true,
+      }),
+    ).toEqual({ label: "Audit the UI, Working, Ronin", current: "page" });
+  });
+});
 
 describe("animateSidebarLayoutChanges", () => {
   const baseArgs: Parameters<AnimateLayoutChanges>[0] = {

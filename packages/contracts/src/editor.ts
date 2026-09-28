@@ -59,7 +59,12 @@ export const EDITORS = [
     launchStyle: "direct-path",
     remoteScheme: "zed",
   },
-  { id: "antigravity", label: "Antigravity", commands: ["agy"], launchStyle: "goto" },
+  {
+    id: "antigravity",
+    label: "Antigravity",
+    commands: ["antigravity-ide", "agy-ide"],
+    launchStyle: "goto",
+  },
   { id: "idea", label: "IntelliJ IDEA", commands: ["idea"], launchStyle: "line-column" },
   { id: "aqua", label: "Aqua", commands: ["aqua"], launchStyle: "line-column" },
   { id: "clion", label: "CLion", commands: ["clion"], launchStyle: "line-column" },

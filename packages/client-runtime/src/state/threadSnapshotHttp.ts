@@ -15,10 +15,9 @@ import {
 } from "../rpc/http.ts";
 import { buildEnvironmentAuthHeaders, withEnvironmentCredentials } from "./environmentHttpAuth.ts";
 
-// Bounded so a pathologically slow endpoint cannot block the (cheaper) socket
-// fallback for long. The cached thread renders while this runs, so the wait only
-// delays the transition to live data on the first open, not the initial paint.
-const DEFAULT_THREAD_SNAPSHOT_TIMEOUT_MS = 6_000;
+// A slow live server should finish its first build. A short timeout only makes
+// the socket request the same snapshot again; cached threads render meanwhile.
+const DEFAULT_THREAD_SNAPSHOT_TIMEOUT_MS = 20_000;
 
 /**
  * Load a thread's detail snapshot over HTTP instead of embedding it in the
