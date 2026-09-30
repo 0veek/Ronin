@@ -193,7 +193,7 @@ export function ThreadPullRequestBadgeControl({
   number,
   url,
   status,
-  onOpenStack,
+  onOpenList,
   onOpenPullRequest,
 }: {
   variant: "underline" | "ghost";
@@ -201,12 +201,12 @@ export function ThreadPullRequestBadgeControl({
   number?: number | undefined;
   url?: string | undefined;
   status: PrStatusIndicator | null;
-  onOpenStack: () => void;
+  onOpenList: () => void;
   onOpenPullRequest: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const presentation = resolveThreadPullRequestBadgePresentation({ badge, number, url, status });
   if (presentation === null) return null;
-  const isStack = badge?.kind === "stack";
+  const opensList = badge !== null && (badge.kind === "stack" || badge.others > 0);
   const className = cn(
     variant === "ghost"
       ? buttonVariants({ variant: "ghost", size: "xs" })
@@ -219,14 +219,14 @@ export function ThreadPullRequestBadgeControl({
   const content = (
     <>
       <presentation.Icon aria-hidden className="size-3 shrink-0" />
-      {presentation.text}
+      <span>{presentation.text}</span>
     </>
   );
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          isStack ? (
+          opensList ? (
             <InlineButton
               className={className}
               aria-label={presentation.label}
@@ -234,7 +234,7 @@ export function ThreadPullRequestBadgeControl({
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                onOpenStack();
+                onOpenList();
               }}
             />
           ) : (

@@ -56,7 +56,10 @@ export interface AcpSessionEventStreamBarrier {
   readonly acknowledge: Deferred.Deferred<void>;
 }
 
-export type AcpSessionRuntimeEvent = AcpParsedSessionEvent | AcpSessionEventStreamBarrier;
+export type AcpSessionRuntimeEvent =
+  | AcpParsedSessionEvent
+  | AcpSessionEventStreamBarrier
+  | { readonly _tag: "ConnectionTerminated"; readonly error: EffectAcpErrors.AcpError };
 
 const defaultSessionLoadTimeout = Duration.seconds(90);
 const defaultSessionLoadReplayIdleGap = Duration.seconds(2);
@@ -335,6 +338,7 @@ export const make = (
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const runtimeScope = yield* Scope.Scope;
     const eventQueue = yield* Queue.unbounded<AcpSessionRuntimeEvent>();
+    const termination = yield* Deferred.make<never, EffectAcpErrors.AcpError>();
     const modeStateRef = yield* Ref.make<AcpSessionModeState | undefined>(undefined);
     const toolCallsRef = yield* Ref.make(new Map<string, AcpToolCallTrackedState>());
     const shownToolCallIds = new Set<string>();
@@ -402,7 +406,7 @@ export const make = (
     ): Effect.Effect<A, EffectAcpErrors.AcpError> =>
       logRequest({ method, payload, status: "started" }).pipe(
         Effect.flatMap(() =>
-          effect.pipe(
+          Effect.raceFirst(effect, Deferred.await(termination)).pipe(
             Effect.catch((error) =>
               enrichProcessExitWithStderr(error).pipe(Effect.flatMap(Effect.fail)),
             ),
@@ -453,6 +457,19 @@ export const make = (
     // On Windows the spawner's handle is the `.cmd` shim's, so its kill would
     // leave the agent process running past the session it belongs to.
     yield* Scope.addFinalizer(runtimeScope, terminateProcessTree(child.pid));
+    yield* child.exitCode.pipe(
+      Effect.flatMap((code) => {
+        const error = new EffectAcpErrors.AcpProcessExitedError({
+          code: Number(code),
+          pid: Number(child.pid),
+        });
+        return Queue.offer(eventQueue, { _tag: "ConnectionTerminated", error }).pipe(
+          Effect.andThen(Deferred.fail(termination, error)),
+        );
+      }),
+      Effect.ignore,
+      Effect.forkIn(runtimeScope),
+    );
 
     yield* child.stderr.pipe(
       Stream.decodeText(),

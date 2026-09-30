@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Upstream reviewed through** | `d15210cd3` — `fix(web): prevent usage summary shift for unpriced records (#13991)` (2026-09-27) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                  |
-| **Ported on**                 | 2026-09-28                                                                                       |
+|                               |                                                                                                     |
+| ----------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `0fcd5f906` — `fix(web): multi-PR badges open the linked pull requests panel (#13211)` (2026-09-29) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                     |
+| **Ported on**                 | 2026-09-30                                                                                          |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -6586,3 +6586,65 @@ apps/web/src/queuedMessageStore.test.ts apps/web/src/components/chat/MessagesTim
 - No live browser/client automation was run, per `AGENTS.md`.
 - No real provider process, telemetry collector, Keychain prompt, simulator, or packaged build was
   exercised against an external system.
+
+## Batch 39 — reviewed through `0fcd5f906` (28 commits)
+
+Reviewed `d15210cd3..0fcd5f906`, with upstream snapshotted at
+`0fcd5f90611451cca842689faea53b5450c022da`. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`. The managed ChatGPT sign-in Ask was resolved
+by keeping Codex CLI login and shadow homes.
+
+### Ported (17)
+
+| Upstream    | Title                                                                                            | Notes                                                                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ed57bed8e` | fix(web): skip unchanged shortcut modifier updates - 195x typing latency improvement (#13884)    | Suppressed redundant modifier renders; added the upstream hook regression test and its jsdom test dependency.                                                           |
+| `72330e22c` | feat(models): add Claude Sonnet 5.5 (#14152)                                                     | Added the model catalog entry.                                                                                                                                          |
+| `b528a7011` | fix(server): restore Windows terminal startup after node-pty upgrade (#13927)                    | Applied terminal startup ordering and adapter fixes with focused Windows-mode tests.                                                                                    |
+| `7733bc839` | fix(desktop): make Linux URL handlers discoverable with the app icon (#8673)                     | Preserved the icon outside AppImage mounts and refreshed the desktop MIME cache.                                                                                        |
+| `b21f3b719` | fix(server): prevent Windows PTY helper crashes in watch mode (#14179)                           | Added the node-pty patch and lockfile entry.                                                                                                                            |
+| `38f3c6230` | fix(shared): local-path remotes no longer crash legacy PR link projection (#13463)               | Guarded local-path remotes without a host.                                                                                                                              |
+| `e518866d2` | fix(server): OpenCode stop no longer hangs when a turn is interrupted before submission (#12003) | Settled prompt admission on interruption.                                                                                                                               |
+| `5da55957d` | feat: save Bitbucket credentials from Source Control settings (#14103)                           | Added environment-scoped settings, secret storage and redaction, live API credential reads, settings UI, and user docs. Server environment variables remain a fallback. |
+| `76fa23df2` | fix(provider): mark OpenCode v2 incompatible (#14198)                                            | Marked v2 broken in the manifest and surfaced guidance even when startup fails.                                                                                         |
+| `d2c9281b8` | fix(web): pull request badge sits on the sidebar row's baseline (#14007)                         | Wrapped badge text for baseline alignment.                                                                                                                              |
+| `5e83e99c9` | Update currentModels in model-manifest.json                                                      | Refreshed current Codex and Claude model lists.                                                                                                                         |
+| `451afcb22` | fix(codex): Pro Max accounts load, so Ultrafast shows up (#14304)                                | Made plan decoding forward compatible and added the Pro Max label and shorter Ultrafast description; Codex still uses CLI login.                                        |
+| `88fbc2cac` | fix(client-runtime): keep model ids in inline code from becoming file chips (#13909)             | Excluded numeric version suffixes from inline-code file links.                                                                                                          |
+| `916ec94f9` | fix(web): show the agent's question on user-input timeline rows (#12900)                         | Used question text as the timeline heading and showed answer preview only after an answer exists.                                                                       |
+| `55ec55b1f` | fix(web): open workspace root links in the file explorer (#12449)                                | Resolved root links to `.` and opened Files.                                                                                                                            |
+| `050cfad04` | fix(grok): recover from crashed provider sessions (#10607)                                       | Added ACP child-exit propagation and ordered exit events before prompt failure so crashed sessions retire and can resume.                                               |
+| `0fcd5f906` | fix(web): multi-PR badges open the linked pull requests panel (#13211)                           | Routed multi-PR badges in sidebar and branch toolbar to the linked PR panel.                                                                                            |
+
+### Already in the tree (2)
+
+| Upstream    | Title                                                                  | Notes                                                                                                                  |
+| ----------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `adfc9240e` | fix(server): preserve usage in oversized transcript records (#13650)   | Ronin's `usageTranscriptReader.ts` buffers and parses complete JSONL lines without a size cap, preserving their usage. |
+| `2a23c30ea` | fix(web): let command menu descriptions use the full row width (#8865) | `ComposerCommandMenu.tsx` already gives descriptions `min-w-0 flex-1 truncate` with no fixed width cap.                |
+
+### Skipped (9)
+
+| Upstream    | Title                                                                                               | Notes                                                                                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `ba79610d1` | fix(web,mobile): say that removing a T3 Connect environment keeps its account registration (#14127) | T3 Connect and mobile are cut.                                                                                                        |
+| `27bdf1aa1` | feat(codex): connect ChatGPT accounts with managed authentication (#14290)                          | Maintainer chose CLI login only; managed account connection, token storage, and remote handoff stay out of Ronin.                     |
+| `2cbc24fca` | chore(release): prepare v0.0.43                                                                     | Upstream release version is not Ronin's.                                                                                              |
+| `1a553d0f5` | fix(shared): merge OpenCode Go limits by credential (#14209)                                        | Ronin has no OpenCode Go usage-limit pooling surface.                                                                                 |
+| `422248515` | feat(codex): regenerate protocol bindings for Codex 0.159 (#14311)                                  | Added mainly gateway OAuth and other protocol fields Ronin does not consume; the needed plan compatibility is handled by `451afcb22`. |
+| `ff1db030b` | chore(release): prepare v0.0.44                                                                     | Upstream release version is not Ronin's.                                                                                              |
+| `8792f9576` | test(server): stop pinning codex install advisory to a release range (#14323)                       | Tests the managed Codex installer omitted with `27bdf1aa1`.                                                                           |
+| `63b61e647` | chore: stop CodeRabbit from editing PR descriptions (#14307)                                        | Upstream PR governance is fork-specific.                                                                                              |
+| `60cb7d180` | fix(web): unresolved pull request links use the compact link tooltip (#14243)                       | Ronin has no `PullRequestLinkPreview` hover card or equivalent unresolved-link tooltip.                                               |
+
+### Verification
+
+- Focused tests passed: terminal manager and adapter (88), server settings and Bitbucket source control (82), Codex and provider compatibility (33), Linux desktop URL handling (13), OpenCode and Grok adapters (141), and web/client/shared link, badge, shortcut, banner, and timeline helpers (204).
+- Commands: `vp test run apps/server/src/terminal/Manager.test.ts apps/server/src/terminal/NodePtyAdapter.test.ts`; `vp test run apps/server/src/serverSettings.test.ts apps/server/src/sourceControl/BitbucketApi.test.ts apps/server/src/sourceControl/SourceControlDiscovery.test.ts`; `vp test run apps/server/src/provider/Layers/CodexProvider.test.ts apps/server/src/provider/providerCompatibility.test.ts apps/server/src/provider/providerMaintenanceRunner.test.ts packages/effect-codex-app-server/src/schema.test.ts`; `vp test run apps/desktop/src/app/DesktopLinuxUrlHandler.test.ts apps/desktop/src/app/DesktopPreReadyPlatform.test.ts`; `vp test run apps/server/src/provider/Layers/OpenCodeAdapter.test.ts apps/server/src/provider/Layers/GrokAdapter.test.ts`; `vp test run apps/web/src/shortcutModifierState.test.ts apps/web/src/components/chat/ProviderStatusBanner.test.ts apps/web/src/markdown-links.test.ts apps/web/src/rightPanelStore.test.ts apps/web/src/workspaceBasenameLookup.test.ts apps/web/src/components/ThreadStatusIndicators.test.ts packages/client-runtime/src/work-log/userInput.test.ts packages/shared/src/threadPullRequests.test.ts`.
+- Targeted typechecks passed for server, web, desktop, contracts, shared, and client runtime. Changed-file `vp lint --report-unused-disable-directives`, `vp fmt --check`, and `git diff --check` passed. `npx react-doctor@latest --verbose --scope changed` scored **64/100**, with 15 maintainability warnings in existing large components/exports and no new state-effect warnings.
+- The 28-commit ledger matches the frozen range: **17 Port, 2 Already in tree, 9 Skip, 0 Ask**.
+
+### Not tested
+
+- No live client/browser automation was run, per `AGENTS.md`.
+- No real provider login, Bitbucket credential, packaged Linux AppImage, or Windows PTY process was exercised against an external system.

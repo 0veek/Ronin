@@ -110,6 +110,7 @@ patchedDependencies:
   "@pierre/diffs@1.3.0-beta.10": patches/@pierre%2Fdiffs@1.3.0-beta.10.patch
   dbus-next@0.10.2: patches/dbus-next@0.10.2.patch
   effect@4.0.0-beta.103: patches/effect@4.0.0-beta.103.patch
+  node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch
 
 peerDependencyRules:
   allowAny:

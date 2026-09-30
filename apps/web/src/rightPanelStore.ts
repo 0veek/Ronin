@@ -575,6 +575,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       openFile: (ref, relativePath, line) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
+            if (relativePath === ".") {
+              return upsertSurface(current, singletonSurface("files"));
+            }
             const withoutStandaloneExplorer = current.surfaces.filter(
               (surface) => surface.kind !== "files",
             );

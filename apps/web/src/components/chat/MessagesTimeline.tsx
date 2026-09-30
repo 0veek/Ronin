@@ -24,6 +24,7 @@ import { resolveWorkEntryToolPresentation } from "@t3tools/client-runtime/work-l
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
+  getQuestionTextPreview,
   hasQuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
 import type {
@@ -3881,10 +3882,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const entryIconName = showWarningIndicator ? "circle-alert" : workEntryIconName(workEntry);
-  const heading = toolWorkEntryHeading(workEntry);
-  const answerPreview = workEntry.questionAnswer
-    ? getQuestionAnswerPreview(workEntry.questionAnswer)
-    : null;
+  const questionHeading = workEntry.questionAnswer
+    ? getQuestionTextPreview(workEntry.questionAnswer)
+    : "";
+  const heading = questionHeading || toolWorkEntryHeading(workEntry);
+  const answerPreview =
+    workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
+      ? getQuestionAnswerPreview(workEntry.questionAnswer)
+      : null;
   const rawPreview = workEntryPreview(workEntry, workspaceRoot);
   const preview =
     rawPreview &&
@@ -3987,7 +3992,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             >
               <span
                 className={cn(
-                  answerPreview ? "shrink-0" : "min-w-0 shrink",
+                  answerPreview ? "min-w-0" : "min-w-0 shrink",
                   expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
                   headingClass,
                 )}

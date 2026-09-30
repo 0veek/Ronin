@@ -135,6 +135,13 @@ function providerEnvironmentSecretName(input: {
   return `provider-env-${Buffer.from(input.instanceId, "utf8").toString("base64url")}-${Buffer.from(input.name, "utf8").toString("base64url")}`;
 }
 
+const SECRET_REDACTED = "••••••";
+const BITBUCKET_SECRET_NAMES = {
+  accessToken: "bitbucket-access-token",
+  apiToken: "bitbucket-api-token",
+} as const;
+const BITBUCKET_SECRET_FIELDS = ["accessToken", "apiToken"] as const;
+
 function redactProviderEnvironmentVariable(
   variable: ProviderInstanceEnvironmentVariable,
 ): ProviderInstanceEnvironmentVariable {
@@ -174,7 +181,15 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
         : instance,
     ]),
   );
-  return { ...settings, providerInstances };
+  return {
+    ...settings,
+    providerInstances,
+    bitbucket: {
+      ...settings.bitbucket,
+      accessToken: settings.bitbucket.accessToken ? SECRET_REDACTED : "",
+      apiToken: settings.bitbucket.apiToken ? SECRET_REDACTED : "",
+    },
+  };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -444,6 +459,7 @@ const make = Effect.gen(function* () {
   const loadSettingsFromDisk = Effect.gen(function* () {
     let settings = DEFAULT_SERVER_SETTINGS;
     let persisted: typeof PersistedOptionalProviderSettings.Type = {};
+    let settingsFileTrusted = false;
 
     if (yield* readConfigExists) {
       const raw = yield* readRawConfig;
@@ -463,6 +479,7 @@ const make = Effect.gen(function* () {
         }
       } else {
         settings = decoded.value;
+        settingsFileTrusted = true;
       }
     }
 
@@ -492,9 +509,33 @@ const make = Effect.gen(function* () {
       ),
     );
 
-    return foldProviderInstanceEnabledFlags(
+    const restored = foldProviderInstanceEnabledFlags(
       restoreUsedProviders(settings, persisted, providerHistory),
     );
+    if (!settingsFileTrusted) return restored;
+    const bitbucket = { ...restored.bitbucket };
+    let moved = false;
+    for (const field of BITBUCKET_SECRET_FIELDS) {
+      const value = bitbucket[field];
+      if (value.length === 0 || value === SECRET_REDACTED) continue;
+      const saved = yield* secretStore
+        .set(BITBUCKET_SECRET_NAMES[field], textEncoder.encode(value))
+        .pipe(
+          Effect.as(true),
+          Effect.catch(() =>
+            Effect.logWarning("failed to move a Bitbucket token into the secret store", {
+              field,
+            }).pipe(Effect.as(false)),
+          ),
+        );
+      if (!saved) continue;
+      bitbucket[field] = SECRET_REDACTED;
+      moved = true;
+    }
+    if (!moved) return restored;
+    const migrated = { ...restored, bitbucket };
+    yield* writeSettingsAtomically(migrated);
+    return migrated;
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({
@@ -543,9 +584,22 @@ const make = Effect.gen(function* () {
           environment,
         } satisfies ProviderInstanceConfig;
       }
+      const bitbucket = { ...settings.bitbucket };
+      for (const field of BITBUCKET_SECRET_FIELDS) {
+        if (bitbucket[field] !== SECRET_REDACTED) continue;
+        const secret = yield* secretStore
+          .get(BITBUCKET_SECRET_NAMES[field])
+          .pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+            ),
+          );
+        bitbucket[field] = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
+      }
       return {
         ...settings,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
+        bitbucket,
       };
     });
 
@@ -652,10 +706,30 @@ const make = Effect.gen(function* () {
       }
     }
 
+    const bitbucket = { ...next.bitbucket };
+    for (const field of BITBUCKET_SECRET_FIELDS) {
+      let value = bitbucket[field];
+      if (value === SECRET_REDACTED) {
+        const inline = current.bitbucket[field];
+        if (inline === SECRET_REDACTED || inline.length === 0) continue;
+        value = inline;
+      }
+      const secretName = BITBUCKET_SECRET_NAMES[field];
+      mutations.set(secretName, {
+        secretName,
+        instanceId: "bitbucket",
+        environmentVariable: field,
+        operation: value.length === 0 ? "remove-secret" : "write-secret",
+        value: value.length === 0 ? null : textEncoder.encode(value),
+      });
+      if (value.length > 0) bitbucket[field] = SECRET_REDACTED;
+    }
+
     return {
       settings: {
         ...next,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
+        bitbucket,
       },
       mutations: [...mutations.values()],
     };

@@ -154,6 +154,14 @@ describe("resolveMarkdownFileLinkTarget", () => {
     expect(resolveMarkdownFileLinkTarget("https://example.com/docs")).toBeNull();
   });
 
+  it("routes a workspace-root code link to the explorer", () => {
+    const cwd = "/Users/aveek/project";
+    expect(resolveInlineCodeFileLinkMeta(cwd, cwd)).toMatchObject({
+      workspaceRelativePath: ".",
+      filePath: cwd,
+    });
+  });
+
   it("does not double-decode file URLs", () => {
     expect(resolveMarkdownFileLinkTarget("file:///Users/julius/project/file%2520name.md")).toBe(
       "/Users/julius/project/file%20name.md",
@@ -452,6 +460,16 @@ describe("resolveInlineCodeFileLinkMeta", () => {
   it("ignores extension-less relative segments like git refs and directories", () => {
     expect(resolveInlineCodeFileLinkMeta("origin/main", "/Users/julius/project")).toBeNull();
     expect(resolveInlineCodeFileLinkMeta("apps/web", "/Users/julius/project")).toBeNull();
+  });
+
+  it("keeps model and runtime versions in inline code", () => {
+    for (const model of ["z-ai/glm-5.3", "z-ai/glm-5.3:12", "python/3.12", "Qwen/Qwen2.5-Coder"]) {
+      expect(resolveInlineCodeFileLinkMeta(model, "/Users/julius/project")).toBeNull();
+    }
+    expect(resolveInlineCodeFileLinkMeta("share/man/ls.1", "/Users/julius/project")).not.toBeNull();
+    expect(
+      resolveInlineCodeFileLinkMeta("./models/glm-5.3", "/Users/julius/project"),
+    ).not.toBeNull();
   });
 
   it("ignores external urls", () => {

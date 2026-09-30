@@ -13,6 +13,7 @@ const {
   setDesktopNameMock,
   mkdirSyncMock,
   writeFileSyncMock,
+  copyFileSyncMock,
 } = vi.hoisted(() => ({
   appendSwitchMock: vi.fn(),
   getSwitchValueMock: vi.fn(),
@@ -21,12 +22,15 @@ const {
   setDesktopNameMock: vi.fn(),
   mkdirSyncMock: vi.fn(),
   writeFileSyncMock: vi.fn(),
+  copyFileSyncMock: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   app: {
     setDesktopName: setDesktopNameMock,
     getVersion: () => "0.0.37",
+    isPackaged: true,
+    getAppPath: () => "/tmp/.mount_Ronin/resources/app.asar",
     commandLine: {
       appendSwitch: appendSwitchMock,
       getSwitchValue: getSwitchValueMock,
@@ -42,6 +46,7 @@ vi.mock("node:fs", () => ({
   readFileSync: () => "{}",
   mkdirSync: mkdirSyncMock,
   writeFileSync: writeFileSyncMock,
+  copyFileSync: copyFileSyncMock,
 }));
 
 import * as DesktopPreReadyPlatform from "./DesktopPreReadyPlatform.ts";
@@ -52,7 +57,26 @@ describe("DesktopPreReadyPlatform", () => {
     getSwitchValueMock.mockReset();
     hasSwitchMock.mockReset();
     registerSchemesMock.mockReset();
+    mkdirSyncMock.mockReset();
+    writeFileSyncMock.mockReset();
+    copyFileSyncMock.mockReset();
   });
+
+  it.effect("prepares a persistent icon for the Linux URL handler", () =>
+    Effect.gen(function* () {
+      vi.stubEnv("XDG_DATA_HOME", "/xdg");
+      try {
+        yield* DesktopPreReadyPlatform.make.pipe(
+          Effect.provideService(HostProcessPlatform, "linux"),
+        );
+        assert.equal(copyFileSyncMock.mock.calls.length, 1);
+        assert.include(copyFileSyncMock.mock.calls[0]?.[1], "/xdg/icons/");
+        assert.include(writeFileSyncMock.mock.calls[0]?.[1], "Icon=/xdg/icons/");
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    }),
+  );
 
   it("reads an explicit Electron command-line switch value", () => {
     const value = DesktopPreReadyPlatform.readCommandLineSwitchValue(

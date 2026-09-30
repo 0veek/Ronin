@@ -39,6 +39,19 @@ const makeServerSettingsLayer = () =>
     ),
   );
 
+const makeServerSettingsLayerWithSecrets = () =>
+  ServerSettingsModule.layer.pipe(
+    Layer.provideMerge(ServerSecretStore.layer),
+    Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+    Layer.provideMerge(
+      Layer.fresh(
+        ServerConfig.layerTest(process.cwd(), {
+          prefix: "t3code-server-settings-test-",
+        }),
+      ),
+    ),
+  );
+
 const makeFailingSecretStoreLayer = (cause: ServerSecretStore.SecretStoreError) =>
   Layer.succeed(
     ServerSecretStore.ServerSecretStore,
@@ -111,6 +124,55 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  it.effect("stores Bitbucket tokens as secrets and redacts them for clients", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const secrets = yield* ServerSecretStore.ServerSecretStore;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const saved = yield* serverSettings.updateSettings({
+        bitbucket: { email: "me@example.com", accessToken: "bb-access", apiToken: "bb-api" },
+      });
+      assert.deepEqual(saved.bitbucket, {
+        email: "me@example.com",
+        accessToken: "bb-access",
+        apiToken: "bb-api",
+      });
+      const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
+      assert.notInclude(raw, "bb-access");
+      assert.notInclude(raw, "bb-api");
+      const forClient = ServerSettingsModule.redactServerSettingsForClient(saved).bitbucket;
+      assert.notInclude(forClient.accessToken, "bb-access");
+      assert.notInclude(forClient.apiToken, "bb-api");
+      yield* serverSettings.updateSettings({ bitbucket: forClient });
+      yield* serverSettings.updateSettings({ bitbucket: { email: "other@example.com" } });
+      assert.equal((yield* serverSettings.getSettings).bitbucket.accessToken, "bb-access");
+      const cleared = yield* serverSettings.updateSettings({ bitbucket: { accessToken: "" } });
+      assert.equal(cleared.bitbucket.accessToken, "");
+      assert.isTrue(Option.isNone(yield* secrets.get("bitbucket-access-token")));
+    }).pipe(Effect.provide(makeServerSettingsLayerWithSecrets())),
+  );
+
+  it.effect("moves a hand-edited Bitbucket token into the secret store on load", () =>
+    Effect.gen(function* () {
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const secrets = yield* ServerSecretStore.ServerSecretStore;
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      yield* fileSystem.writeFileString(
+        serverConfig.settingsPath,
+        '{"bitbucket":{"accessToken":"hand-edited-token"}}',
+      );
+      assert.equal((yield* serverSettings.getSettings).bitbucket.accessToken, "hand-edited-token");
+      assert.notInclude(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+        "hand-edited-token",
+      );
+      assert.isTrue(Option.isSome(yield* secrets.get("bitbucket-access-token")));
+    }).pipe(Effect.provide(makeServerSettingsLayerWithSecrets())),
+  );
+
   it.effect("preserves context when reading a provider environment secret fails", () => {
     const platformCause = PlatformError.systemError({
       _tag: "PermissionDenied",

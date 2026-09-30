@@ -56,8 +56,15 @@ import {
   type Icon,
 } from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
+import { BitbucketCredentialsSettings } from "./BitbucketCredentialsSettings";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
-import { SettingResetButton, SettingsPageContainer, SettingsSection } from "./settingsLayout";
+import {
+  SettingResetButton,
+  SettingsPageContainer,
+  SettingsSection,
+  useSettingsSearchTarget,
+  useSettingsSearchTargetId,
+} from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
@@ -247,7 +254,7 @@ function itemSummary({
       );
     }
 
-    if (!item.executable) {
+    if (!item.executable && auth.status === "unauthenticated") {
       return <span>Available. {item.installHint}</span>;
     }
 
@@ -285,11 +292,18 @@ function DiscoveryItemRow({
   const auth = isProviderDiscoveryItem(item) ? item.auth : null;
   const authStatus = auth ? authPresentation(auth) : null;
   const authAccount = auth ? optionLabel(auth.account) : null;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null);
   const hasDetails = children !== undefined;
+  const searchTargetId = useSettingsSearchTargetId();
+  const bitbucketTargetId =
+    item.kind === "bitbucket" ? searchableSetting("bitbucket-credentials").id : undefined;
+  const targetRef = useSettingsSearchTarget<HTMLDivElement>(bitbucketTargetId);
+  const isExpanded =
+    expandedOverride ?? (bitbucketTargetId !== undefined && searchTargetId === bitbucketTargetId);
 
   return (
     <div
+      ref={targetRef}
       className={cn(
         "first:rounded-t-xl last:rounded-b-xl transition-colors hover:bg-muted/20",
         isVcsNotReady(item) && "opacity-80",
@@ -325,7 +339,7 @@ function DiscoveryItemRow({
                 size="sm"
                 variant="ghost"
                 className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setIsExpanded((open) => !open)}
+                onClick={() => setExpandedOverride(!isExpanded)}
                 aria-expanded={isExpanded}
                 aria-label={`Toggle ${item.label} details`}
               >
@@ -342,7 +356,7 @@ function DiscoveryItemRow({
       </div>
 
       {hasDetails ? (
-        <Collapsible open={isExpanded} onOpenChange={setIsExpanded}>
+        <Collapsible open={isExpanded} onOpenChange={setExpandedOverride}>
           <CollapsibleContent>
             <div className="px-3 pb-4 pt-1 sm:px-4">{children}</div>
           </CollapsibleContent>
@@ -591,7 +605,15 @@ export function SourceControlSettingsPanel() {
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
-                <DiscoveryItemRow key={`provider:${item.kind}`} item={item} />
+                <DiscoveryItemRow key={`provider:${item.kind}`} item={item}>
+                  {item.kind === "bitbucket" && environmentId !== null ? (
+                    <BitbucketCredentialsSettings
+                      key={environmentId}
+                      environmentId={environmentId}
+                      onSaved={handleScan}
+                    />
+                  ) : undefined}
+                </DiscoveryItemRow>
               ))}
             </SettingsSection>
           ) : null}

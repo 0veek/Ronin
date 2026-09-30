@@ -151,26 +151,25 @@ or an SSH key for that server.
 
 ### For Bitbucket
 
-Bitbucket uses tokens instead of a CLI tool. Two options, both set as environment variables on the
-machine running Ronin.
+Open **Settings → Source Control**, expand **Bitbucket**, and choose how to sign in:
 
-Recommended, a Bitbucket access token:
+- **Access token:** a token scoped to one repository, project, or workspace.
+- **API token:** an Atlassian account token used with your email. Give it read/write access to
+  repositories and pull requests, plus user read access (`read:user:bitbucket`).
+
+Choose **Save**. Credentials are stored on the selected environment's server and apply immediately,
+including on a remote environment. Saved tokens cannot be viewed again; enter a new value to
+replace one, or choose **Remove**.
+
+If no credentials are saved, Ronin uses environment variables on the server as a fallback. Restart
+the server after changing them:
 
 ```bash
 export T3CODE_BITBUCKET_ACCESS_TOKEN="your-access-token"
-```
-
-Or an Atlassian account email plus API token, with read/write access to pull requests and
-repositories, plus read access to your user account (`read:user:bitbucket`, used to verify the
-connection):
-
-```bash
+# or
 export T3CODE_BITBUCKET_EMAIL="you@example.com"
 export T3CODE_BITBUCKET_API_TOKEN="your-token"
 ```
-
-If both are set, the access token wins. Restart Ronin and verify the connection in **Source
-Control settings**.
 
 ### For Azure DevOps
 
@@ -212,6 +211,8 @@ Control settings**.
 
 Cross-repository links use a project on the same host. Azure DevOps reviews require a project checked
 out from the matching organization and repository.
+
+Clicking a thread badge with more than one linked review opens its **Linked pull requests** panel.
 
 ## GitHub stacks
 

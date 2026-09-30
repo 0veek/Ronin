@@ -9,11 +9,13 @@ import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/unstable/process/ChildProcessSpawner";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopLinuxUrlHandler from "./DesktopLinuxUrlHandler.ts";
 
 interface RecordedRegistration {
   readonly directories: string[];
   readonly files: Array<{ readonly path: string; readonly content: string }>;
+  readonly copies: Array<{ readonly source: string; readonly destination: string }>;
   readonly commands: Array<{ readonly command: string; readonly args: ReadonlyArray<string> }>;
 }
 
@@ -53,6 +55,8 @@ const makeHandlerLayer = (
     readonly xdgMimeExitCode?: number;
     readonly writeError?: PlatformError.PlatformError;
     readonly existingEntry?: string;
+    readonly iconSource?: string;
+    readonly updateDesktopDatabaseExitCode?: number;
   } = {},
 ) =>
   DesktopLinuxUrlHandler.layer.pipe(
@@ -71,7 +75,22 @@ const makeHandlerLayer = (
               : Effect.sync(() => {
                   recorded.files.push({ path, content });
                 }),
+          copyFile: (source, destination) =>
+            Effect.sync(() => {
+              recorded.copies.push({ source, destination });
+            }),
         }),
+        Layer.succeed(
+          DesktopAssets.DesktopAssets,
+          DesktopAssets.DesktopAssets.of({
+            iconPaths: Effect.succeed({
+              ico: Option.none(),
+              icns: Option.none(),
+              png: input.iconSource ? Option.some(input.iconSource) : Option.none(),
+            }),
+            resolveResourcePath: () => Effect.succeed(Option.none()),
+          }),
+        ),
         Layer.succeed(
           ChildProcessSpawner.ChildProcessSpawner,
           ChildProcessSpawner.make((command) => {
@@ -83,7 +102,13 @@ const makeHandlerLayer = (
               command: childProcess.command,
               args: childProcess.args,
             });
-            return Effect.succeed(mockProcess(input.xdgMimeExitCode ?? 0));
+            return Effect.succeed(
+              mockProcess(
+                childProcess.command === "update-desktop-database"
+                  ? (input.updateDesktopDatabaseExitCode ?? 0)
+                  : (input.xdgMimeExitCode ?? 0),
+              ),
+            );
           }),
         ),
       ),
@@ -102,6 +127,7 @@ const runRegister = (
 const emptyRecording = (): RecordedRegistration => ({
   directories: [],
   files: [],
+  copies: [],
   commands: [],
 });
 
@@ -173,6 +199,10 @@ describe("DesktopLinuxUrlHandler", () => {
       assert.include(recorded.files[0]?.content, "MimeType=x-scheme-handler/t3code;");
       assert.deepEqual(recorded.commands, [
         {
+          command: "update-desktop-database",
+          args: ["/home/alice/.local/share/applications"],
+        },
+        {
           command: "xdg-mime",
           args: ["default", "com.t3tools.T3Code.desktop", "x-scheme-handler/t3code"],
         },
@@ -193,6 +223,21 @@ describe("DesktopLinuxUrlHandler", () => {
     });
   });
 
+  it.effect("copies the AppImage icon to a persistent path for the URL chooser", () => {
+    const recorded = emptyRecording();
+    return Effect.gen(function* () {
+      yield* runRegister(recorded, { iconSource: "/tmp/.mount_Ronin/resources/icon.png" });
+      assert.deepEqual(recorded.copies, [
+        {
+          source: "/tmp/.mount_Ronin/resources/icon.png",
+          destination:
+            "/home/alice/.local/share/applications/../icons/com.t3tools.T3Code.desktop.png",
+        },
+      ]);
+      assert.include(recorded.files[0]?.content, "Icon=");
+    });
+  });
+
   it.effect("does not rewrite the pre-ready entry while the portal can be reading it", () => {
     const recorded = emptyRecording();
 
@@ -202,12 +247,13 @@ describe("DesktopLinuxUrlHandler", () => {
           displayName: "Ronin",
           execTarget: "/home/alice/Applications/Ronin.AppImage",
           scheme: "t3code",
+          iconPath: "/home/alice/.local/share/applications/../icons/com.t3tools.T3Code.desktop.png",
         }),
       });
 
       assert.deepEqual(recorded.files, []);
       assert.deepEqual(recorded.directories, []);
-      assert.equal(recorded.commands.length, 1);
+      assert.equal(recorded.commands.length, 2);
     });
   });
 
@@ -234,10 +280,12 @@ describe("DesktopLinuxUrlHandler", () => {
   });
 
   it.effect("never fails startup when registration cannot complete", () => {
+    const cacheRefreshFailed = emptyRecording();
     const xdgMimeFailed = emptyRecording();
     const writeFailed = emptyRecording();
 
     return Effect.gen(function* () {
+      yield* runRegister(cacheRefreshFailed, { updateDesktopDatabaseExitCode: 1 });
       yield* runRegister(xdgMimeFailed, { xdgMimeExitCode: 1 });
       yield* runRegister(writeFailed, {
         writeError: PlatformError.systemError({
@@ -249,6 +297,10 @@ describe("DesktopLinuxUrlHandler", () => {
         }),
       });
 
+      assert.deepEqual(
+        cacheRefreshFailed.commands.map(({ command }) => command),
+        ["update-desktop-database", "xdg-mime"],
+      );
       assert.equal(xdgMimeFailed.files.length, 1);
       assert.deepEqual(writeFailed.commands, []);
     });
