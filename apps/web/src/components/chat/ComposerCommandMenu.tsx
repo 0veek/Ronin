@@ -31,6 +31,7 @@ import {
   CommandSeparator,
 } from "../ui/command";
 import { PierreEntryIcon } from "./PierreEntryIcon";
+import { composerSuggestionOptionId } from "./composerMenuHighlight";
 
 export type ComposerCommandItem =
   | {
@@ -133,6 +134,7 @@ const SLASH_COMMAND_ICONS: Record<ComposerSlashCommand, LucideIcon> = {
 };
 
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
+  listId: string;
   items: ComposerCommandItem[];
   resolvedTheme: "light" | "dark";
   isLoading: boolean;
@@ -173,7 +175,11 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
         className="surface-menu relative w-full overflow-hidden rounded-[var(--radius-lg)] **:data-[slot=scroll-area-scrollbar]:data-[orientation=vertical]:my-4"
       >
         {props.items.length > 0 ? (
-          <CommandList className="max-h-72 not-empty:py-3">
+          <CommandList
+            id={props.listId}
+            aria-label={props.triggerKind ? LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] : undefined}
+            className="max-h-72 not-empty:py-3"
+          >
             {groups.map((group, groupIndex) => (
               <div key={group.id}>
                 {groupIndex > 0 ? <CommandSeparator className="my-0.5" /> : null}
@@ -186,6 +192,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                   {group.items.map((item) => (
                     <ComposerCommandMenuItem
                       key={item.id}
+                      optionId={composerSuggestionOptionId(props.listId, item.id)}
                       item={item}
                       resolvedTheme={props.resolvedTheme}
                       isActive={props.activeItemId === item.id}
@@ -229,6 +236,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
 });
 
 const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
+  optionId: string;
   item: ComposerCommandItem;
   resolvedTheme: "light" | "dark";
   isActive: boolean;
@@ -240,6 +248,8 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
 
   return (
     <CommandItem
+      render={<div id={props.optionId} />}
+      aria-selected={props.isActive}
       value={props.item.id}
       data-composer-item-id={props.item.id}
       className={cn(
@@ -291,3 +301,11 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
     </CommandItem>
   );
 });
+
+const LISTBOX_LABEL_BY_TRIGGER: Record<ComposerTriggerKind, string> = {
+  path: "Files and folders",
+  "pull-request": "Pull requests",
+  "slash-command": "Commands",
+  "slash-model": "Models",
+  skill: "Skills",
+};

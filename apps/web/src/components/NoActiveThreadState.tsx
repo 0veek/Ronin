@@ -1,14 +1,16 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
-import { MessageSquareIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { MessageSquareDashedIcon, MessageSquareIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
 import { useHandleNewThread } from "~/hooks/useHandleNewThread";
+import { useScratchProject } from "~/hooks/useScratchProject";
 import { useClientSettings } from "~/hooks/useSettings";
 import { shortcutLabelForCommand } from "~/keybindings";
 import { useProjects, useThreadShells } from "~/state/entities";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -47,6 +49,9 @@ export function NoActiveThreadState() {
   const sortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { defaultProjectRef, handleNewThread } = useHandleNewThread();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
 
   const projectTitleById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.title] as const)),
@@ -85,7 +90,9 @@ export function NoActiveThreadState() {
               </EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
                 {defaultProjectRef === null
-                  ? "Add a project to start your first thread."
+                  ? scratchTargetEnvironmentId === null
+                    ? "Add a project to start your first thread."
+                    : "Add a project, or start without one."
                   : "Open a recent thread, or start a new one."}
               </EmptyDescription>
             </EmptyHeader>
@@ -95,6 +102,16 @@ export function NoActiveThreadState() {
                 <PlusIcon aria-hidden />
                 {defaultProjectRef === null ? "Add project" : "New thread"}
               </Button>
+              {scratchTargetEnvironmentId === null ? null : (
+                <Button
+                  onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                  size="sm"
+                  variant="outline"
+                >
+                  <MessageSquareDashedIcon aria-hidden />
+                  Start without a project
+                </Button>
+              )}
               <Button onClick={openPalette} size="sm" variant="outline">
                 <SearchIcon aria-hidden />
                 Search

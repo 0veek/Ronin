@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   scopedProjectKey,
   scopeProjectRef,
@@ -30,7 +31,8 @@ import {
   resolveNewThreadModelSelectionOverride,
 } from "../lib/chatThreadActions";
 import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
-import { primaryServerSettingsAtom } from "../state/server";
+import { environmentServerConfigsAtom, primaryServerSettingsAtom } from "../state/server";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useClientSettings } from "./useSettings";
@@ -136,6 +138,13 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
+      const scratchWorkspaceRoot = appAtomRegistry
+        .get(environmentServerConfigsAtom)
+        .get(projectRef.environmentId)?.scratchWorkspaceRoot;
+      const isScratch = project !== undefined && isScratchProject(project, scratchWorkspaceRoot);
+      const workspaceOptions = isScratch
+        ? { branch: null, worktreePath: null, envMode: "local" as const, startFromOrigin: false }
+        : options;
       const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
         resolveNewThreadModelSelectionOverride({
           projectDefaultSelection: project?.defaultModelSelection ?? null,
@@ -148,6 +157,7 @@ export function useNewThreadHandler() {
       // skipped entirely when a higher-priority source decides, and its
       // query atom caches per project after the first call.
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
+        if (isScratch) return "local";
         const consultProjectFile = project !== undefined && project.defaultThreadEnvMode == null;
         return resolveDefaultThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,
@@ -163,10 +173,10 @@ export function useNewThreadHandler() {
       const logicalProjectKey = project
         ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
         : scopedProjectKey(projectRef);
-      const hasBranchOption = options?.branch !== undefined;
-      const hasWorktreePathOption = options?.worktreePath !== undefined;
-      const hasEnvModeOption = options?.envMode !== undefined;
-      const hasStartFromOriginOption = options?.startFromOrigin !== undefined;
+      const hasBranchOption = workspaceOptions?.branch !== undefined;
+      const hasWorktreePathOption = workspaceOptions?.worktreePath !== undefined;
+      const hasEnvModeOption = workspaceOptions?.envMode !== undefined;
+      const hasStartFromOriginOption = workspaceOptions?.startFromOrigin !== undefined;
       const storedDraftThread = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       const storedDraftThreadRef = storedDraftThread
         ? scopeThreadRef(storedDraftThread.environmentId, storedDraftThread.threadId)
@@ -218,7 +228,7 @@ export function useNewThreadHandler() {
           // below and does not follow this guard.
           let workspaceContext: NewThreadWorkspaceOptions | null = null;
           if (hasExplicitWorkspaceOption) {
-            workspaceContext = pickExplicitWorkspaceOptions(options);
+            workspaceContext = pickExplicitWorkspaceOptions(workspaceOptions);
           } else if (!isDraftAlreadyOpen) {
             const defaultEnvMode = await resolveDefaultEnvMode();
             if (routeChangedSinceRequest()) {
@@ -340,14 +350,17 @@ export function useNewThreadHandler() {
           hasEnvModeOption ||
           hasStartFromOriginOption
         ) {
-          setDraftThreadContext(currentRouteTarget.draftId, pickExplicitWorkspaceOptions(options));
+          setDraftThreadContext(
+            currentRouteTarget.draftId,
+            pickExplicitWorkspaceOptions(workspaceOptions),
+          );
         }
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, currentRouteTarget.draftId, {
           threadId: latestActiveDraftThread.threadId,
           createdAt: latestActiveDraftThread.createdAt,
           runtimeMode: latestActiveDraftThread.runtimeMode,
           interactionMode: latestActiveDraftThread.interactionMode,
-          ...pickExplicitWorkspaceOptions(options),
+          ...pickExplicitWorkspaceOptions(workspaceOptions),
         });
         return Promise.resolve({
           draftId: currentRouteTarget.draftId,
@@ -359,7 +372,7 @@ export function useNewThreadHandler() {
       const threadId = newThreadId();
       const createdAt = new Date().toISOString();
       return (async () => {
-        const initialEnvMode = options?.envMode ?? (await resolveDefaultEnvMode());
+        const initialEnvMode = workspaceOptions?.envMode ?? (await resolveDefaultEnvMode());
         if (routeChangedSinceRequest()) {
           return null;
         }
@@ -390,7 +403,7 @@ export function useNewThreadHandler() {
             createdAt: racedDraft.createdAt,
             runtimeMode: racedDraft.runtimeMode,
             interactionMode: racedDraft.interactionMode,
-            ...pickExplicitWorkspaceOptions(options),
+            ...pickExplicitWorkspaceOptions(workspaceOptions),
           });
           await router.navigate({
             to: "/draft/$draftId",
@@ -402,11 +415,11 @@ export function useNewThreadHandler() {
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draftId, {
           threadId,
           createdAt,
-          branch: options?.branch ?? null,
-          worktreePath: options?.worktreePath ?? null,
+          branch: workspaceOptions?.branch ?? null,
+          worktreePath: workspaceOptions?.worktreePath ?? null,
           envMode: initialEnvMode,
           startFromOrigin:
-            options?.startFromOrigin ??
+            workspaceOptions?.startFromOrigin ??
             resolveNewDraftStartFromOrigin({
               envMode: initialEnvMode,
               newWorktreesStartFromOrigin: primaryServerSettings.newWorktreesStartFromOrigin,

@@ -2,13 +2,18 @@ import type { DraftId } from "~/composerDraftStore";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
+import { useScratchProject } from "~/hooks/useScratchProject";
 import { useClientSettings } from "~/hooks/useSettings";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
-import { selectProjectGroupingSettings } from "~/logicalProject";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "~/logicalProject";
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
@@ -29,6 +34,8 @@ import {
   MenuTrigger,
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+
+const NO_PROJECT_VALUE = "no-project";
 
 interface DraftHeroHeadlineProps {
   readonly draftId: DraftId | null;
@@ -54,6 +61,7 @@ export function DraftHeroHeadline({
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
 
   const environmentLabelById = useMemo(
     () =>
@@ -128,7 +136,70 @@ export function DraftHeroHeadline({
   const activeProjectDisplayName = activeProjectGroup?.displayName ?? activeProjectTitle;
   const hasResolvedProject = activeProjectTitle !== null;
   const canChooseProject = projectPickerEntries.length > 0;
-  const shouldShowProjectMenu = canChooseProject;
+  const activeProject =
+    activeProjectRef === null
+      ? null
+      : (projects.find(
+          (project) =>
+            project.environmentId === activeProjectRef.environmentId &&
+            project.id === activeProjectRef.projectId,
+        ) ?? null);
+  const scratchTargetEnvironmentId = scratchEnvironmentId(
+    activeProjectRef?.environmentId ?? primaryEnvironmentId,
+  );
+  const scratchWorkspaceRoot = scratchWorkspaceRootFor(scratchTargetEnvironmentId);
+  const isScratchDraft =
+    activeProject !== null && isScratchProject(activeProject, scratchWorkspaceRoot);
+  const menuEntries = projectPickerEntries.filter(
+    ({ targetProject }) =>
+      !isScratchProject(targetProject, scratchWorkspaceRootFor(targetProject.environmentId)),
+  );
+  const shouldShowProjectMenu = canChooseProject || scratchWorkspaceRoot !== null;
+
+  const latestTargetRef = useRef({ draftId, activeProjectKey, scratchTargetEnvironmentId });
+  useEffect(() => {
+    latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
+  }, [draftId, activeProjectKey, scratchTargetEnvironmentId]);
+
+  const selectProject = (project: (typeof projects)[number], logicalProjectKey: string) => {
+    if (!draftId) return;
+    latestTargetRef.current = {
+      draftId,
+      activeProjectKey: logicalProjectKey,
+      scratchTargetEnvironmentId: project.environmentId,
+    };
+    const currentDraft = getComposerDraft(draftId);
+    setLogicalProjectDraftThreadId(
+      logicalProjectKey,
+      scopeProjectRef(project.environmentId, project.id),
+      draftId,
+      isScratchProject(project, scratchWorkspaceRootFor(project.environmentId))
+        ? { branch: null, worktreePath: null, envMode: "local", startFromOrigin: false }
+        : undefined,
+    );
+    if (!hasExplicitComposerModelSelection(currentDraft)) {
+      applyStickyState(draftId);
+      if (project.defaultModelSelection) {
+        setModelSelection(draftId, project.defaultModelSelection, { replaceOptions: true });
+      }
+    }
+  };
+
+  const startScratch = async (): Promise<boolean> => {
+    if (scratchTargetEnvironmentId === null || isScratchDraft) return false;
+    const requested = { draftId, activeProjectKey, scratchTargetEnvironmentId };
+    const project = await openScratchProject(scratchTargetEnvironmentId);
+    const latest = latestTargetRef.current;
+    if (
+      !project ||
+      latest.draftId !== requested.draftId ||
+      latest.activeProjectKey !== requested.activeProjectKey ||
+      latest.scratchTargetEnvironmentId !== requested.scratchTargetEnvironmentId
+    )
+      return false;
+    selectProject(project, deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings));
+    return true;
+  };
 
   const projectSelector = shouldShowProjectMenu ? (
     <Menu>
@@ -137,13 +208,14 @@ export function DraftHeroHeadline({
           render={
             <MenuTrigger
               aria-label={hasResolvedProject ? "Change project" : "Choose a project"}
+              data-draft-project-trigger=""
               className="pointer-events-auto inline-block max-w-72 truncate border-primary/45 border-b-2 border-dotted align-baseline text-primary transition-colors hover:border-primary/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             />
           }
         >
-          {activeProjectDisplayName ?? "Choose a project"}
+          {isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
         </TooltipTrigger>
-        {activeProjectDisplayName ? (
+        {activeProjectDisplayName && !isScratchDraft ? (
           <TooltipPopup side="top" className="max-w-80">
             {activeProjectDisplayName}
           </TooltipPopup>
@@ -151,36 +223,26 @@ export function DraftHeroHeadline({
       </Tooltip>
       <MenuPopup align="center" className="max-h-80 min-w-40! w-max max-w-64 overflow-y-auto">
         <MenuRadioGroup
-          value={activeProjectKey}
+          value={isScratchDraft ? NO_PROJECT_VALUE : activeProjectKey}
           onValueChange={(value) => {
+            if (value === NO_PROJECT_VALUE) {
+              void startScratch();
+              return;
+            }
             const entry = projectEntryByKey.get(value as string);
             if (!entry || value === activeProjectKey) {
               return;
             }
-            const project = entry.targetProject;
-            if (!draftId) {
-              return;
-            }
-            // Project selection changes the target of the open draft in
-            // place. The prompt stays in the same composer session, so the
-            // sidebar only gets a draft row if the user later navigates away.
-            const currentDraft = getComposerDraft(draftId);
-            setLogicalProjectDraftThreadId(
-              entry.group.projectKey,
-              scopeProjectRef(project.environmentId, project.id),
-              draftId,
-            );
-            if (!hasExplicitComposerModelSelection(currentDraft)) {
-              applyStickyState(draftId);
-              if (project.defaultModelSelection) {
-                setModelSelection(draftId, project.defaultModelSelection, {
-                  replaceOptions: true,
-                });
-              }
-            }
+            selectProject(entry.targetProject, entry.group.projectKey);
           }}
         >
-          {projectPickerEntries.map(({ group }) => {
+          {scratchWorkspaceRoot === null ? null : (
+            <MenuRadioItem value={NO_PROJECT_VALUE} closeOnClick>
+              <MessageSquareDashedIcon aria-hidden="true" className="size-4 shrink-0" />
+              <span>No project</span>
+            </MenuRadioItem>
+          )}
+          {menuEntries.map(({ group }) => {
             return (
               <MenuRadioItem
                 key={group.projectKey}
@@ -215,7 +277,7 @@ export function DraftHeroHeadline({
             );
           })}
         </MenuRadioGroup>
-        <MenuSeparator />
+        {menuEntries.length > 0 ? <MenuSeparator /> : null}
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
           New project
@@ -233,14 +295,37 @@ export function DraftHeroHeadline({
   );
 
   return (
-    <h1 className="mx-auto w-full max-w-5xl text-balance text-center font-medium text-3xl text-foreground tracking-[-0.03em] sm:text-4xl">
-      {hasResolvedProject ? (
-        <>What should we build in {projectSelector}?</>
-      ) : canChooseProject ? (
-        <>{projectSelector} to start</>
-      ) : (
-        <>Add a project to start</>
+    <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
+      <h1 className="w-full text-balance text-center font-medium text-3xl text-foreground tracking-[-0.03em] sm:text-4xl">
+        {isScratchDraft ? (
+          <>What should we work on?</>
+        ) : hasResolvedProject ? (
+          <>What should we build in {projectSelector}?</>
+        ) : canChooseProject ? (
+          <>{projectSelector} to start</>
+        ) : (
+          <>Add a project to start</>
+        )}
+      </h1>
+      {scratchWorkspaceRoot === null ? null : (
+        <div className="mt-2 flex h-6 items-center text-sm">
+          {isScratchDraft ? (
+            projectSelector
+          ) : (
+            <button
+              type="button"
+              className="pointer-events-auto text-muted-foreground underline-offset-2 hover:underline"
+              onClick={async () => {
+                if (await startScratch()) {
+                  document.querySelector<HTMLElement>("[data-draft-project-trigger]")?.focus();
+                }
+              }}
+            >
+              or start without a project
+            </button>
+          )}
+        </div>
       )}
-    </h1>
+    </div>
   );
 }

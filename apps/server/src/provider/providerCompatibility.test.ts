@@ -52,6 +52,13 @@ const provider: ServerProvider = {
 };
 
 describe("provider compatibility", () => {
+  it("marks Grok versions before 1.0.13 broken", () => {
+    const grok = ProviderDriverKind.make("grok");
+    const policies = ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility;
+    assert.strictEqual(resolveProviderCompatibility(policies, grok, "1.0.12")?.status, "broken");
+    assert.strictEqual(resolveProviderCompatibility(policies, grok, "1.0.13")?.status, "supported");
+  });
+
   it("bundles a compatibility policy for every built-in harness", () => {
     for (const builtIn of BUILT_IN_DRIVERS) {
       assert.isDefined(

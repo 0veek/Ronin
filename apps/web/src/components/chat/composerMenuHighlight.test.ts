@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
+import {
+  composerSuggestionOptionId,
+  resolveComposerMenuActiveItemId,
+} from "./composerMenuHighlight";
+
+describe("composerSuggestionOptionId", () => {
+  it("keeps file paths and malformed UTF-16 distinct in valid DOM ids", () => {
+    const paths = [
+      "docs/my file.md",
+      "docs/my_file.md",
+      "docs/my%20file.md",
+      "docs/my\ud800.md",
+      "docs/my\ud801.md",
+      "docs/\ufffd.md",
+    ];
+    const ids = paths.map((path) => composerSuggestionOptionId("suggestions", `path:file:${path}`));
+    expect(new Set(ids).size).toBe(paths.length);
+    for (const id of ids) expect(id).not.toMatch(/\s|[\ud800-\udfff]/u);
+    expect(composerSuggestionOptionId("other-composer", paths[0]!)).not.toBe(ids[0]);
+  });
+});
 
 describe("resolveComposerMenuActiveItemId", () => {
   const items = [{ id: "top" }, { id: "second" }, { id: "third" }] as const;
@@ -47,5 +67,22 @@ describe("resolveComposerMenuActiveItemId", () => {
         highlightedSearchKey: "skill:ui",
       }),
     ).toBe("top");
+  });
+
+  it("clears the active result while async results are empty and resolves against restored results", () => {
+    const search = {
+      highlightedItemId: "second",
+      currentSearchKey: "path:src",
+      highlightedSearchKey: "path:src",
+    };
+    const cleared = resolveComposerMenuActiveItemId({ ...search, items: [] });
+    expect(cleared).toBeNull();
+    expect(
+      resolveComposerMenuActiveItemId({
+        ...search,
+        highlightedItemId: cleared,
+        items: [{ id: "new-result" }, { id: "second" }],
+      }),
+    ).toBe("new-result");
   });
 });

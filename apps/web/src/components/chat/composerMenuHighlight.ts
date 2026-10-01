@@ -1,3 +1,8 @@
+export function composerSuggestionOptionId(listId: string, itemId: string): string {
+  // JSON escapes lone UTF-16 surrogates before URI encoding without losing identity.
+  return `${listId}-${encodeURIComponent(JSON.stringify(itemId))}`;
+}
+
 export function resolveComposerMenuActiveItemId(input: {
   items: ReadonlyArray<{ id: string }>;
   highlightedItemId: string | null;

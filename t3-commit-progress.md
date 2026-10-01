@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                     |
-| ----------------------------- | --------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `0fcd5f906` — `fix(web): multi-PR badges open the linked pull requests panel (#13211)` (2026-09-29) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                     |
-| **Ported on**                 | 2026-09-30                                                                                          |
+|                               |                                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `0cf482b08` — `fix(web): make composer suggestions usable with screen readers (#10154)` (2026-09-30) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                      |
+| **Ported on**                 | 2026-10-01                                                                                           |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -6648,3 +6648,50 @@ by keeping Codex CLI login and shadow homes.
 
 - No live client/browser automation was run, per `AGENTS.md`.
 - No real provider login, Bitbucket credential, packaged Linux AppImage, or Windows PTY process was exercised against an external system.
+
+## Batch 40 — reviewed through `0cf482b08` (13 commits)
+
+Reviewed `0fcd5f906..0cf482b08`, with upstream snapshotted at
+`0cf482b08bca0249ec94fbcbd0eb04fff28d9b3d`. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`.
+
+### Ported (9)
+
+| Upstream    | Title                                                                                    | Notes                                                                                                                                                                                                                                                                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `c18e5ea6e` | fix(web): stop clipping the bottoms of diff file names (#14375)                          | Gave clipped diff header names enough line height and removed their underline transition.                                                                                                                                                                                                                                                             |
+| `35be904f2` | chore: bump vite-plus to 1.0 (#14462)                                                    | Updated the shared catalog and lockfile, package test scripts, a non-concurrent test, and benchmark API. Omitted the mobile, relay, and Alchemy changes for cut surfaces.                                                                                                                                                                             |
+| `792c7dd12` | fix(web): show double bolts for Codex Ultrafast (#14479)                                 | Added the two-bolt icon and speed-specific trigger display with focused tests.                                                                                                                                                                                                                                                                        |
+| `bd89c1302` | fix(server): Grok CLIs older than 1.0.13 are marked broken (#14486)                      | Updated provider compatibility data and added a regression test.                                                                                                                                                                                                                                                                                      |
+| `7c6787698` | fix(clients): hide disconnected environments when adding projects (#14490)               | Filtered the add-project choices to connected environments.                                                                                                                                                                                                                                                                                           |
+| `6b286ae8a` | feat: start threads without a project (#13612)                                           | Added environment-scoped Scratch creation, one folder per thread, the renderer entry points and shortcut, reverse project selection, remote-aware config, tests, and user docs. Adapted the empty state and new-thread flow to Ronin's route structure. Omitted mobile and the Usage keybinding ordering hunk, whose underlying logic is absent here. |
+| `9da066dbe` | fix(server): Claude /compact no longer ends early and leaves the thread busy (#14497)    | Ignore results for Claude-initiated turns while a user turn is active. Guard newer result fields because this fork uses older Claude SDK types; added a focused adapter test.                                                                                                                                                                         |
+| `1905846e0` | fix(web): Dark+ and Light+ themes import instead of colliding with built-in ids (#14499) | Give reserved imported theme names distinct IDs and avoid pairing names whose common remainder is only punctuation.                                                                                                                                                                                                                                   |
+| `0cf482b08` | fix(web): make composer suggestions usable with screen readers (#10154)                  | Adapted the listbox and active-descendant behavior to Ronin's Lexical editor; labeled the editor and suggestions and announced empty/loading states.                                                                                                                                                                                                  |
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (4)
+
+| Upstream    | Title                                                                          | Notes                                                                                |
+| ----------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| `c2fa9fc91` | fix(web): name the step that registers a mobile client (#10963)                | The mobile/T3 Connect registration flow is cut.                                      |
+| `38969148a` | test(desktop): Keep WSL busy-runtime fixtures visible when sh is bash (#14351) | WSL support is cut.                                                                  |
+| `0d9468fea` | docs: define contribution triage policy (#14480)                               | Upstream-specific contributor governance; Ronin keeps its own contribution guidance. |
+| `d5980a0ff` | docs: use explicit contribution triage exemptions (#14485)                     | Follow-up to the upstream-specific triage policy.                                    |
+
+### Verification
+
+- `vp test run apps/server/src/server.test.ts -t Scratch` passed (4 tests). `vp test run apps/server/src/provider/Layers/ClaudeAdapter.test.ts -t 'keeps a turn open past the result of a Claude-initiated turn'` passed (1 test). `vp test run apps/server/src/provider/providerCompatibility.test.ts` passed (10 tests).
+- `vp test run apps/web/src/components/chat/TraitsPicker.test.ts apps/web/src/vscodeThemeImport.test.ts apps/web/src/components/chat/composerMenuHighlight.test.ts apps/web/src/hooks/useHandleNewThread.test.ts apps/web/src/components/CommandPalette.logic.test.ts apps/web/src/environments/primary/httpLayer.test.ts` passed (74 tests). `vp test run apps/web/src/components/settings/KeybindingsSettings.logic.test.ts` passed (22 tests). `vp run --filter @t3tools/contracts test` passed (407 tests).
+- `vp run --filter <package> typecheck` passed for `t3`, `@t3tools/web`, `@t3tools/desktop`, `@t3tools/contracts`, `@t3tools/client-runtime`, `@t3tools/shared`, `effect-acp`, `effect-codex-app-server`, `@t3tools/ssh`, `@t3tools/tailscale`, and `@t3tools/oxlint-plugin-t3code`.
+- Changed-file `vp lint --report-unused-disable-directives`, `vp fmt --check`, and `git diff --check` passed; lint retained warnings in existing large files. `npx react-doctor@latest --verbose --scope changed` scored **67/100** with seven maintainability warnings and no new bug warnings.
+- `vp run --filter @t3tools/scripts typecheck` still fails on the unchanged `scripts/resolve-previous-release-tag.test.ts:70`: `"preview"` is not assignable to `"nightly" | "stable"`.
+- The 13-commit ledger matches the frozen range: **9 Port, 0 Already in tree, 4 Skip, 0 Ask**.
+
+### Not tested
+
+- No live client/browser automation was run, per `AGENTS.md`.
+- No real Claude or Grok CLI process, remote environment, or packaged desktop build was exercised.

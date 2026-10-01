@@ -30,12 +30,14 @@ const testState = vi.hoisted(() => {
   };
 
   return {
+    scratch: false,
     completeProjectFileRead: (value: null) => completeProjectFileRead(value),
     draftStore,
     get projectFileRead() {
       return projectFileRead;
     },
     reset(nextStoredDraft: typeof storedDraft) {
+      this.scratch = false;
       storedDraft = nextStoredDraft;
       router.state.location.href = "/";
       router.navigate.mockClear();
@@ -55,6 +57,9 @@ vi.mock("@t3tools/client-runtime/environment", () => ({
   scopedProjectKey: () => "remote-project",
   scopeProjectRef: (environmentId: string, projectId: string) => ({ environmentId, projectId }),
   scopeThreadRef: (environmentId: string, threadId: string) => ({ environmentId, threadId }),
+}));
+vi.mock("@t3tools/client-runtime/state/projects", () => ({
+  isScratchProject: () => testState.scratch,
 }));
 vi.mock("@t3tools/contracts", () => ({ DEFAULT_RUNTIME_MODE: "default" }));
 vi.mock("@t3tools/shared/threadEnvMode", () => ({
@@ -113,7 +118,15 @@ vi.mock("../state/entities", () => ({
   useProjects: () => [],
   useThread: () => null,
 }));
-vi.mock("../state/server", () => ({ primaryServerSettingsAtom: {} }));
+vi.mock("../state/server", () => ({
+  primaryServerSettingsAtom: {},
+  environmentServerConfigsAtom: {},
+}));
+vi.mock("../rpc/atomRegistry", () => ({
+  appAtomRegistry: {
+    get: () => new Map([["environment-ssh", { scratchWorkspaceRoot: "/remote/scratch" }]]),
+  },
+}));
 vi.mock("../threadRoutes", () => ({ resolveThreadRouteTarget: () => null }));
 vi.mock("../uiStateStore", () => ({
   legacyProjectCwdPreferenceKey: () => "remote-project",
@@ -124,6 +137,24 @@ vi.mock("./useSettings", () => ({ useClientSettings: () => ({}) }));
 import { useNewThreadHandler } from "./useHandleNewThread";
 
 describe("useNewThreadHandler", () => {
+  it("keeps threads without a project in their own local folder", async () => {
+    testState.reset(null);
+    testState.scratch = true;
+    const openThread = useNewThreadHandler();
+    await openThread({ environmentId: "environment-ssh", projectId: "project-remote" } as never, {
+      envMode: "worktree",
+      branch: "feature",
+      worktreePath: "/remote/worktree",
+      startFromOrigin: true,
+    });
+    expect(testState.draftStore.setLogicalProjectDraftThreadId.mock.calls[0]?.[3]).toMatchObject({
+      envMode: "local",
+      branch: null,
+      worktreePath: null,
+      startFromOrigin: false,
+    });
+  });
+
   it.each([
     ["new", null],
     [

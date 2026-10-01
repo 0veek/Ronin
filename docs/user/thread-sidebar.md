@@ -1,5 +1,11 @@
 # Organizing threads
 
+## Start without a project
+
+On a new thread, choose **No project** from the project menu or select **or start without a project** below the heading. You can also choose **New thread without a project** in the command palette, use `mod+alt+n`, or start from an empty workspace.
+
+Each thread started this way gets its own folder in the environment's `scratch` directory, named from the date, first message, and thread ID. The folder belongs to that environment, including when it is remote. Deleting the thread keeps its files. Branch, worktree, and diff controls are unavailable because the folder is not a Git repository. This option is unavailable when the environment's data directory is inside a Git checkout.
+
 Pin a thread from its context menu to keep it in the pinned section above your active work.
 `mod+shift+p` pins or unpins the thread you have open. Pinned threads are shown independently of
 their project, including when you connect to more than one environment.

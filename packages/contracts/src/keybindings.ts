@@ -91,6 +91,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "composer.dictate",
   "chat.new",
   "chat.newLocal",
+  "chat.newWithoutProject",
   "chat.askOnTheSide",
   "chat.captureTask",
   "chat.secondOpinion",
