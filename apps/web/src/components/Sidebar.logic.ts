@@ -1112,7 +1112,6 @@ export function groupSideChatsUnderParents<
 export {
   generateSpreadPinOrderKeys,
   pinOrderKeyBetween,
-  planPinnedReorder,
 } from "@t3tools/client-runtime/state/thread-sort";
 export { sortPinnedThreadsByOrderKey as sortPinnedThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
 

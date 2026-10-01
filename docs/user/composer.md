@@ -147,6 +147,9 @@ Provider commands such as `/compact` only run when they open the message, so the
 them only there. Ronin's own commands, such as `/model` and `/plan`, and skills stay available on
 any line.
 
+After changing skills, plugins, or MCP servers, choose **Restart agent session** in the command
+palette. Your conversation stays in place; the next message starts the provider with the new setup.
+
 In a thread with prior conversation context, send `/compact` to reduce context usage. The context
 meter offers the same action, and the work log records token counts when the provider reports them.
 

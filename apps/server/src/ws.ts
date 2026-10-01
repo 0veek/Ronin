@@ -43,6 +43,7 @@ import {
   BUILD_SYSTEM_RUN_HISTORY_LIMIT,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
+  type ProjectCreateNewInput,
   type ProjectEntriesFailure,
   type ProjectFileFailure,
   type ProjectFileOperation,
@@ -133,6 +134,7 @@ import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
+import * as NewProject from "./project/NewProject.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -1920,6 +1922,45 @@ const makeWsRpcLayer = (
         );
       });
 
+      const newProjectsRoot = path.resolve(config.baseDir, "projects");
+      const createNewProject = Effect.fn("createNewProject")(function* (
+        input: ProjectCreateNewInput,
+      ) {
+        const folder = yield* NewProject.createNewProjectFolder({
+          root: newProjectsRoot,
+          name: input.name,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationDispatchCommandError({
+                message: "Failed to create the project folder.",
+                cause,
+              }),
+          ),
+        );
+        const projectId = ProjectId.make(yield* randomUUID);
+        yield* Effect.gen(function* () {
+          const command = yield* normalizeDispatchCommand({
+            type: "project.create",
+            commandId: yield* serverCommandId("project-create-new"),
+            projectId,
+            title: input.name,
+            workspaceRoot: folder.workspaceRoot,
+            createdAt: yield* nowIso,
+          });
+          yield* dispatchNormalizedCommand(command);
+        }).pipe(
+          Effect.tapError(() =>
+            fileSystem.remove(folder.workspaceRoot, { recursive: true }).pipe(Effect.ignore),
+          ),
+        );
+        return {
+          projectId,
+          workspaceRoot: folder.workspaceRoot,
+          ...(folder.commitError === undefined ? {} : { commitError: folder.commitError }),
+        };
+      });
+
       const loadProvidersWithSkills = Effect.fn("loadProvidersWithSkills")(function* (
         providers: ReadonlyArray<ServerProvider>,
       ) {
@@ -1986,6 +2027,7 @@ const makeWsRpcLayer = (
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
           ...(scratchWorkspaceRoot === undefined ? {} : { scratchWorkspaceRoot }),
+          newProjectsRoot,
         };
       });
 
@@ -2411,8 +2453,8 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.serverRefreshProviders,
             Effect.gen(function* () {
-              if (input.refreshModels) {
-                yield* modelManifest.forceRefresh;
+              if (input.refreshModels || input.fresh) {
+                if (input.refreshModels) yield* modelManifest.forceRefresh;
                 const instances = yield* providerInstances.listInstances;
                 yield* Effect.forEach(
                   instances.filter(
@@ -3154,6 +3196,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.projectsEnsureScratch, ensureScratchProject, {
             "rpc.aggregate": "orchestration",
           }),
+        [WS_METHODS.projectsCreateNew]: (input) =>
+          observeRpcEffect(WS_METHODS.projectsCreateNew, createNewProject(input), {
+            "rpc.aggregate": "orchestration",
+          }),
         [WS_METHODS.shellOpenInEditor]: (input) =>
           observeRpcEffect(WS_METHODS.shellOpenInEditor, externalLauncher.launchEditor(input), {
             "rpc.aggregate": "workspace",
@@ -3215,11 +3261,16 @@ const makeWsRpcLayer = (
                     resource: input.resource,
                   });
                 }
+                const clone = yield* projectCloneTracker.get(project.value.id);
                 return yield* issueAssetUrl({
                   resource: input.resource,
                   ...(project.value.faviconPath
                     ? { projectFaviconPath: project.value.faviconPath }
                     : {}),
+                  projectCheckoutPending:
+                    clone !== null &&
+                    clone.phase !== "done" &&
+                    clone.destinationPath === project.value.workspaceRoot,
                 });
               }
               const thread = yield* projectionSnapshotQuery

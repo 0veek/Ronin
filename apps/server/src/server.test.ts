@@ -121,6 +121,7 @@ import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
+import type { ProviderInstance } from "./provider/ProviderDriver.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "./provider/providerMaintenance.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -455,6 +456,7 @@ const buildAppUnderTest = (options?: {
     keybindings?: Partial<Keybindings.Keybindings["Service"]>;
     environmentTheme?: Partial<EnvironmentTheme.EnvironmentThemeService["Service"]>;
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
+    providerInstances?: Partial<ProviderInstanceRegistry["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
@@ -709,6 +711,7 @@ const buildAppUnderTest = (options?: {
             listUnavailable: Effect.succeed([]),
             streamChanges: Stream.empty,
             subscribeChanges: Effect.die("Provider instance changes are unused in server tests"),
+            ...options?.layers?.providerInstances,
           }),
           Layer.mock(ProviderRegistry.ProviderRegistry)({
             getProviders: Effect.succeed([]),
@@ -4098,6 +4101,103 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(recovered.availableMemoryBytes, 35 * 4096);
       assert.equal(yield* Ref.get(commandCalls), 2);
     }).pipe(TestClock.withLive),
+  );
+
+  it.effect("fresh provider refresh invalidates the selected instance's caches", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("claudeAgent");
+      let invalidations = 0;
+      const refreshed: Array<ProviderInstanceId> = [];
+      const instance = {
+        instanceId,
+        invalidateCaches: Effect.sync(() => {
+          invalidations += 1;
+        }),
+        snapshot: { maintenanceCapabilities: { packageName: null } },
+      } as unknown as ProviderInstance;
+      yield* buildAppUnderTest({
+        layers: {
+          providerInstances: { listInstances: Effect.succeed([instance]) },
+          providerRegistry: {
+            refreshInstance: (id) =>
+              Effect.sync(() => {
+                refreshed.push(id);
+                return [];
+              }),
+          },
+        },
+      });
+
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          Effect.gen(function* () {
+            yield* client[WS_METHODS.serverRefreshProviders]({ instanceId });
+            yield* client[WS_METHODS.serverRefreshProviders]({ instanceId, fresh: true });
+          }),
+        ),
+      );
+      assert.equal(invalidations, 1);
+      assert.deepEqual(refreshed, [instanceId, instanceId]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("creates a project from a name in the environment's projects folder", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const created: Array<{ readonly title: string; readonly workspaceRoot: string }> = [];
+      const gitCalls: Array<string> = [];
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            dispatch: (command) =>
+              Effect.sync(() => {
+                if (command.type === "project.create") {
+                  created.push({ title: command.title, workspaceRoot: command.workspaceRoot });
+                }
+                return { sequence: created.length };
+              }),
+          },
+          gitVcsDriver: {
+            readConfigValue: () => Effect.succeed(null),
+            execute: (input) =>
+              Effect.sync(() => {
+                gitCalls.push(input.args.join(" "));
+                return {
+                  exitCode: ChildProcessSpawner.ExitCode(0),
+                  stdout: "",
+                  stderr: "",
+                  stdoutTruncated: false,
+                  stderrTruncated: false,
+                };
+              }),
+          },
+        },
+      });
+
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          Effect.gen(function* () {
+            const root = (yield* client[WS_METHODS.serverGetConfig]({})).newProjectsRoot ?? "";
+            const result = yield* client[WS_METHODS.projectsCreateNew]({ name: "Pinball Stats" });
+
+            assert.equal(result.workspaceRoot, path.join(root, "pinball-stats"));
+            assert.isUndefined(result.commitError);
+            assert.deepEqual(created, [
+              { title: "Pinball Stats", workspaceRoot: result.workspaceRoot },
+            ]);
+            assert.deepEqual(gitCalls, [
+              "init --initial-branch=main",
+              "add --force -- README.md assets/icon.svg",
+              "commit --message Initial commit",
+            ]);
+            assert.isTrue(
+              yield* fileSystem.exists(path.join(result.workspaceRoot, "assets", "icon.svg")),
+            );
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
   it.effect("creates the Scratch project once and restores its folder on reuse", () =>

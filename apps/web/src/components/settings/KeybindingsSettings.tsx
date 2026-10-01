@@ -818,7 +818,8 @@ function KeybindingTableRow({
   };
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Tab") return;
+    // Tab is recorded like any key while recording; after that it moves focus on.
+    if (event.key === "Tab" && !isRecording) return;
     event.preventDefault();
     if (event.key === "Escape") {
       setDraft({ keyDraft: row.key, isRecording: false });
@@ -995,7 +996,8 @@ function NewKeybindingTableRow({
   };
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Tab") return;
+    // Tab is recorded like any key while recording; after that it moves focus on.
+    if (event.key === "Tab" && !isRecording) return;
     event.preventDefault();
     if (event.key === "Escape") {
       setDraft({ keyDraft: "", isRecording: false });

@@ -437,6 +437,12 @@ describe("AssetAccess", () => {
       yield* fileSystem.writeFileString(faviconPath, initialFavicon);
       const canonicalFaviconPath = yield* fileSystem.realPath(faviconPath);
 
+      const pendingCloneResult = yield* issueAssetUrl({
+        resource: { _tag: "project-favicon", cwd: root },
+        projectCheckoutPending: true,
+      });
+      expect(pendingCloneResult.relativeUrl).toMatch(/project-favicon-missing$/);
+
       const faviconResult = yield* issueAssetUrl({
         resource: { _tag: "project-favicon", cwd: root },
       });

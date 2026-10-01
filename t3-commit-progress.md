@@ -9,11 +9,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                      |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `0cf482b08` — `fix(web): make composer suggestions usable with screen readers (#10154)` (2026-09-30) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                      |
-| **Ported on**                 | 2026-10-01                                                                                           |
+|                               |                                                                                               |
+| ----------------------------- | --------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `a3abb5266` — `fix(ci): pin eas-cli so mobile PR previews deploy again (#14659)` (2026-10-01) |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                               |
+| **Ported on**                 | 2026-10-02                                                                                    |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -6695,3 +6695,63 @@ None.
 
 - No live client/browser automation was run, per `AGENTS.md`.
 - No real Claude or Grok CLI process, remote environment, or packaged desktop build was exercised.
+
+## Batch 41 — reviewed through `a3abb5266` (26 commits)
+
+Reviewed `0cf482b08..a3abb5266`, with upstream snapshotted at
+`a3abb5266080c15b2a675d7f92b517b567c427e2`. Fork merge base remains
+`083fa4ab24c464ddf01e5b7ab22135d1ebdc120b`.
+
+### Ported (9)
+
+| Upstream    | Title                                                                                         | Notes                                                                                                                                                                                                                                     |
+| ----------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `6f8e2534f` | perf(ci): run PR checks side by side and balance server shards (#14025)                       | Split Ronin lint, typecheck, desktop build, and web tests into concurrent jobs, with `Check` aggregating every Ronin job. Omitted upstream's recorded server shard weights because its test files and timing profile differ from Ronin's. |
+| `7ab800a43` | fix(server): Claude subagents with their own model no longer show the parent's model (#14540) | Emit model corrections immediately and retain nested tool ownership from assistant snapshots; adapted to Ronin's Claude adapter.                                                                                                          |
+| `921cb3c8b` | feat(web): restart the agent session from cmd+k to load new skills and plugins (#14542)       | Added the thread action, targeted provider cache invalidation, and a fresh cwd skills query. Ronin has a separate skills catalog instead of upstream workspace snapshots, so the Antigravity workspace-snapshot hunk was omitted.         |
+| `71a90ae70` | fix(web): hotkey settings record plain keys and Tab (#14548)                                  | Capture unmodified keys and Tab in both recorders while preserving the modifier requirement for global SnapShot shortcuts.                                                                                                                |
+| `41a823984` | fix(release): Windows CLI smoke test no longer fails on temp dir cleanup (#14553)             | Retry best-effort cleanup after the CLI exits.                                                                                                                                                                                            |
+| `148e6deea` | feat: start a new project from just a name (#14527)                                           | Added a Ronin data-directory project folder, README, icon, initial Git commit, environment-scoped RPC, command palette entry points, optional private GitHub publish, and docs. Omitted mobile UI.                                        |
+| `5cc99e1c2` | fix(desktop): agent clicks in the browser no longer pop Save dialogs (#14573)                 | Kept the Electron preview-manager fix and test: agent-driven downloads go to browser artifacts, while human downloads retain Save dialogs. This native preview surface exists in Ronin.                                                   |
+| `5a574a77d` | test(web): remove duplicate sidebar ordering tests (#14558)                                   | Removed duplicate web tests and the unused re-export; client-runtime still tests the shared ordering math.                                                                                                                                |
+| `6ea01f8d2` | fix: cloned projects show their favicon instead of a monogram (#14635)                        | Skip favicon lookup while clone files are pending and refresh the client query when the clone phase changes. Added focused server and client tests; omitted mobile UI.                                                                    |
+
+### Already in the tree (0)
+
+None.
+
+### Skipped (17)
+
+| Upstream    | Title                                                                                       | Notes                                                                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `67b175a4c` | perf(release): build and publish npm platform packages concurrently (#14028)                | Ronin publishes one server package; the upstream platform-package builder and launcher tarballs are absent.                             |
+| `8630e1ac7` | perf(release): trim Windows packaging setup (#14037)                                        | The reusable `release-desktop.yml` workflow and its Windows package cache are absent from Ronin.                                        |
+| `c57a04b72` | perf(release): start Windows builds without waiting for the Linux job (#14027)              | Depends on the upstream reusable release workflow and a Linux CLI archive embedded for WSL; Ronin cuts WSL.                             |
+| `783ccf0fd` | perf(release): build Vercel deployments early and go live after publish (#14029)            | Hosted web deployment is cut.                                                                                                           |
+| `8dc07f199` | chore(mobile): upgrade to Expo SDK 58 and React Native 0.88 RC (#12045)                     | Expo, React Native, their patches, lockfile changes, and incidental web React types bump serve the cut mobile app.                      |
+| `e41755cf8` | feat(mobile): render the Android subscription widget with expo-widgets (#12046)             | Android widget and mobile usage docs only.                                                                                              |
+| `09388bf2d` | feat(mobile): degrade the agent Live Activity once its content goes stale (#12047)          | iOS Live Activity only.                                                                                                                 |
+| `438af295f` | feat(notifications): stack agent alerts by thread on both platforms (#12048)                | Android native notification and hosted relay APNs/FCM changes; both surfaces are cut.                                                   |
+| `ce920f2ac` | chore(mobile): drive dev-menu suppression from the dev-client launch URL (#12049)           | Mobile showcase script and mobile testing skill only.                                                                                   |
+| `9962e6986` | fix(mobile): read display scale and width from the view's scene, not UIScreen.main (#12050) | iOS native views only.                                                                                                                  |
+| `1e9c36023` | refactor(mobile): adopt Expo Modules 2.0 for function-only native members (#12051)          | Expo native modules only.                                                                                                               |
+| `bed69f6ea` | feat(mobile): suppress only the on-screen thread's alert on Android (#12052)                | Android notifications and hosted relay FCM only.                                                                                        |
+| `b91e4668f` | feat(marketing): replace the screenshot crop with a designed social card (#13487)           | Marketing site is cut.                                                                                                                  |
+| `a3fb5392e` | docs: update user count in AGENTS.md (#11413)                                               | Upstream T3 Code user count is not Ronin's.                                                                                             |
+| `a97a4a9d1` | Update marketing stats for GitHub stars and users                                           | Marketing site is cut.                                                                                                                  |
+| `094fb230e` | docs: server features are services, and handlers stay thin (#14613)                         | Upstream-specific agent review governance and service placement policy; Ronin's current server architecture and AGENTS guidance differ. |
+| `a3abb5266` | fix(ci): pin eas-cli so mobile PR previews deploy again (#14659)                            | Mobile EAS preview workflow is cut.                                                                                                     |
+
+### Verification
+
+- Focused tests passed: new-project folder and commit behavior (2), project favicon access and Claude task model (3), new-project RPC (1), fresh provider refresh (1), Electron preview download handling (1), and web, client-runtime, and shared logic (212).
+- Commands: `vp test run apps/server/src/project/NewProject.test.ts apps/server/src/assets/AssetAccess.test.ts apps/server/src/provider/Layers/ClaudeAdapter.test.ts -t 'createNewProjectFolder|issues project favicon capabilities|task.started carries model/effort'`; `vp test run apps/server/src/server.test.ts -t 'creates a project from a name'`; `vp test run apps/server/src/server.test.ts -t 'fresh provider refresh invalidates'`; `vp test run apps/desktop/src/preview/Manager.test.ts -t 'saves downloads from agent-driven pages'`; `vp test run apps/web/src/components/settings/KeybindingsSettings.logic.test.ts apps/web/src/components/Sidebar.logic.test.ts packages/client-runtime/src/state/assets.test.ts packages/shared/src/path.test.ts`.
+- Targeted typechecks passed for `t3`, `@t3tools/web`, `@t3tools/desktop`, `@t3tools/contracts`, `@t3tools/client-runtime`, and `@t3tools/shared`. Changed-file `vp lint --report-unused-disable-directives`, `vp fmt --check`, and `git diff --check` passed with existing lint warnings. React Doctor scored **77/100**: three complexity warnings and one warning on an existing command-palette state-reset effect touched by this port.
+- `vp run --filter @t3tools/scripts typecheck` still fails on the unchanged `scripts/resolve-previous-release-tag.test.ts:70`: `"preview"` is not assignable to `"nightly" | "stable"`.
+- The first server test attempt caught a syntax error in the favicon port; it was fixed, and the focused server tests and typecheck passed on rerun.
+- The 26-commit ledger matches the frozen range: **9 Port, 0 Already in tree, 17 Skip, 0 Ask**.
+
+### Not tested
+
+- No live client or browser automation was run, per `AGENTS.md`.
+- No real provider restart, GitHub publication, packaged Windows build, or CI job was exercised.

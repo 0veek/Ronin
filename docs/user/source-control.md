@@ -16,6 +16,12 @@ Ronin works with the platforms your team already uses:
 
 ### Start Projects from Anywhere
 
+**Start from a name**
+
+- Choose **New project** in the command palette (`Cmd/Ctrl + K`), or choose **Add Project → New project**
+- Type a name. Ronin creates a Git repository in the `projects` folder of that environment's Ronin data directory, with a README, an icon, and an initial commit, then opens a new thread
+- Choose **Create private repository on GitHub** to publish it there too. If Git has no name or email configured, the project still opens without the initial commit
+
 **Clone repositories directly**
 
 - Open the Command Palette (`Cmd/Ctrl + K`) → **Add Project**

@@ -605,6 +605,8 @@ export const ServerConfig = Schema.Struct({
   threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
   /** Folder for threads without a project, offered when the data dir is outside a Git checkout. */
   scratchWorkspaceRoot: Schema.optionalKey(TrimmedNonEmptyString),
+  /** Folder for projects started from a name, when the server supports creation. */
+  newProjectsRoot: Schema.optionalKey(TrimmedNonEmptyString),
   /**
    * Palettes published by this environment's machine. Never sent in a config
    * snapshot: the theme stream emits the current set before any change, so a

@@ -11,8 +11,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  check:
-    name: Check
+  lint:
+    name: Lint
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
@@ -45,8 +45,54 @@ jobs:
       - name: Check
         run: vp check
 
+  typecheck:
+    name: Typecheck
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
+
       - name: Typecheck
         run: vpr typecheck
+
+  build:
+    name: Build
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @t3tools/desktop ensure:electron
 
       - name: Build desktop pipeline
         run: vp run build:desktop
@@ -60,7 +106,7 @@ jobs:
             exit 1
           fi
 
-  # Everything except `t3` (apps/server). `--parallel` drops the package
+  # Everything except `t3` (apps/server) and the web renderer. `--parallel` drops the package
   # dependency ordering that `vp run` applies by default: these `test` tasks
   # declare no `dependsOn` and resolve workspace deps from source, so ordering
   # only bought us idle runners between dependency layers. The concurrency
@@ -92,7 +138,30 @@ jobs:
         run: node --test .github/scripts/check-nightly-release.test.cjs
 
       - name: Test
-        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' test
+        run: vp run --parallel --concurrency-limit 4 --filter '!t3' --filter '!@t3tools/monorepo' --filter '!@t3tools/web' test
+
+  test_web:
+    name: Test Web
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Test
+        run: vp run --filter @t3tools/web test
 
   # apps/server sets `fileParallelism: false`, so its 258 files run strictly
   # one at a time. Sharding spreads them over separate runners instead of
@@ -257,3 +326,17 @@ jobs:
 
       - name: Exercise release-only workflow steps
         run: node scripts/release-smoke.ts
+
+  check:
+    name: Check
+    if: ${{ always() }}
+    needs: [lint, typecheck, build, test, test_web, test_server, rust, windows, release_smoke]
+    runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 5
+    steps:
+      - name: Require every job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(to_entries[]; .value.result == "success")' > /dev/null

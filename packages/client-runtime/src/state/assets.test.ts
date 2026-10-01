@@ -1,5 +1,10 @@
 import { describe, expect, it } from "@effect/vitest";
-import { type AssetCreateUrlResult, EnvironmentId } from "@t3tools/contracts";
+import {
+  type AssetCreateUrlResult,
+  EnvironmentId,
+  ProjectId,
+  type ProjectCloneSnapshot,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
@@ -273,6 +278,55 @@ describe("project favicon URL cache", () => {
       expect(registry.get(favicon({ ...target, faviconPath: null }))).toBe(
         "https://remote.test/api/assets/token/icon.svg",
       );
+    } finally {
+      unmount();
+      registry.dispose();
+    }
+  });
+
+  it("asks again for a cloned project's icon when the checkout lands", () => {
+    const cloning: ProjectCloneSnapshot = {
+      projectId: ProjectId.make("project-cloning"),
+      remoteUrl: "git@github.com:octocat/app.git",
+      destinationPath: "/workspace",
+      repository: null,
+      phase: "running",
+      stage: "receiving",
+      percent: 10,
+      detail: null,
+      error: null,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: null,
+      sequence: 1,
+    };
+    const registry = AtomRegistry.make();
+    const server = { lookups: 0, landed: false };
+    const result = Atom.make(() => {
+      server.lookups += 1;
+      return AsyncResult.success({
+        expiresAt: 4_000_000_000_000,
+        relativeUrl: server.landed
+          ? "/api/assets/token-b/v1-icon.svg"
+          : "/api/assets/token-a/project-favicon-missing",
+      });
+    });
+    const clones = Atom.make<ReadonlyArray<ProjectCloneSnapshot>>([cloning]);
+    const favicon = createProjectFaviconUrlAtomFamily({
+      createUrl: () => result,
+      preparedConnection: () => Atom.make(Option.some({ httpBaseUrl: "https://remote.test" })),
+      projectClones: () => clones,
+    })({ environmentId: EnvironmentId.make("remote"), cwd: "/workspace" });
+    const unmount = registry.mount(favicon);
+    try {
+      expect(registry.get(favicon)).toBe(
+        "https://remote.test/api/assets/token-a/project-favicon-missing",
+      );
+      registry.set(clones, [{ ...cloning, percent: 80, sequence: 2 }]);
+      expect(server.lookups).toBe(1);
+      server.landed = true;
+      registry.set(clones, [{ ...cloning, phase: "done", sequence: 3 }]);
+      expect(registry.get(favicon)).toBe("https://remote.test/api/assets/token-b/v1-icon.svg");
+      expect(server.lookups).toBe(2);
     } finally {
       unmount();
       registry.dispose();

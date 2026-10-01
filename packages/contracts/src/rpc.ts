@@ -121,6 +121,8 @@ import {
   PullRequestUpdateInput,
 } from "./pullRequest.ts";
 import {
+  ProjectCreateNewInput,
+  ProjectCreateNewResult,
   ProjectEnsureScratchResult,
   ProjectListEntriesError,
   ProjectListEntriesInput,
@@ -302,6 +304,7 @@ export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
   projectsEnsureScratch: "projects.ensureScratch",
+  projectsCreateNew: "projects.createNew",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -500,6 +503,8 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
      * refreshes.
      */
     instanceId: Schema.optional(ProviderInstanceId),
+    /** Rescan the selected provider after skills, plugins, or MCP settings change. */
+    fresh: Schema.optional(Schema.Boolean),
     /** Explicit user request to bypass Ronin-owned caches and rediscover models. */
     refreshModels: Schema.optional(Schema.Boolean),
   }),
@@ -1042,6 +1047,12 @@ export const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScra
   error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
 });
 
+export const WsProjectsCreateNewRpc = Rpc.make(WS_METHODS.projectsCreateNew, {
+  payload: ProjectCreateNewInput,
+  success: ProjectCreateNewResult,
+  error: Schema.Union([OrchestrationDispatchCommandError, EnvironmentAuthorizationError]),
+});
+
 export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   payload: LaunchEditorInput,
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
@@ -1560,6 +1571,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,
   WsProjectsEnsureScratchRpc,
+  WsProjectsCreateNewRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
   WsAssetsCreateUrlRpc,

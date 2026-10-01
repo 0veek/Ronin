@@ -285,6 +285,19 @@ export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
 export const ProjectEnsureScratchResult = Schema.Struct({ projectId: ProjectId });
 export type ProjectEnsureScratchResult = typeof ProjectEnsureScratchResult.Type;
 
+/** A project started from a name in a new folder made by the environment. */
+export const ProjectCreateNewInput = Schema.Struct({
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+});
+export type ProjectCreateNewInput = typeof ProjectCreateNewInput.Type;
+
+export const ProjectCreateNewResult = Schema.Struct({
+  projectId: ProjectId,
+  workspaceRoot: TrimmedNonEmptyString,
+  commitError: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type ProjectCreateNewResult = typeof ProjectCreateNewResult.Type;
+
 export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteFileError>()(
   "ProjectWriteFileError",
   {

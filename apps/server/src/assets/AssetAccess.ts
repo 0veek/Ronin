@@ -395,6 +395,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   readonly resource: AssetResource;
   readonly workspaceRoot?: string;
   readonly projectFaviconPath?: string;
+  readonly projectCheckoutPending?: boolean;
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -549,17 +550,19 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
         ),
       );
       const faviconResolver = yield* ProjectFaviconResolver.ProjectFaviconResolver;
-      const faviconPath = yield* faviconResolver
-        .resolvePath(workspaceRoot, input.projectFaviconPath ?? undefined)
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new AssetProjectFaviconResolutionError({
-                resource: input.resource,
-                cause,
-              }),
-          ),
-        );
+      const faviconPath = input.projectCheckoutPending
+        ? null
+        : yield* faviconResolver
+            .resolvePath(workspaceRoot, input.projectFaviconPath ?? undefined)
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AssetProjectFaviconResolutionError({
+                    resource: input.resource,
+                    cause,
+                  }),
+              ),
+            );
       const isExternalOverride =
         faviconPath !== null &&
         input.projectFaviconPath !== undefined &&

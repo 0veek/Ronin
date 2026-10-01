@@ -29,3 +29,8 @@ The frame runs with an opaque origin. Scripts inside the page work, but the page
 Ronin's own DOM, storage, or cookies, and it cannot read anything about your session. Files are
 served through the same signed workspace endpoint the rest of the app uses, which refuses anything
 outside the thread's workspace.
+
+## Downloads in the browser panel
+
+When an agent clicks a download while testing a page in the browser panel, Ronin saves it with the
+browser artifacts. Downloads you start yourself still open the usual Save dialog.

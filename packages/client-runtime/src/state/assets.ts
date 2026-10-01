@@ -2,6 +2,7 @@ import {
   type AssetCreateUrlResult,
   AssetResource,
   EnvironmentId,
+  type ProjectCloneSnapshot,
   WS_METHODS,
 } from "@t3tools/contracts";
 import {
@@ -104,14 +105,29 @@ export function createProjectFaviconUrlAtomFamily(input: {
   readonly preparedConnection: (
     environmentId: EnvironmentId,
   ) => Atom.Atom<Option.Option<{ readonly httpBaseUrl: string }>>;
+  readonly projectClones?: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<ReadonlyArray<ProjectCloneSnapshot>>;
 }) {
   const decodeKey = Schema.decodeUnknownSync(
     Schema.Tuple([EnvironmentId, Schema.String, Schema.NullOr(Schema.String)]),
   );
+  const projectClones = input.projectClones;
   const family = Atom.family((key: string) => {
     const [environmentId, cwd, path] = decodeKey(JSON.parse(key));
     const resource = { _tag: "project-favicon" as const, cwd, ...(path ? { path } : {}) };
-    const request = input.createUrl({ environmentId, input: { resource } });
+    const query = input.createUrl({ environmentId, input: { resource } });
+    const request = projectClones
+      ? query.pipe(
+          Atom.makeRefreshOnSignal(
+            Atom.make(
+              (get) =>
+                get(projectClones(environmentId)).find((clone) => clone.destinationPath === cwd)
+                  ?.phase ?? null,
+            ),
+          ),
+        )
+      : query;
     const resolvedUrl = Atom.make((get): string | null => {
       const result = get(request);
       const connection = get(input.preparedConnection(environmentId));
