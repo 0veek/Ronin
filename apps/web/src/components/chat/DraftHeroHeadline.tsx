@@ -3,7 +3,7 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
+import { ChevronDownIcon, FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -209,11 +209,14 @@ export function DraftHeroHeadline({
             <MenuTrigger
               aria-label={hasResolvedProject ? "Change project" : "Choose a project"}
               data-draft-project-trigger=""
-              className="pointer-events-auto inline-block max-w-72 truncate border-primary/45 border-b-2 border-dotted align-baseline text-primary transition-colors hover:border-primary/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              className="draft-project-picker focus-ring pointer-events-auto inline-flex max-w-72 items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium"
             />
           }
         >
-          {isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
+          <span className="truncate">
+            {isScratchDraft ? "No project" : (activeProjectDisplayName ?? "Choose a project")}
+          </span>
+          <ChevronDownIcon aria-hidden className="size-3.5 shrink-0" />
         </TooltipTrigger>
         {activeProjectDisplayName && !isScratchDraft ? (
           <TooltipPopup side="top" className="max-w-80">
@@ -288,30 +291,26 @@ export function DraftHeroHeadline({
     <button
       type="button"
       onClick={openAddProject}
-      className="pointer-events-auto inline cursor-pointer border-muted-foreground/35 border-b border-dotted text-muted-foreground/60 transition-colors hover:border-muted-foreground/60 hover:text-muted-foreground/80 focus-visible:rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+      className="draft-project-picker focus-ring pointer-events-auto inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium"
     >
+      <FolderPlusIcon aria-hidden className="size-3.5" />
       {activeProjectTitle ?? "Add a project"}
     </button>
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col items-center">
-      <h1 className="w-full text-balance text-center font-medium text-3xl text-foreground tracking-[-0.03em] sm:text-4xl">
-        {isScratchDraft ? (
-          <>What should we work on?</>
-        ) : hasResolvedProject ? (
-          <>What should we build in {projectSelector}?</>
-        ) : canChooseProject ? (
-          <>{projectSelector} to start</>
-        ) : (
-          <>Add a project to start</>
-        )}
-      </h1>
+    <div className="draft-hero mx-auto flex w-full max-w-3xl flex-col items-center text-center">
+      <h1 className="draft-hero-title text-balance">Start a new thread.</h1>
+      <p className="draft-hero-description">
+        Choose a project and describe what you want to work on.
+      </p>
+      <div className="mt-5 flex items-center justify-center gap-2">
+        <span className="text-xs text-muted-foreground">Workspace</span>
+        {projectSelector}
+      </div>
       {scratchWorkspaceRoot === null ? null : (
-        <div className="mt-2 flex h-6 items-center text-sm">
-          {isScratchDraft ? (
-            projectSelector
-          ) : (
+        <div className="mt-2 flex h-6 items-center text-xs">
+          {!isScratchDraft ? (
             <button
               type="button"
               className="pointer-events-auto text-muted-foreground underline-offset-2 hover:underline"
@@ -323,7 +322,7 @@ export function DraftHeroHeadline({
             >
               or start without a project
             </button>
-          )}
+          ) : null}
         </div>
       )}
     </div>

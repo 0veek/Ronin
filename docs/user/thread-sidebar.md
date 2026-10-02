@@ -1,5 +1,15 @@
 # Organizing threads
 
+## Your workspace
+
+Use **New thread** at the top of the sidebar to start work. Search sits directly below it;
+the shortcuts and command palette offer the same actions. The navigation at the bottom opens
+your board, pull requests when available, usage stats, and settings.
+
+On a new thread, the **Workspace** menu below the heading chooses the project. Describe what
+you want in the composer, or pick a starting card to review changes, explore the codebase,
+fix tests, or audit for bugs. A card fills the composer for you to edit before sending.
+
 ## Start without a project
 
 On a new thread, choose **No project** from the project menu or select **or start without a project** below the heading. You can also choose **New thread without a project** in the command palette, use `mod+alt+n`, or start from an empty workspace.

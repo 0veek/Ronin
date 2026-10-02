@@ -1,5 +1,13 @@
 # Environment theme
 
+Ronin's standard appearance uses charcoal surfaces in dark mode and neutral gray controls
+in both modes. Solid panels, crisp borders, and labeled navigation keep the workspace focused
+on your work. Brief entrance and button motion respects your system's reduced-motion preference.
+Choose another palette in **Settings → Appearance** to make the workspace your own.
+
+Development and nightly builds identify themselves with a compact version pill by default.
+Choose **Artwork** under **Environment identification** if you prefer the illustrated header.
+
 Some desktops publish the palette they are currently wearing so that apps can match it. When the
 machine running your Ronin server does that, its themes appear in the theme library alongside
 your own, and Ronin follows them: change the desktop theme and Ronin retints with it, without

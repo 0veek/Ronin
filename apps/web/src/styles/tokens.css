@@ -148,20 +148,9 @@
   --duration-base: 220ms;
   --duration-slow: 360ms;
 
-  /*
-   * Radius. 8px base, matching the corner radii macOS uses for its own
-   * controls and popovers. The ramp above it climbs to 10px for menus and 12px
-   * for dialogs — the band where a surface reads as a macOS panel rather than
-   * as a generic web card. --control-radius is one step tighter for dense
-   * controls, where a full 8px would eat the control's own height.
-   *
-   * The old 4px base was chosen to avoid looking component-library-generic.
-   * That risk is real but it is answered by concentric nesting and restraint,
-   * not by refusing to round: what reads as templated is uniform radius at
-   * every level, not the radius itself.
-   */
-  --radius: 0.5rem;
-  --control-radius: 0.375rem;
+  /* Concentric corners: compact controls sit inside softer workspace panels. */
+  --radius: 0.625rem;
+  --control-radius: 0.5rem;
 
   /*
    * Materials. macOS separates layers with translucency and blur rather than
@@ -352,9 +341,9 @@
   --color-sidebar-row-selected: var(--sidebar-row-selected);
   --color-sidebar-border: var(--contrast-sidebar-border);
   /*
-   * The radius ramp is additive from the 8px base. The steps that matter:
-   * --radius-lg (10px) is the menu/popover corner, --radius-xl (12px) is the
-   * dialog corner. Anything larger is for hero surfaces, not chrome.
+   * The radius ramp is additive from the 10px base: 12px menus, 14px dialogs,
+   * and larger corners for content surfaces. Compact controls use their own
+   * 8px radius to stay concentric inside these panels.
    */
   --radius-sm: calc(var(--radius) - 2px);
   --radius-md: var(--radius);
@@ -381,10 +370,8 @@
   --card-foreground: var(--color-zinc-800);
   --popover: var(--color-white);
   --popover-foreground: var(--color-zinc-800);
-  /* Blueprint ink. Sits a few degrees toward cyan of the stock indigo and a
-     step lower in chroma, so it reads as drafting ink on paper rather than as
-     a component-library default. The sidebar stage art bridges to it. */
-  --primary: oklch(0.47 0.185 256);
+  /* Neutral controls leave color to status and the selected theme. */
+  --primary: #343840;
   --primary-foreground: var(--color-white);
   --secondary: var(--color-zinc-50);
   --secondary-foreground: var(--color-zinc-800);
@@ -402,9 +389,7 @@
   --message-action: var(--primary);
   --message-action-foreground: var(--primary-foreground);
   --message-action-hover: color-mix(in srgb, var(--primary) 90%, var(--background));
-  /* Composer focus bloom and the ledger rail: both derive from the ink so a
-     theme that recolors --primary recolors them for free. */
-  --composer-glow: color-mix(in srgb, var(--primary) 14%, transparent);
+  /* The timeline rail follows the selected action color. */
   --ledger-rail: color-mix(in srgb, var(--primary) 38%, var(--border));
   --accent: var(--color-zinc-100);
   --accent-foreground: var(--color-zinc-900);
@@ -450,40 +435,38 @@
   --code-foreground: var(--foreground);
   --terminal-background: var(--background);
   --terminal-foreground: var(--foreground);
-  --terminal-cursor: rgb(38 56 78);
-  --terminal-selection-background: rgb(37 63 99 / 20%);
+  --terminal-cursor: rgb(52 56 64);
+  --terminal-selection-background: rgb(52 56 64 / 20%);
   --terminal-scrollbar: rgb(0 0 0 / 15%);
   --terminal-scrollbar-hover: rgb(0 0 0 / 25%);
 
   @variant dark {
     color-scheme: dark;
     --appearance-contrast-target: white;
-    /* Keep the workspace in the same neutral-black family as sidebar v2.
-       Surfaces lift from this base instead of starting from a milky gray. */
-    --background: var(--color-neutral-950);
+    /* Charcoal canvas with distinct, neutral surface levels. */
+    --background: #121316;
     --app-chrome-background: var(--background);
-    --surface-raised: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    --surface-raised: #202228;
     --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    --card: #1a1c20;
     --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--background) 97%, var(--color-white));
+    --popover: #22252b;
     --popover-foreground: var(--color-neutral-100);
-    --primary: oklch(0.64 0.17 254);
-    --primary-foreground: var(--color-white);
+    --primary: #d5d9e0;
+    --primary-foreground: #17191d;
     --secondary: --alpha(var(--color-white) / 3%);
     --secondary-foreground: var(--color-neutral-100);
     --muted: --alpha(var(--color-white) / 3%);
-    --muted-foreground: color-mix(in srgb, var(--color-neutral-500) 90%, var(--color-white));
+    --muted-foreground: #989da7;
     --placeholder: var(--muted-foreground);
     --secondary-label: var(--muted-foreground);
     --icon-muted: var(--muted-foreground);
-    --message-surface: color-mix(in srgb, var(--primary) 13%, var(--card));
-    --message-border: color-mix(in srgb, var(--primary) 26%, transparent);
+    --message-surface: color-mix(in srgb, var(--primary) 7%, var(--card));
+    --message-border: color-mix(in srgb, var(--primary) 16%, transparent);
     --message-foreground: var(--foreground);
     --message-action: var(--primary);
     --message-action-foreground: var(--primary-foreground);
     --message-action-hover: color-mix(in srgb, var(--primary) 90%, var(--background));
-    --composer-glow: color-mix(in srgb, var(--primary) 20%, transparent);
     --ledger-rail: color-mix(in srgb, var(--primary) 42%, var(--border));
     --accent: --alpha(var(--color-white) / 4%);
     --accent-foreground: var(--color-neutral-100);
@@ -491,9 +474,9 @@
     --error-foreground: var(--color-red-400);
     --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
     --destructive: var(--error);
-    --border: --alpha(var(--color-white) / 6%);
-    --input: --alpha(var(--color-white) / 8%);
-    --ring: var(--primary);
+    --border: #2d3037;
+    --input: #41454e;
+    --ring: #959ca8;
     --destructive-foreground: var(--error-foreground);
     --info: var(--color-blue-500);
     --info-foreground: var(--color-blue-400);
@@ -508,7 +491,7 @@
     --warning-foreground: var(--color-amber-400);
     --warning-surface: color-mix(in srgb, var(--warning) 16%, transparent);
     --update: var(--primary);
-    --update-foreground: var(--color-blue-400);
+    --update-foreground: var(--primary);
     --update-surface: color-mix(in srgb, var(--update) 18%, transparent);
     --sidebar: var(--card);
     --sidebar-foreground: var(--foreground);
@@ -521,8 +504,8 @@
     --sidebar-stage-fade: var(--card);
     --terminal-background: var(--background);
     --terminal-foreground: var(--foreground);
-    --terminal-cursor: rgb(180 203 255);
-    --terminal-selection-background: rgb(180 203 255 / 25%);
+    --terminal-cursor: rgb(213 217 224);
+    --terminal-selection-background: rgb(213 217 224 / 25%);
     --terminal-scrollbar: rgb(255 255 255 / 10%);
     --terminal-scrollbar-hover: rgb(255 255 255 / 18%);
   }

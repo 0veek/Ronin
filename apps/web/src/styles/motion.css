@@ -26,6 +26,18 @@
   animation-play-state: paused;
 }
 
+/* A single settling motion on entry; the shared duration token honors reduced motion. */
+@keyframes workspace-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* -------------------------------------------------------------------------
  * Theme keyframes
  *

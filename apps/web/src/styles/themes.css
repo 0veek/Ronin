@@ -28,31 +28,19 @@
   --sidebar-row-selected: var(--color-white);
   --sidebar-border: var(--color-zinc-200);
   --sidebar-stage-fade: var(--sidebar);
-  /* Glass, lit from the wordmark. Two colors and five strengths; the recipe
-     that spends them lives in chrome.css. A light pane has almost no headroom
-     above its own fill, so the rim and rake spend what there is on white and
-     the foot does the deepening. */
-  --sidebar-glass-lift: #fff;
-  --sidebar-glass-shade: var(--color-zinc-900);
-  --sidebar-glass-tint: var(--ring);
-  --sidebar-glass-rim: 90%;
-  --sidebar-glass-edge: 45%;
-  --sidebar-glass-rake: 55%;
-  --sidebar-glass-foot: 5%;
-  --sidebar-glass-cast: 4%;
   background-color: var(--sidebar);
 }
 
 .dark [data-app-sidebar] {
-  --background: #000;
+  --background: #16171b;
   --foreground: #f1f3f7;
-  --card: #000;
+  --card: #16171b;
   --card-foreground: var(--foreground);
-  --accent: #191a1d;
+  --accent: #292c32;
   --accent-foreground: #f7f9ff;
-  --muted: #0a0a0a;
-  --muted-foreground: #a3a3a3;
-  --border: rgb(255 255 255 / 8%);
+  --muted: #202228;
+  --muted-foreground: #989da7;
+  --border: #2d3037;
   --input: rgb(255 255 255 / 18%);
   --sidebar: var(--card);
   --sidebar-foreground: var(--foreground);
@@ -65,17 +53,6 @@
   /* The stage-channel header art must ramp to THIS panel's surface, not the
      global chrome background, or the fade shows a seam. */
   --sidebar-stage-fade: var(--card);
-  /* A dark pane is nearly all headroom, so the same eight tokens buy a far
-     more legible material here: the rim reads as a true lit edge and the rake
-     as light entering the slab. */
-  --sidebar-glass-lift: #fff;
-  --sidebar-glass-shade: #000;
-  --sidebar-glass-tint: var(--ring);
-  --sidebar-glass-rim: 24%;
-  --sidebar-glass-edge: 9%;
-  --sidebar-glass-rake: 8%;
-  --sidebar-glass-foot: 20%;
-  --sidebar-glass-cast: 5%;
 }
 
 /* Keep this block after the sidebar compatibility overrides so navigation

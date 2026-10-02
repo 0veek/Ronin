@@ -1,0 +1,220 @@
+/*
+ * Ronin's workspace identity. All color comes from semantic theme roles, so
+ * imported palettes, light mode, and environment themes share the same craft.
+ * Solid surfaces and borders establish hierarchy; only interactions and entrances move.
+ */
+.ronin-insignia {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  color: var(--foreground);
+  background: var(--card);
+}
+
+.ronin-insignia svg {
+  width: 76%;
+  height: 76%;
+}
+
+.sidebar-brand-mark {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.4rem;
+}
+
+.sidebar-wordmark {
+  padding-inline-start: 0.3rem;
+  font-size: 0.875rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.sidebar-brand[data-on-backdrop] .ronin-insignia {
+  color: inherit;
+  border-color: rgb(255 255 255 / 25%);
+  background: rgb(255 255 255 / 10%);
+}
+
+.sidebar-thread-tools {
+  padding-block: 0.25rem;
+}
+
+.sidebar-new-thread {
+  border: 1px solid var(--sidebar-border);
+  background: var(--sidebar-control-surface);
+  color: var(--sidebar-foreground);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.sidebar-new-thread:hover {
+  background: var(--sidebar-row-hover);
+  color: var(--sidebar-foreground);
+}
+
+.sidebar-new-thread:active {
+  transform: scale(0.98);
+}
+
+.sidebar-new-thread svg {
+  color: currentColor;
+}
+
+.sidebar-search-field {
+  background: color-mix(in srgb, var(--sidebar-control-surface) 50%, transparent);
+}
+
+.workspace-nav {
+  padding: 0.25rem;
+  border: 1px solid var(--sidebar-border);
+  border-radius: 0.875rem;
+  background: color-mix(in srgb, var(--sidebar-control-surface) 55%, transparent);
+}
+
+.workspace-nav-button {
+  position: relative;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.workspace-nav-button[aria-current="page"] {
+  background: color-mix(in srgb, var(--ring) 12%, transparent);
+  color: var(--sidebar-foreground);
+  outline: 1px solid var(--sidebar-border);
+}
+
+.draft-hero {
+  animation: workspace-arrive var(--duration-slow) var(--ease-out) both;
+}
+
+.draft-hero-title {
+  color: var(--contrast-foreground);
+  font-size: clamp(1.5rem, 2.5vw, 2rem);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.draft-hero-description {
+  margin-top: 0.875rem;
+  color: var(--contrast-muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.draft-project-picker {
+  max-width: min(18rem, 65vw);
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--contrast-foreground);
+}
+
+.draft-project-picker:hover {
+  border-color: var(--ring);
+}
+
+.draft-starter {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--card) 70%, var(--background));
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.draft-starter:hover {
+  border-color: color-mix(in srgb, var(--ring) 40%, var(--border));
+  background: color-mix(in srgb, var(--ring) 5%, var(--card));
+  transform: translateY(-2px);
+}
+
+.draft-starter:active {
+  transform: translateY(0);
+}
+
+.draft-starter-icon {
+  color: var(--contrast-muted-foreground);
+}
+
+.draft-starter-arrow {
+  color: var(--contrast-muted-foreground);
+  opacity: 0.45;
+  transition:
+    transform var(--duration-fast) var(--ease-out),
+    opacity var(--duration-fast) var(--ease-out);
+}
+
+.draft-starter:hover .draft-starter-arrow {
+  opacity: 1;
+  transform: translate(1px, -1px);
+}
+
+.settings-section-body {
+  background: color-mix(in srgb, var(--card) 75%, var(--background));
+}
+
+.settings-page-intro {
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+  animation: workspace-arrive var(--duration-base) var(--ease-out) both;
+}
+
+.settings-page-icon {
+  color: var(--contrast-muted-foreground);
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.welcome-panel {
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: color-mix(in srgb, var(--card) 85%, var(--background));
+  box-shadow: var(--shadow-raised);
+  animation: workspace-arrive var(--duration-slow) var(--ease-out) both;
+}
+
+/* Keep the command surface usable in short windows and with the keyboard open. */
+@media (max-height: 800px) {
+  .draft-hero-description {
+    display: none;
+  }
+}
+
+@media (max-height: 720px), (max-width: 639px) {
+  .draft-workspace-overlay {
+    align-items: flex-start;
+    overflow-y: auto;
+    pointer-events: auto;
+  }
+
+  .draft-workspace-overlay > .chat-composer-horizontal-inset {
+    padding-block: 1.5rem;
+  }
+
+  .draft-hero-before,
+  .draft-hero-after {
+    position: static;
+  }
+
+  .draft-hero-heading {
+    padding-bottom: 1.25rem;
+  }
+
+  .draft-starter {
+    flex-direction: row;
+    gap: 0.5rem;
+  }
+
+  .draft-starter-arrow {
+    display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .sidebar-new-thread,
+  .draft-project-picker,
+  .draft-starter,
+  .workspace-nav-button[aria-current="page"] {
+    border: 1px solid ButtonText;
+  }
+}

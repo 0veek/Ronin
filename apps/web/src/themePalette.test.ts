@@ -142,17 +142,25 @@ describe("theme files", () => {
     expect(asHex(dark.error)).not.toBe(asHex(darkDefaults.error));
   });
 
-  it("keeps stock dark controls in the neutral-black surface hierarchy", () => {
-    expectThemeColors(getStandardThemeColors("dark"), {
-      canvas: "#0a0a0a",
-      surface: "#111111",
-      surfaceRaised: "#111111",
-      surfaceOverlay: "#111111",
-      toolbarControl: "#111111",
-      secondary: "#111111",
-      muted: "#111111",
-      accentSurface: "#141414",
+  it("keeps stock dark controls in the charcoal surface hierarchy", () => {
+    const colors = getStandardThemeColors("dark");
+    expectThemeColors(colors, {
+      canvas: "#121316",
+      surface: "#1a1c20",
+      surfaceRaised: "#202228",
+      surfaceOverlay: "#22252b",
+      toolbarControl: "#22252b",
+      secondary: "#191a1d",
+      muted: "#191a1d",
+      accentSurface: "#1b1c1f",
     });
+    for (const appearance of ["light", "dark"] as const) {
+      const palette = getStandardThemeColors(appearance);
+      expect(
+        contrastRatio(palette.messageActionForeground, palette.messageAction),
+      ).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(palette.textMuted, palette.canvas)).toBeGreaterThanOrEqual(4.5);
+    }
   });
 
   it("derives readable, distinctive vivid palettes from exact seeds", () => {

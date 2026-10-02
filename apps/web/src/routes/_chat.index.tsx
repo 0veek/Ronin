@@ -117,24 +117,22 @@ function NoProjectsHero() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         {isElectron ? <WorkspaceTopbar /> : null}
         <Empty className="flex-1">
-          <div className="w-full max-w-lg px-8 py-12">
+          <div className="welcome-panel w-full max-w-2xl px-6 py-10 sm:px-10">
             <EmptyHeader className="max-w-none">
-              <EmptyTitle className="text-foreground text-2xl sm:text-3xl">
-                What should we work on?
-              </EmptyTitle>
+              <EmptyTitle className="draft-hero-title">Welcome to Ronin</EmptyTitle>
               <EmptyDescription className="mt-2 text-sm text-muted-foreground/78">
                 {scratchTargetEnvironmentId === null
-                  ? "Add a project to start your first thread."
-                  : "Add a project, or start without one."}
+                  ? "Add a project to start working with your coding agents."
+                  : "Add a project, or start a thread without one."}
               </EmptyDescription>
               <div className="mt-6 flex justify-center gap-2">
-                <Button size="sm" onClick={openAddProject}>
+                <Button size="lg" onClick={openAddProject}>
                   <PlusIcon className="size-4" />
                   Add project
                 </Button>
                 {scratchTargetEnvironmentId === null ? null : (
                   <Button
-                    size="sm"
+                    size="lg"
                     variant="outline"
                     onClick={() => void openScratchProject(scratchTargetEnvironmentId)}
                   >
@@ -166,7 +164,7 @@ function HostedStaticOnboardingState() {
         </WorkspaceTopbar>
 
         <Empty className="flex-1">
-          <div className="w-full max-w-xl rounded-3xl border border-border/55 bg-card/20 px-8 py-12 shadow-sm/5">
+          <div className="welcome-panel w-full max-w-xl rounded-3xl border border-border/55 px-8 py-12">
             <EmptyHeader className="max-w-none">
               <div className="mx-auto mb-5 flex size-11 items-center justify-center rounded-xl border border-border/70 bg-background/70 text-muted-foreground">
                 <LinkIcon className="size-5" />

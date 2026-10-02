@@ -332,8 +332,8 @@ describe("ClientSettings panel animations", () => {
 });
 
 describe("ClientSettings environment identification", () => {
-  it("defaults to artwork and accepts each presentation mode", () => {
-    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("artwork");
+  it("defaults to the version pill and accepts each presentation mode", () => {
+    expect(decodeClientSettings({}).environmentIdentificationMode).toBe("pill");
 
     for (const mode of ["artwork", "pill", "none"] as const) {
       expect(

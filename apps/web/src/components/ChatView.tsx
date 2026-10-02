@@ -9683,7 +9683,7 @@ export default function ChatView(props: ChatViewProps) {
               data-chat-composer-overlay="true"
               className={
                 isDraftHeroState
-                  ? "pointer-events-none absolute inset-0 z-20 flex items-center"
+                  ? "draft-workspace-overlay pointer-events-none absolute inset-0 z-20 flex items-center"
                   : "pointer-events-none absolute inset-x-0 bottom-0 z-20 pt-1.5 sm:pt-2"
               }
             >
@@ -9693,9 +9693,9 @@ export default function ChatView(props: ChatViewProps) {
               >
                 <div data-chat-composer-stack="true" className="pointer-events-auto relative z-10">
                   {isDraftHeroState ? (
-                    <div className="absolute inset-x-0 bottom-full z-0">
+                    <div className="draft-hero-before absolute inset-x-0 bottom-full z-0">
                       <div
-                        className="pb-8"
+                        className="draft-hero-heading pb-7"
                         style={
                           forceExpandedMobileComposer
                             ? {
@@ -9908,7 +9908,7 @@ export default function ChatView(props: ChatViewProps) {
                       </div>
                     </div>
                     {isDraftHeroState ? (
-                      <div className="pointer-events-none absolute inset-x-0 top-full pt-4">
+                      <div className="draft-hero-after pointer-events-none absolute inset-x-0 top-full pt-4">
                         <DraftHeroStarters onPick={pickDraftStarter} />
                       </div>
                     ) : null}

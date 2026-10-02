@@ -360,7 +360,7 @@
     inset-inline: 0;
     bottom: -1px;
     height: 1px;
-    background-color: var(--foreground);
+    background-color: var(--ring);
     opacity: 0;
     transform: scaleX(0.6);
     transition:
@@ -386,9 +386,10 @@
   .sidebar-row::before {
     content: "";
     position: absolute;
-    inset-block: 0;
-    inset-inline-start: 0;
-    width: 2px;
+    inset-block: 25%;
+    inset-inline-start: 3px;
+    width: 3px;
+    border-radius: 3px;
     background-color: var(--ring);
     opacity: 0;
     transform: scaleY(0.4);
@@ -489,49 +490,19 @@
     padding-inline-end: calc(env(safe-area-inset-right) + var(--space-3));
   }
 
-  /*
-   * Composer. Formerly a translucent glass shell whose outline had to be cut
-   * with a shape() clip-path, because the strip was drawn as a second pane
-   * tucked under the first and the two had to read as one continuous piece of
-   * material. Flat, they already are one box: the shell owns the only border,
-   * and the strip is a region inside it divided off by a single hairline.
-   */
-  /* The composer is the one content-area surface that lifts off the canvas:
-     it floats over the timeline rather than sitting in its flow, and the
-     lightest elevation tier is what separates it from the messages scrolling
-     underneath without turning it into a menu. */
+  /* The composer and context strip share one solid shell and a single border. */
   .composer-surface {
-    --composer-radius: var(--radius-2xl);
+    --composer-radius: 22px;
     position: relative;
     isolation: isolate;
     border: 1px solid var(--border);
     border-radius: var(--composer-radius);
     background-color: var(--card);
-    box-shadow: var(--shadow-raised);
     transition: border-color var(--duration-fast) var(--ease-out);
   }
 
-  /* The focus bloom lives on a pseudo-element and fades on opacity, so the
-     composer can light up without animating a box-shadow. Sits beneath the
-     surface's own content (isolation keeps the negative z-index local). */
-  .composer-surface::after {
-    content: "";
-    position: absolute;
-    inset: -1px;
-    z-index: -1;
-    border-radius: inherit;
-    box-shadow: 0 0 0 4px var(--composer-glow);
-    opacity: 0;
-    transition: opacity var(--duration-base) var(--ease-out);
-    pointer-events: none;
-  }
-
   .composer-surface:focus-within {
-    border-color: color-mix(in srgb, var(--ring) 55%, var(--border));
-  }
-
-  .composer-surface:focus-within::after {
-    opacity: 1;
+    border-color: var(--ring);
   }
 
   .composer-context-strip {
@@ -541,12 +512,6 @@
     border-end-start-radius: calc(var(--composer-radius) - 1px);
     border-end-end-radius: calc(var(--composer-radius) - 1px);
     background-color: color-mix(in srgb, var(--card) 60%, var(--background));
-  }
-
-  @media (forced-colors: active) {
-    .composer-surface::after {
-      display: none;
-    }
   }
 
   /*
@@ -851,99 +816,11 @@
   );
 }
 
-/*
- * Sidebar glass: a slab of frosted glass standing on edge, lit by one source at
- * the wordmark. Light enters top-left, scatters down through the material, and
- * has run out by the usage panel. Every layer below encodes that one light --
- * the top edge catches it, the trailing edge refracts it through the slab's
- * thickness, the rake carries it down, and the foot is where it dies. That is
- * also why the usage panel reads as deeper in the material than the thread
- * list: it is further from the lamp, not merely lower in a gradient.
- *
- * There is deliberately no backdrop-filter here, and unlike the floating
- * surfaces above, adding one would be worse than useless. backdrop-filter
- * samples what is behind the element in z-order, and the sidebar is a layout
- * sibling with nothing but a flat fill behind it: a real blur would sample a
- * solid color, hand it back unchanged, and charge a recomposite for the
- * privilege. Menus and dialogs earn their material because app content genuinely
- * passes beneath them; a docked panel does not. What the eye reads as "frosted"
- * here is the rim, the tint, and the tooth, none of which sample anything.
- *
- * On macOS the OS supplies the real thing instead: the window is vibrant, and
- * the fill thins to let that material through (see themes.css).
- *
- * So it is one background-image stack on an element that already paints: no new
- * compositor layer, no will-change, nothing animated. One paint at mount, and
- * then nothing for the rest of the session.
- *
- * These rules are unlayered on purpose. `bg-sidebar` and `surface-grain` are
- * Tailwind utilities, and Tailwind's utility layer outranks its component
- * layer, so a @layer components rule here would lose the background it is
- * trying to compose with. The grain is re-declared as the last stack entry
- * rather than left to the utility, which is what keeps the frost tooth.
- */
+/* Navigation is a solid surface with a single separating rule. */
 [data-app-sidebar] [data-slot="sidebar-inner"] {
   background-color: var(--sidebar-glass-fill, var(--sidebar));
-  background-image:
-    /* The lit rim, brightest at the wordmark and gone by the fold. */
-    linear-gradient(
-      to right,
-      color-mix(in srgb, var(--sidebar-glass-lift) var(--sidebar-glass-rim), transparent),
-      color-mix(
-          in srgb,
-          var(--sidebar-glass-lift) calc(var(--sidebar-glass-rim) * 0.3),
-          transparent
-        )
-        42%,
-      transparent 84%
-    ),
-    /* The slab's thickness, where the glass meets the content it sits beside. */
-    linear-gradient(
-      to left,
-      color-mix(in srgb, var(--sidebar-glass-lift) var(--sidebar-glass-edge), transparent),
-      transparent
-    ),
-    /* The light itself, entering at the mark. */
-    radial-gradient(
-      118% 44% at 0% 0%,
-      color-mix(in srgb, var(--sidebar-glass-lift) var(--sidebar-glass-rake), transparent),
-      transparent 70%
-    ),
-    /* Where it runs out. */
-    linear-gradient(
-      to bottom,
-      transparent 52%,
-      color-mix(in srgb, var(--sidebar-glass-shade) var(--sidebar-glass-foot), transparent)
-    ),
-    /* Glass is never neutral; each theme casts its own through --ring. */
-    linear-gradient(
-      color-mix(in srgb, var(--sidebar-glass-tint) var(--sidebar-glass-cast), transparent),
-      color-mix(in srgb, var(--sidebar-glass-tint) var(--sidebar-glass-cast), transparent)
-    ),
-    /* The etched tooth. */ var(--surface-grain);
-  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat, repeat;
-  background-size:
-    100% 1.5px,
-    2px 100%,
-    100% 100%,
-    100% 100%,
-    100% 100%,
-    var(--surface-grain-size);
-  background-position:
-    top left,
-    top right,
-    top left,
-    bottom left,
-    top left,
-    top left;
-}
-
-/* The material is decoration carrying no information, and every layer of it is
-   a color mix the forced palette has no way to honor. */
-@media (forced-colors: active) {
-  [data-app-sidebar] [data-slot="sidebar-inner"] {
-    background-image: none;
-  }
+  background-image: none;
+  box-shadow: inset -1px 0 var(--sidebar-border);
 }
 
 /* Composer chips are non-editable decorators, so the browser skips them when

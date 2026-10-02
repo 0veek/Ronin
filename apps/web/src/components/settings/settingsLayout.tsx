@@ -145,7 +145,7 @@ export function SettingsSection({
       aria-label={sectionProps["aria-label"] ?? (isPageNamedSection ? title : undefined)}
       ref={targetRef}
       tabIndex={sectionProps.id ? -1 : sectionProps.tabIndex}
-      className={cn("space-y-3", className)}
+      className={cn("settings-section space-y-3", className)}
     >
       {!isPageNamedSection ? (
         <div className="flex min-h-8 items-center justify-between gap-4 px-1 sm:px-2">
@@ -158,7 +158,7 @@ export function SettingsSection({
       ) : headerAction ? (
         <div className="flex min-h-7 items-center justify-end px-1 sm:px-2">{headerAction}</div>
       ) : null}
-      <div className="relative divide-y divide-border/60 overflow-visible border-y border-border/70 text-foreground">
+      <div className="settings-section-body relative divide-y divide-border/60 overflow-visible rounded-2xl border border-border/70 text-foreground">
         {children}
       </div>
     </section>
@@ -355,13 +355,13 @@ function SettingsPageIntro({ meta }: { readonly meta: SettingsPageMeta }) {
   const Icon = meta.icon;
 
   return (
-    <header className="flex items-start gap-3.5 px-1 sm:px-2">
-      <div className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-[var(--radius)] border border-border bg-card text-foreground">
+    <header className="settings-page-intro flex items-start gap-4 px-1 sm:px-2">
+      <div className="settings-page-icon mt-0.5 flex size-12 shrink-0 items-center justify-center rounded-2xl border border-border bg-card text-foreground">
         <Icon aria-hidden className="size-5" />
       </div>
       <div className="min-w-0">
         <div className="label-meta mb-0.5 text-muted-foreground/65">Settings</div>
-        <h1 className="text-2xl font-semibold tracking-[-0.025em] text-foreground">{meta.label}</h1>
+        <h1 className="text-3xl font-semibold tracking-[-0.04em] text-foreground">{meta.label}</h1>
         <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">{meta.description}</p>
       </div>
     </header>

@@ -1,8 +1,7 @@
 /**
- * The sidebar header: one row holding search, project scope and new thread.
+ * The sidebar header: a prominent new-thread action above search and project scope.
  *
- * Search owns the row's text and spans it. Project scope collapses to an icon
- * that sits with new-project and new-thread as a segmented group at the end.
+ * Search spans the second row, with project scope and add-project beside it.
  * The scope icon swaps to the project favicon while a project is selected,
  * so the header still names the scope after the row that showed it is gone.
  *
@@ -79,10 +78,39 @@ export function SidebarThreadHeader({
     : "New thread";
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="sidebar-thread-tools @container/thread-tools grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+      <SidebarHeaderIconButton
+        label="New thread"
+        className="sidebar-new-thread col-span-2 row-start-1 h-9 w-full justify-between px-3"
+        tooltip={
+          showNewThreadInProjectHint ? (
+            <span className="flex flex-col gap-0.5">
+              <span>{newThreadLabel}</span>
+              <span className="text-muted-foreground">
+                New thread in current project: Shift+click
+                {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
+              </span>
+            </span>
+          ) : (
+            newThreadLabel
+          )
+        }
+        disabled={newThreadDisabled}
+        onClick={onNewThread}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <SquarePenIcon className="size-4 shrink-0" />
+          <span className="truncate">New thread</span>
+        </span>
+        {newThreadShortcutLabel ? (
+          <span className="hidden shrink-0 font-mono text-[10px] opacity-65 @[15rem]/thread-tools:block">
+            {newThreadShortcutLabel}
+          </span>
+        ) : null}
+      </SidebarHeaderIconButton>
       <div
         ref={searchFieldRef}
-        className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+        className="sidebar-search-field flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-sidebar-border px-2.5 py-1.5 text-sm font-medium text-sidebar-muted-foreground focus-within:border-ring"
       >
         <SearchIcon className="size-4 shrink-0 text-[var(--sidebar-icon-color)]" />
         <Input
@@ -93,7 +121,7 @@ export function SidebarThreadHeader({
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
           onKeyDown={onSearchKeyDown}
-          placeholder="Search"
+          placeholder="Search…"
           aria-label="Search threads"
           role="combobox"
           aria-autocomplete="list"
@@ -122,9 +150,6 @@ export function SidebarThreadHeader({
           </Button>
         ) : null}
       </div>
-      {/* Unfilled like the search field beside it: the buttons carry their own
-          hover states, and a background well reads far louder on themed
-          palettes than on the base light and dark ones. */}
       <div className="flex shrink-0 items-center">
         {hasProjects ? (
           <>
@@ -134,26 +159,6 @@ export function SidebarThreadHeader({
             </SidebarHeaderIconButton>
           </>
         ) : null}
-        <SidebarHeaderIconButton
-          label="New thread"
-          tooltip={
-            showNewThreadInProjectHint ? (
-              <span className="flex flex-col gap-0.5">
-                <span>{newThreadLabel}</span>
-                <span className="text-muted-foreground">
-                  New thread in current project: Shift+click
-                  {newThreadInProjectShortcutLabel ? ` (${newThreadInProjectShortcutLabel})` : ""}
-                </span>
-              </span>
-            ) : (
-              newThreadLabel
-            )
-          }
-          disabled={newThreadDisabled}
-          onClick={onNewThread}
-        >
-          <SquarePenIcon />
-        </SidebarHeaderIconButton>
       </div>
     </div>
   );

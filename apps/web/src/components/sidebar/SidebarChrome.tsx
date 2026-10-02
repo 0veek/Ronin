@@ -14,6 +14,7 @@ import {
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
+import { RoninInsignia } from "../RoninInsignia";
 import { SidebarFooter, SidebarHeader, SidebarTrigger, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
@@ -91,6 +92,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <Link
       aria-label="Go to threads"
+      data-on-backdrop={onBackdrop || undefined}
       className={cn(
         // No left margin any more: the header grid places it, not this.
         "sidebar-brand relative z-10 h-7 w-fit min-w-0 shrink-0 items-center gap-1 overflow-hidden rounded-(--control-radius) outline-hidden ring-ring focus-visible:ring-2",
@@ -98,27 +100,10 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
       )}
       to="/"
     >
-      <RoninAppIcon />
-      {/* Set as a masthead rather than a UI label: mono small-caps at the same
-          weight as every other structural label in the shell. */}
-      <span className={cn("label-meta truncate", onBackdrop ? "text-white/80" : "text-foreground")}>
-        Ronin
-      </span>
+      <RoninInsignia className="sidebar-brand-mark" />
+      <span className="sidebar-wordmark truncate">Ronin</span>
     </Link>
   );
-}
-
-/**
- * The generated app icon rather than a tinted mark, so the sidebar badge is the
- * same artwork as the dock and the browser tab. The build copies the icons for
- * the active channel into the web root, so this one file is the blue dev icon,
- * the night-sky nightly icon, or the black release icon without any branching
- * here. Corners are already rounded in the export.
- *
- * Decorative: the adjacent "Ronin" text already names the link.
- */
-function RoninAppIcon() {
-  return <img alt="" className="size-5 shrink-0" src="/apple-touch-icon.png" />;
 }
 
 function SidebarFooterIconButton({
@@ -141,7 +126,7 @@ function SidebarFooterIconButton({
             aria-current={isActive ? "page" : undefined}
             aria-label={label}
             className={cn(
-              "flex h-8 min-w-0 flex-1 items-center justify-center rounded-[var(--control-radius)] text-sidebar-muted-foreground outline-hidden ring-ring transition-colors",
+              "workspace-nav-button flex min-h-12 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-[var(--control-radius)] text-sidebar-muted-foreground outline-hidden ring-ring transition-colors",
               "hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
               "focus-visible:ring-2",
               "[&_svg]:size-4 [&_svg]:shrink-0",
@@ -150,6 +135,9 @@ function SidebarFooterIconButton({
             onClick={onClick}
           >
             {children}
+            <span className="text-[10px] font-medium">
+              {label === "Pull Requests" ? "PRs" : label}
+            </span>
           </button>
         }
       />
@@ -224,7 +212,7 @@ export const SidebarChromeFooter = memo(function SidebarChromeFooter() {
     <SidebarFooter className="gap-0 p-0">
       <div className="flex flex-col gap-2 p-[var(--sidebar-content-inset)]">
         <SidebarProviderUpdatePill />
-        <nav aria-label="Workspace" className="flex items-center">
+        <nav aria-label="Workspace" className="workspace-nav flex items-center gap-1">
           <SidebarFooterIconButton
             isActive={currentFooterPage === "board"}
             label="Board"

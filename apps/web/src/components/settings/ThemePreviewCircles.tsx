@@ -2,6 +2,7 @@ import { MoonIcon, SunIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
+  getStandardThemeColors,
   getThemeColorsForMode,
   getThemeModes,
   type ThemeAppearance,
@@ -30,37 +31,13 @@ export type ThemeCardDefinition = {
 export type ThemeMode = ThemeAppearance | "system";
 export type ThemeCardPreviewColors = ThemeCardPreview["colors"];
 
-const STANDARD_THEME_PREVIEW_COLORS: Record<
-  ThemeAppearance,
-  Readonly<Record<ThemePreviewRole, string>>
-> = {
-  light: {
-    sidebar: "#fafafa",
-    canvas: "#fcfcfc",
-    surface: "#ffffff",
-    accentSurface: "#f4f4f5",
-    accent: "#f4f4f5",
-    messageSurface: "#e4e4e7",
-    messageAction: "#4f46e5",
-  },
-  dark: {
-    sidebar: "#0f0f10",
-    canvas: "#0a0a0a",
-    surface: "#121212",
-    accentSurface: "#27272a",
-    accent: "#1c1c1f",
-    messageSurface: "#27272a",
-    messageAction: "#8b9cff",
-  },
-};
-
 export const STANDARD_THEME_CARDS: ReadonlyArray<ThemeCardDefinition> = [
   {
     id: "default",
     label: "Ronin",
     previews: (["light", "dark"] as const).map((mode) => ({
       mode,
-      colors: STANDARD_THEME_PREVIEW_COLORS[mode],
+      colors: getStandardThemeColors(mode),
     })),
   },
 ];

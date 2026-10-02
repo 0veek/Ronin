@@ -10,6 +10,7 @@
  *   base      document rules, shared utilities, scrollbars
  *   chrome    the workspace shell: sidebar, topbar, panels, composer, overlays
  *   themes    the --app-theme-* bridge and per-theme overrides
+ *   workspace Ronin identity, draft landing, navigation, and settings surfaces
  *   motion    keyframes, view transitions, the two rules all motion obeys
  *   markdown  assistant prose
  *   diffs     the @pierre/diffs token bridge
@@ -26,6 +27,7 @@
 @import "./styles/base.css";
 @import "./styles/chrome.css";
 @import "./styles/themes.css";
+@import "./styles/workspace.css";
 @import "./styles/motion.css";
 @import "./styles/markdown.css";
 @import "./styles/diffs.css";

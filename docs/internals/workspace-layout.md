@@ -47,3 +47,20 @@ the task commands.
 
 `@t3tools/shared` and `@t3tools/client-runtime` use explicit subpath exports with no barrel index and
 no wildcard re-exports. Import the concrete subpath you need.
+
+## Renderer design system
+
+The desktop and browser share the renderer's workspace styling. `styles/tokens.css` defines
+semantic roles and geometry; `styles/themes.css` maps selected palettes onto those roles.
+`styles/chrome.css` owns shared panel, composer, and overlay treatments. `styles/workspace.css`
+owns the Ronin insignia, draft landing, sidebar actions, and settings surfaces. Keep new
+decoration expressed in semantic roles so environment and custom themes work in both modes.
+
+The standard palette's theme-editor seed lives in `themePalette.ts`; startup colors live in
+`index.html`. Keep those copies aligned with token changes to avoid a different color during
+boot or when duplicating the standard appearance. Native titlebar height and control insets
+are shared with Electron and must retain their geometry when changing renderer chrome.
+
+Default workspace surfaces are solid, with neutral controls. Entrance and hover motion uses transform or opacity and the
+shared duration tokens, which become zero for reduced motion. Short or narrow windows put
+the draft heading, composer, and starter cards in one scrollable flow.
