@@ -38,6 +38,8 @@ export interface AutomationDraftState {
   readonly timeOfDayText: string;
   readonly weekdays: ReadonlyArray<number>;
   readonly onceAtText: string;
+  /** Keep the exact instant while its displayed local time is unchanged, including DST overlaps. */
+  readonly originalOnceAt?: { readonly at: string; readonly text: string };
   readonly envMode: ThreadEnvMode;
   /**
    * Null uses the project's default, exactly as a new thread would. A value
@@ -117,6 +119,9 @@ export function draftSchedule(draft: AutomationDraftState): AutomationSchedule |
       return { _tag: "daily", timeOfDay, weekdays: draft.weekdays };
     }
     case "once": {
+      if (draft.originalOnceAt?.text === draft.onceAtText) {
+        return { _tag: "once", at: draft.originalOnceAt.at };
+      }
       const at = Date.parse(draft.onceAtText);
       if (Number.isNaN(at)) return null;
       return { _tag: "once", at: new Date(at).toISOString() };
@@ -131,6 +136,13 @@ export function draftSchedule(draft: AutomationDraftState): AutomationSchedule |
  * switching kind mid-edit lands on something sensible rather than blank.
  */
 export function draftFromAutomation(automation: Automation): AutomationDraftState {
+  const onceAt = automation.schedule._tag === "once" ? new Date(automation.schedule.at) : null;
+  const twoDigits = (value: number) => String(value).padStart(2, "0");
+  const onceAtText =
+    onceAt === null
+      ? null
+      : `${onceAt.getFullYear()}-${twoDigits(onceAt.getMonth() + 1)}-${twoDigits(onceAt.getDate())}` +
+        `T${twoDigits(onceAt.getHours())}:${twoDigits(onceAt.getMinutes())}`;
   return {
     ...EMPTY_AUTOMATION_DRAFT,
     editing: automation.id,
@@ -150,8 +162,11 @@ export function draftFromAutomation(automation: Automation): AutomationDraftStat
           weekdays: automation.schedule.weekdays,
         }
       : {}),
-    ...(automation.schedule._tag === "once"
-      ? { onceAtText: automation.schedule.at.slice(0, 16) }
+    ...(automation.schedule._tag === "once" && onceAtText !== null
+      ? {
+          onceAtText,
+          originalOnceAt: { at: automation.schedule.at, text: onceAtText },
+        }
       : {}),
   };
 }

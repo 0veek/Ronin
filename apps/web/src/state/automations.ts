@@ -52,8 +52,8 @@ export interface AutomationsController {
   readonly environmentId: EnvironmentId | null;
   readonly automations: ReadonlyArray<Automation>;
   readonly runs: ReadonlyArray<AutomationRun>;
-  readonly create: (input: Omit<AutomationCreateInput, never>) => Promise<void>;
-  readonly update: (input: AutomationUpdateInput) => Promise<void>;
+  readonly create: (input: AutomationCreateInput) => Promise<boolean>;
+  readonly update: (input: AutomationUpdateInput) => Promise<boolean>;
   readonly remove: (id: AutomationId) => Promise<void>;
   readonly runNow: (id: AutomationId) => Promise<void>;
 }
@@ -85,18 +85,22 @@ export function useAutomations(): AutomationsController {
 
   const create = useCallback(
     async (input: AutomationCreateInput) => {
-      if (environmentId === null) return;
-      await createCommand({ environmentId, input });
+      if (environmentId === null) return false;
+      const result = await createCommand({ environmentId, input });
+      if (result._tag !== "Success") return false;
       refreshAutomations();
+      return true;
     },
     [createCommand, environmentId, refreshAutomations],
   );
 
   const update = useCallback(
     async (input: AutomationUpdateInput) => {
-      if (environmentId === null) return;
-      await updateCommand({ environmentId, input });
+      if (environmentId === null) return false;
+      const result = await updateCommand({ environmentId, input });
+      if (result._tag !== "Success") return false;
       refreshAutomations();
+      return true;
     },
     [environmentId, refreshAutomations, updateCommand],
   );

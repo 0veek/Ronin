@@ -64,7 +64,11 @@ export function AutomationsSettingsPanel({
   readonly createIntent?: AutomationsSearch;
 } = {}) {
   const { environmentId, automations, runs, create, update, remove, runNow } = useAutomations();
-  const projects = useProjects();
+  const allProjects = useProjects();
+  const projects = useMemo(
+    () => allProjects.filter((project) => project.environmentId === environmentId),
+    [allProjects, environmentId],
+  );
   const navigate = useNavigate();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const [draft, setDraft] = useState<AutomationDraftState | null>(null);
@@ -103,17 +107,18 @@ export function AutomationsSettingsPanel({
 
   const saveDraft = async () => {
     if (draft === null) return;
+    if (!projects.some((project) => project.id === draft.projectId)) return;
     if (draft.editing === null) {
       const input = draftToCreateInput(draft);
       if (input === null) return;
-      await create(input);
+      if (!(await create(input))) return;
     } else {
       // Project is deliberately not patchable: moving an automation between
       // projects would change which checkout it writes to, which is a new
       // automation rather than an edit.
       const input = draftToUpdateInput(draft);
       if (input === null) return;
-      await update(input);
+      if (!(await update(input))) return;
     }
     setDraft(null);
   };
@@ -133,8 +138,8 @@ export function AutomationsSettingsPanel({
       >
         {projects.length === 0 ? (
           <SettingsRow
-            title="No projects yet"
-            description="Add a project first — an automation runs its prompt in one."
+            title="No projects in this environment"
+            description="Add a project to the primary environment first — an automation runs its prompt in one."
           />
         ) : null}
 
@@ -542,7 +547,13 @@ function AutomationDraftForm({
           <Button size="xs" variant="ghost" onClick={onCancel}>
             Cancel
           </Button>
-          <Button size="xs" disabled={!isDraftComplete(draft)} onClick={onSave}>
+          <Button
+            size="xs"
+            disabled={
+              !isDraftComplete(draft) || !projects.some((project) => project.id === draft.projectId)
+            }
+            onClick={onSave}
+          >
             {draft.editing === null ? "Save automation" : "Save changes"}
           </Button>
         </div>

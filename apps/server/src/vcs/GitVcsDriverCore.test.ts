@@ -323,7 +323,7 @@ it.effect("uses stable diagnostics for every parsed non-repository command", () 
 
     assert.deepStrictEqual(commands, [
       { args: ["rev-parse", "--git-path", "index"], lcAll: "C" },
-      { args: ["status", "--porcelain=2", "--branch"], lcAll: "C" },
+      { args: ["status", "--porcelain=2", "--branch", "-z"], lcAll: "C" },
       { args: ["rev-parse", "--abbrev-ref", "HEAD"], lcAll: "C" },
       { args: ["rev-parse", "--git-common-dir"], lcAll: "C" },
     ]);
@@ -1278,6 +1278,53 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("repository status", () => {
+    it.effect("preserves whitespace, Unicode, and renamed paths without phantom entries", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        const platform = yield* HostProcessPlatform;
+        const names = [
+          "foo bar.txt",
+          "日本語.txt",
+          ...(platform === "win32" ? [] : ["tab\tfile.txt", "line\nfile.txt"]),
+        ];
+        for (const name of [...names, "src/old/file.ts"])
+          yield* writeTextFile(cwd, name, "original\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "add filenames"]);
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* fileSystem.makeDirectory(path.join(cwd, "src/new"), { recursive: true });
+        yield* git(cwd, ["mv", "src/old/file.ts", "src/new/file.ts"]);
+        for (const name of names) yield* writeTextFile(cwd, name, "original\nedited\n");
+        yield* writeTextFile(cwd, "untracked 日本語.txt", "new\n");
+        const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsLocal(cwd);
+        assert.deepStrictEqual(
+          status.workingTree.files.map((file) => file.path).toSorted(),
+          [...names, "src/new/file.ts", "untracked 日本語.txt"].toSorted(),
+        );
+        for (const name of names)
+          assert.deepInclude(status.workingTree.files, { path: name, insertions: 1, deletions: 0 });
+      }),
+    );
+
+    it.effect(
+      "merges staged and unstaged numstat for unusual filenames before the first commit",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* git(cwd, ["init"]);
+          const platform = yield* HostProcessPlatform;
+          const name = platform === "win32" ? "unborn 日本語 file.txt" : "unborn 日本語\nfile.txt";
+          yield* writeTextFile(cwd, name, "first\n");
+          yield* git(cwd, ["add", "--", name]);
+          yield* writeTextFile(cwd, name, "first\nsecond\n");
+          const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsLocal(cwd);
+          assert.deepStrictEqual(status.workingTree.files, [
+            { path: name, insertions: 2, deletions: 0 },
+          ]);
+        }),
+    );
     it.effect("reports non-repository directories without failing", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

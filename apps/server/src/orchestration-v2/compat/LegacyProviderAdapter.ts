@@ -1112,6 +1112,25 @@ export function makeLegacyProviderAdapterV2(
             ),
           ),
         readThreadSnapshot: () => Effect.succeed(snapshot()),
+        prepareRollback: (rollback) =>
+          Effect.gen(function* () {
+            const targetOrdinal =
+              rollback.target.type === "thread_start" ? -1 : rollback.target.providerTurn.ordinal;
+            const count = rollback.providerThreadTurns.filter(
+              (turn) => turn.ordinal > targetOrdinal,
+            ).length;
+            const native = yield* providers.readThread(input.threadId);
+            return Math.max(0, native.turns.length - count);
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProviderAdapterRollbackThreadError({
+                  driver,
+                  providerThreadId: providerThread.id,
+                  cause,
+                }),
+            ),
+          ),
         rollbackThread: (rollback) => {
           const targetOrdinal =
             rollback.target.type === "thread_start" ? -1 : rollback.target.providerTurn.ordinal;
@@ -1121,7 +1140,15 @@ export function makeLegacyProviderAdapterV2(
           return (
             count === 0
               ? Effect.void
-              : providers.rollbackConversation({ threadId: input.threadId, numTurns: count })
+              : providers.rollbackConversation({
+                  threadId: input.threadId,
+                  numTurns: count,
+                  ...(rollback.retainedTurnCount === undefined
+                    ? {}
+                    : {
+                        retainedTurnCount: rollback.retainedTurnCount,
+                      }),
+                })
           ).pipe(
             Effect.as(snapshot()),
             Effect.mapError(

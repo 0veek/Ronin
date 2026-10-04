@@ -17,6 +17,7 @@
  */
 import {
   type ChatAttachment,
+  type OrchestrationMessageContext,
   CommandId,
   MessageId,
   type QuotaResume,
@@ -54,6 +55,7 @@ export interface QuotaResumePark {
   /** The prompt to replay, verbatim. */
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
+  readonly context?: OrchestrationMessageContext;
 }
 
 export interface QuotaResumeServiceShape {
@@ -74,7 +76,10 @@ export interface QuotaResumeServiceShape {
    * archive, a delete. Distinct from {@link cancel} only in that it is not a
    * user action and never needs a result.
    */
-  readonly supersede: (threadId: ThreadId) => Effect.Effect<void>;
+  readonly supersede: (
+    threadId: ThreadId,
+    options?: { readonly resetAttempts: boolean },
+  ) => Effect.Effect<void>;
   readonly readSnapshot: Effect.Effect<QuotaResumeSnapshot>;
 }
 
@@ -144,6 +149,7 @@ export const make = Effect.gen(function* () {
             role: "user",
             text: entry.park.text,
             attachments: entry.park.attachments,
+            ...(entry.park.context === undefined ? {} : { context: entry.park.context }),
           },
           runtimeMode: "full-access",
           interactionMode: "default",
@@ -253,14 +259,15 @@ export const make = Effect.gen(function* () {
 
   const supersede: QuotaResumeServiceShape["supersede"] = Effect.fn("supersede")(function* (
     threadId: ThreadId,
+    options?: { readonly resetAttempts: boolean },
   ) {
+    if (options?.resetAttempts !== false) attempts.delete(threadId);
     const entry = parked.get(threadId);
     // A row mid-fire is the turn this scheduler just started. Treating that
     // as the thread moving on under us would cancel our own replay.
     if (entry === undefined || entry.row.state === "resuming") return;
     yield* clearFiber(threadId);
     parked.delete(threadId);
-    attempts.delete(threadId);
   });
 
   const readSnapshot = Effect.gen(function* () {

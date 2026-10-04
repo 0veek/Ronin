@@ -4,6 +4,9 @@ When a turn stops because your Claude, Codex, or Grok subscription window is spe
 message instead of leaving a dead turn behind. A banner appears above the composer with a countdown,
 and when the window resets your message sends itself.
 
+The queued message keeps its attachments and inline context, including captured terminal output,
+review comments, and preview annotations.
+
 This only covers subscription windows running out. An authentication failure, a billing problem, or
 a prompt that was too long still fails the way it always has — waiting would not help.
 
@@ -44,7 +47,7 @@ so the message is not silently lost.
   replaying old prompts into a workspace that has moved on would be worse than forgetting them.
 - **One turn per thread.** A second quota failure on the same thread replaces the first.
 - **It gives up after three attempts.** If the provider still refuses right after a reset, the window
-  is not the real problem.
+  is not the real problem. Sending a new message starts a fresh attempt limit.
 - **Only Claude, Codex, and Grok.** Those are the providers whose reset times Ronin can read.
 
 Related: [Review usage](./usage.md) for what your windows currently look like.

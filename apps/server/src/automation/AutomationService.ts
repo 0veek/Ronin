@@ -33,6 +33,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Semaphore from "effect/Semaphore";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
 import { prepareThreadWorktree } from "../git/prepareThreadWorktree.ts";
@@ -91,6 +92,22 @@ export const make = Effect.gen(function* () {
   const randomUUID = crypto.randomUUIDv4.pipe(Effect.orDie);
 
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
+  const locks = new Map<AutomationId, { gate: Semaphore.Semaphore; users: number }>();
+  const withAutomationLock = <A, E, R>(id: AutomationId, effect: Effect.Effect<A, E, R>) =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const lock = locks.get(id) ?? { gate: Semaphore.makeUnsafe(1), users: 0 };
+        lock.users++;
+        locks.set(id, lock);
+        return lock;
+      }),
+      (lock) => lock.gate.withPermit(effect),
+      (lock) =>
+        Effect.sync(() => {
+          lock.users--;
+          if (lock.users === 0) locks.delete(id);
+        }),
+    );
 
   const reschedule = (automation: Automation, nowMs: number): Automation => {
     if (!automation.enabled) return { ...automation, nextRunAt: null };
@@ -154,47 +171,48 @@ export const make = Effect.gen(function* () {
     return automation;
   });
 
-  const update: AutomationServiceShape["update"] = Effect.fn("update")(function* (
-    input: AutomationUpdateInput,
-  ) {
-    const existing = yield* store.get(input.id);
-    if (Option.isNone(existing)) {
-      return yield* new AutomationError({
-        reason: "notFound",
-        detail: "That automation no longer exists.",
-      });
-    }
-    const nowMs = yield* Clock.currentTimeMillis;
-    const updatedAt = yield* nowIso;
-    const withToggle =
-      input.enabled === undefined
-        ? existing.value
-        : applyAutomationEnabledChange({
-            automation: existing.value,
-            enabled: input.enabled,
-            nowIso: updatedAt,
-          });
-    const merged: Automation = {
-      ...withToggle,
-      ...(input.title === undefined ? {} : { title: input.title }),
-      ...(input.prompt === undefined ? {} : { prompt: input.prompt }),
-      ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
-      ...(input.envMode === undefined ? {} : { envMode: input.envMode }),
-      ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
-      ...(input.stopAfterConsecutiveFailures === undefined
-        ? {}
-        : { stopAfterConsecutiveFailures: input.stopAfterConsecutiveFailures }),
-      updatedAt,
-    };
-    // Re-armed from now rather than from the old next-run time: changing a
-    // schedule from "every 6 hours" to "every 15 minutes" should take effect
-    // now, not after the six hours already elapsed.
-    const automation = reschedule(merged, nowMs);
-    yield* store.upsert(automation);
-    return automation;
-  });
+  const update: AutomationServiceShape["update"] = Effect.fn("update")(
+    function* (input: AutomationUpdateInput) {
+      const existing = yield* store.get(input.id);
+      if (Option.isNone(existing)) {
+        return yield* new AutomationError({
+          reason: "notFound",
+          detail: "That automation no longer exists.",
+        });
+      }
+      const nowMs = yield* Clock.currentTimeMillis;
+      const updatedAt = yield* nowIso;
+      const withToggle =
+        input.enabled === undefined
+          ? existing.value
+          : applyAutomationEnabledChange({
+              automation: existing.value,
+              enabled: input.enabled,
+              nowIso: updatedAt,
+            });
+      const merged: Automation = {
+        ...withToggle,
+        ...(input.title === undefined ? {} : { title: input.title }),
+        ...(input.prompt === undefined ? {} : { prompt: input.prompt }),
+        ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
+        ...(input.envMode === undefined ? {} : { envMode: input.envMode }),
+        ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+        ...(input.stopAfterConsecutiveFailures === undefined
+          ? {}
+          : { stopAfterConsecutiveFailures: input.stopAfterConsecutiveFailures }),
+        updatedAt,
+      };
+      // Re-armed from now rather than from the old next-run time: changing a
+      // schedule from "every 6 hours" to "every 15 minutes" should take effect
+      // now, not after the six hours already elapsed.
+      const automation = reschedule(merged, nowMs);
+      yield* store.upsert(automation);
+      return automation;
+    },
+    (effect, input) => withAutomationLock(input.id, effect),
+  );
 
-  const remove = (id: AutomationId) => store.remove(id);
+  const remove = (id: AutomationId) => withAutomationLock(id, store.remove(id));
 
   const recordRun = (input: {
     readonly automation: Automation;
@@ -346,85 +364,95 @@ export const make = Effect.gen(function* () {
       });
     });
 
-  const runNow: AutomationServiceShape["runNow"] = Effect.fn("runNow")(function* (
-    id: AutomationId,
-  ) {
-    const existing = yield* store.get(id);
-    if (Option.isNone(existing)) {
-      return yield* new AutomationError({
-        reason: "notFound",
-        detail: "That automation no longer exists.",
+  const runNow: AutomationServiceShape["runNow"] = Effect.fn("runNow")(
+    function* (id: AutomationId) {
+      const existing = yield* store.get(id);
+      if (Option.isNone(existing)) {
+        return yield* new AutomationError({
+          reason: "notFound",
+          detail: "That automation no longer exists.",
+        });
+      }
+      const automation = existing.value;
+      const run = yield* fire(automation);
+      const nowMs = yield* Clock.currentTimeMillis;
+      const lastRunAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
+      // A manual run counts as a run: it re-anchors an interval schedule, which
+      // is what "run it now, then keep going from here" should mean. Failure
+      // evidence is folded in here so a play-button rerun cannot wipe a streak
+      // unless the turn actually started and the row is still enabled.
+      const withOutcome = applyAutomationRunOutcome({
+        automation: { ...automation, lastRunAt },
+        outcome: run.outcome,
+        nowIso: lastRunAt,
       });
-    }
-    const automation = existing.value;
-    const run = yield* fire(automation);
-    const nowMs = yield* Clock.currentTimeMillis;
-    const lastRunAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
-    // A manual run counts as a run: it re-anchors an interval schedule, which
-    // is what "run it now, then keep going from here" should mean. Failure
-    // evidence is folded in here so a play-button rerun cannot wipe a streak
-    // unless the turn actually started and the row is still enabled.
-    const withOutcome = applyAutomationRunOutcome({
-      automation: { ...automation, lastRunAt },
-      outcome: run.outcome,
-      nowIso: lastRunAt,
-    });
-    yield* store.upsert(reschedule(withOutcome, nowMs));
-    return run;
-  });
+      yield* store.upsert(reschedule(withOutcome, nowMs));
+      return run;
+    },
+    (effect, id) => withAutomationLock(id, effect),
+  );
 
   const listRuns: AutomationServiceShape["listRuns"] = (input) => store.listRuns(input);
 
   const tick = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
     const due = yield* store.listDue(DateTime.formatIso(DateTime.makeUnsafe(nowMs)));
-    for (const automation of due) {
-      const dueMs = automation.nextRunAt === null ? null : Date.parse(automation.nextRunAt);
+    for (const candidate of due) {
+      yield* withAutomationLock(
+        candidate.id,
+        Effect.gen(function* () {
+          const current = yield* store.get(candidate.id);
+          if (Option.isNone(current) || !current.value.enabled) return;
+          const automation = current.value;
+          const nowMs = yield* Clock.currentTimeMillis;
+          const dueMs = automation.nextRunAt === null ? null : Date.parse(automation.nextRunAt);
 
-      if (isStale({ nextRunAtMs: dueMs, nowMs })) {
-        // The machine was off, or asleep, long past the point where this run
-        // is still the thing the user wanted. Advance without firing, and log
-        // it so the history explains the gap rather than showing nothing.
-        yield* recordRun({
-          automation,
-          outcome: "skipped",
-          threadId: null,
-          detail: "Missed while the machine was unavailable.",
-        });
-        yield* store.upsert(
-          reschedule(
-            {
-              ...automation,
-              lastRunAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
-            },
-            nowMs,
-          ),
-        );
-        continue;
-      }
+          if (isStale({ nextRunAtMs: dueMs, nowMs })) {
+            // The machine was off, or asleep, long past the point where this run
+            // is still the thing the user wanted. Advance without firing, and log
+            // it so the history explains the gap rather than showing nothing.
+            yield* recordRun({
+              automation,
+              outcome: "skipped",
+              threadId: null,
+              detail: "Missed while the machine was unavailable.",
+            });
+            yield* store.upsert(
+              reschedule(
+                {
+                  ...automation,
+                  lastRunAt: DateTime.formatIso(DateTime.makeUnsafe(nowMs)),
+                },
+                nowMs,
+              ),
+            );
+            return;
+          }
 
-      if (!shouldFireNow({ nextRunAtMs: dueMs, nowMs })) continue;
+          if (!shouldFireNow({ nextRunAtMs: dueMs, nowMs })) return;
 
-      const run = yield* fire(automation);
-      const lastRunAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
-      const withOutcome = applyAutomationRunOutcome({
-        automation: { ...automation, lastRunAt },
-        outcome: run.outcome,
-        nowIso: lastRunAt,
-      });
-      // A one-shot is done after it is attempted, unless the failure policy
-      // already paused it — that reason must stay visible.
-      const fired: Automation =
-        automation.schedule._tag === "once" && withOutcome.enabled
-          ? {
-              ...withOutcome,
-              enabled: false,
-              nextRunAt: null,
-              disabledReason: "schedule",
-              disabledAt: lastRunAt,
-            }
-          : withOutcome;
-      yield* store.upsert(reschedule(fired, nowMs));
+          const run = yield* fire(automation);
+          const lastRunAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
+          const withOutcome = applyAutomationRunOutcome({
+            automation: { ...automation, lastRunAt },
+            outcome: run.outcome,
+            nowIso: lastRunAt,
+          });
+          // A one-shot is done after it is attempted, unless the failure policy
+          // already paused it — that reason must stay visible.
+          const fired: Automation =
+            automation.schedule._tag === "once" && withOutcome.enabled
+              ? {
+                  ...withOutcome,
+                  enabled: false,
+                  nextRunAt: null,
+                  disabledReason: "schedule",
+                  disabledAt: lastRunAt,
+                }
+              : withOutcome;
+          yield* store.upsert(reschedule(fired, nowMs));
+        }),
+      );
     }
   }).pipe(
     Effect.catchCause((cause) =>

@@ -191,6 +191,7 @@ describe("ProviderSessionReaper", () => {
       recordDeliveredMessage: () => Effect.void,
       clearContinuationLedger: () => unsupported(),
       assertConversationRollbackSupported: () => Effect.void,
+      readThread: () => Effect.die("unused"),
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.empty,
     };

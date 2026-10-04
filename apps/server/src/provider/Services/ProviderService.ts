@@ -32,7 +32,7 @@ import type * as Option from "effect/Option";
 import type * as Stream from "effect/Stream";
 
 import type { ProviderServiceError } from "../Errors.ts";
-import type { ProviderAdapterCapabilities } from "./ProviderAdapter.ts";
+import type { ProviderAdapterCapabilities, ProviderThreadSnapshot } from "./ProviderAdapter.ts";
 import type { ProviderInstanceRoutingInfo } from "./ProviderAdapterRegistry.ts";
 
 /**
@@ -140,6 +140,10 @@ export interface ProviderServiceShape {
     threadId: ThreadId,
   ) => Effect.Effect<void, ProviderServiceError>;
 
+  readonly readThread: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ProviderThreadSnapshot, ProviderServiceError>;
+
   /**
    * The resume state an instance left behind on a thread the last time it (or
    * anything in its continuation group) ran there.
@@ -184,6 +188,8 @@ export interface ProviderServiceShape {
   readonly rollbackConversation: (input: {
     readonly threadId: ThreadId;
     readonly numTurns: number;
+    /** When present, retain this many native turns rather than removing numTurns again. */
+    readonly retainedTurnCount?: number;
   }) => Effect.Effect<void, ProviderServiceError>;
 
   /**

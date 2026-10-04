@@ -74,6 +74,13 @@ provider binding. Thread and project deletion also detach and delete V2 state. M
 including archive/reopen, pin/unpin, snooze/unsnooze, settlement, permission mode, and
 provider changes, synchronize through the shared thread command lock.
 
+V2 checkpoint rewind resolves the legacy turn count to an absolute retained native history length and
+persists it on the checkpoint before changing provider history. The same boundary is reused after
+file-restore, stale-ref deletion, or event-write failures, including after a server restart.
+Retries read current native history and remove only turns after that boundary, including when a
+provider fork changes message IDs. History shorter than the retained length fails without rewinding
+further.
+
 Manual compaction keeps Ronin's existing compaction, restoration, and queued-message
 handling. Automations, build systems, quota resume, side chats, comparison groups, previews,
 devices, and desktop IPC retain their current contracts and services. Their ordinary turn

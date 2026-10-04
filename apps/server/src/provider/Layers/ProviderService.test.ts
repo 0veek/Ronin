@@ -182,18 +182,17 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       Effect.void,
   );
 
-  const compactThread = vi.fn(
-    (threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
-      Effect.sync(() =>
-        emit({
-          type: "thread.state.changed",
-          eventId: asEventId("evt-native-compact"),
-          provider,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          threadId,
-          payload: { state: "compacted" },
-        }),
-      ),
+  const compactThread = vi.fn((threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
+    Effect.sync(() =>
+      emit({
+        type: "thread.state.changed",
+        eventId: asEventId("evt-native-compact"),
+        provider,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        payload: { state: "compacted" },
+      }),
+    ),
   );
   const respondToRequest = vi.fn(
     (
@@ -211,20 +210,18 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     ): Effect.Effect<void, ProviderAdapterError> => Effect.void,
   );
 
-  const stopSession = vi.fn(
-    (threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
-      Effect.sync(() => {
-        sessions.delete(threadId);
-      }),
+  const stopSession = vi.fn((threadId: ThreadId): Effect.Effect<void, ProviderAdapterError> =>
+    Effect.sync(() => {
+      sessions.delete(threadId);
+    }),
   );
 
-  const listSessions = vi.fn(
-    (): Effect.Effect<ReadonlyArray<ProviderSession>> =>
-      Effect.sync(() => Array.from(sessions.values())),
+  const listSessions = vi.fn((): Effect.Effect<ReadonlyArray<ProviderSession>> =>
+    Effect.sync(() => Array.from(sessions.values())),
   );
 
-  const hasSession = vi.fn(
-    (threadId: ThreadId): Effect.Effect<boolean> => Effect.succeed(sessions.has(threadId)),
+  const hasSession = vi.fn((threadId: ThreadId): Effect.Effect<boolean> =>
+    Effect.succeed(sessions.has(threadId)),
   );
 
   const readThread = vi.fn(
@@ -251,11 +248,10 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
       Effect.succeed({ threadId, turns: [] }),
   );
 
-  const stopAll = vi.fn(
-    (): Effect.Effect<void, ProviderAdapterError> =>
-      Effect.sync(() => {
-        sessions.clear();
-      }),
+  const stopAll = vi.fn((): Effect.Effect<void, ProviderAdapterError> =>
+    Effect.sync(() => {
+      sessions.clear();
+    }),
   );
 
   const adapter: ProviderAdapterShape<ProviderAdapterError> = {
@@ -1007,6 +1003,75 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("retries an absolute rewind even when a fork changes retained turn IDs", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-absolute-rewind");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      let turns = ["turn-1", "turn-2", "turn-3"].map((id) => ({
+        id: asTurnId(id),
+        items: [] as const,
+      }));
+      routing.codex.readThread.mockImplementation(() => Effect.sync(() => ({ threadId, turns })));
+      routing.codex.rollbackThread.mockImplementation((_threadId, count) =>
+        Effect.sync(() => {
+          turns = turns
+            .slice(0, Math.max(0, turns.length - count))
+            .map((turn) => ({ ...turn, id: asTurnId(`${turn.id}_fork`) }));
+          return { threadId, turns: [] as const };
+        }),
+      );
+      try {
+        const target = { threadId, numTurns: 1, retainedTurnCount: 2 };
+        yield* provider.rollbackConversation(target);
+        yield* provider.rollbackConversation(target);
+        assert.deepStrictEqual(
+          turns.map((turn) => turn.id),
+          [asTurnId("turn-1_fork"), asTurnId("turn-2_fork")],
+        );
+        yield* provider.rollbackConversation({ ...target, retainedTurnCount: 0 });
+        yield* provider.rollbackConversation({ ...target, retainedTurnCount: 0 });
+        assert.deepStrictEqual(turns, []);
+      } finally {
+        routing.codex.readThread.mockImplementation((id) =>
+          Effect.succeed({ threadId: id, turns: [{ id: asTurnId("turn-1"), items: [] }] }),
+        );
+        routing.codex.rollbackThread.mockImplementation((id) =>
+          Effect.succeed({ threadId: id, turns: [] }),
+        );
+        yield* provider.stopSession({ threadId });
+      }
+    }),
+  );
+
+  it.effect("rejects an unavailable absolute boundary without changing history", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const threadId = asThreadId("thread-missing-rewind-boundary");
+      yield* provider.startSession(threadId, {
+        provider: CODEX_DRIVER,
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const calls = routing.codex.rollbackThread.mock.calls.length;
+      const result = yield* Effect.exit(
+        provider.rollbackConversation({
+          threadId,
+          numTurns: 1,
+          retainedTurnCount: 2,
+        }),
+      );
+      assert.isTrue(Exit.isFailure(result));
+      assert.equal(routing.codex.rollbackThread.mock.calls.length, calls);
+      yield* provider.stopSession({ threadId });
+    }),
+  );
   it.effect("allows promptless continuation only for capable providers", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

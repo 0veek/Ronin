@@ -461,6 +461,7 @@ export interface ProviderAdapterV2RollbackThreadInput {
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly target: ProviderAdapterV2RollbackTarget;
   readonly providerThreadTurns: ReadonlyArray<OrchestrationV2ProviderTurn>;
+  readonly retainedTurnCount?: number;
 }
 
 export interface ProviderAdapterV2ForkThreadInput {
@@ -572,6 +573,10 @@ export interface ProviderAdapterV2SessionRuntime {
     readonly providerThread: OrchestrationV2ProviderThread;
     readonly reason?: string;
   }) => Effect.Effect<{ readonly feedbackId: string }, ProviderAdapterV2Error>;
+  /** Resolve a relative legacy rewind to a native boundary before it is persisted and applied. */
+  readonly prepareRollback?: (
+    input: ProviderAdapterV2RollbackThreadInput,
+  ) => Effect.Effect<number, ProviderAdapterV2Error>;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;

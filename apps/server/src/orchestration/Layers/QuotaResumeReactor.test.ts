@@ -1,5 +1,6 @@
 import {
   CommandId,
+  ComposerContextId,
   EventId,
   MessageId,
   ProjectId,
@@ -143,6 +144,48 @@ const runHarness = (harness: ReturnType<typeof makeHarness>) =>
   );
 
 describe("QuotaResumeReactor", () => {
+  it.effect("keeps inline context with the parked prompt", () =>
+    Effect.gen(function* () {
+      const detail = threadDetail("Fix [log](t3-context://v1/terminal/ctx_log)");
+      const context = {
+        version: 1 as const,
+        records: [
+          {
+            version: 1 as const,
+            contextId: ComposerContextId.make("ctx_log"),
+            kind: "terminal" as const,
+            label: "log",
+            terminalId: "term-1",
+            terminalLabel: "Terminal",
+            lineStart: 0,
+            lineEnd: 0,
+            text: "Failure details",
+          },
+        ],
+      };
+      const harness = makeHarness(sessionSetEvent({}), {
+        detail: {
+          ...detail,
+          messages: detail.messages.map((message) => ({ ...message, context })),
+        },
+      });
+      yield* runHarness(harness);
+      expect(harness.park.mock.calls[0]?.[0].context).toEqual(context);
+    }),
+  );
+
+  it.effect("does not reset attempts for its own automatic replay", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness({
+        ...sessionSetEvent({}),
+        type: "thread.turn-start-requested",
+        commandId: CommandId.make("server:quota-resume:retry"),
+        payload: { threadId },
+      } as OrchestrationEvent);
+      yield* runHarness(harness);
+      expect(harness.supersede).not.toHaveBeenCalled();
+    }),
+  );
   it.effect("parks the last user message when a resumable provider hits its quota", () =>
     Effect.gen(function* () {
       const harness = makeHarness(sessionSetEvent({}));

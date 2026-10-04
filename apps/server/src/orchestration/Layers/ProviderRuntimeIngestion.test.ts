@@ -133,6 +133,7 @@ function createProviderServiceHarness() {
     recordDeliveredMessage: () => Effect.void,
     clearContinuationLedger: () => unsupported(),
     assertConversationRollbackSupported: () => Effect.void,
+    readThread: () => Effect.die("unused"),
     rollbackConversation: () => unsupported(),
     get streamEvents() {
       return Stream.fromPubSub(runtimeEventPubSub);

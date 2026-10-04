@@ -177,19 +177,22 @@ function parseNumstatEntries(
   stdout: string,
 ): Array<{ path: string; insertions: number; deletions: number }> {
   const entries: Array<{ path: string; insertions: number; deletions: number }> = [];
-  for (const line of stdout.split(/\r?\n/g)) {
-    if (line.trim().length === 0) continue;
+  const records = stdout.split("\0");
+  for (let index = 0; index < records.length; index++) {
+    const line = records[index] ?? "";
+    if (line.length === 0) continue;
     const [addedRaw, deletedRaw, ...pathParts] = line.split("\t");
-    const rawPath =
-      pathParts.length > 1 ? (pathParts.at(-1) ?? "").trim() : pathParts.join("\t").trim();
-    if (rawPath.length === 0) continue;
+    let filePath = pathParts.join("\t");
+    // With -z, a rename has an empty path field followed by the old and new paths.
+    if (filePath.length === 0) {
+      filePath = records[index + 2] ?? "";
+      index += 2;
+    }
+    if (filePath.length === 0) continue;
     const added = Number.parseInt(addedRaw ?? "0", 10);
     const deleted = Number.parseInt(deletedRaw ?? "0", 10);
-    const renameArrowIndex = rawPath.indexOf(" => ");
-    const normalizedPath =
-      renameArrowIndex >= 0 ? rawPath.slice(renameArrowIndex + " => ".length).trim() : rawPath;
     entries.push({
-      path: normalizedPath.length > 0 ? normalizedPath : rawPath,
+      path: filePath,
       insertions: Number.isFinite(added) ? added : 0,
       deletions: Number.isFinite(deleted) ? deleted : 0,
     });
@@ -199,7 +202,7 @@ function parseNumstatEntries(
 
 function parsePorcelainPath(line: string): string | null {
   if (line.startsWith("? ") || line.startsWith("! ")) {
-    const simple = line.slice(2).trim();
+    const simple = line.slice(2);
     return simple.length > 0 ? simple : null;
   }
 
@@ -207,15 +210,8 @@ function parsePorcelainPath(line: string): string | null {
     return null;
   }
 
-  const tabIndex = line.indexOf("\t");
-  if (tabIndex >= 0) {
-    const fromTab = line.slice(tabIndex + 1);
-    const [filePath] = fromTab.split("\t");
-    return filePath?.trim().length ? filePath.trim() : null;
-  }
-
-  const parts = line.trim().split(/\s+/g);
-  const filePath = parts.at(-1) ?? "";
+  const metadataFields = line.startsWith("1 ") ? 8 : line.startsWith("2 ") ? 9 : 10;
+  const filePath = line.split(" ").slice(metadataFields).join(" ");
   return filePath.length > 0 ? filePath : null;
 }
 
@@ -1675,7 +1671,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const statusResult = yield* executeGitWithStableDiagnostics(
       "GitVcsDriver.statusDetails.status",
       cwd,
-      ["status", "--porcelain=2", "--branch"],
+      ["status", "--porcelain=2", "--branch", "-z"],
       {
         allowNonZeroExit: true,
       },
@@ -1698,7 +1694,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ...gitCommandContext({
           operation: "GitVcsDriver.statusDetails.status",
           cwd,
-          args: ["status", "--porcelain=2", "--branch"],
+          args: ["status", "--porcelain=2", "--branch", "-z"],
         }),
         detail: "Git status failed.",
         exitCode: statusResult.exitCode,
@@ -1716,7 +1712,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         executeGitWithStableDiagnostics(
           "GitVcsDriver.statusDetails.numstat",
           cwd,
-          ["diff", "HEAD", "--numstat", "--"],
+          ["diff", "HEAD", "--numstat", "-z", "--"],
           { allowNonZeroExit: true },
         ).pipe(
           Effect.flatMap((result) => {
@@ -1727,11 +1723,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                   runGitStdout("GitVcsDriver.statusDetails.numstat.unborn", cwd, [
                     "diff",
                     "--numstat",
+                    "-z",
                   ]),
                   runGitStdout("GitVcsDriver.statusDetails.numstat.unborn.staged", cwd, [
                     "diff",
                     "--cached",
                     "--numstat",
+                    "-z",
                   ]),
                 ]),
                 ([unstagedStdout, stagedStdout]) => {
@@ -1749,7 +1747,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                   }
                   return Array.from(map.entries())
                     .map(([p, s]) => `${s.insertions}\t${s.deletions}\t${p}`)
-                    .join("\n");
+                    .join("\0");
                 },
               );
             }
@@ -1758,7 +1756,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                 ...gitCommandContext({
                   operation: "GitVcsDriver.statusDetails.numstat",
                   cwd,
-                  args: ["diff", "HEAD", "--numstat", "--"],
+                  args: ["diff", "HEAD", "--numstat", "-z", "--"],
                 }),
                 detail: "git diff HEAD --numstat failed.",
                 exitCode: result.exitCode,
@@ -1788,7 +1786,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     let hasStagedChanges = false;
     const changedFilesWithoutNumstat = new Set<string>();
 
-    for (const line of statusStdout.split(/\r?\n/g)) {
+    const statusEntries = statusStdout.split("\0");
+    for (let index = 0; index < statusEntries.length; index++) {
+      const line = statusEntries[index] ?? "";
+      // A rename's second NUL-delimited record is its original path, not another entry.
+      if (line.startsWith("2 ")) index++;
       if (line.startsWith("# branch.head ")) {
         const value = line.slice("# branch.head ".length).trim();
         refName = value.startsWith("(") ? null : value;

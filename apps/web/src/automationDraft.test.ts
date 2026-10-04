@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import type { Automation, ModelSelection } from "@t3tools/contracts";
 import { ProviderInstanceId } from "@t3tools/contracts";
 
@@ -89,6 +89,43 @@ describe("startAutomationDraftFromSearch", () => {
 });
 
 describe("draftFromAutomation", () => {
+  it.each(["Asia/Kolkata", "America/New_York"])(
+    "keeps a one-time instant when edited in %s",
+    (timezone) => {
+      vi.stubEnv("TZ", timezone);
+      try {
+        const at = new Date(2026, 9, 5, 9, 0).toISOString();
+        const draft = draftFromAutomation(automation({ schedule: { _tag: "once", at } }));
+        expect(draft.onceAtText).toBe("2026-10-05T09:00");
+        expect(draftToUpdateInput({ ...draft, title: "Renamed" })?.schedule).toEqual({
+          _tag: "once",
+          at,
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+  it.each(["2026-11-01T05:30:42.123Z", "2026-11-01T06:30:00.000Z"])(
+    "preserves %s during the repeated daylight-saving hour unless the time is edited",
+    (at) => {
+      vi.stubEnv("TZ", "America/New_York");
+      try {
+        const draft = draftFromAutomation(automation({ schedule: { _tag: "once", at } }));
+        expect(draft.onceAtText).toBe("2026-11-01T01:30");
+        expect(draftToUpdateInput({ ...draft, title: "Renamed" })?.schedule).toEqual({
+          _tag: "once",
+          at,
+        });
+        expect(draftSchedule({ ...draft, onceAtText: "2026-11-01T02:45" })).toEqual({
+          _tag: "once",
+          at: "2026-11-01T07:45:00.000Z",
+        });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
   it("carries a pinned model through to the form", () => {
     const draft = draftFromAutomation(automation({ modelSelection }));
     expect(draft.editing).toBe("auto-1");

@@ -249,6 +249,37 @@ export const layer: Layer.Layer<
               };
             });
 
+      let rollbackBoundary = checkpoint.rollbackBoundary;
+      if (
+        runsToRollback.length > 0 &&
+        session.prepareRollback !== undefined &&
+        rollbackBoundary?.providerThreadId !== providerThread.id
+      ) {
+        rollbackBoundary = {
+          providerThreadId: providerThread.id,
+          retainedTurnCount: yield* session.prepareRollback({
+            providerThread,
+            target: rollbackTarget,
+            providerThreadTurns,
+          }),
+        };
+        const occurredAt = yield* DateTime.now;
+        // Persist the absolute boundary before changing native history, including across restarts.
+        yield* eventSink.write({
+          events: [
+            {
+              id: yield* ids.allocate.event({ threadId: input.threadId }),
+              type: "checkpoint.captured",
+              threadId: input.threadId,
+              ...(checkpoint.runId === null ? {} : { runId: checkpoint.runId }),
+              nodeId: checkpoint.nodeId,
+              providerInstanceId: providerThread.providerInstanceId,
+              occurredAt,
+              payload: { ...checkpoint, rollbackBoundary },
+            },
+          ],
+        });
+      }
       const snapshot =
         runsToRollback.length === 0
           ? { providerThread }
@@ -256,6 +287,11 @@ export const layer: Layer.Layer<
               providerThread,
               target: rollbackTarget,
               providerThreadTurns,
+              ...(rollbackBoundary?.providerThreadId === providerThread.id
+                ? {
+                    retainedTurnCount: rollbackBoundary.retainedTurnCount,
+                  }
+                : {}),
             });
       if (input.restoreFiles !== false) yield* checkpoints.restore({ scope, checkpoint });
       const staleCheckpoints = projection.checkpoints.filter(

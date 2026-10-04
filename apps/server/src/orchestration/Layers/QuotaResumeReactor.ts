@@ -71,6 +71,7 @@ const make = Effect.gen(function* () {
           return {
             text: message.text,
             attachments: (message.attachments ?? []) as ReadonlyArray<ChatAttachment>,
+            ...(message.context === undefined ? {} : { context: message.context }),
           };
         }
       }
@@ -85,7 +86,7 @@ const make = Effect.gen(function* () {
       // Any healthy session state means the thread is live again, which no
       // parked replay should survive.
       if (session.status === "running" || session.status === "starting") {
-        yield* quotaResume.supersede(event.payload.threadId);
+        yield* quotaResume.supersede(event.payload.threadId, { resetAttempts: false });
       }
       return;
     }
@@ -108,6 +109,7 @@ const make = Effect.gen(function* () {
       detail: session.lastError,
       text: prompt.text,
       attachments: prompt.attachments,
+      ...(prompt.context === undefined ? {} : { context: prompt.context }),
     });
   });
 
@@ -116,6 +118,11 @@ const make = Effect.gen(function* () {
       yield* processSessionSet(event);
       return;
     }
+    if (
+      event.type === "thread.turn-start-requested" &&
+      event.commandId?.startsWith("server:quota-resume:")
+    )
+      return;
     yield* quotaResume.supersede(event.payload.threadId);
   });
 

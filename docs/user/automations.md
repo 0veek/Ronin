@@ -6,6 +6,9 @@ applies to it: the sidebar, checkpoints, diffs, switching provider mid-thread, a
 
 Manage them in **Settings → Automations**.
 
+Automations belong to the primary environment and its projects. Projects in other connected
+environments are not offered in the project picker.
+
 ## Creating one
 
 Each automation needs a name, a project, a prompt, and a schedule. You can start one from
@@ -26,6 +29,9 @@ keep that provider even if the project default later changes.
 
 Times are the machine's local time, so "every weekday at 09:00" stays at nine through a
 daylight-saving change rather than drifting an hour.
+
+A one-time schedule shows the date and time on the device you are using. Editing its name or
+prompt keeps the scheduled instant, including when you edit from another time zone.
 
 **On failure** decides how many times a run can fail to start before the schedule pauses
 itself. The default is three; you can stop after one, after five, or keep retrying. A
@@ -66,3 +72,6 @@ run opened. A run that did not start says why.
 
 Pausing keeps the automation and its history. Deleting removes both, and does not touch any threads
 it already created.
+
+If a run is being prepared, pausing or deleting waits for that preparation to finish. Your change
+then takes effect for future runs. A failed save leaves your draft open so you can retry.

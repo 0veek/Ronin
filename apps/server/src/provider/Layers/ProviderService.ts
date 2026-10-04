@@ -260,6 +260,7 @@ type ProviderServiceMethod<Name extends keyof ProviderService.ProviderService["S
 const ProviderRollbackConversationInput = Schema.Struct({
   threadId: ThreadId,
   numTurns: NonNegativeInt,
+  retainedTurnCount: Schema.optional(NonNegativeInt),
 });
 
 function toValidationError(
@@ -1706,6 +1707,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       }
     });
 
+  const readThread: ProviderServiceMethod<"readThread"> = Effect.fn("ProviderService.readThread")(
+    function* (threadId) {
+      const routed = yield* resolveRoutableSession({
+        threadId,
+        operation: "ProviderService.readThread",
+        allowRecovery: true,
+      });
+      return yield* routed.adapter.readThread(routed.threadId);
+    },
+  );
+
   const rollbackConversation: ProviderServiceMethod<"rollbackConversation"> = Effect.fn(
     "rollbackConversation",
   )(function* (rawInput) {
@@ -1714,7 +1726,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       schema: ProviderRollbackConversationInput,
       payload: rawInput,
     });
-    if (input.numTurns === 0) {
+    if (input.numTurns === 0 && input.retainedTurnCount === undefined) {
       return;
     }
     let metricProvider = "unknown";
@@ -1726,13 +1738,24 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         allowRecovery: true,
       });
       metricProvider = routed.adapter.provider;
+      let numTurns = input.numTurns;
+      if (input.retainedTurnCount !== undefined) {
+        const current = yield* routed.adapter.readThread(routed.threadId);
+        if (current.turns.length < input.retainedTurnCount) {
+          return yield* toValidationError(
+            "ProviderService.rollbackConversation",
+            "The retained provider history is no longer available. The conversation was not rewound.",
+          );
+        }
+        numTurns = current.turns.length - input.retainedTurnCount;
+      }
       yield* Effect.annotateCurrentSpan({
         "provider.operation": "rollback-conversation",
         "provider.kind": routed.adapter.provider,
         "provider.thread_id": input.threadId,
-        "provider.rollback_turns": input.numTurns,
+        "provider.rollback_turns": numTurns,
       });
-      yield* routed.adapter.rollbackThread(routed.threadId, input.numTurns);
+      if (numTurns > 0) yield* routed.adapter.rollbackThread(routed.threadId, numTurns);
       const session = (yield* routed.adapter.listSessions()).find(
         (session) => session.threadId === routed.threadId,
       );
@@ -1827,6 +1850,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     recordDeliveredMessage,
     clearContinuationLedger,
     assertConversationRollbackSupported,
+    readThread,
     rollbackConversation,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each

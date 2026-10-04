@@ -22,7 +22,10 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -72,6 +75,8 @@ function makeHarness(options?: {
   readonly failTurnStart?: boolean;
   readonly projectMissing?: boolean;
   readonly defaultModelSelection?: ModelSelection | null;
+  readonly onTurnStart?: Effect.Effect<void>;
+  readonly onListDue?: Effect.Effect<void>;
 }) {
   const state: Harness = { dispatched: [], stored: new Map(), runs: [] };
 
@@ -86,8 +91,11 @@ function makeHarness(options?: {
       Effect.sync(() => {
         state.stored.set(value.id, value);
       }),
-    remove: () => Effect.succeed(true),
-    listDue: () => Effect.succeed([...state.stored.values()]),
+    remove: (id: AutomationId) => Effect.sync(() => state.stored.delete(id)),
+    listDue: () =>
+      Effect.sync(() => [...state.stored.values()]).pipe(
+        Effect.tap(() => options?.onListDue ?? Effect.void),
+      ),
     appendRun: (run: AutomationRun) =>
       Effect.sync(() => {
         state.runs.push({
@@ -107,6 +115,7 @@ function makeHarness(options?: {
           return yield* Effect.die(new Error("turn start refused"));
         }
         state.dispatched.push(command);
+        if (command.type === "thread.turn.start") yield* options?.onTurnStart ?? Effect.void;
         return { sequence: state.dispatched.length };
       }),
     streamDomainEvents: Stream.empty,
@@ -367,6 +376,85 @@ describe("AutomationService.fire", () => {
       expect(stored?.enabled).toBe(false);
       expect(stored?.consecutiveFailureCount).toBe(3);
       expect(stored?.disabledReason).toBe("failures");
+    }),
+  );
+});
+
+describe("automation concurrency", () => {
+  for (const mutation of ["edit-and-pause", "delete"] as const) {
+    it.effect(`preserves a concurrent ${mutation} when a run finishes`, () =>
+      Effect.gen(function* () {
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const harness = makeHarness({
+          onTurnStart: Deferred.succeed(entered, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+          ),
+        });
+        const original = automation();
+        harness.state.stored.set(original.id, original);
+        yield* Effect.gen(function* () {
+          const service = yield* AutomationService;
+          const run = yield* Effect.forkChild(service.runNow(original.id));
+          yield* Deferred.await(entered);
+          const change = yield* Effect.forkChild(
+            mutation === "delete"
+              ? service.remove(original.id).pipe(Effect.asVoid)
+              : service
+                  .update({
+                    id: original.id,
+                    enabled: false,
+                    title: "Edited",
+                    prompt: "New prompt",
+                  })
+                  .pipe(Effect.asVoid),
+          );
+          yield* Effect.yieldNow;
+          yield* Deferred.succeed(release, undefined);
+          yield* Fiber.join(run);
+          yield* Fiber.join(change);
+        }).pipe(Effect.provide(harness.layer));
+        if (mutation === "delete") expect(harness.state.stored.has(original.id)).toBe(false);
+        else
+          expect(harness.state.stored.get(original.id)).toMatchObject({
+            enabled: false,
+            title: "Edited",
+            prompt: "New prompt",
+            nextRunAt: null,
+          });
+      }),
+    );
+  }
+
+  it.effect("does not fire a due snapshot after a manual run has rescheduled it", () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const dueRead = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        onTurnStart: Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+        onListDue: Deferred.succeed(dueRead, undefined),
+      });
+      const original = automation({
+        nextRunAt: DateTime.formatIso(yield* DateTime.now),
+      });
+      harness.state.stored.set(original.id, original);
+      yield* Effect.gen(function* () {
+        const service = yield* AutomationService;
+        const run = yield* Effect.forkChild(service.runNow(original.id));
+        yield* Deferred.await(entered);
+        const tick = yield* Effect.forkChild(service.tick);
+        yield* Deferred.await(dueRead);
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(run);
+        yield* Fiber.join(tick);
+      }).pipe(Effect.provide(harness.layer));
+      expect(
+        harness.state.dispatched.filter((command) => command.type === "thread.turn.start"),
+      ).toHaveLength(1);
+      expect(harness.state.runs).toHaveLength(1);
     }),
   );
 });

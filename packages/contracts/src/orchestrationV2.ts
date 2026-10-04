@@ -1153,6 +1153,13 @@ export const OrchestrationV2Checkpoint = Schema.Struct({
   status: Schema.Literals(["ready", "missing", "error", "stale"]),
   files: Schema.Array(OrchestrationV2CheckpointFileSummary),
   capturedAt: Schema.DateTimeUtc,
+  /** Native boundary saved before rewind, so retries preserve the same retained history. */
+  rollbackBoundary: Schema.optional(
+    Schema.Struct({
+      providerThreadId: ProviderThreadId,
+      retainedTurnCount: NonNegativeInt,
+    }),
+  ),
 });
 export type OrchestrationV2Checkpoint = typeof OrchestrationV2Checkpoint.Type;
 
