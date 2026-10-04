@@ -131,6 +131,9 @@ export const make = Effect.gen(function* () {
   const lastSyncedAt = new Map<string, number>();
   const requested = new Map<string, number>();
   let requestGeneration = 0;
+  // Requested keys wait in `requested` for one queued sweep, so a burst of links (an agent
+  // linking dozens of pull requests) is read together and shares the summary batches.
+  let requestedSweepQueued = false;
   const retryStacks = new Set<string>();
 
   const isDue = (key: string, entries: ReadonlyArray<LinkEntry>, nowMs: number): boolean => {
@@ -149,7 +152,8 @@ export const make = Effect.gen(function* () {
     <E>(cause: Cause.Cause<E>): Effect.Effect<void, E> =>
       Cause.hasInterruptsOnly(cause) ? Effect.failCause(cause) : Effect.logWarning(message, fields);
 
-  const sweep = Effect.fn("PullRequestSyncReactor.sweep")(function* () {
+  /** `requested` reads only keys asked for through `requestSync`; `all` is the periodic pass. */
+  const sweep = Effect.fn("PullRequestSyncReactor.sweep")(function* (scope: "all" | "requested") {
     const threads = yield* snapshots.listThreadsWithPullRequests();
     const now = yield* DateTime.now;
     const nowMs = DateTime.toEpochMillis(now);
@@ -256,22 +260,31 @@ export const make = Effect.gen(function* () {
         retryStacks.has(key) ||
         entries.some(
           (entry) =>
-            entry.link.snapshot === null || !snapshotFieldsEqual(entry.link.snapshot, fields),
+            entry.link.snapshot === null ||
+            !snapshotFieldsEqual(entry.link.snapshot, fields) ||
+            (summary.stack !== undefined &&
+              (entry.link.stack?.number ?? null) !== (summary.stack?.number ?? null)),
         );
-      const fetchedStack = needsStack
-        ? yield* pullRequests.stack(ref, { includeDetails: false }).pipe(
-            Effect.map((stack) => ({
-              stack: stack === null ? null : ({ kind: "native", ...stack } as const),
-            })),
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.failCause(cause)
-                : Effect.logWarning("pull request stack lookup failed", {
+      // A summary that says the pull request is in no stack, for links that hold none, already
+      // answers what the stack read would.
+      const knownUnstacked =
+        summary.stack === null && entries.every((entry) => entry.link.stack === null);
+      const fetchedStack = !needsStack
+        ? null
+        : knownUnstacked
+          ? { stack: null }
+          : yield* pullRequests.stack(ref, { includeDetails: false }).pipe(
+              Effect.map((stack) => ({
+                stack: stack === null ? null : ({ kind: "native", ...stack } as const),
+              })),
+              Effect.catchCauseIf(
+                (cause) => !Cause.hasInterruptsOnly(cause),
+                () =>
+                  Effect.logWarning("pull request stack lookup failed", {
                     key,
                   }).pipe(Effect.as(null)),
-            ),
-          )
-        : null;
+              ),
+            );
       if (needsStack) {
         if (fetchedStack === null) retryStacks.add(key);
         else retryStacks.delete(key);
@@ -295,7 +308,7 @@ export const make = Effect.gen(function* () {
     yield* Effect.forEach(
       groups,
       ([key, entries]) =>
-        isDue(key, entries, nowMs)
+        (scope === "all" || requested.has(key)) && isDue(key, entries, nowMs)
           ? syncGroup(key, entries).pipe(
               Effect.catchCause(logSkipped("pull request sync skipped", { key })),
             )
@@ -306,8 +319,12 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const worker = yield* makeDrainableWorker(() =>
-    sweep().pipe(Effect.catchCause(logSkipped("pull request sync sweep failed", {}))),
+  const worker = yield* makeDrainableWorker((scope: "all" | "requested") =>
+    Effect.suspend(() => {
+      // Requests from here on queue another sweep; the ones already recorded are read by this.
+      if (scope === "requested") requestedSweepQueued = false;
+      return sweep(scope);
+    }).pipe(Effect.catchCause(logSkipped("pull request sync sweep failed", {}))),
   );
 
   const start: PullRequestSyncReactor["Service"]["start"] = Effect.fn(
@@ -315,7 +332,7 @@ export const make = Effect.gen(function* () {
   )(function* () {
     yield* forkParked(
       Effect.gen(function* () {
-        yield* worker.enqueue(undefined);
+        yield* worker.enqueue("all");
         yield* worker.drain;
       }).pipe(Effect.repeat(Schedule.spaced("1 minute")), Effect.asVoid),
     );
@@ -324,7 +341,9 @@ export const make = Effect.gen(function* () {
   const requestSync: PullRequestSyncReactor["Service"]["requestSync"] = (key) =>
     Effect.suspend(() => {
       requested.set(threadPullRequestKeyOf(key), ++requestGeneration);
-      return worker.enqueue(undefined);
+      if (requestedSweepQueued) return Effect.void;
+      requestedSweepQueued = true;
+      return worker.enqueue("requested");
     });
 
   return { start, drain: worker.drain, requestSync } satisfies PullRequestSyncReactor["Service"];

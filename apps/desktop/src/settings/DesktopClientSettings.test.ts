@@ -61,6 +61,7 @@ const clientSettings: ClientSettings = {
   sidebarProjectSortOrder: "manual",
   sidebarThreadSortOrder: "created_at",
   sidebarThreadPreviewCount: 6,
+  sidebarWorkingShelfEnabled: false,
   loadBalancingEnabled: false,
   loadBalancingWeights: { "environment-1": 75, "environment-2": 0 },
   timestampFormat: "24-hour",
@@ -137,6 +138,34 @@ describe("DesktopClientSettings", () => {
             ),
             "settings",
           ),
+        );
+      }),
+    ),
+  );
+
+  it.effect("saves through a symlinked client settings file without replacing the link", () =>
+    withClientSettings(
+      Effect.gen(function* () {
+        const environment = yield* DesktopEnvironment.DesktopEnvironment;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const settings = yield* DesktopClientSettings.DesktopClientSettings;
+        const dotfiles = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-desktop-client-settings-dotfiles-",
+        });
+        const linkedSettingsPath = `${dotfiles}/client-settings.json`;
+        yield* fileSystem.writeFileString(linkedSettingsPath, "{}\n");
+        yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
+        yield* fileSystem.symlink(linkedSettingsPath, environment.clientSettingsPath);
+
+        yield* settings.set(clientSettings);
+
+        assert.equal(
+          yield* fileSystem.readLink(environment.clientSettingsPath),
+          linkedSettingsPath,
+        );
+        assert.deepEqual(
+          yield* decodeClientSettingsJson(yield* fileSystem.readFileString(linkedSettingsPath)),
+          clientSettings,
         );
       }),
     ),

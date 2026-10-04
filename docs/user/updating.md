@@ -115,3 +115,10 @@ If a step fails:
    `<client-version>` with the client version shown in the warning.
 
 For remote connection setup and access troubleshooting, see [Remote Access](./remote-access.md).
+
+## Update providers
+
+**Settings → Providers** shows provider updates for the selected environment.
+**Update all** updates every outdated provider on every connected environment
+at once. Hover it to see which providers it will update. Providers that only
+offer a manual update command are not included.

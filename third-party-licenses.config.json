@@ -460,6 +460,33 @@
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2014 Nathan Rajlich <nathan@tootallnate.net>"]
       }
+    },
+    {
+      "license": "MIT",
+      "name": "fastdom",
+      "sourceUrl": "https://github.com/wilsonpage/fastdom",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2016 Wilson Page"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "strictdom",
+      "sourceUrl": "https://github.com/wilsonpage/strictdom",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2013 Wilson Page"]
+      }
+    },
+    {
+      "license": "MIT",
+      "name": "khroma",
+      "sourceUrl": "https://github.com/fabiospampinato/khroma",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) 2019-present Fabio Spampinato, Andrew Maney"]
+      }
     }
   ]
 }

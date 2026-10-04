@@ -1498,6 +1498,7 @@ export function PullRequestDetailPanel({
     ? resolvePullRequestState({ state: detail.state, isDraft: detail.isDraft })
     : null;
   const checksSummary = detail ? summarizePullRequestChecks(detail.checks) : null;
+  const showsApproveWorkflows = workflowApprovalsRequired > 0 && can("approve-workflows");
   // Approvals that still stand, and only those. A superseded one is dimmed beside the reviewer
   // who gave it, so counting it here would have the header assert in a number what the row next
   // to it has just qualified.
@@ -2507,10 +2508,15 @@ export function PullRequestDetailPanel({
                   ))}
                 </span>
                 {tab === "summary" ? (
-                  <span className="ml-auto inline-flex shrink-0 items-center">
+                  <span
+                    className={cn(
+                      "ml-auto flex items-center justify-end",
+                      showsApproveWorkflows ? "shrink-0" : "min-w-0 flex-1",
+                    )}
+                  >
                     {/* The approval sits where the checks summary would, because it is what the
                         checks are waiting on: one slot, whichever of the two has something to say. */}
-                    {workflowApprovalsRequired > 0 && can("approve-workflows") ? (
+                    {showsApproveWorkflows ? (
                       <Tooltip>
                         <TooltipTrigger
                           render={
@@ -2546,7 +2552,7 @@ export function PullRequestDetailPanel({
                       </Tooltip>
                     ) : (
                       <span
-                        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground"
+                        className="flex h-4 min-w-0 flex-wrap content-start items-center justify-end gap-x-1.5 overflow-hidden text-xs text-muted-foreground"
                         aria-label={checksSummary ? `Checks: ${checksSummary}` : "Checks"}
                       >
                         {/* The rollup icon opens the checks behind the summary; with none reported
@@ -2560,7 +2566,7 @@ export function PullRequestDetailPanel({
                         ) : (
                           <CircleDotIcon aria-hidden className="size-3.5" />
                         )}
-                        {checksSummary}
+                        <span className="whitespace-nowrap">{checksSummary}</span>
                       </span>
                     )}
                   </span>

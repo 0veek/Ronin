@@ -118,6 +118,16 @@ environment. Pinned and active reordering require server support. Older servers 
 unpin threads, but do not understand synced ordering; their pinned threads keep the default
 newest-first order below the ones you have arranged.
 
+### Fold working threads (beta)
+
+Turn on **Settings → General → Working section (beta)** to move threads that
+are working or monitoring into a collapsed **Working** section at the bottom of the sidebar. A
+thread returns to the active list when it finishes. Failures, approvals, and questions stay in
+Needs you. Pinned threads stay in the pinned section.
+
+While this is on, the active list is ordered by when each thread last came back to you, so you
+cannot drag to reorder it. Your saved order returns when you turn it off.
+
 For the same threads laid out by what they are doing, side by side, see the
 [board](board.md).
 

@@ -1036,10 +1036,15 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         });
 
         const workingTree = preview.sources.find((source) => source.kind === "working-tree")?.diff;
-        const branchRange = preview.sources.find((source) => source.kind === "branch-range")?.diff;
+        const branchSource = preview.sources.find((source) => source.kind === "branch-range");
+        const branchRange = branchSource?.diff;
+        assert.strictEqual(branchSource?.baseRef, initialBranch);
         assert.include(workingTree, "diff --git a/README.md b/README.md");
         assert.include(workingTree, "+++ b/untracked.txt");
         assert.include(branchRange, "diff --git a/README.md b/README.md");
+        assert.include(branchRange, "+# dirty change");
+        assert.include(branchRange, "+++ b/untracked.txt");
+        assert.notInclude(branchRange, "+# committed change");
       }),
     );
 
@@ -1247,7 +1252,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect("loads merge-base and head contents for branch diff expansion", () =>
+    it.effect("loads merge-base and checkout contents for branch diff expansion", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();
         const { initialBranch } = yield* initRepoWithCommit(cwd);
@@ -1256,6 +1261,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         yield* writeTextFile(cwd, "README.md", "# branch change\nunchanged context\n");
         yield* git(cwd, ["add", "README.md"]);
         yield* git(cwd, ["commit", "-m", "change readme"]);
+        yield* writeTextFile(cwd, "README.md", "# dirty branch change\nunchanged context\n");
 
         const contents = yield* driver.getReviewDiffFileContents(
           makeReviewDiffFileContentsInput(cwd, {
@@ -1266,7 +1272,7 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
         );
 
         assert.strictEqual(contents.oldContents, "# test\n");
-        assert.strictEqual(contents.newContents, "# branch change\nunchanged context\n");
+        assert.strictEqual(contents.newContents, "# dirty branch change\nunchanged context\n");
       }),
     );
   });

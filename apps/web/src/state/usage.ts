@@ -11,6 +11,7 @@ import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type ServerProvider,
+  type UsageBucket,
   type UsageSummary,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
@@ -176,4 +177,26 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     isPartial: answeredCount > 0 && stillReporting > 0,
     refresh,
   };
+}
+
+/** Merges a model slice with the same source ownership as the full usage view. */
+export function mergeAnsweredUsage(
+  environments: readonly EnvironmentUsageStatus[],
+  keepBucket?: (bucket: UsageBucket) => boolean,
+): MergedUsage {
+  const answered: EnvironmentUsage[] = environments.flatMap(({ environmentId, label, summary }) =>
+    summary === null
+      ? []
+      : [
+          {
+            environmentId,
+            label,
+            summary:
+              keepBucket === undefined
+                ? summary
+                : { ...summary, buckets: summary.buckets.filter(keepBucket) },
+          },
+        ],
+  );
+  return mergeUsage(answered, USAGE_CONTRACT_VERSION);
 }

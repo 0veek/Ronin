@@ -249,7 +249,7 @@ export async function readCursorAccountUsage(
           sessionId,
           totals,
           reportedCostUsd,
-          fast: false,
+          speed: "standard",
           dedupeKey: `cursor-account:${accountKey}:${key}:${occurrence}`,
         });
       }

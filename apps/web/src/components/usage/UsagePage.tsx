@@ -45,6 +45,9 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspaceTopbar } from "../shell/WorkspaceTopbar";
 import { ProviderMark } from "./ProviderMark";
+import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
+import { UsageShareBar } from "./UsageShareBar";
+import { costTypeSegments, speedCostSegments } from "./usageBreakdown";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { METRIC_OPTIONS, WINDOW_OPTIONS, resolveUsageShortcut } from "./usageShortcuts";
 import {
@@ -193,9 +196,13 @@ export function UsagePage() {
   }));
   const metric = preferences.metric;
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
+  const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
   const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const selectedModel = merged.models.find(
+    (model) => `${model.provider}:${model.model}` === selectedModelKey,
+  );
   const cursorAccessEnvironments = cursorKeychainAccessEnvironments(environments);
   const sourceMessages = [
     ...new Set(
@@ -224,21 +231,23 @@ export function UsagePage() {
     void navigate({ to: "/" });
   }, [canGoBack, navigate]);
 
+  const handleEscape = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.key !== "Escape") return;
+    if (selectedModel !== undefined) return;
+
+    event.preventDefault();
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+    navigateBackWithinApp();
+  });
+
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.key !== "Escape") return;
-
-      event.preventDefault();
-      const activeElement = document.activeElement;
-      if (activeElement instanceof HTMLElement) {
-        activeElement.blur();
-      }
-      navigateBackWithinApp();
-    };
-
+    const onKeyDown = (event: KeyboardEvent) => handleEscape(event);
     globalThis.addEventListener("keydown", onKeyDown);
     return () => globalThis.removeEventListener("keydown", onKeyDown);
-  }, [navigateBackWithinApp]);
+  }, []);
 
   // Hold the content until every environment is terminal. Rendering merged
   // totals while devices are still answering makes every number on the page
@@ -552,7 +561,10 @@ export function UsagePage() {
                       </div>
 
                       {breakdown === "model" ? (
-                        <ModelBreakdown models={breakdownModels} />
+                        <ModelBreakdown
+                          models={breakdownModels}
+                          onSelectModel={setSelectedModelKey}
+                        />
                       ) : (
                         <TimeBreakdown
                           periods={breakdownPeriods}
@@ -567,6 +579,23 @@ export function UsagePage() {
                       unpricedShare={merged.costQuality.unpricedShare}
                       environments={environments}
                     />
+                    {metric === "cost" && merged.totalTokens > 0 ? (
+                      <section className="grid gap-8 rounded-md border border-border bg-card p-5 lg:grid-cols-2">
+                        <UsageShareBar
+                          label="Cost by type"
+                          segments={costTypeSegments(merged.categoryCost)}
+                          format={formatUsd}
+                        />
+                        {merged.speedCost.fast + merged.speedCost.ultrafast > 0 ? (
+                          <UsageShareBar
+                            label="Cost by speed"
+                            segments={speedCostSegments(merged.speedCost)}
+                            format={formatUsd}
+                            aside={<SpeedPremium premiumUsd={merged.speedCost.premium} />}
+                          />
+                        ) : null}
+                      </section>
+                    ) : null}
                   </>
                 )}
               </>
@@ -574,6 +603,21 @@ export function UsagePage() {
           </div>
         </ScrollArea>
       </div>
+      {selectedModel ? (
+        <UsageModelDialog
+          model={selectedModel}
+          environments={environments}
+          metric={metric}
+          chartWindow={{
+            days,
+            hours,
+            resolution: isPast24Hours ? "hour" : "day",
+            timeZone: window.timeZone,
+            referenceTime: window.untilTime,
+          }}
+          onClose={() => setSelectedModelKey(null)}
+        />
+      ) : null}
     </SidebarInset>
   );
 }
@@ -680,7 +724,13 @@ function ProviderRow({
   );
 }
 
-function ModelBreakdown({ models }: { readonly models: readonly ModelTotals[] }) {
+function ModelBreakdown({
+  models,
+  onSelectModel,
+}: {
+  readonly models: readonly ModelTotals[];
+  readonly onSelectModel: (key: string) => void;
+}) {
   return (
     <table className="w-full text-sm">
       <thead>
@@ -705,10 +755,14 @@ function ModelBreakdown({ models }: { readonly models: readonly ModelTotals[] })
               className="border-b border-border/50 last:border-b-0"
             >
               <td className="py-2 text-foreground">
-                <span className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="flex cursor-pointer items-center gap-2 text-left hover:text-primary focus-visible:outline focus-visible:outline-ring"
+                  onClick={() => onSelectModel(`${model.provider}:${model.model}`)}
+                >
                   <ProviderMark provider={model.provider} className="size-3.5" tinted />
                   <span className="truncate">{model.model}</span>
-                </span>
+                </button>
               </td>
               <td className="py-2 text-right text-foreground tabular-nums">
                 {isModelCostUnknown(model) ? (

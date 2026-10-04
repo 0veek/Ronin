@@ -2680,6 +2680,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             isMobileViewport,
             shiftKey: event.shiftKey,
             modifierKey: event.metaKey || event.ctrlKey,
+            altKey: event.altKey,
+            sendAndNewThread:
+              resolveShortcutCommand(event, keybindings, {
+                context: { composerFocus: true, draftThreadRoute: routeKind === "draft" },
+              }) === "composer.sendAndNewThread",
             isDraftThread: routeKind === "draft",
             isRunning: phase === "running",
             sendShortcut: settings.sendShortcut,
@@ -3255,8 +3260,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           terminalFocus: getTerminalFocusOwner() !== null,
           terminalOpen,
           modelPickerOpen: isComposerModelPickerOpen,
+          composerFocus: isComposerFocused,
         },
       });
+      if (command === "composer.sendAndNewThread") {
+        if (event.isComposing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        submitComposer(undefined, "background");
+        return;
+      }
       if (command !== "composer.stash") return;
       // Always claim the shortcut so the browser save dialog never opens,
       // even when the composer is in a state that can't stash.
@@ -3280,10 +3293,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     activePendingProgress,
     isComposerApprovalState,
     isComposerModelPickerOpen,
+    isComposerFocused,
     keybindings,
     pendingUserInputs.length,
     projectSelectionRequired,
     stashCurrentPrompt,
+    submitComposer,
     isRevertingCheckpoint,
     terminalOpen,
   ]);

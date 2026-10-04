@@ -1,7 +1,11 @@
-import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
+import {
+  EnvironmentAuthorizationError,
+  ORCHESTRATION_WS_METHODS,
+  WS_METHODS,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
-import type * as Duration from "effect/Duration";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -85,6 +89,10 @@ export class EnvironmentRpcSubscriptionObserver extends Context.Reference<{
 }) {}
 
 export const isRpcClientError = Schema.is(RpcClientError.RpcClientError);
+const isEnvironmentAuthorizationError = Schema.is(EnvironmentAuthorizationError);
+
+/** Ceiling for the doubling delay between same-session expected-failure retries. */
+const MAX_EXPECTED_FAILURE_RETRY_DELAY_MS = 30_000;
 
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
 
@@ -178,6 +186,12 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
   readonly onExpectedFailure?: (
     cause: Cause.Cause<EnvironmentRpcStreamFailure<TTag>>,
   ) => Effect.Effect<void, never, never>;
+  /**
+   * First delay before resubscribing on the same session after an expected
+   * failure. Each consecutive failure doubles it up to 30 seconds, and the
+   * first value from a healthy stream resets it. Authorization failures are
+   * not retried; they wait for the next session or `resubscribe` signal.
+   */
   readonly retryExpectedFailureAfter?: Duration.Input | ((retryAttempt: number) => Duration.Input);
   readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
@@ -282,14 +296,27 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                         const handled = Stream.fromEffect(options.onExpectedFailure(cause)).pipe(
                           Stream.drain,
                         );
-                        if (options.retryExpectedFailureAfter === undefined) {
+                        const isAuthorizationFailure = cause.reasons.some(
+                          (reason) =>
+                            reason._tag === "Fail" && isEnvironmentAuthorizationError(reason.error),
+                        );
+                        if (
+                          options.retryExpectedFailureAfter === undefined ||
+                          isAuthorizationFailure
+                        ) {
                           return handled;
                         }
                         consecutiveExpectedFailures += 1;
                         const retryAfter =
                           typeof options.retryExpectedFailureAfter === "function"
                             ? options.retryExpectedFailureAfter(consecutiveExpectedFailures)
-                            : options.retryExpectedFailureAfter;
+                            : Duration.millis(
+                                Math.min(
+                                  Duration.toMillis(options.retryExpectedFailureAfter) *
+                                    2 ** (consecutiveExpectedFailures - 1),
+                                  MAX_EXPECTED_FAILURE_RETRY_DELAY_MS,
+                                ),
+                              );
                         return handled.pipe(
                           Stream.concat(
                             Stream.fromEffect(Effect.sleep(retryAfter)).pipe(Stream.drain),

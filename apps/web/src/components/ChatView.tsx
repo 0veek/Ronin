@@ -4020,9 +4020,6 @@ export default function ChatView(props: ChatViewProps) {
     isGitRepo,
     showEnvironmentIndicator: showComposerEnvironmentIndicator,
   });
-  const initialDiffPanelGitScope =
-    gitStatusQuery.data?.hasWorkingTreeChanges === true ? "unstaged" : "branch";
-  const diffPanelGitStatusResolutionKey = gitStatusQuery.data ? "resolved" : "pending";
   const terminalShortcutLabelOptions = useMemo(
     () => ({
       context: {
@@ -7739,6 +7736,12 @@ export default function ChatView(props: ChatViewProps) {
       composerTerminalContextsRef.current = [];
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
+      if (
+        submissionIntent === "background" &&
+        currentRouteThreadKeyRef.current === routeThreadKey
+      ) {
+        handleNewThreadInActiveProject();
+      }
       return;
     }
     const threadIdForSend = activeThread.id;
@@ -8178,6 +8181,13 @@ export default function ChatView(props: ChatViewProps) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
         acknowledgeActiveThreadWoke();
+        if (
+          submissionIntent === "background" &&
+          !isLocalDraftThread &&
+          currentRouteThreadKeyRef.current === routeThreadKey
+        ) {
+          handleNewThreadInActiveProject();
+        }
         if (backgroundThreadRef) {
           if (backgroundDraftOpened || currentRouteThreadKeyRef.current !== routeThreadKey) {
             finalizePromotedDraftThreadByRef(backgroundThreadRef);
@@ -9246,7 +9256,12 @@ export default function ChatView(props: ChatViewProps) {
             "flex shrink-0",
             panelAnimationsActive &&
               "motion-safe:transition-opacity motion-safe:[transition-duration:var(--panel-animation-duration)] motion-safe:ease-out",
-            rightPanelOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+            // Closed, the control leaves the flex flow so the cluster is only as wide as the two
+            // toggles the header reserves room for; anchored to the cluster's left edge, it fades
+            // out where it stood rather than over the terminal toggle.
+            rightPanelOpen
+              ? "pointer-events-auto opacity-100"
+              : "pointer-events-none absolute right-full mr-1 opacity-0",
           )}
           inert={!rightPanelOpen}
         >
@@ -9295,10 +9310,9 @@ export default function ChatView(props: ChatViewProps) {
     ) : renderedRightPanelSurface?.kind === "diff" ? (
       <Suspense fallback={null}>
         <DiffPanel
-          key={`${activeThreadKey}:${diffPanelGitStatusResolutionKey}`}
+          key={activeThreadKey}
           mode="embedded"
           composerDraftTarget={composerDraftTarget}
-          initialGitScope={initialDiffPanelGitScope}
           workspaceMutationId={workspaceMutationId}
         />
       </Suspense>

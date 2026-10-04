@@ -1,5 +1,6 @@
 import { ClientSettingsSchema, type ClientSettings } from "@t3tools/contracts";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
+import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -34,6 +35,7 @@ const encodeClientSettingsJson = Schema.encodeEffect(ClientSettingsJson);
 
 const DesktopClientSettingsWriteOperation = Schema.Literals([
   "create-temporary-file-name",
+  "resolve-symlink",
   "encode-document",
   "create-directory",
   "write-temporary-file",
@@ -103,8 +105,20 @@ const writeClientSettings = Effect.fnUntraced(function* (input: {
   readonly settings: ClientSettings;
   readonly suffix: string;
 }): Effect.fn.Return<void, DesktopClientSettingsWriteError> {
-  const directory = input.path.dirname(input.settingsPath);
-  const tempPath = `${input.settingsPath}.${process.pid}.${input.suffix}.tmp`;
+  const targetPath = yield* resolveSymlinkTarget(input.settingsPath).pipe(
+    Effect.provideService(FileSystem.FileSystem, input.fileSystem),
+    Effect.provideService(Path.Path, input.path),
+    Effect.mapError(
+      (cause) =>
+        new DesktopClientSettingsWriteError({
+          operation: "resolve-symlink",
+          path: input.settingsPath,
+          cause,
+        }),
+    ),
+  );
+  const directory = input.path.dirname(targetPath);
+  const tempPath = `${targetPath}.${process.pid}.${input.suffix}.tmp`;
   const encoded = yield* encodeClientSettingsJson(input.settings).pipe(
     Effect.mapError(
       (cause) =>
@@ -135,7 +149,7 @@ const writeClientSettings = Effect.fnUntraced(function* (input: {
         }),
     ),
   );
-  yield* input.fileSystem.rename(tempPath, input.settingsPath).pipe(
+  yield* input.fileSystem.rename(tempPath, targetPath).pipe(
     Effect.mapError(
       (cause) =>
         new DesktopClientSettingsWriteError({

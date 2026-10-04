@@ -125,6 +125,7 @@ describe("parseAntigravityConversation", () => {
         reasoningTokens: 22,
       },
       reportedCostUsd: null,
+      speed: "standard",
       dedupeKey: "4f4f0139-bb22-4999-998e-e37500a88c12:2",
     });
   });

@@ -323,6 +323,7 @@ export function buildKeybindingCommandOptions(
 }
 
 export function commandLabel(command: KeybindingCommand): string {
+  if (command === "composer.sendAndNewThread") return "Composer: Send and Start New Thread";
   if (command === "thread.copyReference") return "Pull Request: Copy Link or Thread ID";
   const raw = String(command);
   if (raw.startsWith("script.") && raw.endsWith(".run")) {

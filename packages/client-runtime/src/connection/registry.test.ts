@@ -11,6 +11,7 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Scheduler from "effect/Scheduler";
@@ -121,6 +122,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
   initialProfiles: ReadonlyArray<ConnectionProfile> = [],
   initialCredentials: ReadonlyArray<readonly [string, ConnectionCredential]> = [],
   options?: {
+    readonly probe?: Effect.Effect<void>;
     readonly beforeSessionConnect?: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly beforeRegistrationRegister?: (
       registration: ConnectionRegistration,
@@ -318,7 +320,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
             subscribeServerConfig: () =>
               Stream.die(new Error("Config is not used by registry tests.")),
             ready: Effect.void,
-            probe: Effect.void,
+            probe: options?.probe ?? Effect.void,
             closed: Deferred.await(closed),
           } satisfies RpcSession.RpcSession),
           () => Ref.update(releasedSessions, (count) => count + 1),
@@ -1090,6 +1092,46 @@ describe("EnvironmentRegistry", () => {
           (yield* SubscriptionRef.get(registry.entries)).get(TARGET.environmentId)
             ?.unsupportedReason,
         ).toBeUndefined();
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
+  it.effect("keeps one session per environment across concurrent registrations and retries", () =>
+    Effect.gen(function* () {
+      const probes = yield* Queue.unbounded<void>();
+      const harness = yield* makeHarness([], [], [], { probe: Queue.offer(probes, undefined) });
+
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        const registration = new PrimaryConnectionRegistration({ target: TARGET });
+        yield* Effect.all(
+          Array.from({ length: 5 }, () => registry.registerPlatform(registration)),
+          { concurrency: "unbounded", discard: true },
+        );
+        yield* awaitConnectionState(
+          registry,
+          TARGET.environmentId,
+          (state) => state.phase === "connected",
+        );
+
+        // Platform polls and explicit retries reach a healthy connection at once.
+        yield* Effect.all(
+          [
+            ...Array.from({ length: 5 }, () => registry.registerPlatform(registration)),
+            ...Array.from({ length: 5 }, () => registry.retryNow(TARGET.environmentId)),
+            registry.reconcilePlatform([registration]),
+          ],
+          { concurrency: "unbounded", discard: true },
+        );
+        // Concurrent retries may share the same health probe.
+        yield* Queue.take(probes);
+
+        expect(yield* Ref.get(harness.sessions)).toHaveLength(1);
+        expect(yield* Ref.get(harness.releasedSessions)).toBe(0);
+        expect(yield* registry.state(TARGET.environmentId)).toMatchObject({
+          phase: "connected",
+          generation: 1,
+        });
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

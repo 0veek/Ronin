@@ -19,6 +19,11 @@ inserts a new line. This applies to the web and desktop composer at desktop widt
 use `mod+Shift+Enter` for the opposite action. In a new thread, `mod+Enter` keeps
 starting the thread in the background.
 
+`mod+Alt+Enter` sends from any thread and opens a fresh new-thread composer while
+the submitted thread keeps running. Change it under **Settings → Keybindings →
+Composer: Send and Start New Thread**. In a new thread, `mod+Enter` still starts
+in the background with the same workspace and base branch selections.
+
 The file is a JSON array of rules.
 
 ```json
@@ -124,9 +129,9 @@ application menu's **Quit** action always quits immediately.
 ## `when` Conditions
 
 A `when` expression is evaluated against context keys describing the current UI state. The keys
-the app supplies today are `terminalFocus`, `terminalOpen`, `previewFocus`, `previewOpen`, and
-`modelPickerOpen`. The set is open and grows over time, so treat that as the current list rather
-than a fixed one. Any key the running app does not supply evaluates to `false`.
+the app supplies today are `terminalFocus`, `terminalOpen`, `previewFocus`, `previewOpen`,
+`modelPickerOpen`, and `composerFocus`. The set is open and grows over time, so treat that as the
+current list rather than a fixed one. Any key the running app does not supply evaluates to `false`.
 
 Operators: `!` (not), `&&` (and), `||` (or), and parentheses.
 

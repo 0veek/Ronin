@@ -227,6 +227,49 @@ describe("settle thread shortcut", () => {
 });
 
 describe("composer and pull request shortcuts", () => {
+  it.each([
+    { platform: "MacIntel", modifiers: { metaKey: true } },
+    { platform: "Linux", modifiers: { ctrlKey: true } },
+  ])(
+    "sends and opens a new thread only with composer focus on $platform",
+    ({ platform, modifiers }) => {
+      const input = event({ key: "Enter", altKey: true, ...modifiers });
+      assert.strictEqual(
+        resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { composerFocus: true },
+        }),
+        "composer.sendAndNewThread",
+      );
+      assert.isNull(
+        resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { composerFocus: false },
+        }),
+      );
+    },
+  );
+
+  it("uses the configured send-and-new-thread shortcut instead of restoring its default", () => {
+    const bindings = mergeWithDefaultKeybindings(
+      compileResolvedKeybindingsConfig([
+        { key: "mod+shift+l", command: "composer.sendAndNewThread", when: "composerFocus" },
+      ]),
+    );
+    const options = { platform: "Linux", context: { composerFocus: true } };
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "l", ctrlKey: true, shiftKey: true }), bindings, options),
+      "composer.sendAndNewThread",
+    );
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "Enter", ctrlKey: true, altKey: true }),
+        bindings,
+        options,
+      ),
+    );
+  });
+
   it("fills missing number shortcuts without replacing the saved URL binding", () => {
     const olderServerBindings = DEFAULT_RESOLVED_KEYBINDINGS.filter(
       (binding) =>

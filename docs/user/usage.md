@@ -17,6 +17,16 @@ Each provider owns one colour across the whole page — the chart, the split, th
 model rows all key to the same set, in light and dark alike. The brand mark beside every value
 carries the same identity, so nothing on the page depends on telling two hues apart.
 
+In cost view, **Cost by type** separates input, cache reads, cache writes, and output. **Cost by
+speed** separates standard, fast, and ultrafast requests, with the speed premium showing the extra
+cost over standard pricing. Codex's
+recorded service tier and Claude Code's fast mode determine that premium when rates are available.
+Providers that report a total cost keep that total.
+
+Select a model name in the breakdown to see its trend, token mix, cache hit rate, and cost for the
+current time range. Models without a known rate show a token trend instead. Close the dialog to
+return to the same breakdown.
+
 Grok totals come from the session records it writes as each turn completes, so a turn that never
 finished writing one does not appear.
 

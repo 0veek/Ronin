@@ -34,11 +34,15 @@ export function composerSubmissionIntentForEnter(input: {
   isMobileViewport: boolean;
   shiftKey: boolean;
   modifierKey: boolean;
+  altKey?: boolean;
+  sendAndNewThread?: boolean;
   isDraftThread: boolean;
   isRunning?: boolean;
   sendShortcut?: ClientSettings["sendShortcut"];
   prompt?: string;
 }): ComposerSubmissionIntent | null {
+  if (input.sendAndNewThread && !input.isMobileViewport) return "background";
+  if (input.altKey) return null;
   const requiresModifier =
     input.sendShortcut === "mod-enter" ||
     (input.sendShortcut === "mod-enter-multiline" && /[\r\n]/.test(input.prompt ?? ""));

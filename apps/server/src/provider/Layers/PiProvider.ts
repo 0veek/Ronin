@@ -35,7 +35,6 @@ import { collectSkillsFromRoots, nativeSkillRootsForProvider } from "../skillsCa
 
 const PI_PRESENTATION = {
   displayName: "Pi",
-  badgeLabel: "Early Access",
   showInteractionModeToggle: false,
   requiresNewThreadForModelChange: false,
 } as const;

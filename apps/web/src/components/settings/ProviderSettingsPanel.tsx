@@ -56,6 +56,7 @@ import {
   isProviderUpdateActive,
   type ProviderUpdateCandidate,
 } from "../ProviderUpdateLaunchNotification.logic";
+import { ProviderUpdatesAction } from "../ProviderUpdatesAction";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../ui/collapsible";
 import {
@@ -833,6 +834,7 @@ export function EnvironmentProviderSettings({
         {...searchableSetting("providers")}
         headerAction={
           <div className="flex min-w-0 items-center gap-1.5">
+            <ProviderUpdatesAction />
             {/*
               The 11px size must sit on this flex item, not just the span
               inside: the item's line box is struck from its own font size,

@@ -5,11 +5,12 @@ time, picked from the menu at the top left.
 
 ## Scopes
 
-- **Working tree** — everything you have not committed yet, staged or not. This is the default
-  reading of "what changed".
+- **Working tree** — everything you have not committed yet, staged or not.
 - **Staged** — only what the next commit would take.
-- **Branch changes** — your branch compared against its base. Pick a different base from the
-  selector beside the scope menu.
+- **Branch changes** — everything since your branch split from its base, including committed,
+  staged, unstaged, and untracked changes. Pick a different base from the selector beside the
+  scope menu. This is the default scope until you choose another. Expanding a file shows its current
+  contents.
 - **Latest turn** or a specific **Turn** — the checkpoint diff for one turn of the conversation. See
   [Checkpoints and restoring](./checkpoints.md).
 

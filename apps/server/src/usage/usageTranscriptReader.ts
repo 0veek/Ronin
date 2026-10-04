@@ -76,6 +76,8 @@ export interface TranscriptParseResult {
 /** 64 bytes of JSONL tail is ample to distinguish a replaced file. */
 export const GUARD_LENGTH = 64;
 const NEWLINE = 0x0a;
+/** `stat` calls one transcript walk keeps in flight. The libuv pool has 4 threads. */
+const STAT_CONCURRENCY = 32;
 const CARRIAGE_RETURN = 0x0d;
 
 /**
@@ -109,14 +111,22 @@ function fnv1a(buffer: Buffer): number {
  * Errors on individual entries are swallowed: session files rotate and get
  * removed while the walk is in flight, and a partial listing is far better than
  * failing the page.
+ *
+ * `fileName` restricts the walk to a single basename (Grok's `updates.jsonl`).
+ * Grok sessions also ship multi-megabyte `chat_history` and `events` logs that
+ * never carry usage, so the basename filter keeps a cold scan off those files.
+ *
+ * Directories are listed depth-first, one at a time, then the candidates are
+ * stat'd by a fixed pool of workers: a warm scan stats thousands of files, and
+ * one at a time each waits its own trip through the thread pool. Results keep
+ * `readdir` order, which the aggregator's first-seen dedupe relies on.
  */
 export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
   fileName?: string,
 ): Promise<readonly TranscriptFile[]> {
-  const found: TranscriptFile[] = [];
-
+  const candidates: string[] = [];
   const walk = async (dir: string): Promise<void> => {
     let entries;
     try {
@@ -126,26 +136,33 @@ export async function listTranscriptFiles(
     }
     for (const entry of entries) {
       const child = NodePath.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(child);
-        continue;
+      if (entry.isDirectory()) await walk(child);
+      else if (fileName !== undefined ? entry.name === fileName : entry.name.endsWith(".jsonl")) {
+        candidates.push(child);
       }
-      if (fileName === undefined ? !entry.name.endsWith(".jsonl") : entry.name !== fileName) {
-        continue;
-      }
+    }
+  };
+  await walk(root);
+
+  const found: Array<TranscriptFile | undefined> = Array.from({ length: candidates.length });
+  // Each worker pulls the next candidate from one shared iterator.
+  const queue = candidates.entries();
+  const statQueued = async (): Promise<void> => {
+    for (const [index, path] of queue) {
       try {
-        const stats = await NodeFSP.stat(child);
+        const stats = await NodeFSP.stat(path);
         if (stats.mtimeMs >= sinceMs) {
-          found.push({ path: child, size: stats.size, mtimeMs: stats.mtimeMs });
+          found[index] = { path, size: stats.size, mtimeMs: stats.mtimeMs };
         }
       } catch {
         // Vanished between readdir and stat.
       }
     }
   };
-
-  await walk(root);
-  return found;
+  await Promise.all(
+    Array.from({ length: Math.min(STAT_CONCURRENCY, candidates.length) }, statQueued),
+  );
+  return found.filter((file) => file !== undefined);
 }
 
 /**
@@ -383,6 +400,7 @@ export async function readTranscriptRecords(
         if (
           !mightCarryUsage(line, provider) &&
           !line.includes('"turn_context"') &&
+          !line.includes('"thread_settings_applied"') &&
           !line.includes('"session_meta"')
         ) {
           return;

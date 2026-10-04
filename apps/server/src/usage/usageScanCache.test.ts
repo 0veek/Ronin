@@ -4,6 +4,7 @@ import {
   decodeScanCache,
   dedupeWithinFile,
   encodeScanCache,
+  makeScanCacheWriter,
   pruneScanCache,
   type CachedFile,
   type ScanCache,
@@ -24,7 +25,7 @@ function record(overrides: Partial<UsageRecord> = {}): UsageRecord {
       reasoningTokens: 0,
     },
     reportedCostUsd: null,
-    fast: false,
+    speed: "standard",
     dedupeKey: "msg_1:",
     ...overrides,
   };
@@ -58,7 +59,11 @@ function cacheWith(entries: readonly [string, number, readonly UsageRecord[]][])
 describe("scan cache round trip", () => {
   it("restores records unchanged", () => {
     const original = cacheWith([
-      ["/a.jsonl", 100, [record(), record({ dedupeKey: "msg_2:", model: "claude-opus-5" })]],
+      [
+        "/a.jsonl",
+        100,
+        [record(), record({ dedupeKey: "msg_2:", model: "claude-opus-5-5", speed: "fast" })],
+      ],
       ["/b.jsonl", 200, [record({ sessionId: "session-b", reportedCostUsd: 1.5 })]],
     ]);
 
@@ -66,11 +71,16 @@ describe("scan cache round trip", () => {
       size: 80,
       mtimeMs: 400,
       provider: "codex",
-      records: [record({ provider: "codex", model: "gpt-5.2-codex", dedupeKey: null })],
-      tailRecords: [record({ provider: "codex", model: "gpt-5.2-codex", dedupeKey: null })],
+      records: [
+        record({ provider: "codex", model: "gpt-5.2-codex", dedupeKey: null, speed: "ultrafast" }),
+      ],
+      tailRecords: [
+        record({ provider: "codex", model: "gpt-5.2-codex", dedupeKey: null, speed: "ultrafast" }),
+      ],
       position: position({
         codexState: {
-          model: "gpt-5.2-codex",
+          model: "gpt-6-astra",
+          speed: "ultrafast",
           sessionId: "session-c",
           lastUsageSignature: '{"input_tokens":1}',
           sawSessionMeta: true,
@@ -114,11 +124,62 @@ describe("scan cache round trip", () => {
     expect(decodeScanCache(JSON.parse(JSON.stringify(poisoned))).has("/a.jsonl")).toBe(false);
   });
 
-  it("rejects a document from the previous cache version", () => {
+  it("drops an entry whose speed is not a known index", () => {
+    const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record({ speed: "fast" })]]]));
+    const row = encoded.files["/a.jsonl"]!.r[0]!;
+    const poisoned = {
+      ...encoded,
+      files: { "/a.jsonl": { ...encoded.files["/a.jsonl"]!, r: [[...row.slice(0, 10), true]] } },
+    };
+
+    expect(decodeScanCache(JSON.parse(JSON.stringify(poisoned))).has("/a.jsonl")).toBe(false);
+  });
+
+  it("rejects a document from before records carried a speed", () => {
     const encoded = encodeScanCache(cacheWith([["/a.jsonl", 100, [record()]]]));
     const previous = { ...encoded, version: 3 };
 
     expect(decodeScanCache(JSON.parse(JSON.stringify(previous))).size).toBe(0);
+  });
+
+  it("keeps v4 history while forcing live Codex files to reparse their service tiers", () => {
+    const cache = cacheWith([["/claude.jsonl", 100, [record({ speed: "fast" })]]]);
+    cache.set("/codex.jsonl", {
+      ...cache.get("/claude.jsonl")!,
+      provider: "codex",
+      records: [record({ provider: "codex" })],
+    });
+    const encoded = encodeScanCache(cache);
+    const restored = decodeScanCache({ ...encoded, version: 4 });
+    expect(restored.get("/claude.jsonl")).toEqual(cache.get("/claude.jsonl"));
+    expect(restored.get("/codex.jsonl")?.records).toEqual(cache.get("/codex.jsonl")?.records);
+    expect(restored.get("/codex.jsonl")?.size).toBe(-1);
+    expect(restored.get("/codex.jsonl")?.position).toEqual({
+      resumeOffset: 0,
+      guardLength: 0,
+      guardHash: 0,
+      codexState: null,
+    });
+  });
+
+  it("rewrites only changed entries and still restores the whole cache", () => {
+    const write = makeScanCacheWriter();
+    const cache = cacheWith([
+      ["/a.jsonl", 100, [record()]],
+      ["/b.jsonl", 200, [record({ sessionId: "session-b" })]],
+    ]);
+    const sources = { "claude\u0000/projects": { dir: "/projects", volumeId: "1:2" } };
+    expect(decodeScanCache(JSON.parse(write(cache, { sources })))).toEqual(cache);
+
+    // The replacement adds intern entries; /a's memoised indexes must hold.
+    cache.set("/b.jsonl", {
+      ...cache.get("/b.jsonl")!,
+      size: 30,
+      records: [record({ sessionId: "session-c", model: "claude-opus-5-5", dedupeKey: "msg_3:" })],
+    });
+    const document = JSON.parse(write(cache, { sources }));
+    expect(decodeScanCache(document)).toEqual(cache);
+    expect(document.sources).toEqual(sources);
   });
 
   it("interns repeated model and session strings", () => {

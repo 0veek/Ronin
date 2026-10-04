@@ -20,7 +20,7 @@ import * as NodePath from "node:path";
 import type { UsageProviderKind } from "@t3tools/contracts";
 
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
-import type { CodexScanState, UsageRecord } from "./usageTranscripts.ts";
+import type { CodexScanState, UsageRecord, UsageSpeed } from "./usageTranscripts.ts";
 
 // v2: Codex fork-copy suppression changed what a file parses to, so v1
 // entries would keep serving double-counted records forever.
@@ -29,9 +29,25 @@ import type { CodexScanState, UsageRecord } from "./usageTranscripts.ts";
 // be re-read on their own.
 // v4: entries carry the parse position and reducer state so a grown file
 // re-parses only its appended bytes instead of starting over.
-// Adding a provider needs no bump: entries are keyed by path and carry their
-// provider, so a new root simply has no entries yet.
-export const USAGE_SCAN_CACHE_VERSION = 4 as const;
+// v5: Codex service tiers; v4 used the same standard/fast row encoding.
+export const USAGE_SCAN_CACHE_VERSION = 5 as const;
+const SPEED_COMPATIBLE_SINCE_VERSION = 4;
+
+/**
+ * Each cache version writes its own file in the state directory. An older
+ * server sharing that directory cannot read a newer cache and would replace
+ * it, dropping saved usage for deleted transcripts. Separate files keep both.
+ * A v5 server reads the legacy (v4) file once, when its own file is missing.
+ */
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v5.json";
+export const LEGACY_SCAN_CACHE_FILE_NAME = "usage-scan-cache.json";
+
+/** Serialised as the index into this list. */
+const SPEEDS: readonly UsageSpeed[] = ["standard", "fast", "ultrafast"];
+
+function isSpeed(value: unknown): value is UsageSpeed {
+  return SPEEDS.some((speed) => speed === value);
+}
 
 export interface CachedFile {
   readonly size: number;
@@ -72,7 +88,7 @@ type SerializedRecord = readonly [
   reasoningTokens: number,
   dedupeKey: string | null,
   reportedCostUsd: number | null,
-  fast: 0 | 1,
+  speed: number,
 ];
 
 interface SerializedFile {
@@ -97,26 +113,32 @@ interface SerializedCache {
   readonly files: Readonly<Record<string, SerializedFile>>;
 }
 
-/** Serialises the cache, interning the repeated model and session strings. */
-export function encodeScanCache(cache: ScanCache): SerializedCache {
-  const models: string[] = [];
-  const sessions: string[] = [];
-  const modelIndex = new Map<string, number>();
-  const sessionIndex = new Map<string, number>();
+/** Model and session strings, each stored once and referenced by index. */
+interface InternTables {
+  readonly models: string[];
+  readonly sessions: string[];
+  readonly modelIndex: Map<string, number>;
+  readonly sessionIndex: Map<string, number>;
+}
 
-  const intern = (table: string[], index: Map<string, number>, value: string): number => {
-    const existing = index.get(value);
-    if (existing !== undefined) return existing;
-    const next = table.length;
-    table.push(value);
-    index.set(value, next);
-    return next;
-  };
+function makeInternTables(): InternTables {
+  return { models: [], sessions: [], modelIndex: new Map(), sessionIndex: new Map() };
+}
 
+function intern(table: string[], index: Map<string, number>, value: string): number {
+  const existing = index.get(value);
+  if (existing !== undefined) return existing;
+  const next = table.length;
+  table.push(value);
+  index.set(value, next);
+  return next;
+}
+
+function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile {
   const serializeRecord = (record: UsageRecord): SerializedRecord => [
     record.timestampMs,
-    intern(models, modelIndex, record.model),
-    intern(sessions, sessionIndex, record.sessionId),
+    intern(tables.models, tables.modelIndex, record.model),
+    intern(tables.sessions, tables.sessionIndex, record.sessionId),
     record.totals.uncachedInputTokens,
     record.totals.cachedInputTokens,
     record.totals.cacheCreationTokens,
@@ -124,25 +146,70 @@ export function encodeScanCache(cache: ScanCache): SerializedCache {
     record.totals.reasoningTokens,
     record.dedupeKey,
     record.reportedCostUsd,
-    record.fast ? 1 : 0,
+    SPEEDS.indexOf(record.speed),
   ];
+  return {
+    s: entry.size,
+    m: entry.mtimeMs,
+    p: entry.provider,
+    r: entry.records.map(serializeRecord),
+    t: entry.tailRecords.map(serializeRecord),
+    o: entry.position.resumeOffset,
+    gl: entry.position.guardLength,
+    gh: entry.position.guardHash,
+    cs: entry.position.codexState,
+  };
+}
 
+/** Serialises the cache, interning the repeated model and session strings. */
+export function encodeScanCache(cache: ScanCache): SerializedCache {
+  const tables = makeInternTables();
   const files: Record<string, SerializedFile> = {};
-  for (const [path, entry] of cache) {
-    files[path] = {
-      s: entry.size,
-      m: entry.mtimeMs,
-      p: entry.provider,
-      r: entry.records.map(serializeRecord),
-      t: entry.tailRecords.map(serializeRecord),
-      o: entry.position.resumeOffset,
-      gl: entry.position.guardLength,
-      gh: entry.position.guardHash,
-      cs: entry.position.codexState,
-    };
-  }
+  for (const [path, entry] of cache) files[path] = serializeFile(entry, tables);
+  return {
+    version: USAGE_SCAN_CACHE_VERSION,
+    models: tables.models,
+    sessions: tables.sessions,
+    files,
+  };
+}
 
-  return { version: USAGE_SCAN_CACHE_VERSION, models, sessions, files };
+/**
+ * Returns a function that serialises the cache to JSON text, re-encoding only
+ * the entries that changed since its last call. Call it once per persist.
+ *
+ * Writes the same document as `encodeScanCache`. Most entries never change
+ * between scans, and encoding all of them made each persist cost close to a
+ * second on a large cache. Entries are replaced, never mutated, when their file
+ * changes, so an entry's JSON is memoised by identity. The intern tables only
+ * grow, so a memoised entry's indexes stay valid; a pruned entry can leave an
+ * unused string behind until the next process start.
+ */
+export function makeScanCacheWriter(): (
+  cache: ScanCache,
+  extra: Readonly<Record<string, unknown>>,
+) => string {
+  const tables = makeInternTables();
+  const fragments = new WeakMap<CachedFile, string>();
+  return (cache, extra) => {
+    const files: string[] = [];
+    for (const [path, entry] of cache) {
+      let fragment = fragments.get(entry);
+      if (fragment === undefined) {
+        fragment = JSON.stringify(serializeFile(entry, tables));
+        fragments.set(entry, fragment);
+      }
+      files.push(`${JSON.stringify(path)}:${fragment}`);
+    }
+    // Encoded after the files, which may have added to the intern tables.
+    const head = JSON.stringify({
+      ...extra,
+      version: USAGE_SCAN_CACHE_VERSION,
+      models: tables.models,
+      sessions: tables.sessions,
+    });
+    return `${head.slice(0, -1)},"files":{${files.join(",")}}}`;
+  };
 }
 
 function isRecordArray(value: unknown): value is readonly unknown[] {
@@ -160,7 +227,14 @@ export function decodeScanCache(document: unknown): ScanCache {
   if (typeof document !== "object" || document === null) return cache;
 
   const root = document as Partial<SerializedCache>;
-  if (root.version !== USAGE_SCAN_CACHE_VERSION) return cache;
+  const version = root.version;
+  if (
+    typeof version !== "number" ||
+    version < SPEED_COMPATIBLE_SINCE_VERSION ||
+    version > USAGE_SCAN_CACHE_VERSION
+  ) {
+    return cache;
+  }
   if (!isRecordArray(root.models) || !isRecordArray(root.sessions)) return cache;
   if (typeof root.files !== "object" || root.files === null) return cache;
 
@@ -193,8 +267,9 @@ export function decodeScanCache(document: unknown): ScanCache {
         reasoning,
         dedupeKey,
         reportedCostUsd,
-        fast,
+        speedIndex,
       ] = row as SerializedRecord;
+      const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
       if (
@@ -206,7 +281,7 @@ export function decodeScanCache(document: unknown): ScanCache {
         !Number.isFinite(cacheCreation) ||
         !Number.isFinite(output) ||
         !Number.isFinite(reasoning) ||
-        (fast !== 0 && fast !== 1)
+        speed === undefined
       ) {
         return null;
       }
@@ -224,7 +299,7 @@ export function decodeScanCache(document: unknown): ScanCache {
           reasoningTokens: reasoning,
         },
         reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
-        fast: fast === 1,
+        speed,
         dedupeKey: typeof dedupeKey === "string" ? dedupeKey : null,
       });
     }
@@ -255,7 +330,11 @@ export function decodeScanCache(document: unknown): ScanCache {
     ) {
       continue;
     }
-    const codexState = decodeCodexState(entry.cs);
+    // v4 Codex records predate service tiers, so they all priced as standard.
+    // Keep them, because the rollout may be gone, but make a live rollout
+    // re-parse whole: no file has size -1, and a zero position cannot resume.
+    const legacyCodex = entry.p === "codex" && version < USAGE_SCAN_CACHE_VERSION;
+    const codexState = legacyCodex ? null : decodeCodexState(entry.cs);
     if (codexState === undefined) continue;
 
     const provider: UsageProviderKind = entry.p;
@@ -264,17 +343,14 @@ export function decodeScanCache(document: unknown): ScanCache {
     if (records === null || tailRecords === null) continue;
 
     cache.set(path, {
-      size: entry.s,
+      size: legacyCodex ? -1 : entry.s,
       mtimeMs: entry.m,
       provider,
       records,
       tailRecords,
-      position: {
-        resumeOffset: entry.o,
-        guardLength: entry.gl,
-        guardHash: entry.gh,
-        codexState,
-      },
+      position: legacyCodex
+        ? { resumeOffset: 0, guardLength: 0, guardHash: 0, codexState: null }
+        : { resumeOffset: entry.o, guardLength: entry.gl, guardHash: entry.gh, codexState },
     });
   }
 
@@ -292,6 +368,7 @@ function decodeCodexState(value: unknown): CodexScanState | null | undefined {
   const state = value as Partial<CodexScanState>;
   if (
     typeof state.model !== "string" ||
+    !isSpeed(state.speed) ||
     typeof state.sessionId !== "string" ||
     (state.lastUsageSignature !== null && typeof state.lastUsageSignature !== "string") ||
     typeof state.sawSessionMeta !== "boolean" ||
@@ -303,6 +380,7 @@ function decodeCodexState(value: unknown): CodexScanState | null | undefined {
   }
   return {
     model: state.model,
+    speed: state.speed,
     sessionId: state.sessionId,
     lastUsageSignature: state.lastUsageSignature ?? null,
     sawSessionMeta: state.sawSessionMeta,

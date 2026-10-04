@@ -1399,18 +1399,16 @@ function toComments(raw: {
   readonly comments?: ReadonlyArray<Schema.Schema.Type<typeof RawCommentSchema>> | undefined;
   readonly reviews?: ReadonlyArray<Schema.Schema.Type<typeof RawReviewSchema>> | undefined;
 }): ReadonlyArray<PullRequestComment> {
-  const issueComments = (raw.comments ?? []).map(
-    (comment): PullRequestComment => ({
-      id: comment.id,
-      kind: "issue-comment",
-      author: toActor(comment.author),
-      body: comment.body ?? "",
-      createdAt: comment.createdAt,
-      url: trimmed(comment.url),
-      path: null,
-      reviewState: null,
-    }),
-  );
+  const issueComments = (raw.comments ?? []).map((comment): PullRequestComment => ({
+    id: comment.id,
+    kind: "issue-comment",
+    author: toActor(comment.author),
+    body: comment.body ?? "",
+    createdAt: comment.createdAt,
+    url: trimmed(comment.url),
+    path: null,
+    reviewState: null,
+  }));
   // A review with no body is kept only when its state is the event itself — an approval, a
   // request for changes, a dismissal. GitHub also opens a bodiless `COMMENTED` review as the
   // container for line comments, and those comments are read from the review threads, so
@@ -1729,6 +1727,8 @@ export function decodePullRequestStatsJson(
  * shape as the search row where the two overlap: the checks arrive as GitHub's one-word rollup
  * rather than the whole check list `gh pr view` hands back, which is what keeps a batch cheap.
  */
+const STACK_MEMBERSHIP_SELECTION = "stack { number size baseRefName } stackEntry { position }";
+
 const PULL_REQUEST_SUMMARY_SELECTION =
   "number title url state isDraft mergeable reviewDecision additions deletions changedFiles " +
   "updatedAt mergedAt closedAt headRefName baseRefName " +
@@ -1739,6 +1739,7 @@ const PULL_REQUEST_SUMMARY_SELECTION =
 /** Summaries for pull requests anywhere on one host, one aliased lookup each. */
 export function buildPullRequestSummariesGraphQlQuery(
   changeRequests: ReadonlyArray<{ readonly repository: string; readonly number: number }>,
+  includeStacks = false,
 ): string | null {
   if (changeRequests.length === 0) return null;
   const selections: string[] = [];
@@ -1748,7 +1749,7 @@ export function buildPullRequestSummariesGraphQlQuery(
     if (!REPOSITORY_PART.test(owner) || !REPOSITORY_PART.test(name)) return null;
     if (!Number.isSafeInteger(changeRequest.number) || changeRequest.number <= 0) return null;
     selections.push(
-      `  s${index}: repository(owner: "${owner}", name: "${name}") { pullRequest(number: ${changeRequest.number}) { ${PULL_REQUEST_SUMMARY_SELECTION} } }`,
+      `  s${index}: repository(owner: "${owner}", name: "${name}") { pullRequest(number: ${changeRequest.number}) { ${PULL_REQUEST_SUMMARY_SELECTION}${includeStacks ? ` ${STACK_MEMBERSHIP_SELECTION}` : ""} } }`,
     );
   }
   return `query PullRequestSummaries {\n${selections.join("\n")}\n}`;
@@ -1794,6 +1795,8 @@ export interface GitHubPullRequestSummary {
   readonly reviewDecision: PullRequestReviewDecision | null;
   readonly checksState: PullRequestChecksState | null;
   readonly mergeability: PullRequestMergeability;
+  /** Null when GitHub says the pull request is in no stack; absent when the read did not ask. */
+  readonly stack?: PullRequestStackMembership | null;
 }
 
 /** Summaries keyed by their request position; missing or invalid entries are skipped. */
@@ -1835,6 +1838,7 @@ export function decodePullRequestSummariesJson(
         }),
       ),
       mergeability: toMergeability(pr.mergeable),
+      ...(pr.stack === undefined ? {} : { stack: toStackMembership(pr) ?? null }),
     });
   }
   return Result.succeed(summaries);
@@ -1973,19 +1977,17 @@ export function reviewThreadConversation(
   threads: ReadonlyArray<PullRequestReviewThread>,
 ): ReadonlyArray<PullRequestComment> {
   return threads.flatMap((thread) =>
-    thread.comments.map(
-      (comment): PullRequestComment => ({
-        id: comment.id,
-        kind: "review-comment",
-        author: comment.author,
-        body: comment.body,
-        createdAt: comment.createdAt,
-        url: comment.url,
-        path: thread.path,
-        reviewState: null,
-        reactions: comment.reactions ?? [],
-      }),
-    ),
+    thread.comments.map((comment): PullRequestComment => ({
+      id: comment.id,
+      kind: "review-comment",
+      author: comment.author,
+      body: comment.body,
+      createdAt: comment.createdAt,
+      url: comment.url,
+      path: thread.path,
+      reviewState: null,
+      reactions: comment.reactions ?? [],
+    })),
   );
 }
 

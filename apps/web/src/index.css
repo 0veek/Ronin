@@ -22,6 +22,22 @@
  */
 
 @import "tailwindcss";
+
+/* Virtualizers own their scroll element. Keep its scrollbar opaque while fading rows. */
+@utility virtualized-scroll-fade {
+  -webkit-mask-image: var(--virtualized-scroll-fade-mask), linear-gradient(black, black);
+  mask-image: var(--virtualized-scroll-fade-mask), linear-gradient(black, black);
+  -webkit-mask-position: left, right;
+  mask-position: left, right;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size:
+    calc(100% - var(--app-scrollbar-width)) 100%,
+    var(--app-scrollbar-width) 100%;
+  mask-size:
+    calc(100% - var(--app-scrollbar-width)) 100%,
+    var(--app-scrollbar-width) 100%;
+}
 @import "./styles/fonts.css";
 @import "./styles/tokens.css";
 @import "./styles/base.css";

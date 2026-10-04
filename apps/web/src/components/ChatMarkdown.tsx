@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   CheckIcon,
   ChevronRightIcon,
+  CodeIcon,
   CopyIcon,
   FileSpreadsheetIcon,
   FileTextIcon,
@@ -20,6 +21,7 @@ import {
   PresentationIcon,
   SparklesIcon,
   TriangleAlertIcon,
+  WorkflowIcon,
   WrapTextIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -75,6 +77,7 @@ import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import remarkGfm from "remark-gfm";
+import { remarkKeepWindowsPathDestinations } from "../markdown-windows-paths";
 import { remarkGithubAlerts } from "../markdown-github-alerts";
 import { remarkHtmlPreview } from "../markdown-html-preview";
 import {
@@ -118,6 +121,7 @@ import { GitHubIcon } from "./Icons";
 import { createIncrementalHighlightedDocument } from "../lib/incrementalHighlighting";
 import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
 import { RenderErrorBoundary } from "./RenderErrorBoundary";
+import { MermaidDiagram } from "./chat/MermaidDiagram";
 import { useTheme } from "../hooks/useTheme";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import {
@@ -367,6 +371,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
 
 const CHAT_MARKDOWN_REMARK_PLUGINS = [
   remarkGfm,
+  remarkKeepWindowsPathDestinations,
   remarkGithubAlerts,
   remarkHtmlPreview,
   remarkNormalizeListItemIndentation,
@@ -377,6 +382,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS = [
 
 const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
   remarkGfm,
+  remarkKeepWindowsPathDestinations,
   remarkGithubAlerts,
   remarkHtmlPreview,
   remarkNormalizeListItemIndentation,
@@ -818,6 +824,9 @@ function MarkdownCodeBlock({
   theme,
   onRunShellCommand,
   isStreaming,
+  leadingActions,
+  canWrap = true,
+  diagram = false,
   children,
 }: {
   code: string;
@@ -826,6 +835,10 @@ function MarkdownCodeBlock({
   theme: "light" | "dark";
   onRunShellCommand?: ((command: string) => void) | undefined;
   isStreaming: boolean;
+  leadingActions?: ReactNode;
+  canWrap?: boolean;
+  /** Renders content instead of code, with actions below it like tables. */
+  diagram?: boolean;
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -881,6 +894,38 @@ function MarkdownCodeBlock({
     [],
   );
 
+  const copyButton = (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            className="chat-markdown-chrome-action"
+            onClick={handleCopy}
+            aria-label={copyLabel}
+          />
+        }
+      >
+        {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+      </TooltipTrigger>
+      <TooltipPopup side="top">{copyLabel}</TooltipPopup>
+    </Tooltip>
+  );
+
+  if (diagram) {
+    return (
+      <div className="my-[0.65rem]" data-language={language}>
+        {children}
+        <div className="mt-0.5 flex items-center justify-between select-none">
+          {leadingActions}
+          {copyButton}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="chat-markdown-codeblock border border-border/70 bg-secondary leading-snug dark:border-transparent dark:bg-input/32"
@@ -896,24 +941,27 @@ function MarkdownCodeBlock({
           />
         </span>
         <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  className="chat-markdown-chrome-action"
-                  aria-pressed={wrapped}
-                  onClick={() => setWrapped((value) => !value)}
-                  aria-label={wrapLabel}
-                />
-              }
-            >
-              <WrapTextIcon className="size-3" />
-            </TooltipTrigger>
-            <TooltipPopup side="top">{wrapLabel}</TooltipPopup>
-          </Tooltip>
+          {leadingActions}
+          {canWrap ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="chat-markdown-chrome-action"
+                    aria-pressed={wrapped}
+                    onClick={() => setWrapped((value) => !value)}
+                    aria-label={wrapLabel}
+                  />
+                }
+              >
+                <WrapTextIcon className="size-3" />
+              </TooltipTrigger>
+              <TooltipPopup side="top">{wrapLabel}</TooltipPopup>
+            </Tooltip>
+          ) : null}
           {canRun ? (
             <Tooltip>
               <TooltipTrigger
@@ -933,6 +981,47 @@ function MarkdownCodeBlock({
               <TooltipPopup side="top">Run in terminal</TooltipPopup>
             </Tooltip>
           ) : null}
+          {copyButton}
+        </span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Mermaid fences render as a diagram once the response settles; streaming and
+ * the code toggle keep the highlighted source.
+ */
+function MarkdownMermaidCodeBlock({
+  code,
+  fenceTitle,
+  theme,
+  isStreaming,
+  onExpand,
+  children,
+}: {
+  code: string;
+  fenceTitle: string | null;
+  theme: "light" | "dark";
+  isStreaming: boolean;
+  onExpand?: ((imageUrl: string) => void) | undefined;
+  children: ReactNode;
+}) {
+  const [showCode, setShowCode] = useState(false);
+  const showDiagram = !showCode && !isStreaming && code.trim().length > 0;
+  const toggleLabel = showCode ? "Show diagram" : "Show code";
+  return (
+    <MarkdownCodeBlock
+      code={code}
+      language="mermaid"
+      fenceTitle={fenceTitle}
+      theme={theme}
+      isStreaming={isStreaming}
+      canWrap={!showDiagram}
+      diagram={showDiagram}
+      leadingActions={
+        isStreaming ? null : (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -941,19 +1030,34 @@ function MarkdownCodeBlock({
                   variant="ghost"
                   size="icon-xs"
                   className="chat-markdown-chrome-action"
-                  onClick={handleCopy}
-                  aria-label={copyLabel}
+                  onClick={() => setShowCode((value) => !value)}
+                  aria-label={toggleLabel}
                 />
               }
             >
-              {copied ? <CheckIcon className="size-3" /> : <CopyIcon className="size-3" />}
+              {showCode ? <WorkflowIcon className="size-3" /> : <CodeIcon className="size-3" />}
             </TooltipTrigger>
-            <TooltipPopup side="top">{copyLabel}</TooltipPopup>
+            <TooltipPopup side="top">{toggleLabel}</TooltipPopup>
           </Tooltip>
-        </span>
-      </div>
-      {children}
-    </div>
+        )
+      }
+    >
+      {showDiagram ? (
+        <RenderErrorBoundary resetKeys={[code, theme]} fallback={children}>
+          <Suspense
+            fallback={
+              <div className="flex min-h-36 items-center justify-center text-xs text-muted-foreground">
+                Rendering diagram
+              </div>
+            }
+          >
+            <MermaidDiagram source={code} theme={theme} onExpand={onExpand} />
+          </Suspense>
+        </RenderErrorBoundary>
+      ) : (
+        children
+      )}
+    </MarkdownCodeBlock>
   );
 }
 
@@ -2620,6 +2724,41 @@ function ChatMarkdown({
 
         const language = extractFenceLanguage(codeBlock.className);
         const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
+        const highlightedCode = (
+          <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
+            <Suspense
+              fallback={
+                <pre {...props} className="invisible" aria-hidden>
+                  {children}
+                </pre>
+              }
+            >
+              <SuspenseShikiCodeBlock
+                className={codeBlock.className}
+                code={codeBlock.code}
+                themeName={diffThemeName}
+                isStreaming={isStreaming}
+              />
+            </Suspense>
+          </RenderErrorBoundary>
+        );
+        if (language === "mermaid") {
+          return (
+            <MarkdownMermaidCodeBlock
+              code={codeBlock.code}
+              fenceTitle={fenceTitle}
+              theme={resolvedTheme}
+              isStreaming={isStreaming}
+              onExpand={
+                onImageExpand
+                  ? (src) => onImageExpand({ images: [{ src, name: "Mermaid diagram" }], index: 0 })
+                  : undefined
+              }
+            >
+              {highlightedCode}
+            </MarkdownMermaidCodeBlock>
+          );
+        }
         return (
           <MarkdownCodeBlock
             code={codeBlock.code}
@@ -2633,22 +2772,7 @@ function ChatMarkdown({
             }
             isStreaming={isStreaming}
           >
-            <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
-              <Suspense
-                fallback={
-                  <pre {...props} className="invisible" aria-hidden>
-                    {children}
-                  </pre>
-                }
-              >
-                <SuspenseShikiCodeBlock
-                  className={codeBlock.className}
-                  code={codeBlock.code}
-                  themeName={diffThemeName}
-                  isStreaming={isStreaming}
-                />
-              </Suspense>
-            </RenderErrorBoundary>
+            {highlightedCode}
           </MarkdownCodeBlock>
         );
       },

@@ -63,6 +63,31 @@ describe("formatAssistantCitationForComposer", () => {
 });
 
 describe("composerSubmissionIntentForEnter", () => {
+  it("sends and opens a fresh composer from either a draft or an existing thread", () => {
+    for (const isDraftThread of [false, true]) {
+      expect(
+        composerSubmissionIntentForEnter({
+          isMobileViewport: false,
+          shiftKey: false,
+          modifierKey: true,
+          altKey: true,
+          sendAndNewThread: true,
+          isDraftThread,
+          isRunning: !isDraftThread,
+          sendShortcut: "mod-enter",
+        }),
+      ).toBe("background");
+    }
+    expect(
+      composerSubmissionIntentForEnter({
+        isMobileViewport: false,
+        shiftKey: false,
+        modifierKey: true,
+        altKey: true,
+        isDraftThread: false,
+      }),
+    ).toBeNull();
+  });
   it.each([
     ["enter", "one line", false, "foreground"],
     ["enter", "two\nlines", false, "foreground"],

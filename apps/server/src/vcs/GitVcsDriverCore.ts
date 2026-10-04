@@ -2448,6 +2448,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const readTrackedReviewDiff = Effect.fn("readTrackedReviewDiff")(function* (
     cwd: string,
     ignoreWhitespace: boolean | undefined,
+    baseRef = "HEAD",
   ) {
     const result = yield* executeGit(
       "GitVcsDriver.readTrackedReviewDiff",
@@ -2462,7 +2463,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ...PATCH_RENDER_PREFIX_ARGS,
         "--find-renames",
         ...(ignoreWhitespace ? ["--ignore-all-space"] : []),
-        "HEAD",
+        baseRef,
         "--",
       ],
       {
@@ -2478,6 +2479,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     untrackedPaths: ReadonlyArray<string>,
     pathsTruncated: boolean,
     ignoreWhitespace: boolean | undefined,
+    baseRef = "HEAD",
   ) {
     const [stagedDeletionsStdout, indexValue] = yield* Effect.all(
       [
@@ -2501,7 +2503,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const stagedDeletions = new Set(stagedDeletionsStdout.split("\0").filter(Boolean));
     const pathsToAdd = untrackedPaths.filter((relativePath) => !stagedDeletions.has(relativePath));
     if (pathsToAdd.length === 0) {
-      const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace);
+      const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace, baseRef);
       return { ...tracked, truncated: pathsTruncated || tracked.truncated };
     }
 
@@ -2562,7 +2564,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ...PATCH_RENDER_PREFIX_ARGS,
         "--find-renames",
         ...(ignoreWhitespace ? ["--ignore-all-space"] : []),
-        "HEAD",
+        baseRef,
         "--",
       ],
       {
@@ -2577,6 +2579,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const readWorkingTreeReviewDiff = Effect.fn("readWorkingTreeReviewDiff")(function* (
     cwd: string,
     ignoreWhitespace: boolean | undefined,
+    baseRef = "HEAD",
   ) {
     const untrackedResult = yield* executeGit(
       "GitVcsDriver.readWorkingTreeReviewDiff.listUntracked",
@@ -2588,11 +2591,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       },
     ).pipe(Effect.option);
     if (untrackedResult._tag === "None") {
-      return yield* readTrackedReviewDiff(cwd, ignoreWhitespace);
+      return yield* readTrackedReviewDiff(cwd, ignoreWhitespace, baseRef);
     }
     const untrackedPaths = splitNullSeparatedGitStdoutPaths(untrackedResult.value);
     if (untrackedPaths.length === 0) {
-      const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace);
+      const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace, baseRef);
       return { ...tracked, truncated: untrackedResult.value.stdoutTruncated || tracked.truncated };
     }
 
@@ -2601,11 +2604,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       untrackedPaths,
       untrackedResult.value.stdoutTruncated,
       ignoreWhitespace,
+      baseRef,
     ).pipe(
       Effect.scoped,
       Effect.catch(() =>
         Effect.all([
-          readTrackedReviewDiff(cwd, ignoreWhitespace).pipe(
+          readTrackedReviewDiff(cwd, ignoreWhitespace, baseRef).pipe(
             Effect.orElseSucceed(() => ({ diff: "", truncated: false })),
           ),
           readUntrackedReviewDiffs(cwd).pipe(
@@ -2681,37 +2685,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
     const stagedDiff = stagedResult.stdout.trimEnd();
 
-    const baseResult =
+    const reviewBase =
       baseRef && branch
-        ? yield* executeGit(
-            "GitVcsDriver.getReviewDiffPreview.base",
-            input.cwd,
-            [
-              "diff",
-              "--patch",
-              "--no-color",
-              "--no-ext-diff",
-              "--no-textconv",
-              "--minimal",
-              ...PATCH_RENDER_PREFIX_ARGS,
-              ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
-              `${baseRef}...HEAD`,
-            ],
-            {
-              maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
-              appendTruncationMarker: true,
-            },
-          ).pipe(
-            Effect.orElseSucceed(() => ({
-              exitCode: 0,
-              stdout: "",
-              stderr: "",
-              stdoutTruncated: false,
-              stderrTruncated: false,
-            })),
+        ? yield* runGitStdout("GitVcsDriver.getReviewDiffPreview.mergeBase", input.cwd, [
+            "merge-base",
+            baseRef,
+            "HEAD",
+          ]).pipe(
+            Effect.map((value) => value.trim()),
+            Effect.orElseSucceed(() => null),
           )
-        : null;
-    const baseDiff = baseResult?.stdout ?? "";
+        : "HEAD";
+    // Diff one baseline against the checkout so overlapping committed and dirty
+    // edits appear once, with the same rename/untracked handling as Working tree.
+    const baseResult =
+      reviewBase === "HEAD"
+        ? dirtyResult
+        : reviewBase
+          ? yield* readWorkingTreeReviewDiff(input.cwd, input.ignoreWhitespace, reviewBase).pipe(
+              Effect.orElseSucceed(() => ({ diff: "", truncated: false })),
+            )
+          : { diff: "", truncated: false };
+    const baseDiff = baseResult.diff;
     const hashDiff = (diff: string) =>
       crypto.digest("SHA-256", new TextEncoder().encode(diff)).pipe(
         Effect.map(Encoding.encodeHex),
@@ -2757,11 +2752,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         id: "branch-range",
         kind: "branch-range",
         title: baseRef ? `Against ${baseRef}` : "Against base branch",
-        baseRef,
+        baseRef: baseRef ?? reviewBase,
         headRef: branch ?? "HEAD",
         diff: baseDiff,
         diffHash: baseDiffHash,
-        truncated: baseResult?.stdoutTruncated ?? false,
+        truncated: baseResult.truncated,
       },
     ];
 
@@ -2932,6 +2927,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (mergeBase.length === 0) {
       return yield* reviewDiffFileError(input, "Could not resolve the branch comparison base.");
     }
+    const repositoryRoot = yield* runGitStdout(
+      "GitVcsDriver.getReviewDiffFileContents.repositoryRoot",
+      input.cwd,
+      ["rev-parse", "--show-toplevel"],
+    ).pipe(Effect.map((value) => value.trim()));
     const [oldContents, newContents] = yield* Effect.all(
       [
         input.changeType === "new"
@@ -2939,7 +2939,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           : readReviewFileAtRevision(input, mergeBase, input.oldPath),
         input.changeType === "deleted"
           ? Effect.succeed("")
-          : readReviewFileAtRevision(input, input.headRef, input.newPath),
+          : readWorkingTreeReviewFile(input, repositoryRoot),
       ],
       { concurrency: 2 },
     );

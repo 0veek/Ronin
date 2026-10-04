@@ -14,24 +14,25 @@ describe("diffPanelStore", () => {
     }),
   );
 
-  it("defaults each thread to branch changes when the working tree is clean", () => {
+  it("defaults each thread to branch changes without requiring git status", () => {
     expect(
       selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
     ).toEqual({ kind: "branch", baseRef: null });
   });
 
-  it("defaults each thread to working changes when the working tree is dirty", () => {
-    expect(
-      selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF, true),
-    ).toEqual({ kind: "unstaged" });
+  it("defaults to branch changes before a thread is selected", () => {
+    expect(selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, null)).toEqual({
+      kind: "branch",
+      baseRef: null,
+    });
   });
 
-  it("preserves an explicit scope selection when the working tree state changes", () => {
-    useDiffPanelStore.getState().selectGitScope(THREAD_REF, "branch");
+  it("preserves an explicit working tree selection", () => {
+    useDiffPanelStore.getState().selectGitScope(THREAD_REF, "unstaged");
 
     expect(
-      selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF, true),
-    ).toEqual({ kind: "branch", baseRef: null });
+      selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
+    ).toEqual({ kind: "unstaged" });
   });
 
   it("clears incompatible selection fields when changing scopes", () => {
@@ -67,6 +68,17 @@ describe("diffPanelStore", () => {
     expect(
       selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
     ).toEqual({ kind: "branch", baseRef: "origin/main" });
+  });
+
+  it("keeps a custom base after reviewing a turn and reopening branch changes", () => {
+    const store = useDiffPanelStore.getState();
+    store.selectBranchBaseRef(THREAD_REF, "origin/release");
+    store.selectTurn(THREAD_REF, TurnId.make("turn-1"));
+    store.selectGitScope(THREAD_REF, "branch");
+
+    expect(
+      selectThreadDiffPanelSelection(useDiffPanelStore.getState().byThreadKey, THREAD_REF),
+    ).toEqual({ kind: "branch", baseRef: "origin/release" });
   });
 
   it("reconciles a missing turn selection to the latest available turn", () => {

@@ -43,13 +43,16 @@ loops, or RPC clients.
 The supervisor is the only retry owner.
 
 1. A persisted or platform registration marks an environment as desired.
-2. If the device is offline, the supervisor releases the active session and
-   waits for a signal without consuming retry attempts or running a timer.
+2. If the device reports offline, a connected session gets a short health probe.
+   A responsive session stays connected, including a loopback server. When no
+   healthy session remains, it waits for a signal without consuming retry
+   attempts or running a timer.
 3. When online, it asks the driver for one prepared connection and one RPC
    session.
-4. Transient failures retry forever with exponential backoff capped at 16
-   seconds (`RETRY_DELAYS_MS`). A connection stable for 30 seconds resets
-   accumulated backoff.
+4. Transient failures retry forever with exponential backoff. The ceiling starts
+   at two seconds, doubles after failures, and caps at five minutes; each delay
+   is randomized within the ceiling's upper half. A connection stable for 30
+   seconds resets accumulated backoff.
 5. Authentication or configuration failures remain blocked until an external
    wakeup changes the relevant input.
 6. An involuntary session close keeps the registration and cache, then retries.
@@ -72,11 +75,12 @@ Wakeup handling differs by phase, in [supervisor.ts][supervisor]:
 - While waiting out backoff, application activation resets the retry ladder so a
   foregrounded app reconnects immediately instead of serving the remaining
   delay.
-- Once connected, `monitorConnectedLease` handles plain activation by probing
-  the existing session (`lease.session.probe`, with a shorter timeout for
-  mobile's `application-active-probe`) rather than reconnecting; a healthy
-  session survives foregrounding. `application-active-reconnect` skips the probe
-  and replaces the lease outright.
+- Once connected, `monitorConnectedLease` probes the existing session on plain
+  activation, explicit retry, or an offline report. Activation allows 15 seconds;
+  explicit retry, offline reports, and `application-active-probe` allow three.
+  Concurrent signals share a running probe and can shorten its monotonic
+  deadline. A failed probe reconnects immediately. `application-active-reconnect`
+  replaces the lease outright. A healthy session survives foregrounding or retry.
 
 The UI derives `available`, `offline`, `connecting`, `reconnecting`,
 `connected`, and `error` from supervisor state plus explicit data-sync state.
@@ -98,8 +102,11 @@ Finite requests, durable subscriptions, and commands are separate APIs:
   client error) ends the inner subscription without resubscribing, so the outer
   stream waits for the supervisor to supply a replacement session. A handled
   domain failure runs `onExpectedFailure` and, when
-  `retryExpectedFailureAfter` is set, sleeps and resubscribes on the **same**
-  session. A healthy transport is never torn down for a domain failure.
+  `retryExpectedFailureAfter` is set, resubscribes on the **same** session with
+  exponential backoff capped at 30 seconds for a fixed retry delay. A custom
+  retry callback supplies its own delay policy. The first received chunk resets
+  the retry count. Authorization failures do not retry. A healthy transport is
+  never torn down for a domain failure.
 - Mutations resolve the current environment runtime at execution time.
 - Shell and thread snapshots are available while offline.
 - Sync status is explicit and independent per domain. Shell status is `empty`,
@@ -180,7 +187,7 @@ Core state-machine tests use `@effect/vitest` and deterministic service layers.
 Required coverage includes:
 
 - offline startup and online wakeup;
-- forever retry with the 16-second cap;
+- forever retry with randomized delays and the five-minute ceiling;
 - explicit retry interrupting backoff;
 - authentication wakeups;
 - involuntary close and reconnect;

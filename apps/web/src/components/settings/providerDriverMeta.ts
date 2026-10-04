@@ -107,7 +107,6 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     value: ProviderDriverKind.make("pi"),
     label: DRIVER_LABEL.pi,
     icon: PiAgentIcon,
-    badgeLabel: "Early Access",
     settingsSchema: PiSettings,
   },
 ];
