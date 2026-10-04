@@ -474,3 +474,40 @@ export function applyClaudePromptEffortPrefix(
   }
   return `Ultrathink:\n${trimmed}`;
 }
+
+function canonicalModelSelectionOptions(
+  modelSelection: ModelSelection,
+): ReadonlyArray<readonly [id: string, value: string | boolean]> {
+  return (modelSelection.options ?? [])
+    .map((selection): readonly [id: string, value: string | boolean] => [
+      selection.id,
+      selection.value,
+    ])
+    .toSorted(
+      (
+        [leftId, leftValue]: readonly [id: string, value: string | boolean],
+        [rightId, rightValue]: readonly [id: string, value: string | boolean],
+      ) => {
+        const idOrder = leftId.localeCompare(rightId);
+        return idOrder !== 0 ? idOrder : String(leftValue).localeCompare(String(rightValue));
+      },
+    );
+}
+
+/**
+ * Compares the complete provider selection while treating option ordering and
+ * an omitted empty option list as presentation details.
+ */
+export function modelSelectionsEqual(left: ModelSelection, right: ModelSelection): boolean {
+  if (left.instanceId !== right.instanceId || left.model !== right.model) {
+    return false;
+  }
+  const leftOptions = canonicalModelSelectionOptions(left);
+  const rightOptions = canonicalModelSelectionOptions(right);
+  return (
+    leftOptions.length === rightOptions.length &&
+    leftOptions.every(
+      ([id, value], index) => id === rightOptions[index]?.[0] && value === rightOptions[index]?.[1],
+    )
+  );
+}

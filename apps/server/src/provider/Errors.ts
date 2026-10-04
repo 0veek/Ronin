@@ -226,3 +226,15 @@ export type ProviderServiceError =
   | ProviderSessionDirectoryPersistenceError
   | ProviderAdapterError
   | CheckpointServiceError;
+
+export class ProviderWorkspaceMissingError extends Schema.TaggedErrorClass<ProviderWorkspaceMissingError>()(
+  "ProviderWorkspaceMissingError",
+  {
+    threadId: Schema.String,
+    cwd: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `This thread's workspace folder no longer exists or is not a directory: ${this.cwd}. Restore the folder at this path before retrying.`;
+  }
+}

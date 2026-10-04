@@ -58,6 +58,12 @@ never construct transports, retry loops, or RPC clients. See
 
 ## Orchestration is event-sourced
 
+Ronin keeps the existing client command and projection boundary described below while
+executing ordinary turns through the upstream V2 run engine and durable effect outbox.
+The provider command reactor hands its prepared native request to V2; native ingestion
+and checkpoint reflection keep the desktop read model current. See
+[Orchestration V2 in Ronin](./orchestration-v2.md) for ownership and migration details.
+
 The server does not mutate app state directly. Clients dispatch typed commands; the engine turns them
 into persisted events; projections derive the read model.
 

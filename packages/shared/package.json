@@ -306,6 +306,22 @@
     "./hostClassification": {
       "types": "./src/hostClassification.ts",
       "import": "./src/hostClassification.ts"
+    },
+    "./orchestrationV2ThreadError": {
+      "types": "./src/orchestrationV2ThreadError.ts",
+      "import": "./src/orchestrationV2ThreadError.ts"
+    },
+    "./orchestrationV2PendingBackgroundWork": {
+      "types": "./src/orchestrationV2PendingBackgroundWork.ts",
+      "import": "./src/orchestrationV2PendingBackgroundWork.ts"
+    },
+    "./orchestrationV2Timeline": {
+      "types": "./src/orchestrationV2Timeline.ts",
+      "import": "./src/orchestrationV2Timeline.ts"
+    },
+    "./toolOutput": {
+      "types": "./src/toolOutput.ts",
+      "import": "./src/toolOutput.ts"
     }
   },
   "scripts": {

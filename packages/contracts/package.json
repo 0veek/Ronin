@@ -14,6 +14,10 @@
     "./settings": {
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"
+    },
+    "./orchestration-v2": {
+      "types": "./src/orchestrationV2Entry.ts",
+      "import": "./src/orchestrationV2Entry.ts"
     }
   },
   "scripts": {

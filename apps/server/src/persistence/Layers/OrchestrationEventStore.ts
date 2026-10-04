@@ -185,7 +185,7 @@ const makeEventStore = Effect.gen(function* () {
           payload_json AS "payload",
           metadata_json AS "metadata"
         FROM orchestration_events
-        WHERE sequence > ${request.sequenceExclusive}
+        WHERE application_event_version = 1 AND sequence > ${request.sequenceExclusive}
         ORDER BY sequence ASC
         LIMIT ${request.limit}
       `,
@@ -271,7 +271,7 @@ const makeEventStore = Effect.gen(function* () {
     execute: (request) => sql`
           SELECT sequence
           FROM orchestration_events
-          WHERE aggregate_kind = ${request.aggregateKind}
+          WHERE application_event_version = 1 AND aggregate_kind = ${request.aggregateKind}
             AND stream_id = ${request.aggregateId}
             AND ${sql.and([
               sql`sequence > ${request.sequenceExclusive}`,

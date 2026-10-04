@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { ThreadPullRequestWatch } from "./threadPullRequestWatch.ts";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Struct from "effect/Struct";
@@ -184,7 +185,7 @@ const CHAT_ATTACHMENT_ID_MAX_CHARS = 128;
 export const CorrelationId = CommandId;
 export type CorrelationId = typeof CorrelationId.Type;
 
-const ChatAttachmentId = TrimmedNonEmptyString.check(
+export const ChatAttachmentId = TrimmedNonEmptyString.check(
   Schema.isMaxLength(CHAT_ATTACHMENT_ID_MAX_CHARS),
   Schema.isPattern(/^[a-z0-9_-]+$/i),
 );
@@ -836,6 +837,7 @@ export const ThreadPullRequestLink = Schema.Struct({
   linkedAt: IsoDateTime,
   snapshot: Schema.NullOr(ThreadPullRequestSnapshot),
   stack: Schema.NullOr(ThreadPullRequestStack),
+  watch: Schema.optional(ThreadPullRequestWatch),
 });
 export type ThreadPullRequestLink = typeof ThreadPullRequestLink.Type;
 

@@ -128,6 +128,7 @@ import * as RateLimitService from "./rateLimits/RateLimitService.ts";
 import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
+import { RoninOrchestrationLayerLive } from "./orchestration-v2/runtimeLayer.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -241,6 +242,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(AutomationStore.layer),
   Layer.provideMerge(BuildSystemService.layer),
   Layer.provideMerge(BuildSystemStore.layer),
+  Layer.provideMerge(RoninOrchestrationLayerLive),
   Layer.provideMerge(RuntimeReceiptBusLive),
 );
 
@@ -431,6 +433,7 @@ const ProviderRuntimeLayerLive = ProviderSessionReaperLive.pipe(
 
 const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // Core Services
+  Layer.provideMerge(McpSessionRegistry.layer),
   Layer.provideMerge(ServerSettingsLayerLive),
   Layer.provideMerge(CheckpointingLayerLive),
   Layer.provideMerge(

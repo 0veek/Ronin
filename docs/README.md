@@ -44,6 +44,7 @@ Everything below is for maintainers. Setup lives in the [root README](../README.
 policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../AGENTS.md).
 
 - [Architecture overview](./internals/overview.md)
+- [Orchestration V2 compatibility](./internals/orchestration-v2.md)
 - [Workspace layout](./internals/workspace-layout.md)
 - [Dev container](./internals/devcontainer.md)
 - [Glossary](./internals/glossary.md)

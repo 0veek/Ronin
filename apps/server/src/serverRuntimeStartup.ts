@@ -37,6 +37,7 @@ import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngi
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as AutomationScheduler from "./automation/AutomationScheduler.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
+import { RoninOrchestration } from "./orchestration-v2/compat/RoninOrchestration.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
@@ -785,6 +786,7 @@ export const make = (options?: StartupOptions) =>
     const serverConfig = yield* ServerConfig.ServerConfig;
     const keybindings = yield* Keybindings.Keybindings;
     const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
+    const v2 = yield* Effect.serviceOption(RoninOrchestration);
     const providerSessionReaper = yield* ProviderSessionReaper.ProviderSessionReaper;
     const automationScheduler = yield* AutomationScheduler.AutomationScheduler;
     const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -850,6 +852,12 @@ export const make = (options?: StartupOptions) =>
       );
 
       yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);
+      if (Option.isSome(v2)) {
+        yield* runStartupPhase(
+          "orchestration-v2.start",
+          v2.value.start.pipe(Scope.provide(reactorScope)),
+        );
+      }
       yield* runStartupPhase("worktree-setups.reconcile", reconcileWorktreeSetups);
 
       yield* Effect.logDebug("startup phase: syncing clean projects");

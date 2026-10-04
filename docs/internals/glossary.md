@@ -19,17 +19,21 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 
 ## Orchestration
 
-| Term                    | Meaning                                                                                      |
-| ----------------------- | -------------------------------------------------------------------------------------------- |
-| Command                 | A request to change domain state. Accepting it does not mean its side effects have finished. |
-| Event                   | A persisted fact produced by a command.                                                      |
-| Decider                 | The pure logic that turns a command and current state into events.                           |
-| Projection / read model | A view of current state derived from persisted events.                                       |
-| Projector               | The logic that applies events to a read model.                                               |
-| Reactor                 | A worker that performs follow-up work in response to recorded intent or runtime signals.     |
-| Command receipt         | A durable record of a command's result, used to make retries idempotent.                     |
-| Runtime receipt         | A test-only signal that an asynchronous milestone completed.                                 |
-| Quiesced                | The relevant follow-up workers have finished, beyond the provider turn merely ending.        |
+| Term                    | Meaning                                                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| Command                 | A request to change domain state. Accepting it does not mean its side effects have finished.  |
+| Event                   | A persisted fact produced by a command.                                                       |
+| Decider                 | The pure logic that turns a command and current state into events.                            |
+| Projection / read model | A view of current state derived from persisted events.                                        |
+| Projector               | The logic that applies events to a read model.                                                |
+| Reactor                 | A worker that performs follow-up work in response to recorded intent or runtime signals.      |
+| Command receipt         | A durable record of a command's result, used to make retries idempotent.                      |
+| Runtime receipt         | A test-only signal that an asynchronous milestone completed.                                  |
+| Quiesced                | The relevant follow-up workers have finished, beyond the provider turn merely ending.         |
+| Run                     | V2's durable execution record for a dispatched message, including queued or interrupted work. |
+| Run attempt             | One provider execution attempt within a run.                                                  |
+| Execution node          | V2's ownership record for root work, tools, runtime requests, or background tasks.            |
+| Effect outbox           | Durable side effects accepted with events and performed by the V2 worker.                     |
 
 ## Providers and checkpoints
 

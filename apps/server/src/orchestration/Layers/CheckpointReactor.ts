@@ -39,6 +39,7 @@ import type { OrchestrationDispatchError } from "../Errors.ts";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
+import { RoninOrchestration } from "../../orchestration-v2/compat/RoninOrchestration.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -87,6 +88,7 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
   const receiptBus = yield* RuntimeReceiptBus;
+  const v2 = yield* Effect.serviceOption(RoninOrchestration);
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
   const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
   const pullRequests = yield* PullRequestService.PullRequestService;
@@ -364,6 +366,12 @@ const make = Effect.gen(function* () {
       if (!turnId) {
         return;
       }
+
+      if (
+        Option.isSome(v2) &&
+        (yield* v2.value.ownsTurn(event.threadId, turnId).pipe(Effect.orElseSucceed(() => false)))
+      )
+        return;
 
       const thread = yield* resolveThreadDetail(event.threadId);
       if (!thread) {

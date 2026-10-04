@@ -4,9 +4,10 @@ Ronin is a fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code) with 
 desktop only, no mobile app, no T3 Connect / Clerk / hosted relay, no WSL, no legacy sidebar, no
 Playwright preview automation. Upstream commits are therefore **triaged, not merged**.
 
-Orchestration V2 (`de3439142`) and its dependent changes are deferred by maintainer choice. Ronin
-retains V1 orchestration and its remote protocol. Adopting V2 requires a separate migration that
-preserves Ronin data, providers, and features; compatible independent fixes may still be ported.
+The V2 execution engine originally deferred in `de3439142` is now adapted behind Ronin's
+existing interface and remote protocol in the targeted migration below. Historical skip verdicts
+remain records of their review batches. Upstream's V2 chat UI and native adapter replacement
+remain excluded; V2-dependent follow-up changes need review against Ronin's compatibility layer.
 
 This file is the watermark. On the next sync, only look at commits _after_ the SHA below — every
 commit at or before it has already been judged, and the verdict is recorded here.
@@ -21,6 +22,44 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
+
+## Targeted V2 migration — 2026-10-04
+
+The maintainer explicitly requested V2 execution and selected preservation of Ronin's current
+interface. Production V2 orchestration was adapted from fixed upstream tip
+`ee7b49d638e412590b09b415cc48399d51644b60`, including `de343914273eceb852a1d1d739cd1d38df7796ee`.
+This is a targeted implementation, **not a review of the entire range after the watermark**.
+The watermark remains `00eb8f618`.
+
+- Adapted V2 run/attempt/node state, command policy, event sink, durable effect outbox,
+  recovery, session management, runtime requests, context handoffs, and checkpoint services.
+- Kept the existing renderer and RPC protocol, nine Ronin provider adapters, permission/debug
+  modes, skills, provider continuation ledger, and native background wake behavior.
+- Added migration 062 after Ronin's existing 61 migrations. Legacy state and history remain;
+  V1 and V2 writes share a globally ordered log with separate decoding and command receipts.
+  V2 compaction retains V1 events and receipts. Legacy transcripts hydrate through a recorded
+  startup boundary, and checkpoint counts continue the existing Ronin numbering.
+- Retained side chats, comparisons, queued composer prompts, automations, build systems,
+  quota resume, previews, devices, desktop IPC, and remote connection paths in their current
+  services. Upstream's V2 UI, native adapter replacement, mobile, hosted connection surfaces,
+  and unrelated later changes are excluded.
+- Architecture and compatibility constraints are documented in
+  [Orchestration V2 in Ronin](docs/internals/orchestration-v2.md). Native provider execution
+  and an integrated visual desktop pass were not exercised. No live userdata was modified.
+
+### Targeted migration verification
+
+- Focused verification passed **429 tests across 17 files** with:
+  `vp test run apps/server/src/orchestration-v2 apps/server/src/persistence/Migrations/062_OrchestrationV2.test.ts apps/server/src/persistence/Layers/OrchestrationEventStore.test.ts apps/server/src/persistence/Layers/Sqlite.test.ts apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts apps/server/src/orchestration/Layers/CheckpointReactor.test.ts apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts apps/server/src/serverRuntimeStartup.test.ts apps/server/src/server.test.ts packages/shared/src/model.test.ts packages/shared/src/threadPullRequests.test.ts`.
+  The final project-deletion regression was added afterward; the full bridge rerun passed
+  **18 tests**, bringing the unique focused coverage to **430 passing tests**.
+- Scoped typechecks passed without errors:
+  `vp run --filter t3 --filter @t3tools/contracts --filter @t3tools/shared --filter @t3tools/client-runtime --filter @t3tools/desktop --filter @t3tools/web typecheck`.
+  Effect and React advisory diagnostics remain.
+- `vp run --filter t3 build:bundle` passed. Changed-file
+  `vp lint --report-unused-disable-directives`, `vp fmt --check`, and `git diff --check` passed.
+- No repo-wide checks, native CLI execution, browser automation, or live userdata writes were
+  performed. The implementation remains uncommitted.
 
 ## How to triage the next batch
 

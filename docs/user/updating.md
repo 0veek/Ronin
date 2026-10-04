@@ -64,6 +64,10 @@ interrupted during the update.
 
 The update does not remove saved threads, settings, or project files.
 
+Messages waiting to reach a provider can be cancelled when the server restarts. Ronin
+reports these as **Queued message was not sent** in the conversation. Send the message
+again when you are ready to continue. A saved prompt in the message box stays saved.
+
 ## Choose the Action You See
 
 | Action                     | What to do                                                                                                                                                                |

@@ -84,6 +84,7 @@ import {
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry.ts";
 import { OrchestrationEngineService } from "../Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
+import { RoninOrchestration } from "../../orchestration-v2/compat/RoninOrchestration.ts";
 import {
   ProviderCommandReactor,
   type ProviderCommandReactorShape,
@@ -296,6 +297,7 @@ const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
+  const v2 = yield* Effect.serviceOption(RoninOrchestration);
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -1865,9 +1867,16 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const send = providerService
-      .sendTurn(sendTurnRequest.value)
-      .pipe(Effect.asVoid, Effect.catchCause(recoverTurnStartFailure));
+    const send = (
+      Option.isSome(v2)
+        ? v2.value.startTurn({
+            commandId: event.commandId ?? CommandId.make(event.eventId),
+            threadId: event.payload.threadId,
+            messageId: event.payload.messageId,
+            request: sendTurnRequest.value,
+          })
+        : providerService.sendTurn(sendTurnRequest.value).pipe(Effect.asVoid)
+    ).pipe(Effect.catchCause(recoverTurnStartFailure));
     // The forked send settles `sent` from here on, so drop the entry the post-processing hook uses.
     if (resumed && event.commandId !== null) resumedTurnStarts.delete(event.commandId);
     yield* send.pipe(
@@ -1977,9 +1986,17 @@ const make = Effect.gen(function* () {
     };
 
     // Orchestration turn ids are not provider turn ids, so interrupt by session.
-    yield* providerService
-      .interruptTurn({ threadId: event.payload.threadId })
-      .pipe(Effect.catchCause(recoverInterruptFailure));
+    yield* Effect.gen(function* () {
+      if (
+        Option.isSome(v2) &&
+        (yield* v2.value.interrupt(
+          event.payload.threadId,
+          event.commandId ?? CommandId.make(event.eventId),
+        ))
+      )
+        return;
+      yield* providerService.interruptTurn({ threadId: event.payload.threadId });
+    }).pipe(Effect.catchCause(recoverInterruptFailure));
   });
 
   /**
@@ -2136,6 +2153,7 @@ const make = Effect.gen(function* () {
       thread.id,
       "The session was stopped during context compaction. Send this message again to continue.",
     ).pipe(
+      Effect.andThen(Option.isSome(v2) ? v2.value.detach(thread.id) : Effect.void),
       Effect.andThen(
         thread.session && thread.session.status !== "stopped"
           ? providerService.stopSession({ threadId: thread.id })
