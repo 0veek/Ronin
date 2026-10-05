@@ -9,11 +9,11 @@
  * @module AutomationModelField
  */
 import { useAtomValue } from "@effect/atom-react";
-import type { ModelSelection, ProviderDriverKind } from "@t3tools/contracts";
+import type { EnvironmentId, ModelSelection, ProviderDriverKind } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useMemo } from "react";
 
-import { usePrimarySettings } from "../../hooks/useSettings";
+import { useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
@@ -21,22 +21,25 @@ import {
   resolveDefaultProviderModelSelection,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
-import { primaryServerProvidersAtom } from "../../state/server";
+import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { Button } from "../ui/button";
 
 export function AutomationModelField({
+  environmentId,
   modelSelection,
   projectDefaultModelSelection,
   onChange,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly modelSelection: ModelSelection | null;
   readonly projectDefaultModelSelection: ModelSelection | null;
   readonly onChange: (selection: ModelSelection | null) => void;
 }) {
-  const settings = usePrimarySettings();
-  const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const settings = useEnvironmentSettings(environmentId);
+  const serverProviders =
+    useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const instanceEntries = useMemo(
     () =>
       sortProviderInstanceEntries(

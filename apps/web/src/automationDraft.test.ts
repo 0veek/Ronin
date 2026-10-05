@@ -1,16 +1,18 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { Automation, ModelSelection } from "@t3tools/contracts";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { AUTOMATION_MAX_TITLE_CHARS, EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 
 import {
   createAutomationSearch,
   draftFromAutomation,
+  duplicateAutomationDraft,
   draftSchedule,
   draftToCreateInput,
   draftToUpdateInput,
   EMPTY_AUTOMATION_DRAFT,
   isDraftComplete,
   parseAutomationsSearch,
+  resolveAutomationEnvironmentId,
   startAutomationDraft,
   startAutomationDraftFromSearch,
 } from "./automationDraft";
@@ -61,6 +63,88 @@ describe("parseAutomationsSearch / createAutomationSearch", () => {
   it("builds the search the title bar and palette hand the page", () => {
     expect(createAutomationSearch("proj-1")).toEqual({ create: true, projectId: "proj-1" });
     expect(createAutomationSearch(null)).toEqual({ create: true });
+  });
+
+  it("carries both the environment and project through a remote creation intent", () => {
+    const remote = EnvironmentId.make("remote");
+    expect(parseAutomationsSearch({ ...createAutomationSearch("proj-1", remote) })).toEqual({
+      create: true,
+      projectId: "proj-1",
+      environmentId: remote,
+    });
+    expect(parseAutomationsSearch({ environmentId: "  " })).toEqual({});
+  });
+});
+
+describe("automation machine selection", () => {
+  const primary = EnvironmentId.make("primary");
+  const remote = EnvironmentId.make("remote");
+  it("keeps a requested machine even before it loads or after it disappears", () => {
+    expect(
+      resolveAutomationEnvironmentId({
+        requestedEnvironmentId: remote,
+        primaryEnvironmentId: primary,
+        environmentIds: [primary],
+      }),
+    ).toBe(remote);
+  });
+  it("defaults to the primary and supports a client with only remote machines", () => {
+    expect(
+      resolveAutomationEnvironmentId({
+        primaryEnvironmentId: primary,
+        environmentIds: [remote, primary],
+      }),
+    ).toBe(primary);
+    expect(
+      resolveAutomationEnvironmentId({ primaryEnvironmentId: null, environmentIds: [remote] }),
+    ).toBe(remote);
+    expect(
+      resolveAutomationEnvironmentId({ primaryEnvironmentId: null, environmentIds: [] }),
+    ).toBeNull();
+  });
+});
+
+describe("duplicateAutomationDraft", () => {
+  it("creates a new editable copy retaining execution preferences, with a unique title", () => {
+    const source = automation({
+      modelSelection,
+      stopAfterConsecutiveFailures: null,
+      schedule: { _tag: "interval", everyMinutes: 90 },
+    });
+    const draft = duplicateAutomationDraft(source, [
+      source.title,
+      "Triage (copy)",
+      "TRIAGE (COPY 2)",
+    ]);
+    expect(draft.editing).toBeNull();
+    expect(draft.title).toBe("Triage (copy 3)");
+    expect(draftToUpdateInput(draft)).toBeNull();
+    expect(draftToCreateInput(draft)).toMatchObject({
+      projectId: source.projectId,
+      prompt: source.prompt,
+      schedule: source.schedule,
+      envMode: source.envMode,
+      modelSelection,
+      stopAfterConsecutiveFailures: null,
+    });
+  });
+  it("requires a new time for a copied one-time automation, including after it already ran", () => {
+    const draft = duplicateAutomationDraft(
+      automation({ schedule: { _tag: "once", at: "2026-01-01T09:00:00.000Z" }, enabled: false }),
+      [],
+    );
+    expect(draft.kind).toBe("once");
+    expect(isDraftComplete(draft)).toBe(false);
+    expect(draftToCreateInput(draft)).toBeNull();
+    expect(isDraftComplete({ ...draft, onceAtText: "2026-12-01T09:00" })).toBe(true);
+  });
+  it("reserves space for the copy suffix at the title length limit", () => {
+    const draft = duplicateAutomationDraft(
+      automation({ title: "x".repeat(AUTOMATION_MAX_TITLE_CHARS) }),
+      [],
+    );
+    expect(draft.title).toHaveLength(AUTOMATION_MAX_TITLE_CHARS);
+    expect(draft.title.endsWith(" (copy)")).toBe(true);
   });
 });
 

@@ -410,6 +410,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "automations",
     title: "Automations",
+    searchTerms: [
+      "recipe workflow template duplicate schedule remote machine morning brief regression test gaps weekly changelog",
+    ],
     to: "/settings/automations",
   },
   {

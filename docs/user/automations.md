@@ -6,8 +6,30 @@ applies to it: the sidebar, checkpoints, diffs, switching provider mid-thread, a
 
 Manage them in **Settings → Automations**.
 
-Automations belong to the primary environment and its projects. Projects in other connected
-environments are not offered in the project picker.
+Use **Machine** to manage automations on any connected environment, including machines reached
+over your local network, Tailscale, or SSH. The project picker, available models, schedules, and
+recent runs all belong to the selected machine. Opening **New automation** from a thread or the
+command palette selects that thread's machine and project.
+
+Save or cancel an open draft before switching machines. A disconnected machine keeps running its
+saved schedules while its server is running; reconnect to change them. A connection with read-only
+access can show schedules and history but cannot create, change, or run them.
+
+## Starting from a recipe
+
+Choose a recipe to open an editable draft with a prompt and suggested schedule:
+
+| Recipe            | Suggested schedule | Work                                                                           |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------ |
+| Morning brief     | Weekdays at 09:00  | Summarize recent changes, risks, and next steps in the current checkout.       |
+| Regression patrol | Weekdays at 16:00  | Investigate recent changes and fix one evidenced regression in a new worktree. |
+| Test gap finder   | Mondays at 10:00   | Add meaningful coverage for one behavior in a new worktree.                    |
+| Weekly changelog  | Fridays at 16:00   | Write a readable update from the week's commits in the current checkout.       |
+
+You can also choose a recipe in an empty **New automation** draft. Customize the prompt, project,
+model, and schedule before saving. Choosing a recipe does not save or run it; **Save automation**
+enables its schedule. The brief and changelog prompts ask the agent to keep the checkout read-only;
+they use the same permissions as an ordinary automation.
 
 ## Creating one
 
@@ -54,6 +76,13 @@ play button runs it immediately (which also re-anchors an interval schedule from
 
 **Recent runs** below lists what actually happened, newest first, with a link into the thread each
 run opened. A run that did not start says why.
+
+## Reusing an automation
+
+The **Duplicate** button opens a new draft with the same prompt, schedule, model, work location, and
+failure policy. Give it a new name or choose another project on the same machine before saving.
+The original automation and its history stay as they are. A copied one-time automation requires
+a new date and time, so an old scheduled instant cannot accidentally run again.
 
 ## What it does when nobody is home
 

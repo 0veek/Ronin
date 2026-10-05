@@ -140,6 +140,21 @@ and correlation only, never for routing. `Project` remains environment-local: a 
 remote clone are different projects that may share a `RepositoryIdentity`, and threads bind to one
 project in one environment.
 
+### Automations
+
+Automation configuration, runs, and scheduler state live on the owning environment's server.
+The renderer's machine picker binds `useAutomations(environmentId)` to that server's query and
+command atoms. Projects and provider/model configuration use the same environment ID. Creation
+intents from chat and the command palette carry both environment and project IDs; an unavailable
+requested environment never falls back to the primary. An editor is keyed by environment, and
+machine switching is disabled while its draft is open. In-flight writes retain their original
+environment and refresh its cache even if navigation selects a different machine.
+
+Recipes and duplication populate ordinary unsaved drafts; they add no scheduler or wire protocol.
+Read-only sessions may view lists and history, while mutations retain the existing
+`orchestration:operate` authorization. Daily schedules use the server's local clock, so losing a
+client connection does not pause them while the server remains running.
+
 ## Access methods
 
 Access answers one question: how does the client speak WebSocket to a T3 server? It does not answer

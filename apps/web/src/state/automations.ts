@@ -1,13 +1,9 @@
 /**
- * Scheduled work, read from and written to the primary environment.
- *
- * Scoped to the primary environment for the same reason quota is: the
- * scheduler runs on one machine's clock against one machine's projects, and a
- * merged list would offer to edit schedules the local server does not own.
+ * Scheduled work, read from and written to the selected environment.
+ * Its projects, scheduler clock, models, and run history all belong to that machine.
  *
  * @module state/automations
  */
-import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type {
   Automation,
   AutomationCreateInput,
@@ -16,42 +12,22 @@ import type {
   AutomationUpdateInput,
   EnvironmentId,
 } from "@t3tools/contracts";
-import * as Option from "effect/Option";
 import { useCallback } from "react";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
-import { usePrimaryEnvironmentId } from "./environments";
+import { useEnvironmentQuery } from "./query";
 import { serverEnvironment } from "./server";
 import { useAtomCommand } from "./use-atom-command";
 
 const EMPTY_AUTOMATIONS: ReadonlyArray<Automation> = [];
 const EMPTY_RUNS: ReadonlyArray<AutomationRun> = [];
 
-const automationsAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get): ReadonlyArray<Automation> => {
-    const result = get(serverEnvironment.automations({ environmentId, input: {} }));
-    return Option.getOrNull(AsyncResult.value(result))?.automations ?? EMPTY_AUTOMATIONS;
-  }).pipe(Atom.withLabel(`web-automations:${environmentId}`)),
-);
-
-const runsAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get): ReadonlyArray<AutomationRun> => {
-    const result = get(serverEnvironment.automationRuns({ environmentId, input: {} }));
-    return Option.getOrNull(AsyncResult.value(result))?.runs ?? EMPTY_RUNS;
-  }).pipe(Atom.withLabel(`web-automation-runs:${environmentId}`)),
-);
-
-const emptyAutomationsAtom = Atom.make((): ReadonlyArray<Automation> => EMPTY_AUTOMATIONS).pipe(
-  Atom.withLabel("web-automations:none"),
-);
-const emptyRunsAtom = Atom.make((): ReadonlyArray<AutomationRun> => EMPTY_RUNS).pipe(
-  Atom.withLabel("web-automation-runs:none"),
-);
-
 export interface AutomationsController {
-  readonly environmentId: EnvironmentId | null;
+  readonly environmentId: EnvironmentId;
   readonly automations: ReadonlyArray<Automation>;
   readonly runs: ReadonlyArray<AutomationRun>;
+  readonly isLoading: boolean;
+  readonly error: string | null;
+  readonly refresh: () => void;
   readonly create: (input: AutomationCreateInput) => Promise<boolean>;
   readonly update: (input: AutomationUpdateInput) => Promise<boolean>;
   readonly remove: (id: AutomationId) => Promise<void>;
@@ -61,22 +37,20 @@ export interface AutomationsController {
 /**
  * Everything the Automations page needs.
  *
- * Every mutation refreshes both lists rather than mutating a local copy: the
+ * Mutations refresh server-owned data rather than mutating a local copy: the
  * server owns `nextRunAt`, and a locally-guessed next run would be wrong the
  * moment a schedule changed — which is exactly when the user is looking at it.
+ * Running or deleting an automation also refreshes its run history.
  */
-export function useAutomations(): AutomationsController {
-  const environmentId = usePrimaryEnvironmentId();
-  const automations = useAtomValue(
-    environmentId === null ? emptyAutomationsAtom : automationsAtom(environmentId),
+export function useAutomations(environmentId: EnvironmentId): AutomationsController {
+  const automationsQuery = useEnvironmentQuery(
+    serverEnvironment.automations({ environmentId, input: {} }),
   );
-  const runs = useAtomValue(environmentId === null ? emptyRunsAtom : runsAtom(environmentId));
-  const refreshAutomations = useAtomRefresh(
-    environmentId === null ? emptyAutomationsAtom : automationsAtom(environmentId),
+  const runsQuery = useEnvironmentQuery(
+    serverEnvironment.automationRuns({ environmentId, input: {} }),
   );
-  const refreshRuns = useAtomRefresh(
-    environmentId === null ? emptyRunsAtom : runsAtom(environmentId),
-  );
+  const refreshAutomations = automationsQuery.refresh;
+  const refreshRuns = runsQuery.refresh;
 
   const createCommand = useAtomCommand(serverEnvironment.createAutomation, "automation create");
   const updateCommand = useAtomCommand(serverEnvironment.updateAutomation, "automation update");
@@ -85,7 +59,6 @@ export function useAutomations(): AutomationsController {
 
   const create = useCallback(
     async (input: AutomationCreateInput) => {
-      if (environmentId === null) return false;
       const result = await createCommand({ environmentId, input });
       if (result._tag !== "Success") return false;
       refreshAutomations();
@@ -96,7 +69,6 @@ export function useAutomations(): AutomationsController {
 
   const update = useCallback(
     async (input: AutomationUpdateInput) => {
-      if (environmentId === null) return false;
       const result = await updateCommand({ environmentId, input });
       if (result._tag !== "Success") return false;
       refreshAutomations();
@@ -107,7 +79,6 @@ export function useAutomations(): AutomationsController {
 
   const remove = useCallback(
     async (id: AutomationId) => {
-      if (environmentId === null) return;
       await deleteCommand({ environmentId, input: { id } });
       refreshAutomations();
       // Deleting an automation drops its runs too, so the history has to
@@ -119,7 +90,6 @@ export function useAutomations(): AutomationsController {
 
   const runNow = useCallback(
     async (id: AutomationId) => {
-      if (environmentId === null) return;
       await runNowCommand({ environmentId, input: { id } });
       refreshAutomations();
       refreshRuns();
@@ -127,5 +97,21 @@ export function useAutomations(): AutomationsController {
     [environmentId, refreshAutomations, refreshRuns, runNowCommand],
   );
 
-  return { environmentId, automations, runs, create, update, remove, runNow };
+  const refresh = useCallback(() => {
+    refreshAutomations();
+    refreshRuns();
+  }, [refreshAutomations, refreshRuns]);
+
+  return {
+    environmentId,
+    automations: automationsQuery.data?.automations ?? EMPTY_AUTOMATIONS,
+    runs: runsQuery.data?.runs ?? EMPTY_RUNS,
+    isLoading: automationsQuery.data === null && automationsQuery.error === null,
+    error: automationsQuery.error ?? runsQuery.error,
+    refresh,
+    create,
+    update,
+    remove,
+    runNow,
+  };
 }

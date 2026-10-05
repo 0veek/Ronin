@@ -2294,7 +2294,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  const automationProjectId =
+  const buildSystemProjectId =
     contextualProjectRef !== null &&
     primaryEnvironmentId !== null &&
     contextualProjectRef.environmentId === primaryEnvironmentId
@@ -2313,14 +2313,17 @@ function OpenCommandPaletteDialog(props: {
       "new automation",
     ],
     title: "New automation",
-    ...(automationProjectId !== undefined && contextualProjectGroup
+    ...(contextualProjectRef !== null && contextualProjectGroup
       ? { description: contextualProjectGroup.displayName }
       : {}),
     icon: <ClockIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       await navigate({
         to: "/settings/automations",
-        search: createAutomationSearch(automationProjectId),
+        search: createAutomationSearch(
+          contextualProjectRef?.projectId,
+          contextualProjectRef?.environmentId,
+        ),
       });
     },
   });
@@ -2329,14 +2332,14 @@ function OpenCommandPaletteDialog(props: {
     value: "action:new-build-system",
     searchTerms: ["build", "system", "team", "crew", "orchestrator", "multi agent", "new team"],
     title: "New build system",
-    ...(automationProjectId !== undefined && contextualProjectGroup
+    ...(buildSystemProjectId !== undefined && contextualProjectGroup
       ? { description: contextualProjectGroup.displayName }
       : {}),
     icon: <UsersIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
       await navigate({
         to: "/settings/build-systems",
-        search: createBuildSystemSearch(automationProjectId),
+        search: createBuildSystemSearch(buildSystemProjectId),
       });
     },
   });

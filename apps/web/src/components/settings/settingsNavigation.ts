@@ -83,9 +83,21 @@ export const SETTINGS_PAGE_META = {
   },
   "/settings/automations": {
     label: "Automations",
-    description: "Prompts a project runs on a schedule.",
+    description: "Recurring agent work, starter recipes, and run history on each machine.",
     icon: ClockIcon,
-    searchTerms: ["schedule", "cron", "recurring", "daily", "automation", "unattended"],
+    searchTerms: [
+      "schedule",
+      "cron",
+      "recurring",
+      "daily",
+      "automation",
+      "unattended",
+      "recipe",
+      "workflow",
+      "remote",
+      "changelog",
+      "regression",
+    ],
   },
   "/settings/build-systems": {
     label: "Build systems",

@@ -80,17 +80,17 @@ describe("shouldShowCreateAutomation", () => {
     ).toBe(true);
   });
 
-  it("hides the control on a remote environment", () => {
+  it("shows the control on a remote environment", () => {
     expect(
       shouldShowCreateAutomation({
         activeProjectId,
         activeThreadEnvironmentId: EnvironmentId.make("environment-remote"),
         primaryEnvironmentId,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
-  it("hides the control when there is no project or no primary environment", () => {
+  it("requires a project and also works without a primary environment", () => {
     expect(
       shouldShowCreateAutomation({
         activeProjectId: undefined,
@@ -104,7 +104,7 @@ describe("shouldShowCreateAutomation", () => {
         activeThreadEnvironmentId: primaryEnvironmentId,
         primaryEnvironmentId: null,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

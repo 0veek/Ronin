@@ -140,9 +140,8 @@ export function shouldShowOpenInPicker(input: {
 }
 
 /**
- * Automations run on the primary environment's clock against its projects.
- * Offering the control on a remote thread would save a schedule this server
- * cannot fire.
+ * Every environment owns its scheduler. The route carries this thread's
+ * environment as well as its project, including when the client has no primary.
  */
 export function shouldShowCreateAutomation(input: {
   readonly activeProjectId: ProjectId | undefined;
@@ -150,8 +149,7 @@ export function shouldShowCreateAutomation(input: {
   readonly primaryEnvironmentId: EnvironmentId | null;
 }): boolean {
   if (input.activeProjectId === undefined) return false;
-  if (input.primaryEnvironmentId === null) return false;
-  return input.activeThreadEnvironmentId === input.primaryEnvironmentId;
+  return true;
 }
 
 export const ChatHeader = memo(function ChatHeader({
@@ -215,6 +213,8 @@ export const ChatHeader = memo(function ChatHeader({
     activeThreadEnvironmentId,
     primaryEnvironmentId,
   });
+  const showCreateBuildSystem =
+    showCreateAutomation && activeThreadEnvironmentId === primaryEnvironmentId;
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
@@ -548,7 +548,7 @@ export const ChatHeader = memo(function ChatHeader({
                   onClick={() => {
                     void navigate({
                       to: "/settings/automations",
-                      search: createAutomationSearch(activeProjectId),
+                      search: createAutomationSearch(activeProjectId, activeThreadEnvironmentId),
                     });
                   }}
                 />
@@ -562,7 +562,7 @@ export const ChatHeader = memo(function ChatHeader({
             <TooltipPopup side="top">New automation</TooltipPopup>
           </Tooltip>
         ) : null}
-        {showCreateAutomation && activeProjectId !== undefined ? (
+        {showCreateBuildSystem && activeProjectId !== undefined ? (
           <Tooltip>
             <TooltipTrigger
               render={

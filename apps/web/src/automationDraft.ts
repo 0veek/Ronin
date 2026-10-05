@@ -21,6 +21,8 @@ import {
   DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES,
   MAX_AUTOMATION_INTERVAL_MINUTES,
   MIN_AUTOMATION_INTERVAL_MINUTES,
+  AUTOMATION_MAX_TITLE_CHARS,
+  EnvironmentId,
 } from "@t3tools/contracts";
 
 import { formatTimeOfDay, parseTimeOfDay } from "./automationPresentation";
@@ -71,6 +73,7 @@ export const EMPTY_AUTOMATION_DRAFT: AutomationDraftState = {
 export interface AutomationsSearch {
   readonly create?: boolean;
   readonly projectId?: string;
+  readonly environmentId?: EnvironmentId;
 }
 
 function isTruthySearchFlag(value: unknown): boolean {
@@ -84,15 +87,33 @@ export function parseAutomationsSearch(raw: Record<string, unknown>): Automation
     ...(typeof raw.projectId === "string" && raw.projectId.length > 0
       ? { projectId: raw.projectId }
       : {}),
+    ...(typeof raw.environmentId === "string" && raw.environmentId.trim().length > 0
+      ? { environmentId: EnvironmentId.make(raw.environmentId.trim()) }
+      : {}),
   };
 }
 
 /** Search to hand the automations page so it opens a new draft. */
-export function createAutomationSearch(projectId?: string | null): AutomationsSearch {
+export function createAutomationSearch(
+  projectId?: string | null,
+  environmentId?: EnvironmentId | null,
+): AutomationsSearch {
   return {
     create: true,
     ...(projectId ? { projectId } : {}),
+    ...(environmentId ? { environmentId } : {}),
   };
+}
+
+/** An explicit machine intent must never fall back to another machine's projects. */
+export function resolveAutomationEnvironmentId(input: {
+  readonly requestedEnvironmentId?: EnvironmentId | undefined;
+  readonly primaryEnvironmentId: EnvironmentId | null;
+  readonly environmentIds: ReadonlyArray<EnvironmentId>;
+}): EnvironmentId | null {
+  return (
+    input.requestedEnvironmentId ?? input.primaryEnvironmentId ?? input.environmentIds[0] ?? null
+  );
 }
 
 /**
@@ -174,6 +195,29 @@ export function draftFromAutomation(automation: Automation): AutomationDraftStat
 /** A new draft, optionally pinned to a project. */
 export function startAutomationDraft(projectId = ""): AutomationDraftState {
   return { ...EMPTY_AUTOMATION_DRAFT, projectId };
+}
+
+/** Copies configuration into an unsaved draft; an old one-time run needs a new time. */
+export function duplicateAutomationDraft(
+  automation: Automation,
+  existingTitles: ReadonlyArray<string>,
+): AutomationDraftState {
+  const titles = new Set(existingTitles.map((title) => title.trim().toLocaleLowerCase()));
+  const copyTitle = (number: number) => {
+    const suffix = number === 1 ? " (copy)" : ` (copy ${number})`;
+    return `${automation.title.slice(0, AUTOMATION_MAX_TITLE_CHARS - suffix.length).trimEnd()}${suffix}`;
+  };
+  let title = copyTitle(1);
+  for (let number = 2; titles.has(title.toLocaleLowerCase()); number++) {
+    title = copyTitle(number);
+  }
+  const { originalOnceAt, ...draft } = draftFromAutomation(automation);
+  return {
+    ...draft,
+    editing: null,
+    title,
+    ...(draft.kind === "once" ? { onceAtText: "" } : originalOnceAt ? { originalOnceAt } : {}),
+  };
 }
 
 /**

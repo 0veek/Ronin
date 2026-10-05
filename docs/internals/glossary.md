@@ -50,6 +50,15 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 | Checkpoint baseline | The workspace state captured before the work being compared.                                                 |
 | Turn diff           | The workspace changes attributed to one turn.                                                                |
 
+## Scheduled work
+
+| Term              | Meaning                                                                                                        |
+| ----------------- | -------------------------------------------------------------------------------------------------------------- |
+| Automation        | A saved prompt and schedule owned by one environment and project. Each run opens an ordinary thread.           |
+| Automation recipe | A starter prompt and suggested schedule that populate an editable draft. Choosing one does not save or run it. |
+
+See [automations](../user/automations.md) for recipes, duplication, and machine selection.
+
 ## Pull requests
 
 | Term                 | Meaning                                                                                                                                                                                  |

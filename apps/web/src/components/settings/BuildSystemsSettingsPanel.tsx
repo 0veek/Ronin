@@ -8,7 +8,12 @@
  *
  * @module BuildSystemsSettingsPanel
  */
-import type { BuildSystem, BuildSystemRun, ModelSelection } from "@t3tools/contracts";
+import type {
+  BuildSystem,
+  BuildSystemRun,
+  EnvironmentId,
+  ModelSelection,
+} from "@t3tools/contracts";
 import {
   BUILD_SYSTEM_MAX_DELEGATIONS_LIMIT,
   BUILD_SYSTEM_MAX_TEAMMATES,
@@ -158,8 +163,9 @@ export function BuildSystemsSettingsPanel({
           />
         ) : null}
 
-        {draft !== null ? (
+        {draft !== null && environmentId !== null ? (
           <BuildSystemDraftForm
+            environmentId={environmentId}
             draft={draft}
             projects={projects.map((project) => ({
               id: String(project.id),
@@ -323,12 +329,14 @@ function BuildSystemRow({
 }
 
 function BuildSystemDraftForm({
+  environmentId,
   draft,
   projects,
   onChange,
   onCancel,
   onSave,
 }: {
+  readonly environmentId: EnvironmentId;
   readonly draft: BuildSystemDraftState;
   readonly projects: ReadonlyArray<{
     readonly id: string;
@@ -389,6 +397,7 @@ function BuildSystemDraftForm({
           Leads the run. It does not edit files — it decides who does.
         </p>
         <AutomationModelField
+          environmentId={environmentId}
           modelSelection={draft.orchestratorModelSelection}
           projectDefaultModelSelection={selectedProject?.defaultModelSelection ?? null}
           onChange={(modelSelection) =>
@@ -480,6 +489,7 @@ function BuildSystemDraftForm({
               </div>
             </div>
             <AutomationModelField
+              environmentId={environmentId}
               modelSelection={role.modelSelection}
               projectDefaultModelSelection={selectedProject?.defaultModelSelection ?? null}
               onChange={(modelSelection) => {

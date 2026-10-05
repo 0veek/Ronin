@@ -21,7 +21,7 @@
 - [Getting a second opinion](./user/second-opinion.md)
 - [Review usage](./user/usage.md)
 - [Resume after a limit resets](./user/quota-resume.md)
-- [Automations](./user/automations.md)
+- [Automations and recipes](./user/automations.md)
 - [Build systems](./user/build-systems.md)
 - [Side chats](./user/side-chats.md)
 - [Captured tasks](./user/captured-tasks.md)
