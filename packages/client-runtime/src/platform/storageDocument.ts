@@ -96,47 +96,71 @@ function connectionIdOf(target: ConnectionTarget): string | null {
   }
 }
 
-function removeConnectionMetadata(
+function routeKey(target: ConnectionTarget): string {
+  return connectionIdOf(target) ?? target._tag;
+}
+
+function removeRouteMetadata(
   document: ConnectionCatalogDocument,
-  target: ConnectionTarget,
-  clearDisabled = true,
+  removed: ReadonlyArray<ConnectionTarget>,
 ): ConnectionCatalogDocument {
-  const connectionId = connectionIdOf(target);
+  const connectionIds = new Set(removed.flatMap((target) => connectionIdOf(target) ?? []));
   return {
     ...document,
-    targets: removeCatalogValue(
-      document.targets,
-      (value) => value.environmentId,
-      target.environmentId,
-    ),
-    profiles:
-      connectionId === null
-        ? document.profiles
-        : removeCatalogValue(document.profiles, (value) => value.connectionId, connectionId),
-    credentials:
-      connectionId === null
-        ? document.credentials
-        : removeCatalogValue(document.credentials, (value) => value.connectionId, connectionId),
-    disabledEnvironmentIds: clearDisabled
-      ? removeCatalogValue(document.disabledEnvironmentIds, (value) => value, target.environmentId)
-      : document.disabledEnvironmentIds,
+    profiles: document.profiles.filter((value) => !connectionIds.has(value.connectionId)),
+    credentials: document.credentials.filter((value) => !connectionIds.has(value.connectionId)),
   };
 }
 
+/**
+ * An environment's saved routes in preference order. Targets of one
+ * environment keep their relative order in `targets`, so a document written
+ * before routes existed is one environment with one route.
+ */
+export function catalogRoutes(
+  document: ConnectionCatalogDocument,
+  environmentId: EnvironmentId,
+): ReadonlyArray<PersistedConnectionTarget> {
+  return document.targets.filter((target) => target.environmentId === environmentId);
+}
+
+/**
+ * Replaces an environment's routes with `routes`, preferred first. Records
+ * owned by a dropped route go with it; the environment keeps its position in
+ * the catalog. An empty list leaves the environment's other records in place;
+ * use `removeConnectionFromCatalog` to forget the environment.
+ */
+export function setRoutesInCatalog(
+  document: ConnectionCatalogDocument,
+  environmentId: EnvironmentId,
+  routes: ReadonlyArray<PersistedConnectionTarget>,
+): ConnectionCatalogDocument {
+  const kept = new Set(routes.map(routeKey));
+  const dropped = catalogRoutes(document, environmentId).filter(
+    (target) => !kept.has(routeKey(target)),
+  );
+  const firstIndex = document.targets.findIndex((target) => target.environmentId === environmentId);
+  const others = document.targets.filter((target) => target.environmentId !== environmentId);
+  const insertAt =
+    firstIndex === -1
+      ? others.length
+      : document.targets.slice(0, firstIndex).filter((t) => t.environmentId !== environmentId)
+          .length;
+  return {
+    ...removeRouteMetadata(document, dropped),
+    targets: [...others.slice(0, insertAt), ...routes, ...others.slice(insertAt)],
+  };
+}
+
+/** Saves one route of an environment, keeping its other routes. */
 export function registerConnectionInCatalog(
   document: ConnectionCatalogDocument,
   registration: ConnectionRegistration,
+  routes: ReadonlyArray<PersistedConnectionTarget> = [registration.target],
 ): ConnectionCatalogDocument {
-  const target = registration.target;
-  const previous = document.targets.find(
-    (candidate) => candidate.environmentId === target.environmentId,
-  );
-  const cleaned =
-    previous === undefined ? document : removeConnectionMetadata(document, previous, false);
-  const next: ConnectionCatalogDocument = {
-    ...cleaned,
-    targets: replaceCatalogValue(cleaned.targets, (value) => value.environmentId, target),
-  };
+  // Re-registering (for example editing a label or URL) keeps the disabled
+  // flag; only `setConnectionEnabledInCatalog` or removal changes it.
+  const next = setRoutesInCatalog(document, registration.target.environmentId, routes);
 
   switch (registration._tag) {
     case "BearerConnectionRegistration":
@@ -164,19 +188,27 @@ export function registerConnectionInCatalog(
   }
 }
 
+/** Forgets an environment and every route it had. */
 export function removeConnectionFromCatalog(
   document: ConnectionCatalogDocument,
-  target: ConnectionTarget,
+  environmentId: EnvironmentId,
 ): ConnectionCatalogDocument {
-  const next = removeConnectionMetadata(document, target);
-  return document.githubRoutingPermissions === undefined
-    ? next
-    : {
-        ...next,
-        githubRoutingPermissions: document.githubRoutingPermissions.filter(
-          (permission) => permission.environmentId !== target.environmentId,
-        ),
-      };
+  const next = setRoutesInCatalog(document, environmentId, []);
+  return {
+    ...next,
+    disabledEnvironmentIds: removeCatalogValue(
+      next.disabledEnvironmentIds,
+      (value) => value,
+      environmentId,
+    ),
+    ...(next.githubRoutingPermissions === undefined
+      ? {}
+      : {
+          githubRoutingPermissions: next.githubRoutingPermissions.filter(
+            (permission) => permission.environmentId !== environmentId,
+          ),
+        }),
+  };
 }
 
 /** Flips the disabled flag for a saved environment; unknown ids are ignored. */

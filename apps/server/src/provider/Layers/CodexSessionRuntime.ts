@@ -722,7 +722,7 @@ const decodeCodexThreadResumeMetadata = Schema.decodeUnknownEffect(CodexThreadRe
 interface CodexThreadOpenClient {
   readonly raw: {
     readonly request: (
-      method: "thread/resume",
+      method: "thread/resume" | "thread/unarchive",
       payload: CodexRpc.ClientRequestParamsByMethod["thread/resume"] & {
         readonly excludeTurns?: boolean;
       },
@@ -761,34 +761,42 @@ export const openCodexThread = (input: {
   // Older providers may still return history despite excludeTurns. Only the
   // session metadata is needed here, so unrelated historical items cannot
   // prevent resuming a valid provider thread.
-  return input.client.raw
-    .request("thread/resume", {
+  const resume = () =>
+    input.client.raw.request("thread/resume", {
       threadId: resumeThreadId,
       ...startParams,
       excludeTurns: true,
-    })
-    .pipe(
-      Effect.flatMap((response) =>
-        decodeCodexThreadResumeMetadata(response).pipe(
-          Effect.mapError((error) =>
-            CodexErrors.CodexAppServerRequestError.invalidPayload(
-              "thread/resume",
-              "decode-payload",
-              error,
-            ),
+    });
+  return resume().pipe(
+    Effect.catchTags({
+      CodexAppServerRequestError: (cause) =>
+        /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)
+          ? input.client.raw
+              .request("thread/unarchive", { threadId: resumeThreadId })
+              .pipe(Effect.andThen(() => resume()))
+          : Effect.fail(cause),
+    }),
+    Effect.flatMap((response) =>
+      decodeCodexThreadResumeMetadata(response).pipe(
+        Effect.mapError((error) =>
+          CodexErrors.CodexAppServerRequestError.invalidPayload(
+            "thread/resume",
+            "decode-payload",
+            error,
           ),
         ),
       ),
-      Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
-          threadId: input.threadId,
-          requestedRuntimeMode: input.runtimeMode,
-          resumeThreadId,
-          recoverable: true,
-          cause: error,
-        }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
-      ),
-    );
+    ),
+    Effect.catchIf(isRecoverableThreadResumeError, (error) =>
+      Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+        threadId: input.threadId,
+        requestedRuntimeMode: input.runtimeMode,
+        resumeThreadId,
+        recoverable: true,
+        cause: error,
+      }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
+    ),
+  );
 };
 
 function readNotificationThreadId(notification: CodexServerNotification): string | undefined {

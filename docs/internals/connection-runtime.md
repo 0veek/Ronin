@@ -16,8 +16,9 @@ supported mixed mode.
 
 - `ConnectionResolver` ([resolver.ts][resolver]) resolves a catalog entry into a
   prepared, authenticated endpoint for primary, bearer, or SSH targets.
-- `ConnectionDriver` ([driver.ts][driver]) prepares through the resolver, opens
-  one RPC session, and reports `preparing`, `opening`, and `synchronizing`.
+- `ConnectionDriver` ([driver.ts][driver]) tries an environment's ordered routes
+  through the resolver, opens one RPC session, and reports `preparing`, `opening`,
+  and `synchronizing`. Failed route scopes close before another is tried.
 - `RpcSessionFactory` ([rpc/session.ts][session]) performs one transport
   attempt. It does not retry. `RpcSession` is the interface it returns,
   exposing `client`, `initialConfig`, `ready`, `probe`, and `closed`.
@@ -37,6 +38,36 @@ effects with that supervisor provided.
 `EnvironmentSupervisor` owns desired state, retry scheduling, and the active
 session scope. React components do not create connections, transports, retry
 loops, or RPC clients.
+
+## Routes and learned addresses
+
+One catalog entry and supervisor represent an environment. The entry's `target` and `profile`
+are its preferred route; optional `alternateRoutes` hold the remaining routes. Catalog schema
+version 1 still stores a flat `targets` array. Targets sharing an environment ID form one ordered
+list, so older single-route documents decode without a migration. Reordering preserves disabled
+state and GitHub routing permission; adding a paired address changes the trust key.
+
+`connection/routes.ts` classifies loopback, LAN, Tailscale, public direct, and SSH routes. New
+routes are inserted by that default ranking; existing user order is preserved. Direct route
+checks use a public environment descriptor without credentials and verify its environment ID.
+SSH routes have no cheap check. The driver preserves route order among candidates that answer,
+tries unchecked routes, then tries silent routes. Each attempt owns and closes its transport
+scope. A stalled connection times out per route before the driver tries the next one.
+Transient failures remain retryable when another route is authentication-blocked.
+
+The supervisor checks better direct routes every minute and on network/foreground wakeups.
+A successful authenticated preflight requests a replacement lease; a candidate that then fails
+to connect has a five-minute cooldown. The connection's prepared target identifies the actual
+route in use, independently of catalog preference.
+
+The server's optional `directEndpoints` config field reports eligible bound LAN/Tailscale
+addresses and verified Tailscale Serve mappings. Successful bearer sessions merge these into
+learned routes without restarting the working session just to save them. Learned route IDs
+reference the original paired credential, avoiding token copies. Only learned hints are replaced
+when reported addresses change. Forgetting a paired route removes its dependent learned routes
+and route-owned profiles; forgetting an environment also clears its cached data. Platform-managed
+primary routes and SSH-only registrations do not learn borrowed bearer addresses. HTTPS renderers
+reject insecure learned routes.
 
 ## Connection State
 

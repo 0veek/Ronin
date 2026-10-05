@@ -264,7 +264,7 @@
 }
 
 .wco {
-  --workspace-topbar-height: env(titlebar-area-height, 44px);
+  --workspace-topbar-height: max(44px, env(titlebar-area-height, 44px));
   --workspace-controls-top: env(titlebar-area-y, 0px);
   --workspace-controls-left: calc(env(titlebar-area-x, 0px) + var(--space-3));
   --workspace-controls-right: calc(
@@ -839,4 +839,12 @@
     color-mix(in srgb, var(--sidebar-border) var(--appearance-contrast-base), transparent),
     var(--sidebar-foreground) var(--appearance-contrast-border-boost)
   );
+}
+
+@custom-variant any-hover {
+  @media (any-hover: hover) {
+    &:hover {
+      @slot;
+    }
+  }
 }

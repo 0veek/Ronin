@@ -1,5 +1,6 @@
 import {
   type ClaudeSettings,
+  type ServerProvider,
   type ModelCapabilities,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -617,5 +618,29 @@ export const makePendingClaudeProvider = (
       },
     });
   });
+
+export const probeClaudeWorkspaceSnapshot = Effect.fn("probeClaudeWorkspaceSnapshot")(function* (
+  settings: ClaudeSettings,
+  machineSnapshot: ServerProvider,
+  cwd: string,
+  environment?: NodeJS.ProcessEnv,
+): Effect.fn.Return<
+  ServerProvider & { readonly slashCommandsPending?: boolean },
+  never,
+  FileSystem.FileSystem | Path.Path
+> {
+  if (!settings.enabled) return machineSnapshot;
+  const skills = yield* discoverClaudeSkills(settings, cwd, environment);
+  const capabilities = yield* probeClaudeCapabilities(settings, environment, cwd);
+  return {
+    ...machineSnapshot,
+    skills,
+    slashCommands: dedupeSlashCommands([
+      COMPACT_SLASH_COMMAND,
+      ...(capabilities?.slashCommands ?? []),
+    ]),
+    slashCommandsPending: capabilities === undefined,
+  };
+});
 
 export { probeClaudeCapabilities };

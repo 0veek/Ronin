@@ -122,6 +122,7 @@ vi.mock("../ui/tooltip", () => ({
         : cloneElement(render, undefined, children)
       : children,
   TooltipPopup: () => null,
+  TooltipScrollDismissArea: ({ children }: { children?: ReactNode }) => children,
 }));
 function MockFileDiff(props: {
   fileDiff: { name?: string | null; prevName?: string | null };

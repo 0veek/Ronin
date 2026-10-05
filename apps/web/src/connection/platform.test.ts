@@ -72,6 +72,19 @@ function makeBridge(
 }
 
 describe("desktop SSH pairing", () => {
+  it.effect("rejects an SSH route to a different machine before redeeming its credential", () =>
+    Effect.gen(function* () {
+      const calls: string[] = [];
+      const error = yield* provisionDesktopSshEnvironment(
+        makeBridge(calls),
+        TARGET,
+        EnvironmentId.make("another-machine"),
+      ).pipe(Effect.flip);
+      expect(error).toMatchObject({ reason: "configuration" });
+      expect(calls).toEqual(["ensure", "descriptor"]);
+    }),
+  );
+
   it.effect("fetches the descriptor before consuming the one-time credential", () =>
     Effect.gen(function* () {
       const calls: string[] = [];

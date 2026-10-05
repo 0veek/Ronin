@@ -21,6 +21,12 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
     ...ConnectionProfileBase,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
+    /**
+     * Set on a route the server reported while this client was connected,
+     * rather than one the user paired. Learned routes are replaced when the
+     * server reports a different address, for example after a DHCP change.
+     */
+    learned: Schema.optionalKey(Schema.Literal(true)),
   },
 ) {}
 
@@ -35,9 +41,21 @@ export class SshConnectionProfile extends Schema.TaggedClass<SshConnectionProfil
 export const ConnectionProfile = Schema.Union([BearerConnectionProfile, SshConnectionProfile]);
 export type ConnectionProfile = typeof ConnectionProfile.Type;
 
+/** One way to reach an environment: a direct URL or SSH. */
+export interface ConnectionRoute {
+  readonly target: ConnectionTarget;
+  readonly profile: Option.Option<ConnectionProfile>;
+}
+
+/**
+ * A saved environment. `target` and `profile` are its preferred route;
+ * `alternateRoutes` holds the others in preference order. Read them together
+ * with `connectionRoutes`.
+ */
 export interface ConnectionCatalogEntry {
   readonly target: ConnectionTarget;
   readonly profile: Option.Option<ConnectionProfile>;
+  readonly alternateRoutes?: ReadonlyArray<ConnectionRoute>;
   /** False when the user switched the environment off: saved, but never connects. */
   readonly enabled: boolean;
   /** Discovery rejection stays visible while the saved connection is switched off. */

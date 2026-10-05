@@ -875,6 +875,8 @@ export const PullRequestActivity = Schema.Struct({
    * however long it is.
    */
   commentsTruncated: Schema.Boolean,
+  /** Whether the thread listing itself is incomplete, apart from pages within a thread. */
+  reviewThreadsTruncated: Schema.optional(Schema.Boolean),
   reviewThreads: Schema.Array(PullRequestReviewThread),
   commits: Schema.Array(PullRequestCommit),
   /**
@@ -1306,6 +1308,7 @@ export class PullRequestOperationError extends Schema.TaggedErrorClass<PullReque
   {
     operation: Schema.String,
     detail: TrimmedNonEmptyString,
+    reason: Schema.optional(Schema.Literal("not-found")),
     cause: Schema.optional(Schema.Defect()),
   },
   { httpApiStatus: 502 },

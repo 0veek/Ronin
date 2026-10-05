@@ -1,3 +1,9 @@
+import {
+  type ConnectionTarget,
+  connectionRouteId,
+  connectionRouteLabel,
+  connectionRoutes,
+} from "@t3tools/client-runtime/connection";
 import type { DesktopSshEnvironmentTarget, EnvironmentMachineKind } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import type { ReactNode } from "react";
@@ -16,10 +22,25 @@ export function formatDesktopSshTarget(target: DesktopSshEnvironmentTarget): str
  * How this client reaches a machine, printed first in every environment row so
  * primary, desktop-local, SSH, and remote connections are told apart.
  */
-export function environmentTransportLabel(environment: EnvironmentPresentation): string {
+export function environmentTransportLabel(
+  environment: EnvironmentPresentation,
+  activeTarget: ConnectionTarget | null = null,
+): string {
   const { entry } = environment;
   if (entry.target._tag === "PrimaryConnectionTarget") return "This machine";
-  if (isDesktopLocalConnectionTarget(entry.target)) return "Local backend";
+  const routes = connectionRoutes(entry);
+  if (routes.length > 1) {
+    const active =
+      activeTarget === null
+        ? undefined
+        : routes.find(
+            (route) => connectionRouteId(route.target) === connectionRouteId(activeTarget),
+          );
+    return active === undefined
+      ? connectionRouteLabel(routes[0]!)
+      : `via ${connectionRouteLabel(active)}`;
+  }
+  if (isDesktopLocalConnectionTarget(entry.target)) return "WSL";
   if (
     entry.target._tag === "SshConnectionTarget" &&
     Option.isSome(entry.profile) &&
@@ -40,6 +61,7 @@ export function EnvironmentRow({
   label,
   subtitle,
   below,
+  detail,
   dimmed = false,
   className,
   children,
@@ -49,6 +71,8 @@ export function EnvironmentRow({
   readonly subtitle: ReactNode;
   /** Extra content under the subtitle, such as update progress. */
   readonly below?: ReactNode;
+  /** Expanded content under the whole row, aligned with the label, such as its routes. */
+  readonly detail?: ReactNode;
   readonly dimmed?: boolean;
   readonly className?: string;
   readonly children?: ReactNode;
@@ -68,6 +92,7 @@ export function EnvironmentRow({
         {below}
       </div>
       <div className="flex shrink-0 items-center gap-1">{children}</div>
+      {detail ? <div className="col-span-2 col-start-2 min-w-0">{detail}</div> : null}
     </div>
   );
 }

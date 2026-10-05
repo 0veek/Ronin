@@ -25,6 +25,7 @@ import type {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
+  ServerProvider,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
@@ -69,6 +70,12 @@ export interface ProviderInstance {
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
   readonly snapshot: ServerProviderShape;
+  readonly snapshotForCwd?: (
+    cwd: string,
+  ) => Effect.Effect<
+    ServerProvider & { readonly slashCommandsPending?: boolean },
+    ProviderDriverError
+  >;
   /** Invalidate Ronin-owned discovery caches before an explicit provider refresh. */
   readonly invalidateCaches?: Effect.Effect<void>;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;

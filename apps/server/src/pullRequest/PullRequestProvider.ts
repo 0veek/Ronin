@@ -49,7 +49,13 @@ export class PullRequestProviderError extends Schema.TaggedErrorClass<PullReques
   {
     provider: SourceControlProviderKindSchema,
     operation: Schema.String,
-    reason: Schema.Literals(["missing-tool", "unauthenticated", "rate-limited", "failed"]),
+    reason: Schema.Literals([
+      "missing-tool",
+      "unauthenticated",
+      "rate-limited",
+      "not-found",
+      "failed",
+    ]),
     detail: Schema.String,
     retryAt: Schema.optional(Schema.Number),
     cause: Schema.optional(Schema.Defect()),
@@ -243,6 +249,7 @@ export interface ProviderChangeRequestActivity {
    */
   readonly commentCount: number;
   readonly commentsTruncated: boolean;
+  readonly reviewThreadsTruncated?: boolean;
   readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
   readonly commits: ReadonlyArray<PullRequestCommit>;
   /** The change request's own reactions, from a host that has them. */

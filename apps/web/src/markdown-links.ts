@@ -445,3 +445,23 @@ function buildFileLinkMetaFromTarget(targetPath: string, cwd?: string): Markdown
     ...(columnNumber !== undefined ? { column: columnNumber } : {}),
   };
 }
+
+/** Recognizes compact path labels while preserving authored prose beside a file chip. */
+export function isMarkdownFileLinkLabel(label: string, destination: MarkdownFileLinkMeta): boolean {
+  const position = splitPathAndPosition(label.trim());
+  if (
+    (position.line !== undefined && Number(position.line) !== destination.line) ||
+    (position.column !== undefined && Number(position.column) !== destination.column)
+  )
+    return false;
+  const normalize = (value: string) =>
+    value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/, "");
+  let path = normalize(position.path);
+  let target = normalize(destination.filePath);
+  if (!path) return true;
+  if (isWindowsAbsolutePath(destination.filePath)) {
+    path = path.toLowerCase();
+    target = target.toLowerCase();
+  }
+  return path === target || target.endsWith(`/${path}`);
+}

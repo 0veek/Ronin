@@ -44,12 +44,19 @@ Ronin works with the platforms your team already uses:
   `AGENTS.md` along with recent commit subjects. Claude writers also follow `CLAUDE.md`
 - Supports GitHub Pull Requests, GitLab Merge Requests, Bitbucket Pull Requests, and Azure DevOps Pull Requests
 
+Commit-message previews preserve both staged and unstaged changes, including partially staged
+files. If you already staged changes, a commit without an explicit file selection keeps that
+selection; with nothing staged, Ronin stages the current changes as before.
+
 **Stay on top of open reviews**
 
 - See if your current branch already has an open PR/MR
 - When an agent finishes a turn on your thread's branch, Ronin checks for a newly opened
   PR/MR if background activity is enabled for that repository. Known reviews keep their normal
   refresh schedule.
+- Hold **Shift** on the pull request list or a thread's pull request toolbar to reveal quick
+  **Close**, **Merge**, **Ready for review**, or **Reopen** actions. These act immediately. Stacked pull requests require opening their detail
+  panel to merge the stack.
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - Your authored reviews stay at the top and use the selected sort within their group. By default,
   see passing and approved reviews first, passing reviews awaiting approval next, and conflicting

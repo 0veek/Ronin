@@ -47,7 +47,7 @@ import { WorkspaceTopbar } from "../shell/WorkspaceTopbar";
 import { ProviderMark } from "./ProviderMark";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
-import { costTypeSegments, speedCostSegments } from "./usageBreakdown";
+import { costTypeSegments, modelShare, speedCostSegments } from "./usageBreakdown";
 import { UsageChartLegend, UsageProviderChart, type UsageChartMetric } from "./UsageProviderChart";
 import { METRIC_OPTIONS, WINDOW_OPTIONS, resolveUsageShortcut } from "./usageShortcuts";
 import {
@@ -563,6 +563,7 @@ export function UsagePage() {
                       {breakdown === "model" ? (
                         <ModelBreakdown
                           models={breakdownModels}
+                          metric={metric}
                           onSelectModel={setSelectedModelKey}
                         />
                       ) : (
@@ -726,9 +727,11 @@ function ProviderRow({
 
 function ModelBreakdown({
   models,
+  metric,
   onSelectModel,
 }: {
   readonly models: readonly ModelTotals[];
+  readonly metric: UsageChartMetric;
   readonly onSelectModel: (key: string) => void;
 }) {
   return (
@@ -772,7 +775,7 @@ function ModelBreakdown({
                 )}
               </td>
               <td className="py-2">
-                {isModelCostUnknown(model) ? (
+                {modelShare(model, metric) === null ? (
                   <span className="block text-right text-muted-foreground">—</span>
                 ) : (
                   <span className="flex items-center justify-end gap-2">
@@ -780,13 +783,13 @@ function ModelBreakdown({
                       <span
                         className="block h-full rounded-full"
                         style={{
-                          width: `${(model.costShare * 100).toFixed(1)}%`,
+                          width: `${((modelShare(model, metric) ?? 0) * 100).toFixed(1)}%`,
                           backgroundColor: PROVIDER_COLOR[model.provider],
                         }}
                       />
                     </span>
                     <span className="w-12 text-right text-muted-foreground tabular-nums">
-                      {formatPercent(model.costShare)}
+                      {formatPercent(modelShare(model, metric) ?? 0)}
                     </span>
                   </span>
                 )}

@@ -50,6 +50,25 @@ const decide = (
   }) !== null;
 
 describe("resolveAutoSettlementAt", () => {
+  it("settles merged work after a background turn without treating it as a user resume", () => {
+    expect(
+      decide(
+        makeThread({
+          latestTurn: {
+            turnId: TurnId.make("background-turn"),
+            state: "completed",
+            requestedAt: "2026-08-27T00:00:00.000Z",
+            startedAt: "2026-08-27T00:00:00.000Z",
+            completedAt: "2026-08-27T01:00:00.000Z",
+            assistantMessageId: null,
+          },
+        }),
+        { state: "merged", mergedAt: "2026-08-26T00:00:00.000Z" },
+        { days: null },
+      ),
+    ).toBe(true);
+  });
+
   it("returns the last activity time for persisted settlement", () => {
     expect(
       resolveAutoSettlementAt({

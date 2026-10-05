@@ -45,7 +45,7 @@ export function threadHasQueuedTurnStart(
 }
 
 function pullRequestSettles(
-  thread: Pick<OrchestrationThreadShell, "createdAt" | "latestUserMessageAt" | "latestTurn">,
+  thread: Pick<OrchestrationThreadShell, "createdAt" | "latestUserMessageAt">,
   pullRequest: SettlementPullRequest,
   autoSettleOnMerge: boolean,
 ): boolean {
@@ -54,11 +54,7 @@ function pullRequestSettles(
   }
   const terminalAt = pullRequest.state === "merged" ? pullRequest.mergedAt : pullRequest.closedAt;
   if (terminalAt == null) return false;
-  const userAnchor = latestTimestamp([
-    thread.createdAt,
-    thread.latestUserMessageAt,
-    thread.latestTurn?.requestedAt,
-  ]);
+  const userAnchor = latestTimestamp([thread.createdAt, thread.latestUserMessageAt]);
   if (userAnchor === null) return false;
   const pullRequestAt = Date.parse(terminalAt);
   const userAnchorAt = Date.parse(userAnchor);

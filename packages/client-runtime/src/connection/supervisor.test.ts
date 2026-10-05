@@ -11,10 +11,15 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
 
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
-import type { ConnectionCatalogEntry } from "./catalog.ts";
+import {
+  BearerConnectionProfile,
+  type ConnectionRoute,
+  type ConnectionCatalogEntry,
+} from "./catalog.ts";
 import * as Connectivity from "./connectivity.ts";
 import * as ConnectionDriver from "./driver.ts";
 import {
+  BearerConnectionTarget,
   ConnectionBlockedError,
   ConnectionTransientError,
   PrimaryConnectionTarget,
@@ -102,6 +107,12 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     attempt: number,
     target: ConnectionTarget,
   ) => Effect.Effect<PreparedConnection, ConnectionAttemptError>;
+  readonly route?: (entry: ConnectionCatalogEntry) => ConnectionTarget;
+  readonly preflight?: (
+    entry: ConnectionCatalogEntry,
+    route: ConnectionRoute,
+  ) => Effect.Effect<boolean>;
+  readonly initialConfig?: RpcSession.RpcSession["initialConfig"];
   readonly ready?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
   readonly probe?: (attempt: number) => Effect.Effect<void, ConnectionAttemptError>;
 }) {
@@ -139,7 +150,7 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     entry: ConnectionCatalogEntry,
     reportProgress: (progress: ConnectionDriver.ConnectionDriverProgress) => Effect.Effect<void>,
   ) {
-    const target = entry.target;
+    const target = options?.route?.(entry) ?? entry.target;
     yield* reportProgress({ stage: "preparing" });
     const prepared = yield* prepare(target);
     yield* reportProgress({ stage: "opening", prepared });
@@ -151,7 +162,9 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     const session = yield* Effect.acquireRelease(
       Effect.succeed({
         client: TEST_RPC_CLIENT,
-        initialConfig: Effect.die(new Error("Initial config is not used by supervisor tests.")),
+        initialConfig:
+          options?.initialConfig ??
+          Effect.die(new Error("Initial config is not used by supervisor tests.")),
         subscribeServerConfig: (input) => TEST_RPC_CLIENT.subscribeServerConfig(input),
         ready: options?.ready?.(attempt) ?? Effect.void,
         probe: options?.probe?.(attempt) ?? Effect.void,
@@ -183,7 +196,11 @@ const makeHarness = Effect.fn("TestConnectionHarness.make")(function* (options?:
     ),
     Layer.succeed(
       ConnectionDriver.ConnectionDriver,
-      ConnectionDriver.ConnectionDriver.of({ connect }),
+      ConnectionDriver.ConnectionDriver.of({
+        connect,
+        checkRoute: () => Effect.succeed("unchecked"),
+        preflight: options?.preflight ?? (() => Effect.succeed(false)),
+      }),
     ),
   );
 
@@ -1282,3 +1299,95 @@ describe("EnvironmentSupervisor", () => {
     }),
   );
 });
+
+it.effect("returns from a fallback to the preferred route after the network changes", () =>
+  Effect.gen(function* () {
+    const fallback = new BearerConnectionTarget({
+      environmentId: TARGET.environmentId,
+      label: "Public fallback",
+      connectionId: "fallback",
+    });
+    const entry: ConnectionCatalogEntry = {
+      ...TARGET_ENTRY,
+      alternateRoutes: [
+        {
+          target: fallback,
+          profile: Option.some(
+            new BearerConnectionProfile({
+              connectionId: "fallback",
+              environmentId: TARGET.environmentId,
+              label: "Public fallback",
+              httpBaseUrl: "https://fallback.example.test",
+              wsBaseUrl: "wss://fallback.example.test",
+            }),
+          ),
+        },
+      ],
+    };
+    let preferredAvailable = false;
+    const harness = yield* makeHarness({
+      route: (attemptEntry) => (preferredAvailable ? attemptEntry.target : fallback),
+      prepare: (_attempt, target) => Effect.succeed({ ...PREPARED_CONNECTION, target }),
+      preflight: () => Effect.succeed(preferredAvailable),
+    });
+    const supervisor = yield* EnvironmentSupervisor.make(entry, { initiallyDesired: true }).pipe(
+      Effect.provide(harness.dependencies),
+    );
+    yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+    expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target).toBe(
+      fallback,
+    );
+    preferredAvailable = true;
+    yield* harness.wake("network-changed");
+    yield* awaitState(
+      supervisor.state,
+      (state) => state.phase === "connected" && state.generation > 1,
+    );
+    expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target).toBe(TARGET);
+    expect(yield* Ref.get(harness.releaseCount)).toBe(1);
+  }),
+);
+
+it.effect("uses routes learned from the ready session for subsequent attempts", () =>
+  Effect.gen(function* () {
+    const learned = new BearerConnectionTarget({
+      environmentId: TARGET.environmentId,
+      label: "Learned LAN",
+      connectionId: "learned-lan",
+    });
+    const reported = [{ httpBaseUrl: "http://192.168.1.10:3773" }];
+    const persisted = yield* Deferred.make<void>();
+    const harness = yield* makeHarness({
+      prepare: (_attempt, target) => Effect.succeed({ ...PREPARED_CONNECTION, target }),
+      initialConfig: Effect.succeed({ directEndpoints: reported } as never),
+      preflight: (_entry, route) =>
+        route.target === learned
+          ? Deferred.succeed(persisted, undefined).pipe(Effect.as(false))
+          : Effect.succeed(false),
+    });
+    const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+      initiallyDesired: true,
+      learnRoutes: ({ activeRoute, reported: addresses }) => {
+        expect([TARGET, learned]).toContain(activeRoute.target);
+        expect(addresses).toEqual(reported);
+        return Effect.succeed(
+          Option.some({
+            ...TARGET_ENTRY,
+            target: learned,
+            alternateRoutes: [{ target: TARGET, profile: Option.none() }],
+          }),
+        );
+      },
+    }).pipe(Effect.provide(harness.dependencies));
+    yield* awaitState(supervisor.state, (state) => state.phase === "connected");
+    yield* Deferred.await(persisted);
+    // A dropped socket reconnects using the updated entry, without rebuilding a supervisor.
+    yield* harness.closeLatestSession();
+    yield* TestClock.adjust("2 seconds");
+    yield* awaitState(
+      supervisor.state,
+      (state) => state.phase === "connected" && state.generation > 1,
+    );
+    expect(Option.getOrThrow(yield* SubscriptionRef.get(supervisor.prepared)).target).toBe(learned);
+  }),
+);

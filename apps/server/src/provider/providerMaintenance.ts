@@ -53,10 +53,12 @@ export interface ProviderMaintenanceCommandAction {
 }
 
 export interface ProviderMaintenanceCapabilityResolutionOptions {
-  readonly binaryPath?: string | null;
+  readonly binaryPath?: string | null | undefined;
   readonly env?: NodeJS.ProcessEnv;
   readonly resolvedCommandPath?: string | null;
   readonly realCommandPath?: string | null;
+  readonly miseWrapper?: boolean;
+  readonly brewExecutable?: string;
   /**
    * Host platform, which decides how an install path is read: `/usr/local/bin`
    * means Homebrew on macOS and a hand-installed binary anywhere else.
@@ -80,7 +82,7 @@ export interface PackageManagedProviderMaintenanceDefinition {
     readonly executable: string;
     readonly args: ReadonlyArray<string>;
     readonly lockKey: string;
-    readonly isCommandPath: (commandPath: string) => boolean;
+    readonly isCommandPath?: (commandPath: string) => boolean;
   } | null;
 }
 
@@ -153,7 +155,11 @@ export function makeTargetedProviderUpdateAction(
   const update = capabilities.update;
   const packageName = capabilities.packageName;
   if (!update || !packageName) return null;
-  if (!/^(?:npm-global:|bun-global$|pnpm-global$|vite-plus-global$)/.test(update.lockKey))
+  if (
+    !/^(?:npm-global(?::|$)|bun-global$|pnpm-global$|vite-plus-global$|yarn-global$|volta$)/.test(
+      update.lockKey,
+    )
+  )
     return null;
   const packageIndex = update.args.findIndex(
     (arg) => arg === `${packageName}@latest` || arg === packageName,
@@ -244,6 +250,7 @@ function makeVitePlusGlobalProviderMaintenanceCapabilities(
 
 function makeHomebrewProviderMaintenanceCapabilities(
   definition: PackageManagedProviderMaintenanceDefinition,
+  executable = "brew",
 ): ProviderMaintenanceCapabilities {
   if (!definition.homebrewFormula) {
     return makeManualOnlyProviderMaintenanceCapabilities({
@@ -255,7 +262,7 @@ function makeHomebrewProviderMaintenanceCapabilities(
   return makeProviderMaintenanceCapabilities({
     provider: definition.provider,
     packageName: definition.npmPackageName,
-    updateExecutable: "brew",
+    updateExecutable: executable,
     updateArgs: ["upgrade", definition.homebrewFormula],
     updateLockKey: "homebrew",
   });
@@ -355,10 +362,44 @@ export function resolvePackageManagedProviderMaintenance(
       ...(options?.realCommandPath ? [options.realCommandPath] : []),
     ];
 
+    if (
+      options?.miseWrapper ||
+      commandPaths.some((path) => /\/mise\/(?:installs|shims)\//.test(normalizeCommandPath(path)))
+    ) {
+      return makeManualOnlyProviderMaintenanceCapabilities({
+        provider: definition.provider,
+        packageName: definition.npmPackageName,
+      });
+    }
+    const managed = commandPaths.some((path) =>
+      /\/yarn\/(?:data\/)?global\/node_modules\//.test(normalizeCommandPath(path)),
+    )
+      ? {
+          executable: "yarn",
+          args: ["global", "add", `${definition.npmPackageName}@latest`],
+          lock: "yarn-global",
+        }
+      : commandPaths.some((path) =>
+            /\/\.?volta\/tools\/image\/packages\//.test(normalizeCommandPath(path)),
+          )
+        ? {
+            executable: "volta",
+            args: ["install", `${definition.npmPackageName}@latest`],
+            lock: "volta",
+          }
+        : null;
+    if (managed)
+      return makeProviderMaintenanceCapabilities({
+        provider: definition.provider,
+        packageName: definition.npmPackageName,
+        updateExecutable: managed.executable,
+        updateArgs: managed.args,
+        updateLockKey: managed.lock,
+      });
     const nativeUpdate = definition.nativeUpdate;
     if (
       nativeUpdate &&
-      commandPaths.some((commandPath) => nativeUpdate.isCommandPath(commandPath))
+      commandPaths.some((commandPath) => nativeUpdate.isCommandPath?.(commandPath))
     ) {
       return (
         makeNativeProviderMaintenanceCapabilities(
@@ -382,7 +423,13 @@ export function resolvePackageManagedProviderMaintenance(
     }
     const platform = options?.platform ?? "darwin";
     if (commandPaths.some((commandPath) => isHomebrewCommandPath(commandPath, platform))) {
-      return makeHomebrewProviderMaintenanceCapabilities(definition);
+      return makeHomebrewProviderMaintenanceCapabilities(definition, options?.brewExecutable);
+    }
+    if (
+      nativeUpdate &&
+      !commandPaths.some((path) => normalizeCommandPath(path).includes("/node_modules/"))
+    ) {
+      return makeNativeProviderMaintenanceCapabilities(definition, resolvedCommandPath, platform)!;
     }
   }
 
@@ -446,12 +493,37 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
   const realCommandPath = yield* fileSystem
     .realPath(resolvedCommandPath)
     .pipe(Effect.orElseSucceed(() => resolvedCommandPath));
+  const miseWrapper = yield* fileSystem.stat(realCommandPath).pipe(
+    Effect.flatMap((stat) =>
+      stat.type === "File" && stat.size <= 16 * 1024
+        ? fileSystem
+            .readFileString(realCommandPath)
+            .pipe(
+              Effect.map(
+                (source) =>
+                  /^#![^\r\n]+[\r\n]/.test(source) && /\bmise\s+(?:exec|x)\b/.test(source),
+              ),
+            )
+        : Effect.succeed(false),
+    ),
+    Effect.orElseSucceed(() => false),
+  );
+  const brewPrefix = [resolvedCommandPath, realCommandPath]
+    .map((path) => path.replaceAll("\\", "/").match(/^(.*?)(?:\/(?:Cellar|Caskroom|bin)\/)/i)?.[1])
+    .find((prefix) => prefix && isHomebrewCommandPath(prefix + "/bin/provider", platform));
+  const brewExecutable =
+    brewPrefix &&
+    (yield* fileSystem.exists(`${brewPrefix}/bin/brew`).pipe(Effect.orElseSucceed(() => false)))
+      ? `${brewPrefix}/bin/brew`
+      : undefined;
   return resolver.resolve({
     ...options,
     platform,
     env,
     resolvedCommandPath,
     realCommandPath,
+    miseWrapper,
+    ...(brewExecutable ? { brewExecutable } : {}),
   });
 });
 

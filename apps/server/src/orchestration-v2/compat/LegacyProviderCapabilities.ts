@@ -32,6 +32,7 @@ export function legacyProviderCapabilities(
       supportsInterrupt: true,
       supportsActiveSteering:
         driver === "codex" || driver === "claudeAgent" || driver === "opencode",
+      activeSteeringInterruptsTools: driver === "claudeAgent",
       supportsSteeringByInterruptRestart: false,
       supportsQueuedMessages: true,
       terminalStatusQuality: "strong",

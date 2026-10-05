@@ -60,6 +60,13 @@ Claude Code runs one skill per message; when a message names several, the last o
 Claude starts the others through its Skill tool, which refuses skills marked
 `disable-model-invocation`.
 
+## Workspace commands
+
+The composer discovers Claude slash commands in the current workspace, including project and
+local settings. Switching projects refreshes the command list. If discovery fails, readable
+skills remain available and Ronin retries; previously discovered commands for that workspace
+stay visible until the refresh succeeds.
+
 ## Stopping One Agent
 
 When a Claude thread spawns subagents, the Agents panel lists them with live status, activity, and

@@ -17,14 +17,26 @@ const install = NodeChildProcess.spawnSync("vp i", {
 });
 if (install.status !== 0) process.exit(install.status ?? 1);
 
-if (NodeFS.realpathSync(projectRoot) !== NodeFS.realpathSync(worktree)) {
-  for (const file of ENV_FILES) {
-    const source = NodePath.join(projectRoot, file);
-    if (!NodeFS.existsSync(source)) continue;
-    const target = NodePath.join(worktree, file);
-    NodeFS.rmSync(target, { force: true });
-    NodeFS.symlinkSync(source, target);
+// Only replace worktree symlinks; real files belong to the checkout owner.
+for (const file of ENV_FILES) {
+  const source = NodePath.join(projectRoot, file);
+  const sourceStat = NodeFS.lstatSync(source, { throwIfNoEntry: false });
+  if (!sourceStat) continue;
+  if (!sourceStat.isFile()) {
+    process.stderr.write(`Skipping ${file}: ${source} is not a regular file.\n`);
+    continue;
   }
+  const target = NodePath.join(worktree, file);
+  const targetStat = NodeFS.lstatSync(target, { throwIfNoEntry: false });
+  if (targetStat && !targetStat.isSymbolicLink()) {
+    if (NodePath.resolve(source) !== NodePath.resolve(target)) {
+      process.stderr.write(`Skipping ${file}: ${target} is a real file.\n`);
+    }
+    continue;
+  }
+  if (targetStat) NodeFS.unlinkSync(target);
+  NodeFS.mkdirSync(NodePath.dirname(target), { recursive: true });
+  NodeFS.symlinkSync(source, target);
 }
 
 const warm = NodeChildProcess.spawnSync(

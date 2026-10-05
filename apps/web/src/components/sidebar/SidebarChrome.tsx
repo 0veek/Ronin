@@ -88,6 +88,35 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
   );
 });
 
+export function SidebarBrandWidthProbe({
+  onWidthChange,
+}: {
+  onWidthChange: (width: number) => void;
+}) {
+  const observeWidth = useCallback(
+    (probe: HTMLDivElement) => {
+      const observer = new ResizeObserver(([entry]) => {
+        if (entry) onWidthChange(entry.borderBoxSize[0]?.inlineSize ?? probe.offsetWidth);
+      });
+      observer.observe(probe);
+      return () => observer.disconnect();
+    },
+    [onWidthChange],
+  );
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none invisible fixed top-0 left-0 flex w-max px-[var(--workspace-titlebar-content-left,12px)]"
+      ref={observeWidth}
+    >
+      <span className="sidebar-brand flex w-max items-center gap-1">
+        <RoninInsignia className="sidebar-brand-mark" />
+        <span className="sidebar-wordmark">Ronin</span>
+      </span>
+    </div>
+  );
+}
+
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <Link

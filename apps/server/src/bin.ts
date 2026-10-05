@@ -2,6 +2,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as CliError from "effect/unstable/cli/CliError";
 import { Command } from "effect/unstable/cli";
 
 import * as NetService from "@t3tools/shared/Net";
@@ -12,7 +13,7 @@ import { pairCommand } from "./cli/pair.ts";
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { isEntrypoint } from "./entrypoint.ts";
 import { projectCommand } from "./cli/project.ts";
-import { runServerCommand, serveCommand, startCommand } from "./cli/server.ts";
+import { runDefaultServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { serviceCommand } from "./cli/service.ts";
 import { uninstallCommand } from "./cli/uninstall.ts";
 import { updateCommand } from "./cli/update.ts";
@@ -27,8 +28,14 @@ const CliRuntimeLayer = Layer.mergeAll(NodeServices.layer, NetService.layer);
 export const makeCli = () =>
   Command.make("t3", { ...sharedServerCommandFlags }).pipe(
     Command.withDescription("Run the Ronin server."),
-    Command.withHandler((flags) => runServerCommand(flags)),
+    Command.withHandler(runDefaultServerCommand),
     Command.withSubcommands([
+      Command.make("help").pipe(
+        Command.withDescription("Show command help."),
+        Command.withHandler(() =>
+          Effect.fail(new CliError.ShowHelp({ commandPath: ["t3"], errors: [] })),
+        ),
+      ),
       startCommand,
       serveCommand,
       appCommand,

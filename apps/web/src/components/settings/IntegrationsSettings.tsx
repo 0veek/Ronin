@@ -667,10 +667,18 @@ function DeviceIntegrationControls({
   const list = useAtomCommand(deviceEnvironment.list, { reportFailure: false });
   const [pending, setPending] = useState<"hub" | "check" | "agent" | null>(null);
   const busy = state.hostStatus === "installing" || state.hostStatus === "starting";
+  const localPlatformsUnavailable = state.hosts.some(
+    (host) => host.kind === "local" && !host.platforms.some((platform) => platform.available),
+  );
   const [platformsRevealed, setPlatformsRevealed] = useState(false);
   // Keep diagnostics visible through subsequent agent setup and refresh phases.
   if (platformsRevealed && !enabled) setPlatformsRevealed(false);
-  if (enabled && !platformsRevealed && state.hostStatus === "ready" && pending !== "hub") {
+  if (
+    enabled &&
+    !platformsRevealed &&
+    (state.hostStatus === "ready" || localPlatformsUnavailable) &&
+    pending !== "hub"
+  ) {
     setPlatformsRevealed(true);
   }
 

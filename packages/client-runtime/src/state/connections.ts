@@ -155,6 +155,27 @@ export function createEnvironmentCatalogAtoms<R, E>(
         Effect.flatMap((registry) => registry.setEnabled(input.environmentId, input.enabled)),
       ),
   });
+  const removeRoute = createRuntimeCommand(runtime, {
+    label: "environment-catalog:remove-route",
+    scheduler: commandScheduler,
+    concurrency: serial,
+    execute: (input: { readonly environmentId: EnvironmentIdType; readonly routeId: string }) =>
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.flatMap((registry) => registry.removeRoute(input.environmentId, input.routeId)),
+      ),
+  });
+  const reorderRoutes = createRuntimeCommand(runtime, {
+    label: "environment-catalog:reorder-routes",
+    scheduler: commandScheduler,
+    concurrency: serial,
+    execute: (input: {
+      readonly environmentId: EnvironmentIdType;
+      readonly routeIds: ReadonlyArray<string>;
+    }) =>
+      EnvironmentRegistry.EnvironmentRegistry.pipe(
+        Effect.flatMap((registry) => registry.reorderRoutes(input.environmentId, input.routeIds)),
+      ),
+  });
 
   return {
     catalogAtom,
@@ -166,6 +187,8 @@ export function createEnvironmentCatalogAtoms<R, E>(
     stateAtom,
     register,
     remove,
+    removeRoute,
+    reorderRoutes,
     retryNow,
     setEnabled,
   };

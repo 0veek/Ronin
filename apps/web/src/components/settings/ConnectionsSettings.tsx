@@ -31,7 +31,7 @@ import {
   type EnvironmentId,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
-import { connectionStatusText } from "@t3tools/client-runtime/connection";
+import { connectionRoutes, connectionStatusText } from "@t3tools/client-runtime/connection";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -52,6 +52,7 @@ import {
   useRelativeTimeTick,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import { EnvironmentIconPicker } from "./EnvironmentIconPicker";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
@@ -1375,6 +1376,7 @@ type SavedBackendListRowProps = {
   removingEnvironmentId: EnvironmentId | null;
   onSetEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
   onRemove: (environmentId: EnvironmentId) => void;
+  onAddRoute: (environment: EnvironmentPresentation) => void;
 };
 
 function SavedBackendListRow({
@@ -1382,7 +1384,9 @@ function SavedBackendListRow({
   removingEnvironmentId,
   onSetEnabled,
   onRemove,
+  onAddRoute,
 }: SavedBackendListRowProps) {
+  const [routesOpen, setRoutesOpen] = useState(false);
   const environmentId = environment.environmentId;
   const connectionState = environment.connection.phase;
   const unsupported = connectionState === "unsupported";
@@ -1520,11 +1524,20 @@ function SavedBackendListRow({
               environmentId={environmentId}
               serverLabel={`${environment.label} server`}
               selfUpdate={resolveServerSelfUpdateCapability(environment.serverConfig)}
+              installation={environment.serverConfig?.environment.capabilities.serverInstallation}
               threadContinuation={supportsServerUpdateThreadContinuation(environment.serverConfig)}
               targetVersion={versionMismatch.clientVersion}
               label={serverUpdateState.status === "failed" ? "Retry" : "Update"}
             />
           ) : null}
+          <Button
+            size="xs"
+            variant="ghost"
+            aria-expanded={routesOpen}
+            onClick={() => setRoutesOpen((open) => !open)}
+          >
+            {connectionRoutes(environment.entry).length} routes
+          </Button>
           <Switch
             checked={enabled}
             disabled={removingEnvironmentId === environmentId || unsupported}
@@ -1541,6 +1554,12 @@ function SavedBackendListRow({
           </Button>
         </div>
       </div>
+      {routesOpen ? (
+        <EnvironmentRoutesList
+          environment={environment}
+          onAddRoute={() => onAddRoute(environment)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1601,17 +1620,16 @@ export function ConnectionsSettings() {
   const savedDesktopSshEnvironmentKeys = useMemo(() => {
     const keys = new Set<string>();
     for (const environment of savedEnvironments) {
-      const profile = environment.entry.profile;
-      if (
-        environment.entry.target._tag !== "SshConnectionTarget" ||
-        Option.isNone(profile) ||
-        profile.value._tag !== "SshConnectionProfile"
-      ) {
-        continue;
+      for (const { target, profile } of connectionRoutes(environment.entry)) {
+        if (
+          target._tag !== "SshConnectionTarget" ||
+          Option.isNone(profile) ||
+          profile.value._tag !== "SshConnectionProfile"
+        )
+          continue;
+        keys.add(profile.value.target.alias);
+        keys.add(formatDesktopSshTarget(profile.value.target));
       }
-      const target = profile.value.target;
-      keys.add(target.alias);
-      keys.add(formatDesktopSshTarget(target));
     }
     return keys;
   }, [savedEnvironments]);
@@ -1636,6 +1654,8 @@ export function ConnectionsSettings() {
   >(null);
   const [isRevokingOtherDesktopClients, setIsRevokingOtherDesktopClients] = useState(false);
   const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
+  // Set when the dialog adds a route to a saved machine instead of a new one.
+  const [routeTarget, setRouteTarget] = useState<EnvironmentPresentation | null>(null);
   const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
   const [savedBackendHost, setSavedBackendHost] = useState("");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
@@ -1951,7 +1971,11 @@ export function ConnectionsSettings() {
     async (target: DesktopSshEnvironmentTarget) => {
       setIsAddingSavedBackend(true);
       setSavedBackendError(null);
-      const result = await connectSshEnvironment({ target, label: "" });
+      const result = await connectSshEnvironment({
+        target,
+        label: "",
+        ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
+      });
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           setSavedBackendError(formatDesktopSshConnectionError(squashAtomCommandFailure(result)));
@@ -1967,14 +1991,17 @@ export function ConnectionsSettings() {
       setSavedBackendSshUsername("");
       setSavedBackendSshPort("");
       setAddBackendDialogOpen(false);
+      setRouteTarget(null);
       toastManager.add({
         type: "success",
-        title: "Environment connected",
-        description: `${target.alias} is ready over an SSH-managed tunnel.`,
+        title: routeTarget ? "Route added" : "Environment connected",
+        description: routeTarget
+          ? `${routeTarget.label} can now be reached over SSH ${target.alias}.`
+          : `${target.alias} is ready over an SSH-managed tunnel.`,
       });
       setIsAddingSavedBackend(false);
     },
-    [connectSshEnvironment],
+    [connectSshEnvironment, routeTarget],
   );
 
   const handleAddSavedBackend = useCallback(async () => {
@@ -2021,7 +2048,10 @@ export function ConnectionsSettings() {
       return;
     }
 
-    const result = await connectPairing(remotePairingInput);
+    const result = await connectPairing({
+      ...remotePairingInput,
+      ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
+    });
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -2039,13 +2069,17 @@ export function ConnectionsSettings() {
     setSavedBackendSshUsername("");
     setSavedBackendSshPort("");
     setAddBackendDialogOpen(false);
+    setRouteTarget(null);
     toastManager.add({
       type: "success",
-      title: "Environment added",
-      description: "The environment is saved and will reconnect on app startup.",
+      title: routeTarget ? "Route added" : "Environment added",
+      description: routeTarget
+        ? `${routeTarget.label} has another route and will use the saved preference order.`
+        : "The environment is saved and will reconnect on app startup.",
     });
     setIsAddingSavedBackend(false);
   }, [
+    routeTarget,
     connectPairing,
     connectSavedBackendSshTarget,
     savedBackendHost,
@@ -2355,7 +2389,7 @@ export function ConnectionsSettings() {
         onClick={() => void handleAddSavedBackend()}
       >
         <PlusIcon className="size-3.5" />
-        {isAddingSavedBackend ? "Adding…" : "Add environment"}
+        {isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Add environment"}
       </Button>
     </div>
   );
@@ -2494,7 +2528,7 @@ export function ConnectionsSettings() {
           onClick={() => void handleAddSavedBackend()}
         >
           <PlusIcon className="size-3.5" />
-          {isAddingSavedBackend ? "Adding…" : "Add environment"}
+          {isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Add environment"}
         </Button>
       </div>
     </div>
@@ -2683,6 +2717,9 @@ export function ConnectionsSettings() {
                       environmentId={primaryEnvironmentId}
                       serverLabel={primaryEnvironment?.label ?? "this server"}
                       selfUpdate={resolveServerSelfUpdateCapability(primaryServerConfig)}
+                      installation={
+                        primaryServerConfig?.environment.capabilities.serverInstallation
+                      }
                       threadContinuation={supportsServerUpdateThreadContinuation(
                         primaryServerConfig,
                       )}
@@ -2927,6 +2964,7 @@ export function ConnectionsSettings() {
             onOpenChange={(open) => {
               setAddBackendDialogOpen(open);
               if (!open) {
+                setRouteTarget(null);
                 setSavedBackendError(null);
               }
             }}
@@ -2940,6 +2978,7 @@ export function ConnectionsSettings() {
                         size="xs"
                         variant="ghost"
                         className="h-5 gap-1 rounded-sm px-1 text-2xs font-normal text-muted-foreground/60 hover:text-muted-foreground"
+                        onClick={() => setRouteTarget(null)}
                         aria-label="Add environment"
                       >
                         <PlusIcon className="size-3" />
@@ -2953,8 +2992,14 @@ export function ConnectionsSettings() {
             </Tooltip>
             <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
               <DialogHeader>
-                <DialogTitle>Add environment</DialogTitle>
-                <DialogDescription>Pair another environment with this client.</DialogDescription>
+                <DialogTitle>
+                  {routeTarget ? `Add route to ${routeTarget.label}` : "Add environment"}
+                </DialogTitle>
+                <DialogDescription>
+                  {routeTarget
+                    ? "Pair another address for this environment. Routes are tried in preference order."
+                    : "Pair another environment with this client."}
+                </DialogDescription>
               </DialogHeader>
               <DialogPanel>
                 <div className="space-y-4">
@@ -2991,6 +3036,11 @@ export function ConnectionsSettings() {
             removingEnvironmentId={removingSavedEnvironmentId}
             onSetEnabled={handleSetSavedBackendEnabled}
             onRemove={handleRemoveSavedBackend}
+            onAddRoute={(target) => {
+              setRouteTarget(target);
+              setSavedBackendError(null);
+              setAddBackendDialogOpen(true);
+            }}
           />
         ))}
         {listedEnvironments.length === 0 ? <EmptyRemoteEnvironments /> : null}

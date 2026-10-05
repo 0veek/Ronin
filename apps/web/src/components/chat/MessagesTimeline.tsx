@@ -173,7 +173,7 @@ import {
 import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { WorkingGlyph } from "./WorkingGlyph";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipTrigger, TooltipScrollDismissArea } from "../ui/tooltip";
 import { type ParsedTerminalContextEntry } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
 import { useUiStateStore } from "~/uiStateStore";
@@ -963,7 +963,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   return (
     <TimelineRowCtx value={sharedState}>
       <TimelineRowActivityCtx value={activityState}>
-        <div
+        <TooltipScrollDismissArea
           ref={setTimelineViewportElement}
           className="relative h-full min-h-0"
           data-assistant-citation-viewport="true"
@@ -1038,7 +1038,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               });
             }}
           />
-        </div>
+        </TooltipScrollDismissArea>
       </TimelineRowActivityCtx>
     </TimelineRowCtx>
   );

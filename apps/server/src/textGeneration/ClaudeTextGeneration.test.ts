@@ -34,67 +34,18 @@ const ClaudeTextGenerationTestLayer = ServerConfig.ServerConfig.layerTest(proces
 function makeFakeClaudeBinary(dir: string) {
   return Effect.gen(function* () {
     const path = yield* Path.Path;
+    const fs = yield* FileSystem.FileSystem;
     const platform = yield* HostProcessPlatform;
     const binDir = path.join(dir, "bin");
+    const fixturePath = yield* path.fromFileUrl(
+      new URL("./testing/ClaudeTextGeneration.fixture.mjs", import.meta.url),
+    );
+    const source = yield* fs.readFileString(fixturePath);
     writeFakeCli({
       directory: binDir,
       name: "claude",
       platform,
-      source: [
-        'const args = process.argv.slice(2).join(" ");',
-        "",
-        "function fail(message, code) {",
-        '  process.stderr.write(message + "\\n");',
-        "  process.exit(code);",
-        "}",
-        "",
-        'const permissionIndex = process.argv.indexOf("--permission-mode");',
-        'if (permissionIndex === -1 || process.argv[permissionIndex + 1] !== "dontAsk") {',
-        '  fail("text generation must deny permission prompts", 12);',
-        "}",
-        'const toolsIndex = process.argv.indexOf("--tools");',
-        'if (toolsIndex === -1 || process.argv[toolsIndex + 1] !== "") {',
-        '  fail("text generation must receive an explicit empty tool set", 13);',
-        "}",
-        "",
-        'let stdinContent = "";',
-        "if (!process.stdin.isTTY) {",
-        "  const chunks = [];",
-        "  for await (const chunk of process.stdin) {",
-        "    chunks.push(chunk);",
-        "  }",
-        '  stdinContent = Buffer.concat(chunks).toString("utf8");',
-        "}",
-        "",
-        "const argsMustContain = process.env.T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN;",
-        "if (argsMustContain && !args.includes(argsMustContain)) {",
-        '  fail("args missing expected content", 2);',
-        "}",
-        "",
-        "const argsMustNotContain = process.env.T3_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN;",
-        "if (argsMustNotContain && args.includes(argsMustNotContain)) {",
-        '  fail("args contained forbidden content", 3);',
-        "}",
-        "",
-        "const stdinMustContain = process.env.T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN;",
-        "if (stdinMustContain && !stdinContent.includes(stdinMustContain)) {",
-        '  fail("stdin missing expected content", 4);',
-        "}",
-        "",
-        "const configDirMustBe = process.env.T3_FAKE_CLAUDE_CONFIG_DIR_MUST_BE;",
-        "if (configDirMustBe && process.env.CLAUDE_CONFIG_DIR !== configDirMustBe) {",
-        '  fail("CLAUDE_CONFIG_DIR was " + (process.env.CLAUDE_CONFIG_DIR ?? ""), 5);',
-        "}",
-        "",
-        "const stderrText = process.env.T3_FAKE_CLAUDE_STDERR;",
-        "if (stderrText) {",
-        '  process.stderr.write(stderrText + "\\n");',
-        "}",
-        "",
-        'process.stdout.write(process.env.T3_FAKE_CLAUDE_OUTPUT ?? "");',
-        "process.exitCode = Number(process.env.T3_FAKE_CLAUDE_EXIT_CODE ?? 0);",
-        "",
-      ].join("\n"),
+      source,
     });
     return binDir;
   });

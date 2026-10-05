@@ -87,6 +87,23 @@ devices, and desktop IPC retain their current contracts and services. Their ordi
 requests reach V2 through the same command reactor. The transport remains single-origin
 and environment-local for desktop, direct remote, Tailscale, and SSH clients.
 
+## Restart and background notifications
+
+Recovery continues an unfinished root turn only when its saved native thread, session, and
+running provider turn agree, or when a previously admitted continuation crashed before start.
+Settled or waiting roots with cancelled background work remain asleep, including stale pending
+continuation effects. Background cleanup is reported on a later user turn.
+
+Automatic delegated-task completion messages use active steering only when the adapter says
+steering will preserve active tools. The legacy Claude capability marks steering as interrupting
+tools, so these messages wait in the queue while explicit user steering remains available.
+Stop can target the provider thread's latest accepted turn when a later attempt failed before
+creating a provider turn but background work remains.
+
+The shared `@t3tools/shared/KeyedLock` releases idle keys and serializes session, thread,
+checkpoint, provider-maintenance, terminal, VCS-status, import, and SSH-tunnel operations.
+`KeyedSerialExecutor` retains its compatibility export for V2 services.
+
 ## Verification
 
 Focused bridge tests run the real V1 projections and ingestion together with the V2 engine,

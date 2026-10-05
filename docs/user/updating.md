@@ -70,11 +70,12 @@ again when you are ready to continue. A saved prompt in the message box stays sa
 
 ## Choose the Action You See
 
-| Action                     | What to do                                                                                                                                                                |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Update server**          | Available for the Ronin Linux background service. Select the button and leave Ronin open while it prepares, tests, restarts, and reconnects.                              |
-| **Update the desktop app** | Open the Ronin desktop app on the machine that runs the server and install the app update there. Reopen it if needed.                                                     |
-| **Copy update command**    | Copy the command, open a terminal on the server machine, stop the current Ronin server, and relaunch it with the copied command and any startup options you normally use. |
+| Action                     | What to do                                                                                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Update server**          | Available for the Ronin Linux background service. Select the button and leave Ronin open while it prepares, tests, restarts, and reconnects.                                  |
+| **Update the desktop app** | Open the Ronin desktop app on the machine that runs the server and install the app update there. Reopen it if needed.                                                         |
+| **Copy update command**    | Run the copied command on the server machine to update its detected global install, then restart Ronin with your usual options.                                               |
+| **Copy relaunch command**  | Stop the server and run the copied one-time runner command with the same subcommand and options. The command matches npx, pnpm dlx, or bunx when Ronin recognizes the runner. |
 
 The available action depends on how that server was started. Ronin does not update connected
 servers silently in the background.

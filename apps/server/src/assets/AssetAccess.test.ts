@@ -1,3 +1,5 @@
+import * as NodeOS from "node:os";
+import { vi } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { AssetPreviewTypeValidationError, ThreadId } from "@t3tools/contracts";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
@@ -17,6 +19,11 @@ import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, resolveAsset } from "./AssetAccess.ts";
 
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeOS>();
+  return { ...actual, homedir: vi.fn(actual.homedir) };
+});
+
 const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-asset-access-test-",
 });
@@ -31,6 +38,46 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
+  it.effect("resolves home-relative media paths independently of the workspace", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped();
+      const home = path.join(directory, "home");
+      const file = path.join(home, "Downloads", "recording.mp4");
+      yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+      yield* fs.writeFileString(file, "recording bytes");
+      const canonicalFile = yield* fs.realPath(file);
+      const spy = vi.mocked(NodeOS.homedir).mockReturnValue(home);
+      try {
+        for (const workspaceRoot of [path.join(directory, "workspace"), undefined]) {
+          if (workspaceRoot) yield* fs.makeDirectory(workspaceRoot, { recursive: true });
+          for (const requestedPath of ["~/Downloads/recording.mp4", "~\\Downloads/recording.mp4"]) {
+            const result = yield* issueAssetUrl({
+              resource: {
+                _tag: "media-file",
+                threadId: ThreadId.make("home-media"),
+                path: requestedPath,
+              },
+              ...(workspaceRoot ? { workspaceRoot } : {}),
+            });
+            const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+            const separator = suffix.indexOf("/");
+            expect(
+              yield* resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1)),
+            ).toMatchObject({
+              kind: "file",
+              path: canonicalFile,
+              mimeType: "video/mp4",
+            });
+          }
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    }).pipe(Effect.provide(testLayer)),
+  );
+
   it.effect("issues workspace URLs that resolve the entry file and sibling assets", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

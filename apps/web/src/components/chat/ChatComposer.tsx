@@ -1324,6 +1324,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedProviderEntry],
   );
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProviderEntry);
+  const selectedWorkspaceCommands = discoveredSkillsCatalog.workspaceCommands.find(
+    (entry) => entry.instanceId === selectedProviderStatus?.instanceId,
+  );
+  const selectedProviderSlashCommands =
+    selectedWorkspaceCommands?.slashCommands ?? selectedProviderStatus?.slashCommands ?? [];
   const selectedProviderSkills = useMemo(
     () =>
       mergeProviderSkillCatalogs(
@@ -1595,9 +1600,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }));
     }
     if (composerTrigger.kind === "slash-command") {
-      const nativeCommandNames = (selectedProviderStatus?.slashCommands ?? []).map(
-        (command) => command.name,
-      );
+      const nativeCommandNames = selectedProviderSlashCommands.map((command) => command.name);
       const availableBuiltInCommands = getAvailableComposerSlashCommands({
         planModeEnabled: planModeUiEnabled,
         nativeCommandNames,
@@ -1634,7 +1637,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // apply locally on selection and skills insert a `$` mention the server
       // dispatches from any position, so only provider commands are gated.
       const providerSlashCommandItems = (
-        composerTrigger.rangeStart === 0 ? (selectedProviderStatus?.slashCommands ?? []) : []
+        composerTrigger.rangeStart === 0 ? selectedProviderSlashCommands : []
       )
         .filter(
           (command) => !shouldHideProviderNativeSlashCommand(command.name, appOfferedCommandNames),

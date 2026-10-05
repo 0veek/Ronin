@@ -27,6 +27,7 @@ import {
   type DesktopBridge,
   type DesktopEnvironmentBootstrap,
   type DesktopSshEnvironmentTarget,
+  type EnvironmentId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -85,23 +86,65 @@ const connectivityLayer = Connectivity.layer({
   ),
 });
 
+interface NetworkInformationLike extends EventTarget {
+  readonly type?: string;
+}
+
+/**
+ * Wakes connections when the browser reports a different network type, such
+ * as a laptop moving from Wi-Fi to a phone hotspot. `change` also fires for
+ * bandwidth and latency estimates on the same network, so only a type change
+ * counts. Browsers without `navigator.connection.type` rely on the periodic
+ * route check instead.
+ */
+const networkPathChanges = Stream.callback<"network-changed">((queue) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      const connection =
+        typeof navigator === "undefined"
+          ? undefined
+          : (navigator as Navigator & { readonly connection?: NetworkInformationLike }).connection;
+      if (connection?.type === undefined) return undefined;
+      let previous = connection.type;
+      const listener = () => {
+        const type = connection.type;
+        if (type === undefined || type === previous) return;
+        previous = type;
+        Queue.offerUnsafe(queue, "network-changed");
+      };
+      connection.addEventListener("change", listener);
+      return { connection, listener };
+    }),
+    (subscription) =>
+      Effect.sync(() =>
+        subscription?.connection.removeEventListener("change", subscription.listener),
+      ),
+  ).pipe(Effect.asVoid),
+);
+
 const wakeupsLayer = Wakeups.layer({
-  changes: Stream.callback<"application-active">((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => {
-        const listener = () => {
-          if (document.visibilityState === "visible") {
-            Queue.offerUnsafe(queue, "application-active");
-          }
-        };
-        document.addEventListener("visibilitychange", listener);
-        return listener;
-      }),
-      (listener) =>
-        Effect.sync(() => {
-          document.removeEventListener("visibilitychange", listener);
-        }),
-    ).pipe(Effect.asVoid),
+  changes: Stream.mergeAll(
+    [
+      Stream.callback<"application-active">((queue) =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            const listener = () => {
+              if (document.visibilityState === "visible") {
+                Queue.offerUnsafe(queue, "application-active");
+              }
+            };
+            document.addEventListener("visibilitychange", listener);
+            return listener;
+          }),
+          (listener) =>
+            Effect.sync(() => {
+              document.removeEventListener("visibilitychange", listener);
+            }),
+        ).pipe(Effect.asVoid),
+      ),
+      networkPathChanges,
+    ],
+    { concurrency: "unbounded" },
   ),
 });
 
@@ -131,7 +174,11 @@ function sshPreparationError(cause: unknown) {
 
 export const provisionDesktopSshEnvironment = Effect.fn(
   "web.connectionPlatform.ssh.provisionDesktop",
-)(function* (bridge: DesktopBridge, target: DesktopSshEnvironmentTarget) {
+)(function* (
+  bridge: DesktopBridge,
+  target: DesktopSshEnvironmentTarget,
+  expectedEnvironmentId?: EnvironmentId,
+) {
   const bootstrap = yield* Effect.tryPromise({
     try: () =>
       bridge.ensureSshEnvironment(target, {
@@ -150,6 +197,12 @@ export const provisionDesktopSshEnvironment = Effect.fn(
     try: () => bridge.fetchSshEnvironmentDescriptor(bootstrap.httpBaseUrl),
     catch: sshPreparationError,
   });
+  if (expectedEnvironmentId !== undefined && descriptor.environmentId !== expectedEnvironmentId) {
+    return yield* new ConnectionBlockedError({
+      reason: "configuration",
+      detail: `That host reaches ${descriptor.label}, a different machine. Add it as its own environment instead.`,
+    });
+  }
   const access = yield* Effect.tryPromise({
     try: () => bridge.bootstrapSshBearerSession(bootstrap.httpBaseUrl, pairingToken),
     catch: sshPreparationError,
@@ -179,16 +232,18 @@ const capabilitiesLayer = Layer.effectContext(
       }).pipe(Effect.map(Option.fromNullishOr)),
     });
     const ssh = SshEnvironmentGateway.of({
-      provision: Effect.fn("web.connectionPlatform.ssh.provision")(function* (target) {
-        const bridge = window.desktopBridge;
-        if (bridge === undefined) {
-          return yield* new ConnectionBlockedError({
-            reason: "unsupported",
-            detail: "SSH environments are only available in the desktop app.",
-          });
-        }
-        return yield* provisionDesktopSshEnvironment(bridge, target);
-      }),
+      provision: Effect.fn("web.connectionPlatform.ssh.provision")(
+        function* (target, expectedEnvironmentId) {
+          const bridge = window.desktopBridge;
+          if (bridge === undefined) {
+            return yield* new ConnectionBlockedError({
+              reason: "unsupported",
+              detail: "SSH environments are only available in the desktop app.",
+            });
+          }
+          return yield* provisionDesktopSshEnvironment(bridge, target, expectedEnvironmentId);
+        },
+      ),
       prepare: Effect.fn("web.connectionPlatform.ssh.prepare")(function* (input) {
         const bridge = window.desktopBridge;
         if (bridge === undefined) {

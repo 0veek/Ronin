@@ -11,6 +11,8 @@ import {
 } from "../connection/catalog.ts";
 import { BearerConnectionTarget, SshConnectionTarget } from "../connection/model.ts";
 import {
+  catalogRoutes,
+  setRoutesInCatalog,
   EMPTY_CONNECTION_CATALOG_DOCUMENT,
   parseConnectionCatalogDocument,
   registerConnectionInCatalog,
@@ -72,7 +74,9 @@ describe("ConnectionCatalogDocument", () => {
         }),
       ).disabledEnvironmentIds,
     ).toEqual([ENVIRONMENT_ID]);
-    expect(removeConnectionFromCatalog(disabled, BEARER_TARGET).disabledEnvironmentIds).toEqual([]);
+    expect(
+      removeConnectionFromCatalog(disabled, BEARER_TARGET.environmentId).disabledEnvironmentIds,
+    ).toEqual([]);
   });
 
   it("registers a bearer connection as one catalog mutation", () => {
@@ -148,7 +152,7 @@ describe("ConnectionCatalogDocument", () => {
       }),
     );
 
-    expect(removeConnectionFromCatalog(registered, BEARER_TARGET)).toEqual(
+    expect(removeConnectionFromCatalog(registered, BEARER_TARGET.environmentId)).toEqual(
       EMPTY_CONNECTION_CATALOG_DOCUMENT,
     );
   });
@@ -245,3 +249,41 @@ describe("ConnectionCatalogDocument", () => {
     }),
   );
 });
+
+it.effect("round-trips route preferences and removes only the discarded route's credential", () =>
+  Effect.gen(function* () {
+    const ssh = new SshConnectionTarget({
+      environmentId: ENVIRONMENT_ID,
+      label: "SSH",
+      connectionId: "ssh",
+    });
+    const sshProfile = new SshConnectionProfile({
+      connectionId: "ssh",
+      environmentId: ENVIRONMENT_ID,
+      label: "SSH",
+      target: { alias: "desk", hostname: "desk.example.test", username: null, port: 22 },
+    });
+    const bearer = registerConnectionInCatalog(
+      EMPTY_CONNECTION_CATALOG_DOCUMENT,
+      new BearerConnectionRegistration({
+        target: BEARER_TARGET,
+        profile: BEARER_PROFILE,
+        credential: BEARER_CREDENTIAL,
+      }),
+    );
+    const multi = registerConnectionInCatalog(
+      bearer,
+      new SshConnectionRegistration({ target: ssh, profile: sshProfile }),
+      [ssh, BEARER_TARGET],
+    );
+    const decoded = yield* parseConnectionCatalogDocument(multi);
+    expect(catalogRoutes(decoded, ENVIRONMENT_ID)).toEqual([ssh, BEARER_TARGET]);
+    const reordered = setRoutesInCatalog(decoded, ENVIRONMENT_ID, [BEARER_TARGET, ssh]);
+    expect(reordered.credentials).toEqual(bearer.credentials);
+    expect(reordered.profiles).toHaveLength(2);
+    const removed = setRoutesInCatalog(reordered, ENVIRONMENT_ID, [ssh]);
+    expect(removed.credentials).toEqual([]);
+    expect(removed.profiles).toEqual([sshProfile]);
+    expect(catalogRoutes(removed, ENVIRONMENT_ID)).toEqual([ssh]);
+  }),
+);

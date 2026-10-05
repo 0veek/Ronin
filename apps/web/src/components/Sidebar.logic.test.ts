@@ -8,6 +8,7 @@ import {
   planSidebarThreadDrop,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
+  resolveSidebarSweepKeys,
   sidebarListItemId,
   sidebarMarkerId,
   archiveSelectedThreadEntries,
@@ -47,6 +48,7 @@ import {
   groupBuildSystemThreadsUnderOrchestrator,
   sortSettledThreadsForSidebar,
   sortInboxThreadsByReturn,
+  sortWorkingThreadsBySend,
   pinOrderKeyBetween,
   sortPinnedThreadsForSidebar,
   sortThreadsForSidebar,
@@ -2644,6 +2646,22 @@ describe("resolveSidebarDropVerb", () => {
   });
 });
 
+describe("resolveSidebarSweepKeys", () => {
+  const ordered = ["a", "b", "c", "d", "blocked"];
+  const canSettle = (key: string) => key !== "blocked";
+
+  it("covers every row between the pressed row and the pointer, in either direction", () => {
+    expect(resolveSidebarSweepKeys(ordered, "b", "b", canSettle)).toEqual(["b"]);
+    expect(resolveSidebarSweepKeys(ordered, "b", "d", canSettle)).toEqual(["b", "c", "d"]);
+    expect(resolveSidebarSweepKeys(ordered, "d", "a", canSettle)).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("leaves out rows that cannot settle and rows that left the list", () => {
+    expect(resolveSidebarSweepKeys(ordered, "c", "blocked", canSettle)).toEqual(["c", "d"]);
+    expect(resolveSidebarSweepKeys(ordered, "gone", "a", canSettle)).toEqual([]);
+  });
+});
+
 describe("navigation after parking a thread", () => {
   it.each([
     ["settle", "settled", null, "thread", true],
@@ -2847,5 +2865,24 @@ describe("Working shelf (beta)", () => {
         unsnooze: false,
       });
     });
+  });
+});
+
+describe("Working section user-send order", () => {
+  it("ignores background turn completion and wake timestamps", () => {
+    const old = {
+      id: "old",
+      environmentId: "env",
+      createdAt: "2026-01-01",
+      latestUserMessageAt: "2026-01-02",
+      updatedAt: "2026-10-05",
+    };
+    const recent = {
+      ...old,
+      id: "recent",
+      latestUserMessageAt: "2026-01-03",
+      updatedAt: "2026-01-03",
+    };
+    expect(sortWorkingThreadsBySend([old, recent])).toEqual([recent, old]);
   });
 });

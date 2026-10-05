@@ -810,3 +810,20 @@ it("pins only owned package-manager installs and preserves their execution conte
   }
   expect(makeTargetedProviderUpdateAction(capabilities, "2.0.0; rm -rf /")).toBeNull();
 });
+
+it("updates Yarn and Volta installs using their manager and leaves mise pinned", () => {
+  for (const [path, executable] of [
+    ["/home/me/.config/yarn/global/node_modules/@example/package-tool/bin/tool", "yarn"],
+    ["/home/me/.volta/tools/image/packages/@example/package-tool/bin/tool", "volta"],
+  ]) {
+    expect(packageToolUpdate.resolve({ binaryPath: path }).update?.executable).toBe(executable);
+  }
+  expect(
+    nativePackageToolUpdate.resolve({ binaryPath: "/custom/provider" }).update?.executable,
+  ).toBe("/custom/provider");
+  expect(
+    nativePackageToolUpdate.resolve({
+      binaryPath: "/home/me/.local/share/mise/installs/provider/bin/provider",
+    }).update,
+  ).toBeNull();
+});

@@ -1,5 +1,7 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
+import { useShortcutModifierState } from "~/shortcutModifierState";
+import type { PullRequestSpeedActionResult } from "~/components/pullRequest/PullRequestSpeedActions";
 import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import type {
   EnvironmentId,
@@ -296,6 +298,10 @@ export const Route = createFileRoute("/_chat/pull-requests")({
 });
 
 function PullRequestsRouteView() {
+  const modifiers = useShortcutModifierState(true);
+  const speedMode =
+    modifiers.shiftKey && !modifiers.metaKey && !modifiers.ctrlKey && !modifiers.altKey;
+
   const search = Route.useSearch();
   const sort = search.sort ?? "ready";
   const statsPolicy: PullRequestStatsPolicy =
@@ -888,6 +894,10 @@ function PullRequestsRouteView() {
   // new lands at the bottom. Only a different question — other filters, another search — starts
   // the order again. Declared here, ahead of the snapshot write below, so that write can read
   // this round's accumulation rather than only its own slice.
+  const onSpeedAction = ({ entry }: PullRequestSpeedActionResult) => {
+    setDetailRefreshToken((token) => token + 1);
+    refreshListAndStats(undefined, entry.environmentId);
+  };
   const [ordered, setOrdered] = useState<{
     key: string;
     entries: ReadonlyArray<EnvironmentPullRequestEntry>;
@@ -1349,11 +1359,11 @@ function PullRequestsRouteView() {
     [statsBatches],
   );
   const statsObserver = useRef<IntersectionObserver | null>(null);
-  const statsRows = useRef(new Set<HTMLButtonElement>());
+  const statsRows = useRef(new Set<HTMLDivElement>());
   const statsPending = useRef(true);
   const statsPolicyRef = useRef(statsPolicy);
   statsPolicyRef.current = statsPolicy;
-  const registerStatsRow = useCallback((node: HTMLButtonElement | null) => {
+  const registerStatsRow = useCallback((node: HTMLDivElement | null) => {
     if (node === null || typeof IntersectionObserver === "undefined") return;
     statsRows.current.add(node);
     statsObserver.current?.observe(node);
@@ -1707,6 +1717,8 @@ function PullRequestsRouteView() {
                       selected.number === entry.number
                     }
                     onSelect={selectEntry}
+                    speedMode={speedMode}
+                    onActed={onSpeedAction}
                   />
                 );
               })}

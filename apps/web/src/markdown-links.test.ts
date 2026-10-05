@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 
 import {
   extractMarkdownLinkHrefs,
+  isMarkdownFileLinkLabel,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   resolveMarkdownFileLinkTarget,
@@ -503,5 +504,29 @@ describe("directory paths with a trailing separator", () => {
   it("does not produce an empty label for the filesystem root", () => {
     const meta = resolveMarkdownFileLinkMeta("/tmp/", "/repo/project");
     expect(meta?.basename).not.toBe("");
+  });
+});
+
+describe("isMarkdownFileLinkLabel", () => {
+  const destination = resolveMarkdownFileLinkMeta("/workspace/src/main.ts:42:7", "/workspace")!;
+  it.each([
+    "main.ts",
+    "src/main.ts",
+    "./src/main.ts",
+    "main.ts:42",
+    "main.ts:42:7",
+    "/workspace/src/main.ts",
+  ])("compacts matching path label %s", (label) => {
+    expect(isMarkdownFileLinkLabel(label, destination)).toBe(true);
+  });
+  it.each(["Read the entry point", "main.ts:12", "main.ts:42:9", "other/main.ts", "other.ts"])(
+    "preserves authored or mismatched label %s",
+    (label) => {
+      expect(isMarkdownFileLinkLabel(label, destination)).toBe(false);
+    },
+  );
+  it("matches Windows paths independent of slash direction and case", () => {
+    const windows = resolveMarkdownFileLinkMeta("C:/workspace/src/Main.ts:42", "C:/workspace")!;
+    expect(isMarkdownFileLinkLabel("src\\main.ts:42", windows)).toBe(true);
   });
 });

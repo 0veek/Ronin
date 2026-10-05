@@ -93,12 +93,12 @@ describe("connection onboarding", () => {
         target: {
           environmentId: "environment-paired",
           label: "Paired environment",
-          connectionId: "bearer:environment-paired",
+          connectionId: "bearer:environment-paired:https://remote.example.test",
         },
         profile: {
           environmentId: "environment-paired",
           label: "Paired environment",
-          connectionId: "bearer:environment-paired",
+          connectionId: "bearer:environment-paired:https://remote.example.test",
           httpBaseUrl: "https://remote.example.test/",
           wsBaseUrl: "wss://remote.example.test/",
         },
@@ -120,6 +120,43 @@ describe("connection onboarding", () => {
       expect(tokenParams.get("subject_token")).toBe("pairing-token");
       expect(tokenParams.get("scope")).toBe(AuthStandardClientScopes.join(" "));
       expect(tokenParams.get("client_label")).toBe("Ronin Test");
+    }),
+  );
+
+  it.effect("rejects a route to a different machine without consuming its pairing code", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const error = yield* preparePairingRegistration({
+        host: "remote.example.test",
+        pairingCode: "pairing-token",
+        expectedEnvironmentId: EnvironmentId.make("another-environment"),
+      }).pipe(
+        Effect.provide(Layer.mergeAll(CLIENT_PRESENTATION_LAYER, pairingHttpLayer(calls))),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({ reason: "configuration" });
+      expect(calls.map((call) => call.url)).toEqual([
+        "https://remote.example.test/.well-known/t3/environment",
+      ]);
+    }),
+  );
+
+  it.effect("keeps separate pairing registrations for two addresses of the same machine", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ readonly url: string; readonly init: RequestInit }> = [];
+      const layer = Layer.mergeAll(CLIENT_PRESENTATION_LAYER, pairingHttpLayer(calls));
+      const preferred = yield* preparePairingRegistration({
+        host: "remote.example.test",
+        pairingCode: "first-token",
+      }).pipe(Effect.provide(layer));
+      const fallback = yield* preparePairingRegistration({
+        host: "fallback.example.test",
+        pairingCode: "second-token",
+        expectedEnvironmentId: preferred.target.environmentId,
+      }).pipe(Effect.provide(layer));
+      expect(fallback.target.environmentId).toBe(preferred.target.environmentId);
+      expect(fallback.target.connectionId).not.toBe(preferred.target.connectionId);
+      expect(fallback.profile.httpBaseUrl).toBe("https://fallback.example.test/");
     }),
   );
 
@@ -271,12 +308,12 @@ describe("connection onboarding", () => {
         target: {
           environmentId: "environment-ssh",
           label: "Remote development box",
-          connectionId: "ssh:environment-ssh",
+          connectionId: 'ssh:environment-ssh:["devbox","devbox.example.test","developer",22]',
         },
         profile: {
           environmentId: "environment-ssh",
           label: "Remote development box",
-          connectionId: "ssh:environment-ssh",
+          connectionId: 'ssh:environment-ssh:["devbox","devbox.example.test","developer",22]',
           target,
         },
       });

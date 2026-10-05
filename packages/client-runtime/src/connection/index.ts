@@ -5,6 +5,7 @@ export {
   ConnectionDriver,
   type ConnectionDriverProgress,
   type EnvironmentConnectionLease,
+  type RouteCheck,
 } from "./driver.ts";
 export * from "./errors.ts";
 export * from "./githubRoutingPermissions.ts";
@@ -30,6 +31,7 @@ export {
   PlatformEnvironmentRemovalError,
 } from "./registry.ts";
 export { ConnectionResolver } from "./resolver.ts";
+export * from "./routes.ts";
 export { EnvironmentSupervisor, type EnvironmentSupervisorOptions } from "./supervisor.ts";
 export * as Wakeups from "./wakeups.ts";
 

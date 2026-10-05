@@ -3,6 +3,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
   EnvironmentId,
+  EventId,
+  NodeId,
   MessageId,
   ProjectId,
   ProviderDriverKind,
@@ -14,6 +16,7 @@ import {
   TurnId,
 } from "@t3tools/contracts";
 import { type OrchestrationV2DomainEvent } from "@t3tools/contracts/orchestration-v2";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -46,6 +49,7 @@ import { CheckpointReactor } from "../../orchestration/Services/CheckpointReacto
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { PullRequestService } from "../../pullRequest/PullRequestService.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
+import { OrchestrationEffectWorkerV2 } from "../EffectWorker.ts";
 import { EventSinkV2 } from "../EventSink.ts";
 import { OrchestratorV2 } from "../Orchestrator.ts";
 import { ProviderAdapterRegistryV2 } from "../ProviderAdapterRegistry.ts";
@@ -70,10 +74,12 @@ const decodeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
 const testBridge = (
   driverName: (typeof drivers)[number],
   scenario:
+    | "automatic-completion"
     | "basic"
     | "steer"
     | "background"
     | "background-exit"
+    | "failed-background-stop"
     | "native-wake"
     | "failed-start"
     | "history"
@@ -97,6 +103,7 @@ const testBridge = (
     const checkpoints = new Set<string>();
     const captures: Array<string> = [];
     let starts = 0;
+    let sends = 0;
     let session: ProviderSession | undefined = {
       provider: driver,
       providerInstanceId: instanceId,
@@ -135,15 +142,19 @@ const testBridge = (
       sendTurn: (input) =>
         Queue.offer(sent, input).pipe(
           Effect.andThen(
-            scenario === "failed-start"
-              ? Effect.fail(
-                  new ProviderAdapterRequestError({
-                    provider: driver,
-                    method: "sendTurn",
-                    detail: "Test provider rejected the prompt",
-                  }),
-                )
-              : Effect.succeed({ threadId, turnId }),
+            Effect.suspend(() => {
+              sends++;
+              return scenario === "failed-start" ||
+                (scenario === "failed-background-stop" && sends === 2)
+                ? Effect.fail(
+                    new ProviderAdapterRequestError({
+                      provider: driver,
+                      method: "sendTurn",
+                      detail: "Test provider rejected the prompt",
+                    }),
+                  )
+                : Effect.succeed({ threadId, turnId });
+            }),
           ),
         ),
       stopSession: ({ threadId }) =>
@@ -362,6 +373,90 @@ const testBridge = (
       yield* awaitEvent(
         (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
       );
+      if (scenario === "automatic-completion") {
+        const current = yield* v2.getThreadProjection(threadId);
+        const run = current.runs.find((candidate) => candidate.status === "running")!;
+        const taskId = NodeId.make("automatic-task");
+        const completionMessageId = MessageId.make("automatic-result");
+        const occurredAt = yield* DateTime.now;
+        yield* sink.write({
+          events: [
+            {
+              id: EventId.make("completion-cohort"),
+              type: "run.updated",
+              threadId,
+              runId: run.id,
+              occurredAt,
+              payload: {
+                ...run,
+                delegatedCompletion: {
+                  disposition: "open",
+                  nextGeneration: 2,
+                  delivery: { generation: 1, messageId: completionMessageId, taskIds: [taskId] },
+                },
+              },
+            },
+            {
+              id: EventId.make("completed-task"),
+              type: "subagent.updated",
+              threadId,
+              runId: run.id,
+              nodeId: taskId,
+              occurredAt,
+              payload: {
+                id: taskId,
+                threadId,
+                runId: run.id,
+                parentNodeId: run.rootNodeId!,
+                origin: "app_owned",
+                createdBy: "agent",
+                driver,
+                providerInstanceId: instanceId,
+                providerThreadId: null,
+                childThreadId: null,
+                nativeTaskRef: null,
+                prompt: "Background work",
+                title: "Completed background work",
+                model: null,
+                completionWake: "always",
+                completionDelivery: { state: "claimed", observedByRunId: null },
+                status: "completed",
+                result: "done",
+                startedAt: occurredAt,
+                completedAt: occurredAt,
+                updatedAt: occurredAt,
+              },
+            },
+          ],
+        });
+        yield* v2.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("deliver-completion"),
+          threadId,
+          messageId: completionMessageId,
+          text: "Background work completed",
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "agent",
+          creationSource: "server",
+          delegatedCompletion: { parentRunId: run.id, generation: 1, taskIds: [taskId] },
+        });
+        const worker = yield* OrchestrationEffectWorkerV2;
+        yield* worker.drain();
+        const after = yield* v2.getThreadProjection(threadId);
+        assert.equal(after.runs.find((candidate) => candidate.id === run.id)?.status, "running");
+        assert.equal(
+          after.runs.find((candidate) => candidate.userMessageId === completionMessageId)?.status,
+          "queued",
+        );
+        assert.equal(
+          yield* Queue.size(sent),
+          0,
+          "automatic completions must not steer Claude while tools run",
+        );
+        assert.equal(yield* Queue.size(interrupted), 0);
+        return;
+      }
       if (scenario === "steer") {
         const followup = MessageId.make("followup");
         yield* legacy.dispatch({
@@ -450,6 +545,7 @@ const testBridge = (
       if (
         scenario === "background" ||
         scenario === "background-exit" ||
+        scenario === "failed-background-stop" ||
         scenario === "native-wake"
       ) {
         yield* PubSub.publish(
@@ -516,6 +612,7 @@ const testBridge = (
       if (
         scenario === "background" ||
         scenario === "background-exit" ||
+        scenario === "failed-background-stop" ||
         scenario === "native-wake"
       ) {
         assert.equal(
@@ -523,6 +620,48 @@ const testBridge = (
           "running",
           "Background work can outlive its root turn",
         );
+        if (scenario === "failed-background-stop") {
+          yield* bridge.startTurn({
+            threadId,
+            commandId: CommandId.make("failed-follow-up"),
+            messageId: MessageId.make("failed-follow-up-message"),
+            request: { threadId, input: "Follow up", attachments: [], modelSelection },
+          });
+          yield* Queue.take(sent);
+          yield* domainEvents.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "thread.activity-appended" &&
+                event.payload.activity.kind === "provider.turn.start.failed",
+            ),
+            Stream.runHead,
+          );
+          const worker = yield* OrchestrationEffectWorkerV2;
+          yield* worker.drain();
+          const failed = yield* v2.getThreadProjection(threadId);
+          const latestRun = failed.runs.at(-1)!;
+          assert.equal(latestRun.status, "failed");
+          assert.equal(
+            failed.providerTurns.length,
+            1,
+            "A rejected follow-up must not create a native turn",
+          );
+          yield* v2.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop-earlier-background"),
+            threadId,
+            runId: latestRun.id,
+          });
+          assert.equal(yield* Queue.take(interrupted), threadId);
+          yield* worker.drain();
+          const stopped = yield* v2.getThreadProjection(threadId);
+          assert.equal(
+            stopped.turnItems.find((item) => item.type === "subagent")?.status,
+            "interrupted",
+            "Stop clears background work owned by the earlier accepted turn",
+          );
+          return;
+        }
         if (scenario === "native-wake") {
           const wake = { ...base, turnId: TurnId.make("native-wake") };
           yield* PubSub.publish(
@@ -740,6 +879,10 @@ it.effect("continues ingesting background tasks after checkpointing the root tur
 it.effect("cancels background tasks when their provider exits", () =>
   testBridge("claudeAgent", "background-exit"),
 );
+it.effect(
+  "Stop reaches earlier background work after a follow-up fails before provider start",
+  () => testBridge("claudeAgent", "failed-background-stop"),
+);
 it.effect("retains native background wake turns and their Ronin checkpoint ownership", () =>
   testBridge("claudeAgent", "native-wake"),
 );
@@ -757,4 +900,9 @@ it.effect("restores the current Ronin conversation and restarts checkpoint numbe
 );
 it.effect("deletes V2 sessions and threads when a Ronin project is deleted", () =>
   testBridge("codex", "delete-project"),
+);
+
+it.effect(
+  "queues automatic completion messages while Claude is running without interrupting tools",
+  () => testBridge("claudeAgent", "automatic-completion"),
 );

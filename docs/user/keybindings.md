@@ -24,6 +24,11 @@ the submitted thread keeps running. Change it under **Settings → Keybindings �
 Composer: Send and Start New Thread**. In a new thread, `mod+Enter` still starts
 in the background with the same workspace and base branch selections.
 
+**Composer: Next Machine** (`composer.cycleHost`) moves a new-thread draft to the next available
+environment. Assign a shortcut in **Settings → Keybindings**; it has no built-in binding.
+It also works for **No project** drafts, creating that environment's scratch workspace when
+needed. Existing threads stay on their own environment.
+
 The file is a JSON array of rules.
 
 ```json

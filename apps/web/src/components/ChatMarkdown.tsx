@@ -140,6 +140,7 @@ import {
   shouldOpenMarkdownFileLinkInEditor,
   type MarkdownFileLinkMeta,
 } from "../markdown-links";
+import { isMarkdownFileLinkLabel } from "../markdown-links";
 import { readLocalApi } from "../localApi";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { useAssetUrlState } from "~/assets/assetUrls";
@@ -2667,10 +2668,21 @@ function ChatMarkdown({
           );
         }
 
-        return fileLinkChip(
-          fileLinkMeta,
-          `[${fileLinkMeta.basename}](${normalizedHref})`,
-          props.className,
+        const label = nodeToPlainText(children);
+        const start = node?.position?.start.offset;
+        const end = node?.position?.end.offset;
+        const source = start !== undefined && end !== undefined ? text.slice(start, end) : "";
+        const copyMarkdown =
+          source.startsWith("[") && source.includes("](")
+            ? source
+            : `[${(label || fileLinkMeta.basename).replace(/[\\[\]]/g, "\\$&")}](${normalizedHref})`;
+        const chip = fileLinkChip(fileLinkMeta, copyMarkdown, props.className);
+        return isMarkdownFileLinkLabel(label, fileLinkMeta) ? (
+          chip
+        ) : (
+          <span data-markdown-copy={copyMarkdown}>
+            {children} {chip}
+          </span>
         );
       },
       code({ node, children, className, ...props }) {

@@ -1,5 +1,9 @@
 import { SearchIcon } from "lucide-react";
 import { PullRequestStackPopover } from "./PullRequestStackPopover";
+import {
+  PullRequestSpeedActions,
+  type PullRequestSpeedActionResult,
+} from "./PullRequestSpeedActions";
 import { memo, type RefCallback } from "react";
 
 import { cn } from "~/lib/utils";
@@ -78,6 +82,8 @@ function PullRequestRowImpl({
   statsKey,
   statsRef,
   onSelect,
+  speedMode,
+  onActed,
 }: {
   entry: EnvironmentPullRequestEntry;
   selected: boolean;
@@ -93,144 +99,153 @@ function PullRequestRowImpl({
   matchedElsewhere?: boolean;
   /** Used by the list's shared visibility observer to defer optional line-count reads. */
   statsKey?: string;
-  statsRef?: RefCallback<HTMLButtonElement>;
+  statsRef?: RefCallback<HTMLDivElement>;
   onSelect: (entry: PullRequestRowTarget) => void;
+  speedMode: boolean;
+  onActed: (result: PullRequestSpeedActionResult) => void;
 }) {
   const { Icon, providerName } = getSourceControlPresentationForKind(entry.provider);
   return (
-    <button
+    <div
       ref={statsRef}
       data-pull-request-stats-key={statsKey}
-      type="button"
-      aria-current={selected ? "true" : undefined}
-      onClick={() => onSelect(entry)}
-      className={cn(
-        "grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        // Offscreen rows are skipped for style, layout and paint: a long list costs what the
-        // viewport shows, not what the pages have loaded. The intrinsic size keeps the
-        // scrollbar honest while a row is skipped.
-        "[contain-intrinsic-block-size:54px] [content-visibility:auto]",
-        selected ? "bg-accent" : "hover:bg-accent/60",
-      )}
+      className="flex items-center rounded-lg [contain-intrinsic-block-size:54px] [content-visibility:auto]"
     >
-      <span className="relative mt-0.75 inline-flex shrink-0 self-start">
-        <PullRequestStateGlyph state={entry.state} isDraft={entry.isDraft} />
-        <span className="absolute -right-1 -bottom-1 inline-flex">
-          <PullRequestConflictGlyph
-            state={entry.state}
-            isDraft={entry.isDraft}
-            mergeability={entry.mergeability}
-            baseBranch={entry.baseBranch}
-            className="size-3 fill-background [stroke-width:2.5]"
-          />
-        </span>
-      </span>
-      <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5">
-        <span className="col-start-1 row-start-1 block truncate text-sm font-medium text-foreground">
-          {entry.title}
-        </span>
-        <span className="col-start-2 row-start-1 flex items-center justify-self-end gap-2 text-xs">
-          {entry.stack ? (
-            <PullRequestStackPopover
-              environmentId={entry.environmentId}
-              reference={{
-                projectId: entry.projectId,
-                host: entry.host,
-                repository: entry.repository,
-                number: entry.number,
-              }}
-              membership={entry.stack}
-              onSelect={(target) =>
-                onSelect({ ...target, host: entry.host, environmentId: entry.environmentId })
-              }
+      <button
+        type="button"
+        aria-current={selected ? "true" : undefined}
+        onClick={() => onSelect(entry)}
+        className={cn(
+          "grid w-full cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          // Offscreen rows are skipped for style, layout and paint: a long list costs what the
+          // viewport shows, not what the pages have loaded. The intrinsic size keeps the
+          // scrollbar honest while a row is skipped.
+          "[contain-intrinsic-block-size:54px] [content-visibility:auto]",
+          selected ? "bg-accent" : "hover:bg-accent/60",
+        )}
+      >
+        <span className="relative mt-0.75 inline-flex shrink-0 self-start">
+          <PullRequestStateGlyph state={entry.state} isDraft={entry.isDraft} />
+          <span className="absolute -right-1 -bottom-1 inline-flex">
+            <PullRequestConflictGlyph
+              state={entry.state}
+              isDraft={entry.isDraft}
+              mergeability={entry.mergeability}
+              baseBranch={entry.baseBranch}
+              className="size-3 fill-background [stroke-width:2.5]"
             />
-          ) : null}
-          {/* Only a verdict somebody has actually given: "review required" is the absence of
-              one, and saying so on every unreviewed row would say nothing. */}
-          {entry.reviewDecision === "approved" ? (
-            <PullRequestReviewDecisionGlyph decision="approved" />
-          ) : entry.reviewDecision === "changes-requested" ? (
-            <span className="min-w-0 truncate text-amber-600/90 dark:text-amber-400/80">
-              Changes requested
-            </span>
-          ) : null}
-          {entry.checksState === undefined ? null : (
-            <PullRequestChecksPopover
-              checksState={entry.checksState}
-              environmentId={entry.environmentId}
-              reference={{
-                projectId: entry.projectId,
-                repository: entry.repository,
-                number: entry.number,
-              }}
-            />
-          )}
-          <PullRequestDiffStat
-            additions={entry.additions}
-            deletions={entry.deletions}
-            className="shrink-0 whitespace-nowrap text-[11px]"
-          />
+          </span>
         </span>
-        <PullRequestMetaLine className="@container/pr-row-meta col-start-1 row-start-2 overflow-hidden text-xs text-muted-foreground/70">
-          {matchedElsewhere ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <span className="flex min-w-6 items-center gap-1 overflow-hidden rounded-full border border-border/60 px-1 text-3xs" />
+        <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5">
+          <span className="col-start-1 row-start-1 block truncate text-sm font-medium text-foreground">
+            {entry.title}
+          </span>
+          <span className="col-start-2 row-start-1 flex items-center justify-self-end gap-2 text-xs">
+            {entry.stack ? (
+              <PullRequestStackPopover
+                environmentId={entry.environmentId}
+                reference={{
+                  projectId: entry.projectId,
+                  host: entry.host,
+                  repository: entry.repository,
+                  number: entry.number,
+                }}
+                membership={entry.stack}
+                onSelect={(target) =>
+                  onSelect({ ...target, host: entry.host, environmentId: entry.environmentId })
                 }
-              >
-                <span className="sr-only">matched in the description</span>
-                <SearchIcon aria-hidden className="size-3 shrink-0" />
-                <span aria-hidden className="hidden truncate @xs/pr-row-meta:block">
-                  matched in the description
-                </span>
-              </TooltipTrigger>
-              <TooltipPopup side="top">Matched in the description</TooltipPopup>
-            </Tooltip>
-          ) : null}
-          <span className="flex shrink-0 items-center gap-1">
-            {showProvider ? (
+              />
+            ) : null}
+            {/* Only a verdict somebody has actually given: "review required" is the absence of
+              one, and saying so on every unreviewed row would say nothing. */}
+            {entry.reviewDecision === "approved" ? (
+              <PullRequestReviewDecisionGlyph decision="approved" />
+            ) : entry.reviewDecision === "changes-requested" ? (
+              <span className="min-w-0 truncate text-amber-600/90 dark:text-amber-400/80">
+                Changes requested
+              </span>
+            ) : null}
+            {entry.checksState === undefined ? null : (
+              <PullRequestChecksPopover
+                checksState={entry.checksState}
+                environmentId={entry.environmentId}
+                reference={{
+                  projectId: entry.projectId,
+                  repository: entry.repository,
+                  number: entry.number,
+                }}
+              />
+            )}
+            <PullRequestDiffStat
+              additions={entry.additions}
+              deletions={entry.deletions}
+              className="shrink-0 whitespace-nowrap text-[11px]"
+            />
+          </span>
+          <PullRequestMetaLine className="@container/pr-row-meta col-start-1 row-start-2 overflow-hidden text-xs text-muted-foreground/70">
+            {matchedElsewhere ? (
               <Tooltip>
-                <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-                  <Icon aria-label={providerName} className="size-3" />
+                <TooltipTrigger
+                  render={
+                    <span className="flex min-w-6 items-center gap-1 overflow-hidden rounded-full border border-border/60 px-1 text-3xs" />
+                  }
+                >
+                  <span className="sr-only">matched in the description</span>
+                  <SearchIcon aria-hidden className="size-3 shrink-0" />
+                  <span aria-hidden className="hidden truncate @xs/pr-row-meta:block">
+                    matched in the description
+                  </span>
                 </TooltipTrigger>
-                <TooltipPopup>{providerName}</TooltipPopup>
+                <TooltipPopup side="top">Matched in the description</TooltipPopup>
               </Tooltip>
             ) : null}
-            {/* The number carries the link, here as much as on the detail: a right-click on it
+            <span className="flex shrink-0 items-center gap-1">
+              {showProvider ? (
+                <Tooltip>
+                  <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
+                    <Icon aria-label={providerName} className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipPopup>{providerName}</TooltipPopup>
+                </Tooltip>
+              ) : null}
+              {/* The number carries the link, here as much as on the detail: a right-click on it
                 copies the pull request's own address rather than opening the editing menu. */}
-            <span
-              onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                void showPullRequestLinkContextMenu({
-                  url: entry.url,
-                  openLabel: openOnHostLabel(entry.provider),
-                  position: { x: event.clientX, y: event.clientY },
-                });
-              }}
-            >
-              #{entry.number}
+              <span
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void showPullRequestLinkContextMenu({
+                    url: entry.url,
+                    openLabel: openOnHostLabel(entry.provider),
+                    position: { x: event.clientX, y: event.clientY },
+                  });
+                }}
+              >
+                #{entry.number}
+              </span>
+            </span>
+            {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
+            {environmentLabel ? (
+              <span className="min-w-0 max-w-32 truncate">{environmentLabel}</span>
+            ) : null}
+            <PullRequestActorLabel
+              actor={entry.author}
+              className="min-w-4 max-w-40"
+              labelClassName="sr-only @xs/pr-row-meta:not-sr-only @xs/pr-row-meta:truncate"
+            />
+            {entry.labels.length > 0 ? <PullRequestRowLabels labels={entry.labels} /> : null}
+          </PullRequestMetaLine>
+          <span className="col-start-2 row-start-2 flex items-center justify-self-end gap-3 whitespace-nowrap text-[11px] text-muted-foreground/70 tabular-nums">
+            <span className="hidden @sm/pr-row:inline">
+              {formatRelativeTimeLabel(entry.updatedAt)}
             </span>
           </span>
-          {showProjectTitle ? <span className="truncate">{entry.repository}</span> : null}
-          {environmentLabel ? (
-            <span className="min-w-0 max-w-32 truncate">{environmentLabel}</span>
-          ) : null}
-          <PullRequestActorLabel
-            actor={entry.author}
-            className="min-w-4 max-w-40"
-            labelClassName="sr-only @xs/pr-row-meta:not-sr-only @xs/pr-row-meta:truncate"
-          />
-          {entry.labels.length > 0 ? <PullRequestRowLabels labels={entry.labels} /> : null}
-        </PullRequestMetaLine>
-        <span className="col-start-2 row-start-2 flex items-center justify-self-end gap-3 whitespace-nowrap text-[11px] text-muted-foreground/70 tabular-nums">
-          <span className="hidden @sm/pr-row:inline">
-            {formatRelativeTimeLabel(entry.updatedAt)}
-          </span>
         </span>
-      </span>
-    </button>
+      </button>
+      {entry.state !== "merged" && entry.provider === "github" ? (
+        <PullRequestSpeedActions entry={entry} visible={speedMode} onActed={onActed} />
+      ) : null}
+    </div>
   );
 }
 

@@ -165,6 +165,13 @@ The file is built from the transcript your client already has, so exporting work
 remote connection and never writes anything on the machine running the agent. A reply that is still
 being written is left out, and the entry only appears once a thread's transcript is open.
 
+## Draft and sweep actions
+
+Right-click an unsent draft in the sidebar to discard it. **Undo** restores its prompt and
+attachments before the notice expires. For groups of threads, press a settle, unsettle, or wake
+action and drag across neighboring rows to apply the same action to each thread you cross.
+Cancel the gesture to stop applying more actions.
+
 ## Settling threads
 
 Threads on closed pull requests always settle automatically. Merged pull requests also settle by

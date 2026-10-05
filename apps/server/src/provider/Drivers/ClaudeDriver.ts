@@ -17,6 +17,7 @@ import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -33,6 +34,7 @@ import {
   checkClaudeProviderStatus,
   makePendingClaudeProvider,
   probeClaudeCapabilities,
+  probeClaudeWorkspaceSnapshot,
 } from "../Layers/ClaudeProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
@@ -235,6 +237,44 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         ),
       );
 
+      // Bound discovery by workspace, and retain its last commands through a
+      // partial refresh. Pending probes expire immediately so the client can retry.
+      const workspaceCommands = new Map<string, ServerProvider["slashCommands"]>();
+      const workspaceProbeCache = yield* Cache.makeWith(
+        (workspaceCwd: string) =>
+          snapshot.getSnapshot.pipe(
+            Effect.flatMap((machineSnapshot) =>
+              probeClaudeWorkspaceSnapshot(
+                effectiveConfig,
+                machineSnapshot,
+                workspaceCwd,
+                processEnv,
+              ),
+            ),
+            Effect.map((scoped) => {
+              if (scoped.slashCommandsPending)
+                return {
+                  ...scoped,
+                  slashCommands: workspaceCommands.get(workspaceCwd) ?? scoped.slashCommands,
+                };
+              workspaceCommands.delete(workspaceCwd);
+              workspaceCommands.set(workspaceCwd, scoped.slashCommands);
+              if (workspaceCommands.size > 50)
+                workspaceCommands.delete(workspaceCommands.keys().next().value!);
+              return scoped;
+            }),
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          ),
+        {
+          capacity: 50,
+          timeToLive: (exit) =>
+            Exit.isSuccess(exit) && !exit.value.slashCommandsPending
+              ? Duration.seconds(30)
+              : Duration.zero,
+        },
+      );
+
       return {
         instanceId,
         driverKind: DRIVER_KIND,
@@ -246,7 +286,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
-        invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
+        snapshotForCwd: (workspaceCwd: string) => Cache.get(workspaceProbeCache, workspaceCwd),
+        invalidateCaches: Effect.all(
+          [Cache.invalidateAll(capabilitiesProbeCache), Cache.invalidateAll(workspaceProbeCache)],
+          { discard: true },
+        ),
         adapter,
         textGeneration,
       } satisfies ProviderInstance;

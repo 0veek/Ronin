@@ -140,6 +140,7 @@ import * as NewProject from "./project/NewProject.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
@@ -538,6 +539,7 @@ const makeWsRpcLayer = (
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
+      const directEndpoints = yield* DirectEndpoints.DirectEndpoints;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
       const review = yield* ReviewService.ReviewService;
       const vcsProvisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -2092,6 +2094,7 @@ const makeWsRpcLayer = (
           remoteOpenTargets: yield* resolveAvailableEditorsForConfig(
             remoteOpenTargets.resolveTargets(),
           ),
+          directEndpoints: yield* resolveAvailableEditorsForConfig(directEndpoints.resolve()),
           observability: {
             logsDirectoryPath: config.logsDir,
             localTracingEnabled: true,
@@ -2845,7 +2848,26 @@ const makeWsRpcLayer = (
                 ).pipe(Effect.orElseSucceed(() => [])),
                 providerRegistry.getProviders,
               ]);
+              const instances = yield* providerInstances.listInstances;
+              const workspaceCommands = yield* Effect.forEach(
+                instances.filter((instance) => instance.enabled && instance.snapshotForCwd),
+                (instance) =>
+                  instance.snapshotForCwd!(input.cwd ?? config.cwd).pipe(
+                    Effect.map((snapshot) => ({
+                      instanceId: instance.instanceId,
+                      slashCommands: snapshot.slashCommands,
+                      pending: snapshot.slashCommandsPending === true,
+                    })),
+                    Effect.orElseSucceed(() => ({
+                      instanceId: instance.instanceId,
+                      slashCommands: [],
+                      pending: true,
+                    })),
+                  ),
+                { concurrency: 2 },
+              );
               return {
+                workspaceCommands,
                 skills: mergeSkillSources(
                   skills,
                   providers.flatMap((provider) => provider.skills),

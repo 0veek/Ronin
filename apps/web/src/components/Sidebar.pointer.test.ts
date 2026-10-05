@@ -78,6 +78,13 @@ describe("sidebar pointer lifecycle", () => {
     expect(drag.onFinish).toHaveBeenCalledOnce();
   });
 
+  it("moves to the pointer on the move that starts the drag", () => {
+    const drag = gesture();
+    document.dispatchEvent(pointer("pointermove", { clientY: 90 }));
+    expect(drag.onStart).toHaveBeenCalledExactlyOnceWith({ x: 10, y: 10 });
+    expect(drag.onMove).toHaveBeenCalledExactlyOnceWith({ x: 10, y: 90 });
+  });
+
   const interruptions = {
     blur: () => window.dispatchEvent(new Event("blur")),
     hidden: () => {

@@ -975,14 +975,61 @@ describe("openCodexThread", () => {
     }),
   );
 
+  it.effect("unarchives a saved native session and resumes it with the same options", () =>
+    Effect.gen(function* () {
+      const calls: Array<{ method: string; payload: unknown }> = [];
+      let archived = true;
+      const response = makeThreadOpenResponse("saved-thread");
+      const opened = yield* openCodexThread({
+        client: {
+          request: () => Effect.die("An archived session must not start fresh"),
+          raw: {
+            request: (method, payload) =>
+              Effect.suspend(() => {
+                calls.push({ method, payload });
+                if (method === "thread/unarchive") {
+                  archived = false;
+                  return Effect.succeed({});
+                }
+                return archived
+                  ? Effect.fail(
+                      new CodexErrors.CodexAppServerRequestError({
+                        code: -32603,
+                        errorMessage: "session saved-thread is archived; run codex unarchive",
+                      }),
+                    )
+                  : Effect.succeed(response);
+              }),
+          },
+        },
+        threadId: ThreadId.make("thread-1"),
+        runtimeMode: "full-access",
+        cwd: "/tmp/project",
+        requestedModel: "gpt-5.3-codex",
+        serviceTier: "fast",
+        resumeThreadId: "saved-thread",
+      });
+      NodeAssert.equal(opened.thread.id, "saved-thread");
+      NodeAssert.deepStrictEqual(
+        calls.map(({ method }) => method),
+        ["thread/resume", "thread/unarchive", "thread/resume"],
+      );
+      NodeAssert.deepStrictEqual(calls[0]?.payload, calls[2]?.payload);
+      NodeAssert.deepStrictEqual(calls[1]?.payload, { threadId: "saved-thread" });
+    }),
+  );
+
   it.effect("falls back to thread/start when resume fails recoverably", () =>
     Effect.gen(function* () {
-      const calls: Array<{ method: "thread/start" | "thread/resume"; payload: unknown }> = [];
+      const calls: Array<{
+        method: "thread/start" | "thread/resume" | "thread/unarchive";
+        payload: unknown;
+      }> = [];
       const started = makeThreadOpenResponse("fresh-thread");
       const client = {
         raw: {
           request: (
-            method: "thread/resume",
+            method: "thread/resume" | "thread/unarchive",
             payload: CodexRpc.ClientRequestParamsByMethod["thread/resume"],
           ) => {
             calls.push({ method, payload });

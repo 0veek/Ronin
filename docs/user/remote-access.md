@@ -85,6 +85,28 @@ The Tailscale support is an endpoint provider add-on. The core remote model stil
 
 For `https://app.t3.codes`, prefer an HTTPS Tailnet or other HTTPS endpoint. A plain `http://100.x.y.z:3773` endpoint can still work from a desktop client or another browser page served over HTTP, but it will not work from the hosted HTTPS app because of browser mixed-content rules.
 
+### Several routes to one environment
+
+A saved environment can have direct LAN, Tailscale, HTTPS, and desktop-managed SSH routes.
+Open its **routes** button in **Settings → Connections** to see the address currently **In use**.
+Choose **Add route** to pair another address or SSH target for that same environment. A link for
+another environment is rejected before its pairing code is redeemed.
+
+Drag routes into your preferred order, or focus a drag handle and use the keyboard to reorder.
+Ronin tries the preferred route first and falls back when it cannot connect. While using a
+fallback, it checks preferred direct addresses when the network changes, when you return to the
+app, and periodically. Once one is reachable, Ronin reconnects through it. SSH remains available
+as a fallback; checking a preferred SSH route would require launching a tunnel.
+
+After a direct connection succeeds, Ronin can discover that environment's LAN and Tailscale
+addresses. These appear as **found automatically** and reuse the existing pairing. Stale
+automatically discovered addresses are replaced as the environment's network changes; addresses
+you paired yourself remain saved. An HTTPS browser only learns HTTPS addresses it can use.
+
+Remove an extra paired route with its remove button. This also forgets addresses learned through
+that route. To forget the entire environment, use **Remove from this device**. Switching an
+environment off keeps all its routes and their order for when you switch it on again.
+
 ### Option 2: Headless Server (CLI)
 
 Use this when you want to run the server without a GUI, for example on a remote machine over SSH.

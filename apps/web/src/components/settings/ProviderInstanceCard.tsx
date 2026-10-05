@@ -467,7 +467,11 @@ export function ProviderInstanceCard({
     compatibility.status !== "supported" &&
     compatibility.status !== "unknown";
   const VersionAdvisoryIcon = hasCompatibilityWarning ? AlertTriangleIcon : ArrowUpCircleIcon;
-  const onRunVersionAction = versionAdvisory?.targetVersion ? onInstallRecommended : onRunUpdate;
+  const onRunVersionAction = readOnly
+    ? undefined
+    : versionAdvisory?.targetVersion
+      ? onInstallRecommended
+      : onRunUpdate;
   const FallbackIconComponent = driverOption?.icon;
   const displayName =
     instance.displayName?.trim() || driverOption?.label || String(instance.driver);
@@ -658,6 +662,104 @@ export function ProviderInstanceCard({
   const statusLineClassName =
     "flex min-w-0 flex-wrap items-center gap-x-1.5 text-sm leading-[1.45] text-muted-foreground/80";
 
+  const versionAdvisoryNode = versionAdvisory ? (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-xs"
+            variant="ghost"
+            className={cn(
+              "pointer-events-auto relative size-5 rounded-sm p-0",
+              versionAdvisory.emphasis === "strong"
+                ? "text-warning hover:text-warning"
+                : "text-update-foreground hover:text-update-foreground",
+            )}
+            aria-label={`${versionAdvisory.title} — view details`}
+          >
+            <VersionAdvisoryIcon className="size-3.5" />
+          </Button>
+        }
+      />
+      <PopoverPopup
+        side="bottom"
+        align="start"
+        className="w-[min(21rem,calc(100vw-1.5rem))] [--popup-width:min(21rem,calc(100vw-1.5rem))]"
+      >
+        <div className="grid min-w-0 gap-3">
+          <div className="grid gap-0.5">
+            <p className="text-sm font-semibold leading-tight text-foreground">
+              {versionAdvisory.title}
+            </p>
+            <p
+              className={cn(
+                "text-xs leading-snug",
+                versionAdvisory.emphasis === "strong" ? "text-warning" : "text-muted-foreground",
+              )}
+            >
+              {versionAdvisory.detail}
+            </p>
+          </div>
+          {onRunVersionAction ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="w-full"
+              disabled={isUpdating}
+              onClick={onRunVersionAction}
+            >
+              {isUpdating ? <Spinner /> : <DownloadIcon />}
+              {isUpdating
+                ? "Updating"
+                : versionAdvisory.targetVersion
+                  ? `Install ${getProviderVersionLabel(versionAdvisory.targetVersion)}`
+                  : "Update now"}
+            </Button>
+          ) : null}
+          {onRunVersionAction && updateCommand ? (
+            <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
+              <span aria-hidden className="h-px flex-1 bg-border" />
+              or, update manually using
+              <span aria-hidden className="h-px flex-1 bg-border" />
+            </div>
+          ) : null}
+          {updateCommand ? (
+            <div className="flex min-w-0 items-center gap-1 rounded-md border border-border/70 bg-muted/40 py-0.5 pr-0.5 pl-2">
+              <ScrollArea scrollFade className="h-8 min-w-0 flex-1 rounded-none">
+                <code className="flex h-full w-max items-center whitespace-nowrap pr-3 font-mono text-2xs text-foreground">
+                  {updateCommand}
+                </code>
+              </ScrollArea>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      className="size-6 shrink-0 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+                      onClick={() =>
+                        copyToClipboard(updateCommand, {
+                          providerName: displayName,
+                        })
+                      }
+                      aria-label="Copy update command"
+                    >
+                      <CopyIcon className="size-3" />
+                    </Button>
+                  }
+                />
+                <TooltipPopup side="top">Copy command</TooltipPopup>
+              </Tooltip>
+            </div>
+          ) : null}
+        </div>
+      </PopoverPopup>
+    </Popover>
+  ) : null;
+
   if (mode === "list") {
     return (
       <div
@@ -692,49 +794,7 @@ export function ProviderInstanceCard({
                 </code>
               ) : null}
               {versionCodeNode}
-              {versionAdvisory ? (
-                hasCompatibilityWarning ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span
-                          tabIndex={0}
-                          role="img"
-                          aria-label={versionAdvisory.title}
-                          className="pointer-events-auto inline-flex shrink-0 text-warning"
-                        >
-                          <VersionAdvisoryIcon className="size-3.5" />
-                        </span>
-                      }
-                    />
-                    <TooltipPopup side="top">{versionAdvisory.detail}</TooltipPopup>
-                  </Tooltip>
-                ) : updateCommand ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          type="button"
-                          size="icon-xs"
-                          variant="ghost"
-                          className="pointer-events-auto relative shrink-0 text-update-foreground"
-                          aria-label={`Copy ${displayName} update command`}
-                          onClick={() =>
-                            copyToClipboard(updateCommand, { providerName: displayName })
-                          }
-                        >
-                          <VersionAdvisoryIcon className="size-3.5" />
-                        </Button>
-                      }
-                    />
-                    <TooltipPopup side="top">Copy update command</TooltipPopup>
-                  </Tooltip>
-                ) : (
-                  <span role="img" aria-label="Update available" className="inline-flex shrink-0">
-                    <VersionAdvisoryIcon className="size-3.5 text-update-foreground" />
-                  </span>
-                )
-              ) : null}
+              {versionAdvisoryNode}
             </span>
             <span className="mt-0.5 flex items-start gap-1.5 text-sm leading-[1.45] text-muted-foreground/80">
               {statusDotNode ? (
@@ -777,105 +837,7 @@ export function ProviderInstanceCard({
               aria-disabled={readOnly || undefined}
               className={cn("inline-flex items-center gap-2", readOnly && "opacity-50")}
             >
-              {versionAdvisory ? (
-                <Popover>
-                  <PopoverTrigger
-                    render={
-                      <Button
-                        type="button"
-                        size="icon-xs"
-                        variant="ghost"
-                        className={cn(
-                          "size-5 rounded-sm p-0",
-                          versionAdvisory.emphasis === "strong"
-                            ? "text-warning hover:text-warning"
-                            : "text-update-foreground hover:text-update-foreground",
-                        )}
-                        aria-label={`${versionAdvisory.title} — view details`}
-                      >
-                        <VersionAdvisoryIcon className="size-3.5" />
-                      </Button>
-                    }
-                  />
-                  <PopoverPopup
-                    side="bottom"
-                    align="start"
-                    className="w-[min(21rem,calc(100vw-1.5rem))] [--popup-width:min(21rem,calc(100vw-1.5rem))]"
-                  >
-                    <div className="grid min-w-0 gap-3">
-                      <div className="grid gap-0.5">
-                        <p className="text-sm font-semibold leading-tight text-foreground">
-                          {versionAdvisory.title}
-                        </p>
-                        <p
-                          className={cn(
-                            "text-xs leading-snug",
-                            versionAdvisory.emphasis === "strong"
-                              ? "text-warning"
-                              : "text-muted-foreground",
-                          )}
-                        >
-                          {versionAdvisory.detail}
-                        </p>
-                      </div>
-                      {onRunVersionAction ? (
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="outline"
-                          className="w-full"
-                          disabled={isUpdating}
-                          onClick={onRunVersionAction}
-                        >
-                          {isUpdating ? <Spinner /> : <DownloadIcon />}
-                          {isUpdating
-                            ? "Updating"
-                            : versionAdvisory.targetVersion
-                              ? `Install ${getProviderVersionLabel(versionAdvisory.targetVersion)}`
-                              : "Update now"}
-                        </Button>
-                      ) : null}
-                      {onRunVersionAction && updateCommand ? (
-                        <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
-                          <span aria-hidden className="h-px flex-1 bg-border" />
-                          or, update manually using
-                          <span aria-hidden className="h-px flex-1 bg-border" />
-                        </div>
-                      ) : null}
-                      {updateCommand ? (
-                        <div className="flex min-w-0 items-center gap-1 rounded-md border border-border/70 bg-muted/40 py-0.5 pr-0.5 pl-2">
-                          <ScrollArea scrollFade className="h-8 min-w-0 flex-1 rounded-none">
-                            <code className="flex h-full w-max items-center whitespace-nowrap pr-3 font-mono text-2xs text-foreground">
-                              {updateCommand}
-                            </code>
-                          </ScrollArea>
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <Button
-                                  type="button"
-                                  size="icon-xs"
-                                  variant="ghost"
-                                  className="size-6 shrink-0 rounded-sm p-0 text-muted-foreground hover:text-foreground"
-                                  onClick={() =>
-                                    copyToClipboard(updateCommand, {
-                                      providerName: displayName,
-                                    })
-                                  }
-                                  aria-label="Copy update command"
-                                >
-                                  <CopyIcon className="size-3" />
-                                </Button>
-                              }
-                            />
-                            <TooltipPopup side="top">Copy command</TooltipPopup>
-                          </Tooltip>
-                        </div>
-                      ) : null}
-                    </div>
-                  </PopoverPopup>
-                </Popover>
-              ) : null}
+              {versionAdvisoryNode}
               {titleTailNode}
             </span>
           </div>

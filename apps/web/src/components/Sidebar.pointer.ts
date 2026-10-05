@@ -30,7 +30,9 @@ export class SidebarPointerSensor {
   private readonly document: Document;
   private readonly window: Window;
 
-  constructor(private readonly props: SensorProps<Options>) {
+  // The settle sweep constructs this sensor directly, outside dnd-kit, so it
+  // takes only the props the gesture reads.
+  constructor(private readonly props: Omit<SensorProps<Options>, "activeNode" | "context">) {
     this.pointer = props.event as PointerEvent;
     this.document = getOwnerDocument(this.pointer.target);
     this.window = getWindow(this.pointer.target);
@@ -85,8 +87,9 @@ export class SidebarPointerSensor {
       this.document.addEventListener("selectionchange", this.clearSelection);
       this.clearSelection();
       this.props.onStart(this.coordinates());
-      return;
     }
+    // The move that starts a drag also moves it, so a release before the
+    // next pointermove still lands where the pointer is.
     if (this.phase === "dragging") {
       if (event.cancelable) event.preventDefault();
       this.props.onMove(coordinates);

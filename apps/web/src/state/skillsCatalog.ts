@@ -3,6 +3,9 @@ import type { EnvironmentId, ProviderSkillsCatalogResult } from "@t3tools/contra
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
+import { useEffect } from "react";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+
 import { serverEnvironment } from "./server";
 import { usePrimaryEnvironmentId } from "./environments";
 
@@ -11,6 +14,7 @@ export interface SkillsCatalogView {
   readonly error: string | null;
   readonly skills: ProviderSkillsCatalogResult["skills"];
   readonly roninSkillsDir: string | null;
+  readonly workspaceCommands: NonNullable<ProviderSkillsCatalogResult["workspaceCommands"]>;
 }
 
 const EMPTY: SkillsCatalogView = {
@@ -18,6 +22,7 @@ const EMPTY: SkillsCatalogView = {
   error: null,
   skills: [],
   roninSkillsDir: null,
+  workspaceCommands: [],
 };
 
 const skillsCatalogAtom = Atom.family((environmentId: EnvironmentId) =>
@@ -35,6 +40,7 @@ const skillsCatalogAtom = Atom.family((environmentId: EnvironmentId) =>
         error: result._tag === "Failure" ? "Skills could not be scanned." : null,
         skills: snapshot?.skills ?? [],
         roninSkillsDir: snapshot?.roninSkillsDir ?? null,
+        workspaceCommands: snapshot?.workspaceCommands ?? [],
       };
     }).pipe(Atom.withLabel(`web-skills-catalog:${environmentId}:${cwd ?? "default"}`)),
   ),
@@ -55,5 +61,20 @@ export function useEnvironmentSkillsCatalog(
   environmentId: EnvironmentId,
   cwd: string | null,
 ): SkillsCatalogView {
-  return useAtomValue(skillsCatalogAtom(environmentId)(cwd?.trim() || null));
+  const workspaceCwd = cwd?.trim() || null;
+  const view = useAtomValue(skillsCatalogAtom(environmentId)(workspaceCwd));
+  const pending = view.workspaceCommands.some((commands) => commands.pending);
+  useEffect(() => {
+    if (!pending || view.isPending) return;
+    const timer = setTimeout(() => {
+      appAtomRegistry.refresh(
+        serverEnvironment.skillsCatalog({
+          environmentId,
+          input: workspaceCwd ? { cwd: workspaceCwd } : {},
+        }),
+      );
+    }, 10_000);
+    return () => clearTimeout(timer);
+  }, [environmentId, workspaceCwd, pending, view.isPending, view.workspaceCommands]);
+  return view;
 }
