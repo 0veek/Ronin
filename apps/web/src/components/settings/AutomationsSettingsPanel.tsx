@@ -13,6 +13,8 @@ import type { Automation, AutomationRun, EnvironmentId, ModelSelection } from "@
 import {
   MAX_AUTOMATION_INTERVAL_MINUTES,
   MIN_AUTOMATION_INTERVAL_MINUTES,
+  AUTOMATION_MAX_TITLE_CHARS,
+  AUTOMATION_MAX_PROMPT_CHARS,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
@@ -37,6 +39,7 @@ import {
   draftToCreateInput,
   draftToUpdateInput,
   isDraftComplete,
+  canSaveAutomationDraft,
   startAutomationDraft,
   startAutomationDraftFromSearch,
   resolveAutomationEnvironmentId,
@@ -143,8 +146,18 @@ function EnvironmentAutomationsSettings({
   readonly onSelectEnvironment: (environmentId: EnvironmentId) => void;
 }) {
   const environmentId = environment.environmentId;
-  const { automations, runs, isLoading, error, refresh, create, update, remove, runNow } =
-    useAutomations(environmentId);
+  const {
+    automations,
+    runs,
+    isLoading,
+    error,
+    pendingAutomationIds,
+    refresh,
+    create,
+    update,
+    remove,
+    runNow,
+  } = useAutomations(environmentId);
   const session = useEnvironmentSessionState(environmentId);
   const sessionAccess = {
     session: session.data,
@@ -170,7 +183,7 @@ function EnvironmentAutomationsSettings({
   const { draft, setDraft, isSaving, saveDraft } = useAutomationEditor({
     environmentId,
     createIntent,
-    projectIds: projects.map((project) => String(project.id)),
+    projects,
     canEdit,
     create,
     update,
@@ -244,7 +257,11 @@ function EnvironmentAutomationsSettings({
         {draft !== null ? (
           <AutomationDraftForm
             environmentId={environmentId}
-            disabled={!canEdit || isSaving}
+            disabled={
+              !canEdit ||
+              isSaving ||
+              (draft.editing !== null && pendingAutomationIds.has(draft.editing))
+            }
             isSaving={isSaving}
             draft={draft}
             projects={projects.map((project) => ({
@@ -262,8 +279,10 @@ function EnvironmentAutomationsSettings({
           <AutomationRow
             key={automation.id}
             automation={automation}
-            disabled={!canEdit || isSaving}
+            disabled={!canEdit || isSaving || pendingAutomationIds.has(automation.id)}
+            pending={pendingAutomationIds.has(automation.id)}
             draftOpen={draft !== null}
+            beingEdited={draft?.editing === automation.id}
             projectTitle={projectTitleById.get(automation.projectId) ?? "Unknown project"}
             nextRunLabel={formatNextRun(automation, formatInstant)}
             onToggle={(enabled) => void update({ id: automation.id, enabled })}
@@ -469,6 +488,8 @@ function AutomationRow({
   onDelete,
   disabled,
   draftOpen,
+  pending,
+  beingEdited,
 }: {
   readonly automation: Automation;
   readonly projectTitle: string;
@@ -480,6 +501,8 @@ function AutomationRow({
   readonly onDelete: () => void;
   readonly disabled: boolean;
   readonly draftOpen: boolean;
+  readonly pending: boolean;
+  readonly beingEdited: boolean;
 }) {
   return (
     <SettingsRow
@@ -490,7 +513,7 @@ function AutomationRow({
       status={
         <span className="inline-flex items-center gap-1.5 text-2xs text-secondary-label">
           <ClockIcon aria-hidden className="size-3" />
-          {nextRunLabel}
+          {pending ? "Working…" : nextRunLabel}
         </span>
       }
       control={
@@ -526,7 +549,7 @@ function AutomationRow({
             size="icon-xs"
             variant="ghost"
             aria-label={`Delete ${automation.title}`}
-            disabled={disabled}
+            disabled={disabled || beingEdited}
             onClick={onDelete}
           >
             <Trash2Icon className="size-3.5" />
@@ -549,7 +572,7 @@ function AutomationDraftForm({
   isSaving,
   draft,
   projects,
-  onChange,
+  onChange: onDraftChange,
   onCancel,
   onSave,
 }: {
@@ -567,6 +590,10 @@ function AutomationDraftForm({
   readonly onSave: () => void;
 }) {
   const schedule = draftSchedule(draft);
+  const project = projects.find((candidate) => candidate.id === draft.projectId);
+  const onChange = (next: AutomationDraftState) => {
+    if (!disabled) onDraftChange(next);
+  };
   return (
     <div className="space-y-3 rounded-[var(--radius-lg)] border border-border bg-muted/10 p-3 sm:p-4">
       <h3 className="text-sm font-medium">
@@ -583,6 +610,7 @@ function AutomationDraftForm({
             <span className="font-medium text-xs">Name</span>
             <Input
               value={draft.title}
+              maxLength={AUTOMATION_MAX_TITLE_CHARS}
               placeholder="Triage new issues"
               onChange={(event) => onChange({ ...draft, title: event.currentTarget.value })}
             />
@@ -591,7 +619,7 @@ function AutomationDraftForm({
             <span className="font-medium text-xs">Project</span>
             <Select
               value={draft.projectId}
-              disabled={draft.editing !== null}
+              disabled={disabled || draft.editing !== null}
               onValueChange={(value) => onChange({ ...draft, projectId: String(value) })}
             >
               <SelectTrigger className="w-full" aria-label="Project">
@@ -615,6 +643,7 @@ function AutomationDraftForm({
           <span className="font-medium text-xs">Prompt</span>
           <Textarea
             rows={4}
+            maxLength={AUTOMATION_MAX_PROMPT_CHARS}
             value={draft.prompt}
             placeholder="Check for new issues assigned to me and summarise what changed since yesterday."
             onChange={(event) => onChange({ ...draft, prompt: event.currentTarget.value })}
@@ -626,6 +655,7 @@ function AutomationDraftForm({
             <span className="font-medium text-xs">Repeats</span>
             <Select
               value={draft.kind}
+              disabled={disabled}
               onValueChange={(value) => {
                 if (value === "interval" || value === "daily" || value === "once") {
                   onChange({ ...draft, kind: value });
@@ -659,6 +689,7 @@ function AutomationDraftForm({
             <span className="font-medium text-xs">Runs in</span>
             <Select
               value={draft.envMode}
+              disabled={disabled}
               onValueChange={(value) => {
                 if (value === "local" || value === "worktree") {
                   onChange({ ...draft, envMode: value });
@@ -686,6 +717,7 @@ function AutomationDraftForm({
           <span className="font-medium text-xs">On failure</span>
           <Select
             value={automationFailurePolicyValue(draft.stopAfterConsecutiveFailures)}
+            disabled={disabled}
             onValueChange={(value) =>
               onChange({
                 ...draft,
@@ -725,12 +757,10 @@ function AutomationDraftForm({
         </label>
 
         <AutomationModelField
+          disabled={disabled}
           environmentId={environmentId}
           modelSelection={draft.modelSelection}
-          projectDefaultModelSelection={
-            projects.find((project) => project.id === draft.projectId)?.defaultModelSelection ??
-            null
-          }
+          projectDefaultModelSelection={project?.defaultModelSelection ?? null}
           onChange={(modelSelection) => onChange({ ...draft, modelSelection })}
         />
 
@@ -747,11 +777,7 @@ function AutomationDraftForm({
           </Button>
           <Button
             size="xs"
-            disabled={
-              !isDraftComplete(draft) ||
-              !projects.some((project) => project.id === draft.projectId) ||
-              disabled
-            }
+            disabled={disabled || !canSaveAutomationDraft(draft, project)}
             onClick={onSave}
           >
             {isSaving ? "Saving…" : draft.editing === null ? "Save automation" : "Save changes"}
@@ -765,19 +791,23 @@ function AutomationDraftForm({
 function useAutomationEditor({
   environmentId,
   createIntent,
-  projectIds,
+  projects,
   canEdit,
   create,
   update,
 }: {
   readonly environmentId: EnvironmentId;
   readonly createIntent: AutomationsSearch | undefined;
-  readonly projectIds: ReadonlyArray<string>;
+  readonly projects: ReadonlyArray<{
+    readonly id: string;
+    readonly defaultModelSelection: ModelSelection | null;
+  }>;
   readonly canEdit: boolean;
   readonly create: AutomationsController["create"];
   readonly update: AutomationsController["update"];
 }) {
   const navigate = useNavigate();
+  const projectIds = projects.map((project) => project.id);
   const [draft, setDraft] = useState<AutomationDraftState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const savingRef = useRef(false);
@@ -787,7 +817,7 @@ function useAutomationEditor({
   if (createKey !== null && createKey !== appliedCreateKey) {
     const next = startAutomationDraftFromSearch(createIntent ?? {}, projectIds);
     if (next !== null) {
-      setDraft(next);
+      if (draft === null) setDraft(next);
       setAppliedCreateKey(createKey);
     }
   }
@@ -799,7 +829,8 @@ function useAutomationEditor({
 
   const saveDraft = async () => {
     if (draft === null || !canEdit || savingRef.current || !isDraftComplete(draft)) return;
-    if (!projectIds.includes(draft.projectId)) return;
+    const project = projects.find((candidate) => candidate.id === draft.projectId);
+    if (!canSaveAutomationDraft(draft, project)) return;
     savingRef.current = true;
     setIsSaving(true);
     const saved = await saveAutomationDraft(draft, create, update).finally(() => {

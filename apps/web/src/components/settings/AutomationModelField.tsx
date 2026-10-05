@@ -30,11 +30,13 @@ export function AutomationModelField({
   environmentId,
   modelSelection,
   projectDefaultModelSelection,
+  disabled = false,
   onChange,
 }: {
   readonly environmentId: EnvironmentId;
   readonly modelSelection: ModelSelection | null;
   readonly projectDefaultModelSelection: ModelSelection | null;
+  readonly disabled?: boolean;
   readonly onChange: (selection: ModelSelection | null) => void;
 }) {
   const settings = useEnvironmentSettings(environmentId);
@@ -53,20 +55,21 @@ export function AutomationModelField({
   );
   const resolvedSelection = resolveDefaultProviderModelSelection(
     serverProviders,
-    modelSelection ?? projectDefaultModelSelection,
+    projectDefaultModelSelection,
   );
+  const pickerSelection = modelSelection;
   const activeEntry = instanceEntries.find(
-    (entry) => entry.instanceId === resolvedSelection?.instanceId,
+    (entry) =>
+      entry.instanceId === pickerSelection?.instanceId && entry.enabled && entry.isAvailable,
   );
   const usesOverride = modelSelection !== null;
-  const pickerSelection = usesOverride ? resolvedSelection : null;
 
   const pinResolvedDefault = () => {
     const next = resolveDefaultProviderModelSelection(
       serverProviders,
       projectDefaultModelSelection,
     );
-    if (next === null) return;
+    if (disabled || next === null) return;
     onChange(createModelSelection(next.instanceId, next.model, next.options));
   };
 
@@ -76,6 +79,8 @@ export function AutomationModelField({
       {usesOverride && pickerSelection && activeEntry ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <ProviderModelPicker
+            disabled={disabled}
+            preserveMissingModel
             activeInstanceId={pickerSelection.instanceId}
             model={pickerSelection.model}
             lockedProvider={null}
@@ -85,10 +90,11 @@ export function AutomationModelField({
             triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
             triggerAriaLabel="Automation model"
             onInstanceModelChange={(instanceId, model) => {
-              onChange(createModelSelection(instanceId, model));
+              if (!disabled) onChange(createModelSelection(instanceId, model));
             }}
           />
           <TraitsPicker
+            disabled={disabled}
             provider={activeEntry.driverKind as ProviderDriverKind}
             models={activeEntry.models}
             model={pickerSelection.model}
@@ -100,6 +106,7 @@ export function AutomationModelField({
             triggerVariant="outline"
             triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
             onModelOptionsChange={(nextOptions) => {
+              if (disabled) return;
               onChange(
                 createModelSelection(
                   pickerSelection.instanceId,
@@ -109,25 +116,29 @@ export function AutomationModelField({
               );
             }}
           />
-          <Button size="xs" variant="ghost" onClick={() => onChange(null)}>
+          <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onChange(null)}>
             Use project default
           </Button>
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-sm text-muted-foreground">
-            {usesOverride ? "Saved model is no longer available" : "Project default"}
+            {usesOverride
+              ? "Saved model is no longer available"
+              : projectDefaultModelSelection === null
+                ? "No project default"
+                : "Project default"}
           </span>
           <Button
             size="xs"
             variant="outline"
-            disabled={resolvedSelection === null}
+            disabled={disabled || resolvedSelection === null}
             onClick={pinResolvedDefault}
           >
             Choose a model
           </Button>
           {usesOverride ? (
-            <Button size="xs" variant="ghost" onClick={() => onChange(null)}>
+            <Button size="xs" variant="ghost" disabled={disabled} onClick={() => onChange(null)}>
               Use project default
             </Button>
           ) : null}
@@ -137,9 +148,11 @@ export function AutomationModelField({
         {usesOverride && pickerSelection && activeEntry
           ? "This automation always uses this provider and model."
           : usesOverride
-            ? "The pinned provider is gone. Pick another, or go back to the project default."
-            : resolvedSelection === null
-              ? "Add a provider first — a run needs a model to send the prompt to."
+            ? "The pinned provider is unavailable. Pick another, or go back to the project default."
+            : projectDefaultModelSelection === null
+              ? resolvedSelection === null
+                ? "This project has no default model. Add a provider, then choose a model."
+                : "This project has no default model. Choose a model before saving."
               : "Uses whatever this project starts new threads with."}
       </p>
     </div>

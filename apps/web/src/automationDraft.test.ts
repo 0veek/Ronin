@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { Automation, ModelSelection } from "@t3tools/contracts";
-import { AUTOMATION_MAX_TITLE_CHARS, EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  AUTOMATION_MAX_TITLE_CHARS,
+  AUTOMATION_MAX_PROMPT_CHARS,
+  EnvironmentId,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 
 import {
   createAutomationSearch,
@@ -145,6 +150,31 @@ describe("duplicateAutomationDraft", () => {
     );
     expect(draft.title).toHaveLength(AUTOMATION_MAX_TITLE_CHARS);
     expect(draft.title.endsWith(" (copy)")).toBe(true);
+  });
+});
+
+describe("automation text limits", () => {
+  it.each([
+    { title: "x".repeat(AUTOMATION_MAX_TITLE_CHARS + 1) },
+    { prompt: "x".repeat(AUTOMATION_MAX_PROMPT_CHARS + 1) },
+    { title: "   " },
+    { prompt: "   " },
+  ])("rejects incomplete or oversized text before sending a command", (text) => {
+    const draft = { ...draftFromAutomation(automation()), ...text };
+    expect(isDraftComplete(draft)).toBe(false);
+    expect(draftToCreateInput({ ...draft, editing: null })).toBeNull();
+    expect(draftToUpdateInput(draft)).toBeNull();
+  });
+
+  it("accepts trimmed text exactly at the contract limits", () => {
+    const draft = {
+      ...startAutomationDraft("proj-1"),
+      title: `  ${"x".repeat(AUTOMATION_MAX_TITLE_CHARS)}  `,
+      prompt: `  ${"x".repeat(AUTOMATION_MAX_PROMPT_CHARS)}  `,
+    };
+    expect(isDraftComplete(draft)).toBe(true);
+    expect(draftToCreateInput(draft)?.title).toHaveLength(AUTOMATION_MAX_TITLE_CHARS);
+    expect(draftToCreateInput(draft)?.prompt).toHaveLength(AUTOMATION_MAX_PROMPT_CHARS);
   });
 });
 

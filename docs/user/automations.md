@@ -37,9 +37,15 @@ Each automation needs a name, a project, a prompt, and a schedule. You can start
 **Settings → Automations**, from the clock in a thread's title bar, or from the command
 palette (**New automation**).
 
+Opening **New automation** again on the same machine keeps your current draft. Finish or cancel
+that draft before starting another. Names can contain up to 120 characters and prompts up to
+20,000 characters.
+
 **Model** chooses which provider and model runs the prompt. The default is the project's
 default — the same one a new thread would use. Pin a specific model when the job should
 keep that provider even if the project default later changes.
+If the project has no default model, choose a model before saving. An unavailable pinned provider
+stays visible as unavailable; choosing another model or **Use project default** changes the selection.
 
 **Repeats** offers three shapes:
 
@@ -73,6 +79,8 @@ until you do.
 Each row shows its schedule in words and when it goes next. A row that hit its failure
 limit says so instead of "Paused". The switch pauses an automation without deleting it; the
 play button runs it immediately (which also re-anchors an interval schedule from now).
+While a row action is pending, its controls wait for the response so repeated clicks cannot start
+extra runs or conflict with an edit. Other automations remain available.
 
 **Recent runs** below lists what actually happened, newest first, with a link into the thread each
 run opened. A run that did not start says why.

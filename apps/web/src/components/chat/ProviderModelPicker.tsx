@@ -38,6 +38,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   activeProviderIconClassName?: string;
   isComposerOwned?: boolean;
   disabled?: boolean;
+  /** Keep a saved model's exact name when it is missing from the current catalog. */
+  preserveMissingModel?: boolean;
   terminalOpen?: boolean;
   open?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
@@ -64,11 +66,12 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 
   const activeInstanceId = props.activeInstanceId;
   const selectedInstanceOptions = props.modelOptionsByInstance.get(activeInstanceId) ?? [];
-  // OpenCode can keep a model through a transient catalog refresh. Other
-  // providers keep the active instance's first option as their normal fallback.
+  // OpenCode and pinned settings keep their saved model through catalog changes.
   const selectedModel =
     selectedInstanceOptions.find((option) => option.slug === props.model) ??
-    (activeEntry?.driverKind === "opencode" ? undefined : selectedInstanceOptions[0]);
+    (props.preserveMissingModel || activeEntry?.driverKind === "opencode"
+      ? undefined
+      : selectedInstanceOptions[0]);
   const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
   const triggerLabel = selectedModel
     ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`

@@ -31,7 +31,7 @@ export function AutomationRecipeGallery({
             <Button
               key={recipe.id}
               variant="outline"
-              className="h-auto items-start justify-start gap-3 whitespace-normal p-3 text-left"
+              className="h-auto items-start justify-start gap-3 whitespace-normal p-3 text-left sm:h-auto"
               onClick={() => onChoose(recipe)}
             >
               <Icon aria-hidden className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

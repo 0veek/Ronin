@@ -16,7 +16,7 @@ const server = vi.hoisted(() => ({
       (
         kind: string,
         target: { environmentId: EnvironmentId; input: unknown },
-      ) => Promise<{ _tag: "Success" }>
+      ) => Promise<{ _tag: "Success" | "Failure" }>
     >(),
   latest: null as AutomationsController | null,
 }));
@@ -170,5 +170,111 @@ describe("automation environment queries", () => {
     expect(selected.error).toContain("Machine unavailable");
     expect(selected.isLoading).toBe(false);
     expect(container.textContent).toBe("Machine unavailable");
+  });
+
+  it("starts one run for repeated clicks and blocks conflicting edits until it settles", async () => {
+    let complete = () => {};
+    server.command.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = () => resolve({ _tag: "Success" });
+        }),
+    );
+    const selected = await render(remote);
+    const id = selected.automations[0]!.id;
+    let run!: Promise<void>;
+    await act(async () => {
+      run = selected.runNow(id);
+      await selected.runNow(id);
+      expect(await selected.update({ id, enabled: false })).toBe(false);
+      await selected.remove(id);
+    });
+    expect(server.command).toHaveBeenCalledExactlyOnceWith("run", {
+      environmentId: remote,
+      input: { id },
+    });
+    await act(async () => {
+      complete();
+      await run;
+    });
+    await act(async () => {
+      await server.latest!.runNow(id);
+    });
+    expect(server.command).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps pending actions scoped when another machine has the same automation ID", async () => {
+    let complete = () => {};
+    server.command.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = () => resolve({ _tag: "Success" });
+        }),
+    );
+    const selected = await render(remote);
+    const id = selected.automations[0]!.id;
+    let run!: Promise<void>;
+    await act(async () => {
+      run = selected.runNow(id);
+    });
+    expect(server.latest!.pendingAutomationIds.has(id)).toBe(true);
+    const other = await render(primary);
+    expect(other.pendingAutomationIds.size).toBe(0);
+    await act(async () => {
+      await other.runNow(id);
+    });
+    expect(server.command).toHaveBeenNthCalledWith(2, "run", {
+      environmentId: primary,
+      input: { id },
+    });
+    await render(remote);
+    expect(server.latest!.pendingAutomationIds.has(id)).toBe(true);
+    await act(async () => {
+      complete();
+      await run;
+    });
+    expect(server.latest!.pendingAutomationIds.size).toBe(0);
+  });
+
+  it("unlocks an automation after a failed action so it can be retried", async () => {
+    server.command.mockResolvedValueOnce({ _tag: "Failure" });
+    const selected = await render(remote);
+    const id = selected.automations[0]!.id;
+    await act(async () => {
+      await selected.runNow(id);
+    });
+    expect(server.latest!.pendingAutomationIds.size).toBe(0);
+    await act(async () => {
+      await server.latest!.runNow(id);
+    });
+    expect(server.command).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a pending run guarded after leaving and reopening the page", async () => {
+    let complete = () => {};
+    server.command.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = () => resolve({ _tag: "Success" });
+        }),
+    );
+    const selected = await render(remote);
+    const id = selected.automations[0]!.id;
+    let run!: Promise<void>;
+    await act(async () => {
+      run = selected.runNow(id);
+    });
+    await act(async () => root.render(null));
+    const reopened = await render(remote);
+    expect(reopened.pendingAutomationIds.has(id)).toBe(true);
+    await act(async () => {
+      await reopened.runNow(id);
+    });
+    expect(server.command).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      complete();
+      await run;
+    });
+    expect(server.latest!.pendingAutomationIds.size).toBe(0);
   });
 });

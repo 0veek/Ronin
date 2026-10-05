@@ -22,6 +22,7 @@ import {
   MAX_AUTOMATION_INTERVAL_MINUTES,
   MIN_AUTOMATION_INTERVAL_MINUTES,
   AUTOMATION_MAX_TITLE_CHARS,
+  AUTOMATION_MAX_PROMPT_CHARS,
   EnvironmentId,
 } from "@t3tools/contracts";
 
@@ -237,18 +238,41 @@ export function startAutomationDraftFromSearch(
   return startAutomationDraft(projectId);
 }
 
+function hasValidAutomationText(draft: AutomationDraftState): boolean {
+  const titleLength = draft.title.trim().length;
+  const promptLength = draft.prompt.trim().length;
+  return (
+    titleLength > 0 &&
+    titleLength <= AUTOMATION_MAX_TITLE_CHARS &&
+    promptLength > 0 &&
+    promptLength <= AUTOMATION_MAX_PROMPT_CHARS
+  );
+}
+
 export function isDraftComplete(draft: AutomationDraftState): boolean {
   return (
-    draft.projectId.length > 0 &&
-    draft.title.trim().length > 0 &&
-    draft.prompt.trim().length > 0 &&
-    draftSchedule(draft) !== null
+    draft.projectId.length > 0 && hasValidAutomationText(draft) && draftSchedule(draft) !== null
+  );
+}
+
+/** A saved default or an explicit model is required for the server to start a run. */
+export function canSaveAutomationDraft(
+  draft: AutomationDraftState,
+  project:
+    | { readonly id: string; readonly defaultModelSelection: ModelSelection | null }
+    | undefined,
+): boolean {
+  if (!project || project.id !== draft.projectId) return false;
+  return (
+    isDraftComplete(draft) &&
+    (draft.modelSelection !== null || project.defaultModelSelection !== null)
   );
 }
 
 export function draftToCreateInput(draft: AutomationDraftState): AutomationCreateInput | null {
   const schedule = draftSchedule(draft);
-  if (schedule === null || draft.projectId.length === 0) return null;
+  if (schedule === null || draft.projectId.length === 0 || !hasValidAutomationText(draft))
+    return null;
   return {
     projectId: draft.projectId as ProjectId,
     title: draft.title.trim(),
@@ -263,7 +287,7 @@ export function draftToCreateInput(draft: AutomationDraftState): AutomationCreat
 export function draftToUpdateInput(draft: AutomationDraftState): AutomationUpdateInput | null {
   if (draft.editing === null) return null;
   const schedule = draftSchedule(draft);
-  if (schedule === null) return null;
+  if (schedule === null || !hasValidAutomationText(draft)) return null;
   return {
     id: draft.editing,
     title: draft.title.trim(),

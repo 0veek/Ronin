@@ -29,6 +29,7 @@ const io = vi.hoisted(() => ({
   providers: new Map<EnvironmentId, ReadonlyArray<ServerProvider>>(),
   canOperate: true,
   onlyRemoteProjects: false,
+  noProjectDefaults: false,
 }));
 
 const primaryId = EnvironmentId.make("primary");
@@ -67,20 +68,26 @@ vi.mock("../../state/entities", () => ({
         id: projectId,
         environmentId: primaryId,
         title: "Laptop project",
-        defaultModelSelection: null,
+        defaultModelSelection: io.noProjectDefaults ? null : remoteSelection,
       },
       {
         id: projectId,
         environmentId: remoteId,
         title: "Remote project",
-        defaultModelSelection: remoteSelection,
+        defaultModelSelection: io.noProjectDefaults ? null : remoteSelection,
       },
     ].filter((project) => !io.onlyRemoteProjects || project.environmentId === remoteId),
 }));
 vi.mock("../../hooks/useSettings", () => ({
   useClientSettings: (selector: (settings: typeof DEFAULT_UNIFIED_SETTINGS) => unknown) =>
     selector(DEFAULT_UNIFIED_SETTINGS),
-  useEnvironmentSettings: () => DEFAULT_UNIFIED_SETTINGS,
+  useEnvironmentSettings: () => ({
+    ...DEFAULT_UNIFIED_SETTINGS,
+    providerInstances: {
+      ...DEFAULT_UNIFIED_SETTINGS.providerInstances,
+      codex_remote: { driver: "codex", enabled: true },
+    },
+  }),
   usePrimarySettingsAvailable: () => true,
 }));
 vi.mock("../../state/server", () => ({
@@ -101,6 +108,7 @@ vi.mock("../../state/automations", () => ({
       runs: [],
       isLoading: false,
       error: null,
+      pendingAutomationIds: new Set<AutomationId>(),
       refresh: () => {},
       create: async (input: AutomationCreateInput) => {
         const saved = await io.create(environmentId, input);
@@ -162,6 +170,7 @@ beforeEach(() => {
   io.automations.clear();
   io.canOperate = true;
   io.onlyRemoteProjects = false;
+  io.noProjectDefaults = false;
   io.create.mockResolvedValue(true);
   io.providers.clear();
   io.providers.set(remoteId, [
@@ -325,5 +334,94 @@ describe("automation workflows", () => {
     expect(container.textContent).toContain("Machine unavailable");
     expect(io.readEnvironmentIds).toEqual([]);
     expect(io.create).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unsaved recipe when another create intent opens the same machine", async () => {
+    await render();
+    await click(
+      [...container.querySelectorAll("button")].find((element) =>
+        element.textContent?.startsWith("Morning brief"),
+      )!,
+    );
+    const prompt = container.querySelector("textarea")!.value;
+    await render({ environmentId: remoteId, create: true, projectId });
+    expect(container.querySelector("textarea")?.value).toBe(prompt);
+    expect(
+      container.querySelector<HTMLInputElement>('input[placeholder="Triage new issues"]')?.value,
+    ).toBe("Morning brief");
+    await click(button("Save automation"));
+    expect(io.create).toHaveBeenCalledExactlyOnceWith(
+      remoteId,
+      expect.objectContaining({ title: "Morning brief", prompt }),
+    );
+  });
+
+  it("shows an unavailable pinned provider rather than claiming a fallback is pinned", async () => {
+    io.automations.set(remoteId, [
+      makeAutomation({
+        projectId,
+        title: "Pinned report",
+        prompt: "Summarize changes.",
+        schedule: { _tag: "interval", everyMinutes: 120 },
+        envMode: "local",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("deleted-provider"),
+          model: "old-model",
+        },
+      }),
+    ]);
+    await render();
+    await click(button("Duplicate Pinned report"));
+    expect(container.textContent).toContain("Saved model is no longer available");
+    expect(container.textContent).not.toContain(
+      "This automation always uses this provider and model.",
+    );
+    await click(button("Choose a model"));
+    await click(button("Save automation"));
+    expect(io.create).toHaveBeenCalledExactlyOnceWith(
+      remoteId,
+      expect.objectContaining({ modelSelection: remoteSelection }),
+    );
+  });
+
+  it("does not change the schedule through an open popup after access becomes read-only", async () => {
+    await render({ environmentId: remoteId, create: true, projectId });
+    const trigger = button("Schedule kind");
+    await act(async () => {
+      trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
+    });
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((element) =>
+      element.textContent?.includes("On an interval"),
+    );
+    expect(option).toBeDefined();
+    io.canOperate = false;
+    await render({ environmentId: remoteId });
+    await click(option!);
+    expect(button("Schedule kind").textContent).toContain("At a time of day");
+    expect(container.querySelector('input[type="number"]')).toBeNull();
+    expect(io.create).not.toHaveBeenCalled();
+  });
+
+  it("requires a model choice for a recipe when the project has no default model", async () => {
+    io.noProjectDefaults = true;
+    await render();
+    await click(
+      [...container.querySelectorAll("button")].find((element) =>
+        element.textContent?.startsWith("Morning brief"),
+      )!,
+    );
+    expect(container.textContent).toContain("This project has no default model");
+    expect(button("Save automation").disabled).toBe(true);
+    await click(button("Save automation"));
+    expect(io.create).not.toHaveBeenCalled();
+    await click(button("Choose a model"));
+    expect(button("Save automation").disabled).toBe(false);
+    await click(button("Save automation"));
+    expect(io.create).toHaveBeenCalledExactlyOnceWith(
+      remoteId,
+      expect.objectContaining({
+        modelSelection: expect.objectContaining({ instanceId: remoteSelection.instanceId }),
+      }),
+    );
   });
 });
