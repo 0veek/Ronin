@@ -1,5 +1,6 @@
 import {
   ApprovalRequestId,
+  SecretRequestActivity,
   UserInputAttachmentAnswerPayload,
   type ChatAttachment,
   type OrchestrationEvent,
@@ -141,6 +142,8 @@ function isStalePendingApprovalFailureDetail(detail: string | null): boolean {
 }
 
 // A refresh reads each persisted summary source, so skip activities that cannot change the result.
+const decodeSecretRequestActivity = Schema.decodeUnknownOption(SecretRequestActivity);
+
 function shouldRefreshThreadShellSummary(event: OrchestrationEvent): boolean {
   if (event.type !== "thread.activity-appended") {
     return true;
@@ -153,6 +156,7 @@ function shouldRefreshThreadShellSummary(event: OrchestrationEvent): boolean {
     case "user-input.requested":
     case "user-input.resolved":
     case "provider.user-input.respond.failed":
+    case "secret-request.updated":
       return true;
     default:
       return false;
@@ -170,6 +174,17 @@ function derivePendingUserInputCountFromActivities(
   );
 
   for (const activity of ordered) {
+    if (activity.kind === "secret-request.updated") {
+      const request = decodeSecretRequestActivity(activity.payload);
+      if (
+        Option.isSome(request) &&
+        request.value.threadId === activity.threadId &&
+        request.value.secretStatus === "pending"
+      ) {
+        openRequestIds.add(request.value.id);
+      }
+      continue;
+    }
     const requestId = extractActivityRequestId(activity.payload);
     if (requestId === null) {
       continue;
@@ -1404,6 +1419,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           providerInstanceId: event.payload.session.providerInstanceId ?? null,
           runtimeMode: event.payload.session.runtimeMode,
           activeTurnId: event.payload.session.activeTurnId,
+          goal: event.payload.session.goal,
           lastError: event.payload.session.lastError,
           updatedAt: event.payload.session.updatedAt,
         });
@@ -2164,9 +2180,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
         Effect.provideService(ServerConfig, serverConfig),
-        Effect.catchTag("SqlError", (sqlError) =>
-          Effect.fail(toPersistenceSqlError("ProjectionPipeline.projectEvent:query")(sqlError)),
-        ),
+        Effect.catchTags({
+          SqlError: (sqlError) =>
+            Effect.fail(toPersistenceSqlError("ProjectionPipeline.projectEvent:query")(sqlError)),
+        }),
       );
 
     const projectEvent: OrchestrationProjectionPipelineShape["projectEvent"] = Effect.fn(
@@ -2237,9 +2254,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           Effect.annotateLogs({ projectors: projectors.length }),
         ),
       ),
-      Effect.catchTag("SqlError", (sqlError) =>
-        Effect.fail(toPersistenceSqlError("ProjectionPipeline.bootstrap:query")(sqlError)),
-      ),
+      Effect.catchTags({
+        SqlError: (sqlError) =>
+          Effect.fail(toPersistenceSqlError("ProjectionPipeline.bootstrap:query")(sqlError)),
+      }),
     );
 
     return {

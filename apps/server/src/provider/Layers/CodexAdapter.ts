@@ -7,6 +7,7 @@
  *
  * @module CodexAdapterLive
  */
+import { providerGoalFromCodex } from "../nativeGoals.ts";
 import {
   EventId,
   type CanonicalItemType,
@@ -1258,6 +1259,46 @@ function mapToRuntimeEvents(
         payload: {
           usage: normalizedUsage,
         },
+      },
+    ];
+  }
+
+  if (event.method === "thread/goal/updated") {
+    const payload = readPayload(EffectCodexSchema.V2ThreadGoalUpdatedNotification, event.payload);
+    return payload
+      ? [
+          {
+            ...runtimeEventBase(event, canonicalThreadId),
+            type: "thread.goal.updated",
+            payload: { goal: providerGoalFromCodex(payload.goal) },
+          },
+        ]
+      : [];
+  }
+  if (event.method === "thread/goal/cleared") {
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "thread.goal.updated",
+        payload: { goal: null },
+      },
+    ];
+  }
+  if (event.method === "ronin/goal/command-started") {
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "turn.started",
+        payload: { native: false },
+      },
+    ];
+  }
+  if (event.method === "ronin/goal/command-completed") {
+    return [
+      {
+        ...runtimeEventBase(event, canonicalThreadId),
+        type: "turn.completed",
+        payload: { state: "completed", native: false },
       },
     ];
   }

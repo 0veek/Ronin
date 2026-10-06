@@ -1,4 +1,6 @@
 import { parsePersistedServerObservabilitySettings } from "@t3tools/shared/serverSettings";
+import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -38,6 +40,7 @@ export class DesktopBackendConfiguration extends Context.Service<
     >;
     // Renderer-facing label for the primary instance (Windows vs local).
     readonly resolvePrimaryLabel: Effect.Effect<string>;
+    readonly currentBootstrapToken: Effect.Effect<string, PlatformError.PlatformError>;
   }
 >()("@t3tools/desktop/backend/DesktopBackendConfiguration") {}
 
@@ -145,6 +148,7 @@ const readPersistedBackendObservabilitySettings = Effect.gen(function* () {
 
 interface SharedBootstrapInput {
   readonly bootstrapToken: string;
+  readonly bootstrapSecret: string;
   readonly observabilitySettings: BackendObservabilitySettings;
 }
 
@@ -180,6 +184,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       t3Home: environment.baseDir,
       host: backendExposure.bindHost,
       desktopBootstrapToken: input.bootstrapToken,
+      desktopBootstrapSecret: input.bootstrapSecret,
       tailscaleServeEnabled: backendExposure.tailscaleServeEnabled,
       tailscaleServePort: backendExposure.tailscaleServePort,
       desktopTelemetryFd: 4,
@@ -223,16 +228,16 @@ export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   // SynchronizedRef (not a plain Ref) so the read-generate-write is atomic.
   // crypto.randomBytes is a yield point; concurrent resolvePrimary calls must
-  // share one token rather than each overwriting the other.
-  const tokenRef = yield* SynchronizedRef.make(Option.none<string>());
-  const getOrCreateBootstrapToken = SynchronizedRef.modifyEffect(tokenRef, (current) =>
+  // share one secret rather than each overwriting the other.
+  const secretRef = yield* SynchronizedRef.make(Option.none<string>());
+  const getOrCreateBootstrapSecret = SynchronizedRef.modifyEffect(secretRef, (current) =>
     Option.match(current, {
-      onSome: (token) => Effect.succeed([token, current] as const),
+      onSome: (secret) => Effect.succeed([secret, current] as const),
       onNone: () =>
-        crypto.randomBytes(24).pipe(
+        crypto.randomBytes(32).pipe(
           Effect.map((bytes) => {
-            const token = Encoding.encodeHex(bytes);
-            return [token, Option.some(token)] as const;
+            const secret = Encoding.encodeHex(bytes);
+            return [secret, Option.some(secret)] as const;
           }),
         ),
     }),
@@ -242,15 +247,27 @@ export const make = Effect.gen(function* () {
   // server-settings file is picked up on the next restart cycle without
   // having to bounce the desktop process.
   const sharedInputs = Effect.gen(function* () {
-    const bootstrapToken = yield* getOrCreateBootstrapToken;
+    const bootstrapSecret = yield* getOrCreateBootstrapSecret;
+    const bootstrapToken = currentDesktopBootstrapToken(
+      bootstrapSecret,
+      yield* Clock.currentTimeMillis,
+    );
     const observabilitySettings = yield* readPersistedBackendObservabilitySettings.pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
-    return { bootstrapToken, observabilitySettings } satisfies SharedBootstrapInput;
+    return {
+      bootstrapToken,
+      bootstrapSecret,
+      observabilitySettings,
+    } satisfies SharedBootstrapInput;
   });
 
   return DesktopBackendConfiguration.of({
+    currentBootstrapToken: Effect.gen(function* () {
+      const secret = yield* getOrCreateBootstrapSecret;
+      return currentDesktopBootstrapToken(secret, yield* Clock.currentTimeMillis);
+    }),
     resolvePrimary: Effect.gen(function* () {
       const shared = yield* sharedInputs;
       const resourceMonitorPath = yield* resolveResourceMonitorPath().pipe(

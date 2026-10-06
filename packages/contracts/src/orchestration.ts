@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import { ProviderGoal } from "./providerGoal.ts";
 import * as Schema from "effect/Schema";
 import { ThreadPullRequestWatch } from "./threadPullRequestWatch.ts";
 import * as SchemaIssue from "effect/SchemaIssue";
@@ -11,6 +12,9 @@ import {
   ApprovalRequestId,
   CheckpointRef,
   CommandId,
+  ForwardCompatibleUnion,
+  isUnknownUnionMember,
+  type UnknownUnionMember,
   EventId,
   IsoDateTime,
   MessageId,
@@ -498,43 +502,66 @@ const ProjectMonogramIcon = Schema.Struct({
   text: ProjectMonogramText,
   color: ProjectIconColor,
 });
-const ProjectIcon = Schema.Union([ProjectLucideIcon, ProjectEmojiIcon, ProjectMonogramIcon]);
-const ProjectLucideIconWire = Schema.Struct({
+/** A project's chosen icon, as clients set it. */
+export const ProjectIconOverride = Schema.Union([
+  ProjectLucideIcon,
+  ProjectEmojiIcon,
+  ProjectMonogramIcon,
+]);
+export type ProjectIconOverride = typeof ProjectIconOverride.Type;
+
+/**
+ * Before v2, servers sent a monogram as a lucide icon carrying its text, so
+ * older clients showed a folder. Icons stored then, and v2 servers released
+ * before this change, still use that shape; it is read here, never written.
+ */
+const ProjectLucideIconWithLegacyMonogram = Schema.Struct({
   ...ProjectLucideIcon.fields,
   monogramText: Schema.optional(ProjectMonogramText),
   monogram: Schema.optional(ProjectMonogramText),
 });
-
-// Older peers only know lucide/emoji. Keep monograms out of their validated
-// `monogram` field too: old grapheme counters can reject otherwise valid text.
-export const ProjectIconOverride = Schema.Union([
-  ProjectLucideIconWire,
+const projectIconMembers = [
+  ProjectLucideIconWithLegacyMonogram,
   ProjectEmojiIcon,
   ProjectMonogramIcon,
-]).pipe(
+] as const;
+type ProjectIconMember = (typeof projectIconMembers)[number]["Type"];
+
+const fromLegacyMonogram = (icon: ProjectIconMember): ProjectIconOverride => {
+  if (icon.kind !== "lucide") return icon;
+  const text = icon.monogramText ?? icon.monogram;
+  return text === undefined
+    ? { kind: "lucide", name: icon.name, color: icon.color }
+    : { kind: "monogram", text, color: icon.color };
+};
+
+/** An icon the server stores; it reads legacy monograms and writes the plain shape. */
+export const StoredProjectIcon = Schema.Union(projectIconMembers).pipe(
   Schema.decodeTo(
-    ProjectIcon,
-    SchemaTransformation.transform({
-      decode: (icon): typeof ProjectIcon.Type => {
-        if (icon.kind !== "lucide") return icon;
-        const text = icon.monogramText ?? icon.monogram;
-        return text === undefined
-          ? { kind: "lucide", name: icon.name, color: icon.color }
-          : { kind: "monogram", text, color: icon.color };
-      },
-      encode: (icon) =>
-        icon.kind === "monogram"
-          ? {
-              kind: "lucide" as const,
-              name: "folder-code",
-              color: icon.color,
-              monogramText: icon.text,
-            }
-          : icon,
+    Schema.toType(ProjectIconOverride),
+    SchemaTransformation.transform<ProjectIconOverride, ProjectIconMember>({
+      decode: fromLegacyMonogram,
+      encode: (icon) => icon,
     }),
   ),
 );
-export type ProjectIconOverride = typeof ProjectIconOverride.Type;
+
+/**
+ * An icon as clients receive it. A kind from a newer server decodes as no
+ * override, so the client shows the project's default icon.
+ */
+export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "kind").pipe(
+  Schema.decodeTo(
+    Schema.NullOr(Schema.toType(ProjectIconOverride)),
+    SchemaTransformation.transform<
+      ProjectIconOverride | null,
+      ProjectIconMember | UnknownUnionMember<"kind">
+    >({
+      decode: (icon) => (isUnknownUnionMember(icon) ? null : fromLegacyMonogram(icon)),
+      encode: (icon) => icon as ProjectIconMember,
+    }),
+  ),
+);
 
 export const OrchestrationProject = Schema.Struct({
   id: ProjectId,
@@ -550,7 +577,7 @@ export const OrchestrationProject = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   // Optional on the wire so cached snapshots from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
-  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
+  projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -673,6 +700,7 @@ export const OrchestrationSession = Schema.Struct({
   providerInstanceId: Schema.optional(ProviderInstanceId),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   activeTurnId: Schema.NullOr(TurnId),
+  goal: Schema.optional(Schema.NullOr(ProviderGoal)),
   lastError: Schema.NullOr(TrimmedNonEmptyString),
   updatedAt: IsoDateTime,
 });
@@ -931,7 +959,7 @@ export const OrchestrationProjectShell = Schema.Struct({
   autoPull: Schema.optional(Schema.Boolean),
   // Optional on the wire so cached snapshots from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
-  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
+  projectIcon: Schema.optional(Schema.NullOr(ReceivedProjectIcon)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1865,7 +1893,7 @@ export const ProjectCreatedPayload = Schema.Struct({
   defaultModelSelection: Schema.NullOr(ModelSelection),
   // Optional so persisted events from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
-  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
+  projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1880,7 +1908,7 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   autoPull: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
-  projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
+  projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   updatedAt: IsoDateTime,
 });

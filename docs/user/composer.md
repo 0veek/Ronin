@@ -14,6 +14,21 @@ the background. Ronin opens another new thread and shows an **Open** action for 
 started. The new thread keeps the selected workspace mode and base branch. If **New worktree** is
 selected, each background thread creates its own worktree.
 
+Expand a command in the conversation to see its syntax highlighted details. Embedded scripts
+use their own language colors; command output stays plain text, and invisible control bytes
+are shown as visible symbols.
+
+## Private secret requests
+
+When an agent needs a signing secret for a tool that supports private input, Ronin shows a
+private card in the conversation. Paste the value into that card and choose **Save**, or
+choose **Decline**. The value is stored by the connected environment and never appears in
+the transcript or the agent's context. The agent receives a reference that works once in
+the same project and expires after 24 hours if unused.
+
+Stop and unanswered-request timeouts close the card. A request inherited by a fork can only
+be answered in the original thread. Ordinary chat messages are not private secret input.
+
 ## Send while the agent is working
 
 On web and desktop, a message sent during a running turn waits at the end of the conversation as a
@@ -52,6 +67,9 @@ HEIC and HEIF photos are converted to JPEG automatically when you drag them into
 paste them into a message.
 
 ## Custom models
+
+When fast mode is enabled, the traits picker shows it beside reasoning, such as **High Fast**
+or **High Ultrafast**. Other options, such as the context window, stay separated in the label.
 
 On web and desktop, use Settings → Providers → **Models** to add an unlisted model with a custom
 name and options. Only options supported by the provider integration affect turns. Antigravity
@@ -153,6 +171,22 @@ palette. Your conversation stays in place; the next message starts the provider 
 In a thread with prior conversation context, send `/compact` to reduce context usage. The context
 meter offers the same action, and the work log records token counts when the provider reports them.
 
+## Native goals
+
+With Codex or Claude, send `/goal <objective>` to keep the agent working toward an objective.
+The row above the composer shows the goal and its latest status. Codex reports token usage and
+time; Claude reports evaluator checks. Progress comes from the provider.
+
+**Stop** pauses a Codex goal and interrupts its work. When idle, choose **Resume**, or send
+`/goal resume`, to continue. `/goal pause` pauses an idle goal, and `/goal` shows its current state.
+With Claude, Stop interrupts work while keeping the goal set; send another message to continue.
+Choose **Clear** or send `/goal clear` when idle to remove either provider's goal. These controls
+preserve your composer draft and attachments. Send goal commands separately from attachments,
+and wait for the active turn to finish or queue the command.
+
+Claude's SDK does not distinguish an evaluator timeout or an impossible verdict from a successful
+final evaluation. Those outcomes can therefore appear as **Goal complete**.
+
 ## Reading width
 
 ## Context in your message
@@ -224,6 +258,9 @@ automatically. HTML previews cannot access your T3 Code session.
 
 The file viewer recognizes images, HTML, and PDF files by their filename extension,
 including filenames or folders containing `#` or `?`.
+
+When a tool returns a screenshot, expand its timeline row to see the image. Select the image
+to open the larger preview. Screenshots load from the environment where the tool ran.
 
 On mobile, select a PDF attachment or link to open it. iOS uses the native viewer;
 Android opens a compatible installed file viewer.

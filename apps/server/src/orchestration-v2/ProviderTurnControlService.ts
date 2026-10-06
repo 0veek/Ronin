@@ -12,6 +12,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as NodeTimersPromises from "node:timers/promises";
 
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
@@ -185,6 +186,15 @@ export const layer: Layer.Layer<
             providerTurnId: loaded.providerTurn.id,
             requestRuntimeRestart: true,
           });
+          // Native terminal ingestion owns the normal checkpoint. Give it a
+          // bounded grace period before Stop repairs stale projected work.
+          const deadline = performance.now() + 2_000;
+          while (loaded.providerTurn.status === "running" && performance.now() < deadline) {
+            const current = yield* projections.getProviderControlContext(input.threadId, input);
+            if (current.providerTurn?.status !== "running" && current.attempt?.status !== "running")
+              break;
+            yield* Effect.promise(() => NodeTimersPromises.setTimeout(10));
+          }
         }).pipe(
           Effect.mapError((cause) =>
             isProviderTurnControlError(cause)

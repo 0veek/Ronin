@@ -146,6 +146,8 @@ export default defineConfig({
       "t3code/no-native-title-tooltip": "error",
       "t3code/no-unscoped-has": "error",
       "t3code/namespace-node-imports": "error",
+      "t3code/require-suppression-reason": "error",
+      "t3code/prefer-catch-tags": "error",
     },
     overrides: [
       {

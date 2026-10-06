@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   applyGitStatusStreamEvent,
   buildTemporaryWorktreeBranchName,
+  flattenTemporaryWorktreeBranchName,
   isTemporaryWorktreeBranch,
   normalizeGitRemoteUrl,
   parseGitHubRepositoryNameWithOwnerFromRemoteUrl,
@@ -78,6 +79,7 @@ describe("isTemporaryWorktreeBranch", () => {
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/deadbeef`)).toBe(true);
     expect(isTemporaryWorktreeBranch(` ${WORKTREE_BRANCH_PREFIX}/deadbeef `)).toBe(true);
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/DEADBEEF`)).toBe(true);
+    expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}-deadbeef`)).toBe(true);
   });
 
   it("normalizes a UUID-shaped random callback to the canonical 8-hex form", () => {
@@ -87,9 +89,10 @@ describe("isTemporaryWorktreeBranch", () => {
   });
 
   it("matches legacy UUID-shaped temporary worktree refs from older mobile builds", () => {
-    expect(
-      isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12`),
-    ).toBe(true);
+    expect(isTemporaryWorktreeBranch("t3code/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12")).toBe(true);
+    expect(isTemporaryWorktreeBranch("t3code/deadbeef")).toBe(true);
+    expect(isTemporaryWorktreeBranch("t3code-deadbeef")).toBe(true);
+    expect(isTemporaryWorktreeBranch("t3/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12")).toBe(false);
   });
 
   it("rejects UUID-shaped refs that are not RFC 4122 v4", () => {
@@ -107,6 +110,21 @@ describe("isTemporaryWorktreeBranch", () => {
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/feature/demo`)).toBe(false);
     expect(isTemporaryWorktreeBranch("main")).toBe(false);
     expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/deadbeef-extra`)).toBe(false);
+    expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}-deadbeef-extra`)).toBe(false);
+    expect(isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}-feature-demo`)).toBe(false);
+  });
+});
+
+describe("flattenTemporaryWorktreeBranchName", () => {
+  it("keeps the canonical token for temporary and legacy UUID names", () => {
+    expect(flattenTemporaryWorktreeBranchName(`${WORKTREE_BRANCH_PREFIX}/DEADBEEF`)).toBe(
+      `${WORKTREE_BRANCH_PREFIX}-deadbeef`,
+    );
+    expect(
+      flattenTemporaryWorktreeBranchName(
+        `${WORKTREE_BRANCH_PREFIX}/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12`,
+      ),
+    ).toBe(`${WORKTREE_BRANCH_PREFIX}-f4ae4e0e`);
   });
 });
 

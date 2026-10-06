@@ -17,6 +17,7 @@ export type AssetUrlState =
   | {
       readonly _tag: "Success";
       readonly url: string;
+      readonly expiresAt: number;
       readonly sourcePath?: string;
       /** Pixel size read from the image header, when the server could read one. */
       readonly imageDimensions?: AssetImageDimensions;
@@ -45,6 +46,7 @@ export function useAssetUrlState(
     : {
         _tag: "Success",
         url,
+        expiresAt: result.value.expiresAt,
         ...(result.value.sourcePath !== undefined ? { sourcePath: result.value.sourcePath } : {}),
         ...(result.value.imageDimensions !== undefined
           ? { imageDimensions: result.value.imageDimensions }

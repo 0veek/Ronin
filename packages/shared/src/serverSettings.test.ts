@@ -18,6 +18,34 @@ import {
 } from "./serverSettings.ts";
 
 describe("serverSettings helpers", () => {
+  describe("worktreesDirectory", () => {
+    it("remembers previous custom locations so their worktrees stay managed", () => {
+      const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { worktreesDirectory: "/a" });
+      expect(first.previousWorktreesDirectories).toEqual([]);
+      const second = applyServerSettingsPatch(first, { worktreesDirectory: "/b" });
+      expect(second.previousWorktreesDirectories).toEqual(["/a"]);
+      const reset = applyServerSettingsPatch(second, { worktreesDirectory: "" });
+      expect(reset.previousWorktreesDirectories).toEqual(["/a", "/b"]);
+      const back = applyServerSettingsPatch(reset, { worktreesDirectory: "/a" });
+      expect(back.previousWorktreesDirectories).toEqual(["/b"]);
+    });
+  });
+  it("resets one checkout's credit override without retaining a removed key", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      removeAgentCreditsOnMerge: true,
+      removeAgentCreditsOnMergeOverrides: { first: false, second: true },
+    };
+    const reset = applyServerSettingsPatch(current, {
+      removeAgentCreditsOnMergeOverrides: { second: true },
+    });
+    expect(reset.removeAgentCreditsOnMergeOverrides).toEqual({ second: true });
+    expect(reset.removeAgentCreditsOnMerge).toBe(true);
+    expect(
+      applyServerSettingsPatch(reset, { removeAgentCreditsOnMergeOverrides: {} })
+        .removeAgentCreditsOnMergeOverrides,
+    ).toEqual({});
+  });
   it("replaces SSH host lists when saving, editing, and removing hosts", () => {
     const host = { id: "mini", label: "Mac mini", target: "mini" };
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });

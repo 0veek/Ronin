@@ -11,6 +11,10 @@ import {
   outcomeFromExit,
 } from "./Attributes.ts";
 
+export const secretRefsConsumedTotal = Metric.counter("t3_secret_refs_consumed_total", {
+  description: "One-use secret references consumed or rejected.",
+});
+
 export const rpcRequestsTotal = Metric.counter("t3_rpc_requests_total", {
   description: "Total RPC requests handled by the websocket RPC server.",
 });
@@ -51,7 +55,7 @@ export const providerTurnsTotal = Metric.counter("t3_provider_turns_total", {
 });
 
 export const providerTurnDuration = Metric.timer("t3_provider_turn_duration", {
-  description: "Provider turn request duration.",
+  description: "Time for the provider adapter to start a turn, not how long the turn runs.",
 });
 
 export const providerRuntimeEventsTotal = Metric.counter("t3_provider_runtime_events_total", {
@@ -72,6 +76,18 @@ export const terminalSessionsTotal = Metric.counter("t3_terminal_sessions_total"
 
 export const terminalRestartsTotal = Metric.counter("t3_terminal_restarts_total", {
   description: "Total terminal restart requests handled.",
+});
+
+export const webhookDeliveriesTotal = Metric.counter("t3_webhook_deliveries_total", {
+  description: "Webhook requests handled, by outcome and source.",
+});
+
+export const webhookDeliveryDuration = Metric.timer("t3_webhook_delivery_duration", {
+  description: "Time to verify, log, and enqueue one webhook request.",
+});
+
+export const webhookRunsTotal = Metric.counter("t3_webhook_runs_total", {
+  description: "Runs started from webhook deliveries, by outcome.",
 });
 
 export const metricAttributes = (
@@ -95,16 +111,13 @@ export interface WithMetricsOptions {
   ) => Readonly<Record<string, unknown>>;
 }
 
-const withMetricsImpl = <A, E, R>(
-  effect: Effect.Effect<A, E, R>,
+const recordMetrics = (
   options: WithMetricsOptions,
-): Effect.Effect<A, E, R> =>
+  startedAt: bigint,
+  exit: Exit.Exit<unknown, unknown>,
+) =>
   Effect.gen(function* () {
-    const startedAt = yield* Clock.currentTimeNanos;
-    const exit = yield* Effect.exit(effect);
-    const endedAt = yield* Clock.currentTimeNanos;
-    const elapsedNanos = endedAt > startedAt ? endedAt - startedAt : 0n;
-    const duration = Duration.nanos(elapsedNanos);
+    const duration = Duration.nanos((yield* Clock.currentTimeNanos) - startedAt);
     const baseAttributes =
       typeof options.attributes === "function" ? options.attributes() : (options.attributes ?? {});
 
@@ -129,17 +142,22 @@ const withMetricsImpl = <A, E, R>(
         1,
       );
     }
-
-    if (Exit.isSuccess(exit)) {
-      return exit.value;
-    }
-    return yield* Effect.failCause(exit.cause);
   });
 
+// Durations come from the monotonic clock, so wall-clock corrections cannot skew them, and
+// metrics are recorded in an exit finalizer, so interrupted work is counted as "interrupt".
+const withMetricsImpl = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  options: WithMetricsOptions,
+): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Clock.currentTimeNanos, (startedAt) =>
+    Effect.onExit(effect, (exit) => recordMetrics(options, startedAt, exit)),
+  );
+
 export const withMetrics: {
-  <A, E, R>(
+  (
     options: WithMetricsOptions,
-  ): (effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+  ): <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
   <A, E, R>(effect: Effect.Effect<A, E, R>, options: WithMetricsOptions): Effect.Effect<A, E, R>;
 } = dual(2, withMetricsImpl);
 

@@ -141,7 +141,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   readonly httpSnapshot?: Option.Option<OrchestrationThreadDetailSnapshot>;
   readonly completionMarker?: boolean;
   readonly resumeCache?: NonNullable<Parameters<typeof makeEnvironmentThreadState>[1]>;
-  readonly loadCached?: Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
+  readonly loadCached?: ReturnType<Persistence.EnvironmentCacheStore["Service"]["loadThread"]>;
   readonly saveThread?: Persistence.EnvironmentCacheStore["Service"]["saveThread"];
 }) {
   const inputs = yield* Queue.unbounded<TestThreadInput>();
@@ -374,6 +374,25 @@ const deleted = (): OrchestrationThreadStreamItem => ({
 });
 
 describe("EnvironmentThreads", () => {
+  it.effect("loads the server thread when its local cache read fails", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({
+        loadCached: Effect.fail(
+          new Persistence.ConnectionPersistenceError({
+            operation: "load-thread",
+            message: "The database connection is closing.",
+          }),
+        ),
+        httpSnapshot: Option.some({ snapshotSequence: 7, thread: BASE_THREAD }),
+      });
+
+      const state = yield* awaitThreadState(h.observed, (value) => value.status === "live");
+      expect(Option.getOrThrow(state.data)).toEqual(BASE_THREAD);
+      expect(yield* Ref.get(h.loaderCalls)).toBe(1);
+      expect(yield* Ref.get(h.subscriptionCount)).toBe(1);
+    }),
+  );
+
   it("backs off thread subscription retries up to a 30 second cap", () => {
     expect(threadSubscriptionRetryDelay(1)).toBe(250);
     expect(threadSubscriptionRetryDelay(2)).toBe(500);

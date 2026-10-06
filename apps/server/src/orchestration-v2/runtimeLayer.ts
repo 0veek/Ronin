@@ -13,7 +13,10 @@ import { layer as checkpointRollbackServiceLayer } from "./CheckpointRollbackSer
 import { layer as commandPolicyLayer } from "./CommandPolicy.ts";
 import { layerFromApplicationReceipts as commandReceiptStoreLayer } from "./CommandReceiptStore.ts";
 import { layer as contextHandoffServiceLayer } from "./ContextHandoffService.ts";
-import { layer as effectOutboxLayer } from "./EffectOutbox.ts";
+import {
+  layer as effectOutboxLayer,
+  pruneWorkerLive as effectOutboxPruneWorkerLive,
+} from "./EffectOutbox.ts";
 import {
   executorLayer as effectExecutorLayer,
   layer as effectWorkerLayer,
@@ -262,6 +265,7 @@ export function layerWithAdapters<R>(adapters: Layer.Layer<ProviderAdapterRegist
     PreparedTurnRequests.layer,
     ThreadCommandExecutor.layer,
     providerContinuationWorkerProvided,
+    effectOutboxPruneWorkerLive.pipe(Layer.provide(effectOutboxLayer)),
   );
 }
 

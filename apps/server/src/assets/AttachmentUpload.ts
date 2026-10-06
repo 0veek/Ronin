@@ -1,4 +1,4 @@
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
 
 import {
   ATTACHMENT_UPLOAD_URL_TTL_MS,
@@ -170,9 +170,10 @@ export const storeAttachmentUpload = Effect.fn("AttachmentUpload.store")(functio
     attachmentsDir: config.attachmentsDir,
     relativePath,
   });
+  const partId = yield* (yield* Crypto.Crypto).randomUUIDv4.pipe(Effect.orDie);
   const partPath = resolveAttachmentRelativePath({
     attachmentsDir: config.attachmentsDir,
-    relativePath: `${relativePath}.${NodeCrypto.randomUUID()}.part`,
+    relativePath: `${relativePath}.${partId}.part`,
   });
   if (!finalPath || !partPath) {
     return { ok: false, status: 500, detail: "Failed to resolve attachment path." };

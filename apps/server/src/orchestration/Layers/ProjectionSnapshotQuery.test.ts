@@ -567,6 +567,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
           activeOrderKey: "hq",
+          autoSettleDisabledAt: null,
           sideChat: null,
           queuedPrompt: null,
           comparisonGroupId: null,
@@ -619,6 +620,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ],
           session: {
             threadId: ThreadId.make("thread-1"),
+            goal: null,
             status: "running",
             providerName: "codex",
             runtimeMode: "approval-required",
@@ -697,6 +699,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           pinOrderKey: "gm",
           activeOrderKey: "hq",
           sideChat: null,
+          autoSettleDisabledAt: null,
           queuedPrompt: null,
           comparisonGroupId: null,
           titleRegeneration: null,
@@ -704,6 +707,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           session: {
             threadId: ThreadId.make("thread-1"),
             status: "running",
+            goal: null,
             providerName: "codex",
             runtimeMode: "approval-required",
             activeTurnId: asTurnId("turn-1"),

@@ -26,6 +26,7 @@
 - [Side chats](./user/side-chats.md)
 - [Captured tasks](./user/captured-tasks.md)
 - [Inline previews](./user/inline-previews.md)
+- [Visual replies](./user/html-renders.md)
 - [Devices](./user/devices.md)
 - [Customize a project icon](./user/project-settings.md)
 - [Environment themes](./user/environment-theme.md)

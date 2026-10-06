@@ -38,6 +38,8 @@ function decodeDisabledReason(value: unknown): AutomationDisabledReason | null {
 }
 
 interface AutomationDbRow {
+  readonly webhookToken: string | null;
+  readonly webhookHasSecret: number;
   readonly automationId: string;
   readonly projectId: string;
   readonly title: string;
@@ -66,12 +68,21 @@ interface AutomationRunDbRow {
 }
 
 function toAutomation(row: AutomationDbRow): Automation {
+  const schedule = decodeSchedule(JSON.parse(row.scheduleJson));
   return {
     id: AutomationId.make(row.automationId),
     projectId: ProjectId.make(row.projectId),
     title: row.title,
     prompt: row.prompt,
-    schedule: decodeSchedule(JSON.parse(row.scheduleJson)),
+    schedule,
+    ...(schedule._tag !== "webhook" || row.webhookToken == null
+      ? {}
+      : {
+          webhook: {
+            path: automationWebhookPath(row.automationId, row.webhookToken),
+            hasSecret: row.webhookHasSecret === 1,
+          },
+        }),
     envMode: row.envMode as ThreadEnvMode,
     modelSelection:
       row.modelSelectionJson === null
@@ -100,11 +111,26 @@ function toRun(row: AutomationRunDbRow): AutomationRun {
   };
 }
 
+export const WEBHOOK_ROUTE_PREFIX = "/api/hooks";
+export const automationWebhookPath = (id: string, token: string) =>
+  `${WEBHOOK_ROUTE_PREFIX}/${encodeURIComponent(id)}/${encodeURIComponent(token)}`;
+
+export interface AutomationWebhookCredentials {
+  readonly token: string;
+  readonly secret: string | null;
+}
+
 export interface AutomationStoreShape {
   readonly list: (projectId: ProjectId | null) => Effect.Effect<ReadonlyArray<Automation>>;
   readonly get: (id: AutomationId) => Effect.Effect<Option.Option<Automation>>;
   /** Fails loudly: a save that did not happen must never look like one that did. */
-  readonly upsert: (automation: Automation) => Effect.Effect<void, AutomationError>;
+  readonly upsert: (
+    automation: Automation,
+    credentials?: AutomationWebhookCredentials | null,
+  ) => Effect.Effect<void, AutomationError>;
+  readonly getWebhookCredentials: (
+    id: AutomationId,
+  ) => Effect.Effect<AutomationWebhookCredentials | null, AutomationError>;
   readonly remove: (id: AutomationId) => Effect.Effect<boolean, AutomationError>;
   /** Enabled automations whose next run is at or before `atIso`. */
   readonly listDue: (atIso: string) => Effect.Effect<ReadonlyArray<Automation>>;
@@ -160,7 +186,9 @@ export const make = Effect.gen(function* () {
               created_at AS "createdAt",
               updated_at AS "updatedAt",
               last_run_at AS "lastRunAt",
-              next_run_at AS "nextRunAt"
+              next_run_at AS "nextRunAt",
+          webhook_token AS "webhookToken",
+          (webhook_secret IS NOT NULL) AS "webhookHasSecret"
             FROM automations
             ORDER BY created_at ASC, automation_id ASC
           `
@@ -181,7 +209,9 @@ export const make = Effect.gen(function* () {
               created_at AS "createdAt",
               updated_at AS "updatedAt",
               last_run_at AS "lastRunAt",
-              next_run_at AS "nextRunAt"
+              next_run_at AS "nextRunAt",
+          webhook_token AS "webhookToken",
+          (webhook_secret IS NOT NULL) AS "webhookHasSecret"
             FROM automations
             WHERE project_id = ${projectId}
             ORDER BY created_at ASC, automation_id ASC
@@ -208,7 +238,9 @@ export const make = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           last_run_at AS "lastRunAt",
-          next_run_at AS "nextRunAt"
+          next_run_at AS "nextRunAt",
+          webhook_token AS "webhookToken",
+          (webhook_secret IS NOT NULL) AS "webhookHasSecret"
         FROM automations
         WHERE automation_id = ${id}
       `;
@@ -216,7 +248,7 @@ export const make = Effect.gen(function* () {
       return row === undefined ? Option.none<Automation>() : Option.some(toAutomation(row));
     }).pipe(Effect.orElseSucceed(() => Option.none<Automation>()));
 
-  const upsert = (automation: Automation) =>
+  const persist = (automation: Automation) =>
     sql`
       INSERT INTO automations (
         automation_id,
@@ -270,7 +302,44 @@ export const make = Effect.gen(function* () {
         updated_at = excluded.updated_at,
         last_run_at = excluded.last_run_at,
         next_run_at = excluded.next_run_at
-    `.pipe(Effect.asVoid, writeFailed("The automation could not be saved."));
+    `.pipe(Effect.asVoid);
+
+  const upsert: AutomationStoreShape["upsert"] = (automation, credentials) =>
+    sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* persist(automation);
+          if (credentials !== undefined) {
+            yield* sql`UPDATE automations SET webhook_token = ${credentials?.token ?? null},
+          webhook_secret = ${credentials?.secret ?? null} WHERE automation_id = ${automation.id}`;
+          }
+        }),
+      )
+      .pipe(
+        Effect.mapError(
+          () =>
+            new AutomationError({
+              reason: "writeFailed",
+              detail: "The automation could not be saved.",
+            }),
+        ),
+      );
+
+  const getWebhookCredentials: AutomationStoreShape["getWebhookCredentials"] = (id) =>
+    Effect.gen(function* () {
+      const rows = yield* sql<{ token: string | null; secret: string | null }>`
+        SELECT webhook_token AS token, webhook_secret AS secret FROM automations WHERE automation_id = ${id}`;
+      const row = rows[0];
+      return row?.token == null ? null : { token: row.token, secret: row.secret };
+    }).pipe(
+      Effect.mapError(
+        () =>
+          new AutomationError({
+            reason: "readFailed",
+            detail: "Could not read webhook configuration.",
+          }),
+      ),
+    );
 
   const remove = (id: AutomationId) =>
     Effect.gen(function* () {
@@ -278,6 +347,7 @@ export const make = Effect.gen(function* () {
       if (Option.isNone(existing)) return false;
       yield* sql`DELETE FROM automations WHERE automation_id = ${id}`;
       yield* sql`DELETE FROM automation_runs WHERE automation_id = ${id}`;
+      yield* sql`DELETE FROM automation_webhook_deliveries WHERE automation_id = ${id}`;
       return true;
     }).pipe(writeFailed("The automation could not be deleted."));
 
@@ -300,7 +370,9 @@ export const make = Effect.gen(function* () {
           created_at AS "createdAt",
           updated_at AS "updatedAt",
           last_run_at AS "lastRunAt",
-          next_run_at AS "nextRunAt"
+          next_run_at AS "nextRunAt",
+          webhook_token AS "webhookToken",
+          (webhook_secret IS NOT NULL) AS "webhookHasSecret"
         FROM automations
         WHERE enabled = 1
           AND next_run_at IS NOT NULL
@@ -348,6 +420,7 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.orElseSucceed(() => []));
 
   return AutomationStore.of({
+    getWebhookCredentials,
     list,
     get,
     upsert,

@@ -23,6 +23,7 @@ import {
   NonNegativeInt,
   PositiveInt,
   ProjectId,
+  SecretRef,
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
@@ -54,7 +55,29 @@ export type AutomationTimeOfDay = typeof AutomationTimeOfDay.Type;
 export const MIN_AUTOMATION_INTERVAL_MINUTES = 15;
 export const MAX_AUTOMATION_INTERVAL_MINUTES = 60 * 24 * 30;
 
-export const AutomationSchedule = Schema.Union([
+/** HMAC-SHA256 over the exact request body; the signing secret is stored separately. */
+export const AutomationWebhookSignature = Schema.Struct({
+  header: TrimmedNonEmptyString,
+  encoding: Schema.Literals(["hex", "base64"]),
+  prefix: Schema.String,
+});
+export type AutomationWebhookSignature = typeof AutomationWebhookSignature.Type;
+
+export const AutomationWebhookSignatureInput = Schema.Struct({
+  ...AutomationWebhookSignature.fields,
+  /** Omit both fields to retain the existing signing secret. */
+  secret: Schema.optional(TrimmedNonEmptyString),
+  secretRef: Schema.optional(SecretRef),
+});
+export type AutomationWebhookSignatureInput = typeof AutomationWebhookSignatureInput.Type;
+
+export const AutomationWebhookEndpoint = Schema.Struct({
+  /** Relative to the connected environment, including its bearer token. */
+  path: TrimmedNonEmptyString,
+  hasSecret: Schema.Boolean,
+});
+
+const TimedAutomationSchedule = Schema.Union([
   /**
    * Every N minutes from when it was last saved or last ran.
    *
@@ -80,7 +103,22 @@ export const AutomationSchedule = Schema.Union([
     at: IsoDateTime,
   }),
 ]);
+export const AutomationSchedule = Schema.Union([
+  Schema.TaggedStruct("webhook", {
+    signature: Schema.NullOr(AutomationWebhookSignature),
+  }),
+  ...TimedAutomationSchedule.members,
+]);
 export type AutomationSchedule = typeof AutomationSchedule.Type;
+
+/** Writable schedules may carry a private signing secret or its one-use reference. */
+export const AutomationScheduleInput = Schema.Union([
+  Schema.TaggedStruct("webhook", {
+    signature: Schema.optional(Schema.NullOr(AutomationWebhookSignatureInput)),
+  }),
+  ...TimedAutomationSchedule.members,
+]);
+export type AutomationScheduleInput = typeof AutomationScheduleInput.Type;
 
 export const AUTOMATION_MAX_PROMPT_CHARS = 20_000;
 export const AUTOMATION_MAX_TITLE_CHARS = 120;
@@ -127,6 +165,7 @@ export const Automation = Schema.Struct({
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(AUTOMATION_MAX_TITLE_CHARS)),
   prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(AUTOMATION_MAX_PROMPT_CHARS)),
   schedule: AutomationSchedule,
+  webhook: Schema.optional(AutomationWebhookEndpoint),
   /**
    * Whether each run gets its own worktree.
    *
@@ -176,7 +215,7 @@ export const AutomationCreateInput = Schema.Struct({
   projectId: ProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(AUTOMATION_MAX_TITLE_CHARS)),
   prompt: TrimmedNonEmptyString.check(Schema.isMaxLength(AUTOMATION_MAX_PROMPT_CHARS)),
-  schedule: AutomationSchedule,
+  schedule: AutomationScheduleInput,
   envMode: ThreadEnvMode,
   modelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   enabled: Schema.optional(Schema.Boolean),
@@ -193,13 +232,81 @@ export const AutomationUpdateInput = Schema.Struct({
   prompt: Schema.optional(
     TrimmedNonEmptyString.check(Schema.isMaxLength(AUTOMATION_MAX_PROMPT_CHARS)),
   ),
-  schedule: Schema.optional(AutomationSchedule),
+  schedule: Schema.optional(AutomationScheduleInput),
   envMode: Schema.optional(ThreadEnvMode),
   modelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   enabled: Schema.optional(Schema.Boolean),
   stopAfterConsecutiveFailures: Schema.optional(Schema.NullOr(PositiveInt)),
 });
 export type AutomationUpdateInput = typeof AutomationUpdateInput.Type;
+
+export const AutomationRotateWebhookTokenInput = Schema.Struct({
+  id: AutomationId,
+});
+export type AutomationRotateWebhookTokenInput = typeof AutomationRotateWebhookTokenInput.Type;
+
+export const AutomationWebhookDeliveryId = TrimmedNonEmptyString.pipe(
+  Schema.brand("AutomationWebhookDeliveryId"),
+);
+export type AutomationWebhookDeliveryId = typeof AutomationWebhookDeliveryId.Type;
+
+export const AutomationWebhookDeliveryOutcome = Schema.Literals([
+  "accepted",
+  "dispatch_failed",
+  "rejected_signature",
+  "disabled",
+  "rate_limited",
+]);
+export type AutomationWebhookDeliveryOutcome = typeof AutomationWebhookDeliveryOutcome.Type;
+
+export const AutomationWebhookDeliverySummary = Schema.Struct({
+  id: AutomationWebhookDeliveryId,
+  automationId: AutomationId,
+  receivedAt: IsoDateTime,
+  method: TrimmedNonEmptyString,
+  contentType: Schema.NullOr(Schema.String),
+  bodyBytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  outcome: AutomationWebhookDeliveryOutcome,
+  /** True when a configured signature matched; false when none was configured. */
+  signatureVerified: Schema.Boolean,
+  /** Template placeholders that had no value in this request and rendered empty. */
+  missingFields: Schema.Array(Schema.String),
+  error: Schema.NullOr(Schema.String),
+});
+export type AutomationWebhookDeliverySummary = typeof AutomationWebhookDeliverySummary.Type;
+
+export const AutomationWebhookDelivery = Schema.Struct({
+  ...AutomationWebhookDeliverySummary.fields,
+  query: Schema.String,
+  headers: Schema.Record(Schema.String, Schema.String),
+  /** Body as UTF-8 text, cut at the log limit; see bodyTruncated. */
+  body: Schema.String,
+  bodyTruncated: Schema.Boolean,
+  renderedPrompt: Schema.NullOr(Schema.String),
+});
+export type AutomationWebhookDelivery = typeof AutomationWebhookDelivery.Type;
+
+export const AutomationListWebhookDeliveriesInput = Schema.Struct({
+  id: AutomationId,
+});
+export type AutomationListWebhookDeliveriesInput = typeof AutomationListWebhookDeliveriesInput.Type;
+
+export const AutomationListWebhookDeliveriesResult = Schema.Struct({
+  deliveries: Schema.Array(AutomationWebhookDeliverySummary),
+});
+export type AutomationListWebhookDeliveriesResult =
+  typeof AutomationListWebhookDeliveriesResult.Type;
+
+export const AutomationGetWebhookDeliveryInput = Schema.Struct({
+  id: AutomationId,
+  deliveryId: AutomationWebhookDeliveryId,
+});
+export type AutomationGetWebhookDeliveryInput = typeof AutomationGetWebhookDeliveryInput.Type;
+
+export const AutomationGetWebhookDeliveryResult = Schema.Struct({
+  delivery: AutomationWebhookDelivery,
+});
+export type AutomationGetWebhookDeliveryResult = typeof AutomationGetWebhookDeliveryResult.Type;
 
 export const AutomationMutationResult = Schema.Struct({
   automation: Automation,

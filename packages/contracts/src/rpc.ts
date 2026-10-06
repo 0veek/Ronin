@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
@@ -236,6 +237,11 @@ import {
   AutomationRunsInput,
   AutomationRunsResult,
   AutomationUpdateInput,
+  AutomationRotateWebhookTokenInput,
+  AutomationListWebhookDeliveriesInput,
+  AutomationListWebhookDeliveriesResult,
+  AutomationGetWebhookDeliveryInput,
+  AutomationGetWebhookDeliveryResult,
 } from "./automation.ts";
 import {
   BuildSystemCreateInput,
@@ -404,7 +410,11 @@ export const WS_METHODS = {
   automationsCreate: "automations.create",
   automationsUpdate: "automations.update",
   automationsDelete: "automations.delete",
+  secretsAnswerRequest: "secrets.answerRequest",
   automationsRunNow: "automations.runNow",
+  automationsRotateWebhookToken: "automations.rotateWebhookToken",
+  automationsListWebhookDeliveries: "automations.listWebhookDeliveries",
+  automationsGetWebhookDelivery: "automations.getWebhookDelivery",
   automationsRuns: "automations.runs",
   buildSystemsList: "buildSystems.list",
   buildSystemsCreate: "buildSystems.create",
@@ -658,11 +668,42 @@ export const WsAutomationsDeleteRpc = Rpc.make(WS_METHODS.automationsDelete, {
   error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
 });
 
+export const WsSecretRequestAnswerRpc = Rpc.make(WS_METHODS.secretsAnswerRequest, {
+  payload: SecretRequestAnswerInput,
+  success: Schema.Void,
+  error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
+});
+
 export const WsAutomationsRunNowRpc = Rpc.make(WS_METHODS.automationsRunNow, {
   payload: AutomationRunNowInput,
   success: AutomationRunNowResult,
   error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
 });
+
+export const WsAutomationsRotateWebhookTokenRpc = Rpc.make(
+  WS_METHODS.automationsRotateWebhookToken,
+  {
+    payload: AutomationRotateWebhookTokenInput,
+    success: AutomationMutationResult,
+    error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+  },
+);
+export const WsAutomationsListWebhookDeliveriesRpc = Rpc.make(
+  WS_METHODS.automationsListWebhookDeliveries,
+  {
+    payload: AutomationListWebhookDeliveriesInput,
+    success: AutomationListWebhookDeliveriesResult,
+    error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+  },
+);
+export const WsAutomationsGetWebhookDeliveryRpc = Rpc.make(
+  WS_METHODS.automationsGetWebhookDelivery,
+  {
+    payload: AutomationGetWebhookDeliveryInput,
+    success: AutomationGetWebhookDeliveryResult,
+    error: Schema.Union([EnvironmentAuthorizationError, AutomationError]),
+  },
+);
 
 export const WsAutomationsRunsRpc = Rpc.make(WS_METHODS.automationsRuns, {
   payload: AutomationRunsInput,
@@ -1514,6 +1555,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsAutomationsUpdateRpc,
   WsAutomationsDeleteRpc,
   WsAutomationsRunNowRpc,
+  WsAutomationsRotateWebhookTokenRpc,
+  WsAutomationsListWebhookDeliveriesRpc,
+  WsAutomationsGetWebhookDeliveryRpc,
+  WsSecretRequestAnswerRpc,
   WsAutomationsRunsRpc,
   WsBuildSystemsListRpc,
   WsBuildSystemsCreateRpc,

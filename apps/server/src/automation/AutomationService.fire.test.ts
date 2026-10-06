@@ -20,6 +20,7 @@ import {
   type OrchestrationCommand,
   ProjectId,
   ProviderInstanceId,
+  SecretRef,
 } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -29,6 +30,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "@effect/vitest";
 
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
@@ -37,6 +39,8 @@ import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSna
 import * as ServerSettings from "../serverSettings.ts";
 import { AutomationService, make } from "./AutomationService.ts";
 import { AutomationStore } from "./AutomationStore.ts";
+import type { AutomationWebhookCredentials } from "./AutomationStore.ts";
+import { SecretRequests } from "../secrets/SecretRequests.ts";
 
 const PROJECT_ID = ProjectId.make("project-1");
 const MODEL: ModelSelection = {
@@ -65,6 +69,8 @@ const automation = (overrides: Partial<Automation> = {}): Automation => ({
 });
 
 interface Harness {
+  readonly credentials: Map<string, AutomationWebhookCredentials>;
+  readonly consumed: Array<{ ref: SecretRef; projectId: ProjectId }>;
   readonly dispatched: OrchestrationCommand[];
   readonly stored: Map<string, Automation>;
   readonly runs: Array<{ outcome: string; threadId: string | null; detail: string | null }>;
@@ -78,7 +84,13 @@ function makeHarness(options?: {
   readonly onTurnStart?: Effect.Effect<void>;
   readonly onListDue?: Effect.Effect<void>;
 }) {
-  const state: Harness = { dispatched: [], stored: new Map(), runs: [] };
+  const state: Harness = {
+    dispatched: [],
+    stored: new Map(),
+    runs: [],
+    credentials: new Map(),
+    consumed: [],
+  };
 
   const storeLayer = Layer.succeed(AutomationStore, {
     list: () => Effect.succeed([...state.stored.values()]),
@@ -87,9 +99,13 @@ function makeHarness(options?: {
         const found = state.stored.get(id);
         return found === undefined ? Option.none() : Option.some(found);
       }).pipe(Effect.map((resolve) => resolve())),
-    upsert: (value: Automation) =>
+    getWebhookCredentials: (id: AutomationId) =>
+      Effect.sync(() => state.credentials.get(id) ?? null),
+    upsert: (value: Automation, credentials?: AutomationWebhookCredentials | null) =>
       Effect.sync(() => {
         state.stored.set(value.id, value);
+        if (credentials === null) state.credentials.delete(value.id);
+        else if (credentials !== undefined) state.credentials.set(value.id, credentials);
       }),
     remove: (id: AutomationId) => Effect.sync(() => state.stored.delete(id)),
     listDue: () =>
@@ -181,7 +197,21 @@ function makeHarness(options?: {
 
   const layer = Layer.effect(AutomationService, make).pipe(
     Layer.provide(
-      Layer.mergeAll(storeLayer, engineLayer, snapshotLayer, gitLayer, settingsLayer, cryptoLayer),
+      Layer.mergeAll(
+        storeLayer,
+        engineLayer,
+        snapshotLayer,
+        gitLayer,
+        settingsLayer,
+        cryptoLayer,
+        Layer.mock(SecretRequests)({
+          consume: (input) =>
+            Effect.sync(() => {
+              state.consumed.push(input);
+              return "private-signing-value";
+            }),
+        }),
+      ),
     ),
   );
 
@@ -189,6 +219,103 @@ function makeHarness(options?: {
 }
 
 const dispatchedTypes = (state: Harness) => state.dispatched.map((command) => command.type);
+
+it.effect(
+  "consumes a signing secret reference in its project without putting the value in the schedule",
+  () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const service = yield* AutomationService;
+      const ref = SecretRef.make("secret-ref:0123456789abcdef0123456789abcdef");
+      const created = yield* service.create({
+        projectId: PROJECT_ID,
+        title: "Webhook",
+        prompt: "Review {{body.number}}",
+        envMode: "worktree",
+        schedule: {
+          _tag: "webhook",
+          signature: {
+            header: "x-hub-signature-256",
+            prefix: "sha256=",
+            encoding: "hex",
+            secretRef: ref,
+          },
+        },
+      });
+      expect(harness.state.consumed).toEqual([{ ref, projectId: PROJECT_ID }]);
+      expect(created.webhook?.hasSecret).toBe(true);
+      expect(created.nextRunAt).toBeNull();
+      const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(created);
+      expect(encoded).not.toContain("private-signing-value");
+      expect(encoded).not.toContain(ref);
+      expect(harness.state.credentials.get(created.id)?.secret).toBe("private-signing-value");
+      const edited = yield* service.update({
+        id: created.id,
+        schedule: {
+          _tag: "webhook",
+          signature: { header: "x-signature", prefix: "", encoding: "base64" },
+        },
+      });
+      expect(edited.webhook?.path).toBe(created.webhook?.path);
+      expect(harness.state.consumed).toHaveLength(1);
+      const timed = yield* service.update({
+        id: created.id,
+        schedule: { _tag: "interval", everyMinutes: 60 },
+      });
+      expect(timed.webhook).toBeUndefined();
+      expect(harness.state.credentials.has(created.id)).toBe(false);
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
+
+it.effect("replaces a webhook URL while retaining its signature and rejecting the old URL", () => {
+  const harness = makeHarness();
+  return Effect.gen(function* () {
+    const service = yield* AutomationService;
+    const created = yield* service.create({
+      projectId: PROJECT_ID,
+      title: "Webhook",
+      prompt: "Review event",
+      envMode: "local",
+      schedule: {
+        _tag: "webhook",
+        signature: { header: "x-signature", encoding: "hex", prefix: "", secret: "signing-value" },
+      },
+    });
+    const oldToken = harness.state.credentials.get(created.id)!.token;
+    const replaced = yield* service.rotateWebhookToken(created.id);
+    const credentials = harness.state.credentials.get(created.id)!;
+    expect(replaced.webhook?.path).not.toBe(created.webhook?.path);
+    expect(credentials.secret).toBe("signing-value");
+    expect(credentials.token).not.toBe(oldToken);
+    expect(
+      yield* service
+        .runWebhook({ id: created.id, token: oldToken, prompt: "Old event" })
+        .pipe(Effect.flip),
+    ).toMatchObject({ reason: "notFound" });
+    expect(harness.state.dispatched).toEqual([]);
+    expect(
+      (yield* service.runWebhook({ id: created.id, token: credentials.token, prompt: "New event" }))
+        .outcome,
+    ).toBe("started");
+    expect(
+      harness.state.dispatched.find((command) => command.type === "thread.turn.start"),
+    ).toMatchObject({ message: { text: "New event" } });
+    yield* service.update({ id: created.id, enabled: false });
+    expect(
+      yield* service
+        .runWebhook({ id: created.id, token: credentials.token, prompt: "Disabled event" })
+        .pipe(Effect.flip),
+    ).toMatchObject({ reason: "notFound" });
+    yield* service.remove(created.id);
+    expect(
+      yield* service
+        .runWebhook({ id: created.id, token: credentials.token, prompt: "Removed event" })
+        .pipe(Effect.flip),
+    ).toMatchObject({ reason: "notFound" });
+    expect(harness.state.runs).toHaveLength(1);
+  }).pipe(Effect.provide(harness.layer));
+});
 
 /** Runs `runNow` against a harness and hands back its captured state. */
 const runNowWith = (harness: ReturnType<typeof makeHarness>) =>

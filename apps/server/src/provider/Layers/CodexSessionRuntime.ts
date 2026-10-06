@@ -47,6 +47,8 @@ import {
   type RoninToolAvailability,
 } from "../CodexDeveloperInstructions.ts";
 import { toNativeInteractionMode } from "../DebugModeInstructions.ts";
+import { providerGoalFromCodex } from "../nativeGoals.ts";
+import { makeCodexGoalController } from "./CodexGoals.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -811,6 +813,8 @@ function readNotificationThreadId(notification: CodexServerNotification): string
     case "thread/name/updated":
     case "thread/settings/updated":
     case "thread/tokenUsage/updated":
+    case "thread/goal/updated":
+    case "thread/goal/cleared":
     case "model/rerouted":
     case "turn/started":
     case "hook/started":
@@ -1080,6 +1084,8 @@ function shouldSuppressChildConversationNotification(
     method === "thread/name/updated" ||
     method === "thread/settings/updated" ||
     method === "thread/tokenUsage/updated" ||
+    method === "thread/goal/updated" ||
+    method === "thread/goal/cleared" ||
     method === "model/rerouted" ||
     method === "turn/started" ||
     method === "turn/completed" ||
@@ -1120,6 +1126,8 @@ const CHILD_AGENT_EVENT_METHODS: ReadonlySet<string> = new Set([
 ]);
 
 const CHILD_CHATTER_METHODS: ReadonlySet<string> = new Set([
+  "thread/goal/updated",
+  "thread/goal/cleared",
   "item/agentMessage/delta",
   "item/reasoning/textDelta",
   "item/reasoning/summaryTextDelta",
@@ -2004,6 +2012,13 @@ export const makeCodexSessionRuntime = (
         }
 
         let requestId: ApprovalRequestId | undefined;
+        if (notification.method === "thread/goal/updated") {
+          yield* updateSession(sessionRef, {
+            goal: providerGoalFromCodex(notification.params.goal),
+          });
+        } else if (notification.method === "thread/goal/cleared") {
+          yield* updateSession(sessionRef, { goal: null });
+        }
         let requestKind: ProviderRequestKind | undefined;
         let turnId = childParentTurnId ?? route.turnId;
         let itemId = route.itemId;
@@ -2486,6 +2501,122 @@ export const makeCodexSessionRuntime = (
       yield* Queue.shutdown(events);
     });
 
+    const startNativeTurn = (input: CodexSessionRuntimeSendTurnInput) =>
+      Effect.gen(function* () {
+        const providerThreadId = yield* readProviderThreadId;
+        if (hasConfiguredMcpServer(options.appServerArgs)) {
+          yield* client.request("config/mcpServer/reload", undefined).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
+                cause,
+              }),
+            ),
+          );
+        }
+        const normalizedModel = normalizeCodexModelSlug(
+          input.model ?? (yield* Ref.get(sessionRef)).model,
+        );
+        const models = options.models ? yield* options.models : [];
+        const modelName = models.find((model) => model.slug === normalizedModel)?.name;
+        const params = yield* buildTurnStartParams({
+          threadId: providerThreadId,
+          runtimeMode: options.runtimeMode,
+          ...(input.input ? { prompt: input.input } : {}),
+          ...(input.attachments ? { attachments: input.attachments } : {}),
+          ...(normalizedModel ? { model: normalizedModel } : {}),
+          ...(modelName ? { modelName } : {}),
+          ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
+          ...(input.effort ? { effort: input.effort } : {}),
+          ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
+          // Derived from the session's own credential rather than the
+          // setting, so the prompt describes the tools this turn actually
+          // has even if the setting changed after the session started.
+          browserToolsAvailable: configuredMcpToolAvailability(
+            options.appServerArgs,
+            options.mcpCapabilities,
+          ),
+        });
+        yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
+        const rawResponse = yield* client.raw.request("turn/start", params);
+        const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
+          Effect.mapError((error) =>
+            CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
+              "decode-response-payload",
+              error,
+              { method: "turn/start" },
+            ),
+          ),
+        );
+        const turnId = TurnId.make(response.turn.id);
+        yield* updateSession(sessionRef, (session) => ({
+          status: "running",
+          // Codex accepts follow-ups while the current turn is still
+          // running. The response contains the queued turn id, but
+          // turn/interrupt only accepts the id that is active now.
+          activeTurnId: session.activeTurnId ?? turnId,
+          ...(normalizedModel ? { model: normalizedModel } : {}),
+        }));
+        const resumedProviderThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
+        return {
+          threadId: options.threadId,
+          turnId,
+          ...(resumedProviderThreadId
+            ? { resumeCursor: { threadId: resumedProviderThreadId } }
+            : {}),
+        } satisfies ProviderTurnStartResult;
+      });
+
+    const rememberGoal = Effect.fn("CodexSessionRuntime.rememberGoal")(function* (
+      threadId: string,
+      goal: EffectCodexSchema.V2ThreadGoalUpdatedNotification["goal"] | null,
+    ) {
+      yield* updateSession(sessionRef, {
+        goal: goal === null ? null : providerGoalFromCodex(goal),
+      });
+      yield* emitEvent({
+        kind: "notification",
+        threadId: options.threadId,
+        method: goal === null ? "thread/goal/cleared" : "thread/goal/updated",
+        payload: goal === null ? { threadId } : { threadId, goal },
+      });
+    });
+    const completeGoalCommand = Effect.fn("CodexSessionRuntime.completeGoalCommand")(function* (
+      reply: string,
+    ) {
+      const turnId = TurnId.make(`goal-command:${yield* randomUUIDv4("provider-event")}`);
+      const itemId = ProviderItemId.make(turnId);
+      yield* emitEvent({
+        kind: "notification",
+        threadId: options.threadId,
+        turnId,
+        method: "ronin/goal/command-started",
+      });
+      yield* emitEvent({
+        kind: "notification",
+        threadId: options.threadId,
+        turnId,
+        itemId,
+        method: "item/agentMessage/delta",
+        textDelta: reply,
+        payload: { threadId: yield* readProviderThreadId, turnId, itemId, delta: reply },
+      });
+      yield* emitEvent({
+        kind: "notification",
+        threadId: options.threadId,
+        turnId,
+        method: "ronin/goal/command-completed",
+      });
+      return { threadId: options.threadId, turnId } satisfies ProviderTurnStartResult;
+    });
+    const goals = makeCodexGoalController({
+      client,
+      readThreadId: readProviderThreadId,
+      getGoal: Ref.get(sessionRef).pipe(Effect.map((session) => session.goal ?? null)),
+      rememberGoal,
+      completeCommand: completeGoalCommand,
+      startNativeTurn,
+    });
+
     return {
       start,
       getSession: Ref.get(sessionRef),
@@ -2493,74 +2624,13 @@ export const makeCodexSessionRuntime = (
         const providerThreadId = yield* readProviderThreadId;
         yield* client.request("thread/compact/start", { threadId: providerThreadId });
       }),
-      sendTurn: (input) =>
-        Effect.gen(function* () {
-          const providerThreadId = yield* readProviderThreadId;
-          if (hasConfiguredMcpServer(options.appServerArgs)) {
-            yield* client.request("config/mcpServer/reload", undefined).pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("Failed to refresh Codex MCP tool catalog before turn.", {
-                  cause,
-                }),
-              ),
-            );
-          }
-          const normalizedModel = normalizeCodexModelSlug(
-            input.model ?? (yield* Ref.get(sessionRef)).model,
-          );
-          const models = options.models ? yield* options.models : [];
-          const modelName = models.find((model) => model.slug === normalizedModel)?.name;
-          const params = yield* buildTurnStartParams({
-            threadId: providerThreadId,
-            runtimeMode: options.runtimeMode,
-            ...(input.input ? { prompt: input.input } : {}),
-            ...(input.attachments ? { attachments: input.attachments } : {}),
-            ...(normalizedModel ? { model: normalizedModel } : {}),
-            ...(modelName ? { modelName } : {}),
-            ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
-            ...(input.effort ? { effort: input.effort } : {}),
-            ...(input.interactionMode ? { interactionMode: input.interactionMode } : {}),
-            // Derived from the session's own credential rather than the
-            // setting, so the prompt describes the tools this turn actually
-            // has even if the setting changed after the session started.
-            browserToolsAvailable: configuredMcpToolAvailability(
-              options.appServerArgs,
-              options.mcpCapabilities,
-            ),
-          });
-          yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
-          const rawResponse = yield* client.raw.request("turn/start", params);
-          const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
-            Effect.mapError((error) =>
-              CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
-                "decode-response-payload",
-                error,
-                { method: "turn/start" },
-              ),
-            ),
-          );
-          const turnId = TurnId.make(response.turn.id);
-          yield* updateSession(sessionRef, (session) => ({
-            status: "running",
-            // Codex accepts follow-ups while the current turn is still
-            // running. The response contains the queued turn id, but
-            // turn/interrupt only accepts the id that is active now.
-            activeTurnId: session.activeTurnId ?? turnId,
-            ...(normalizedModel ? { model: normalizedModel } : {}),
-          }));
-          const resumedProviderThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
-          return {
-            threadId: options.threadId,
-            turnId,
-            ...(resumedProviderThreadId
-              ? { resumeCursor: { threadId: resumedProviderThreadId } }
-              : {}),
-          } satisfies ProviderTurnStartResult;
-        }),
+      sendTurn: goals.sendTurn,
       interruptTurn: (turnId) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
           const session = yield* Ref.get(sessionRef);
+          const pausedGoal = yield* Effect.exit(goals.pause());
+          const stoppingGoal = Exit.isFailure(pausedGoal) || pausedGoal.value;
           // Stop-everything: children are full threads with their own turns;
           // interrupting only the parent leaves the fleet running. Interrupt
           // each live child turn first, best-effort per child, BOUNDED: the
@@ -2581,14 +2651,20 @@ export const makeCodexSessionRuntime = (
                 .pipe(Effect.timeoutOption("3 seconds"), Effect.ignore),
             { concurrency: 8, discard: true },
           ).pipe(Effect.timeoutOption("10 seconds"), Effect.ignore);
-          const effectiveTurnId = turnId ?? session.activeTurnId;
+          // Pausing can race a native continuation. Read the current turn only
+          // after pausing so Stop reaches whichever turn Codex is now running.
+          const effectiveTurnId = stoppingGoal
+            ? (yield* Ref.get(sessionRef)).activeTurnId
+            : (turnId ?? session.activeTurnId);
           if (!effectiveTurnId) {
+            yield* pausedGoal;
             return;
           }
           yield* client.request("turn/interrupt", {
             threadId: providerThreadId,
             turnId: effectiveTurnId,
           });
+          yield* pausedGoal;
         }),
       readThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;

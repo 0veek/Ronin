@@ -1,6 +1,12 @@
 import { expect, it } from "@effect/vitest";
 import { NodeHttpServer } from "@effect/platform-node";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import { SecretRequests } from "../secrets/SecretRequests.ts";
+import { OrchestratorCommandRejectedError } from "../orchestration-v2/Orchestrator.ts";
+import { HtmlRender, HtmlRenderImagesNotFoundError } from "../htmlRender/HtmlRender.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
+import { EventSinkV2 } from "../orchestration-v2/EventSink.ts";
 import { EnvironmentId, PreviewTabId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -25,6 +31,7 @@ const threadId = ThreadId.make("thread-mcp-test");
 const tabId = PreviewTabId.make("tab-mcp-test");
 const alternateTabId = PreviewTabId.make("tab-mcp-alternate");
 const decodeJsonText = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
+const encodeJsonText = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const invocation = {
   environmentId,
   threadId,
@@ -62,6 +69,39 @@ const PullRequestsTestLayer = McpHttpServer.PullRequestsToolkitRegistrationLive.
   ),
 );
 
+const SecretsTestLayer = McpHttpServer.SecretsToolkitRegistrationLive.pipe(
+  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provide(
+    Layer.mergeAll(
+      Layer.mock(SecretRequests)({}),
+      Layer.mock(ThreadManagementService)({}),
+      Layer.mock(EventSinkV2)({}),
+      NodeCrypto.layer,
+    ),
+  ),
+);
+
+it.effect("registers the private secret tool and enforces its MCP capability", () =>
+  Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const tool = server.tools.find(({ tool }) => tool.name === "request_secret");
+    expect(tool?.tool.description).toContain("one-use secretRef");
+    const denied = yield* server
+      .callTool({
+        name: "request_secret",
+        arguments: { label: "Signing secret", reason: "Verify deliveries" },
+      })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, {
+          ...invocation,
+          capabilities: new Set<McpInvocationContext.McpCapability>(),
+        }),
+      );
+    expect(denied.isError).toBe(true);
+    expect(yield* encodeJsonText(denied.content)).toContain("secrets");
+  }).pipe(Effect.provide(SecretsTestLayer)),
+);
+
 const snapshotResult = {
   url: "http://example.test/",
   title: "Example",
@@ -79,6 +119,105 @@ const snapshotResult = {
     height: 5,
   },
 };
+
+it.effect(
+  "registers inline HTML and returns preview PNGs as image content with safe repair advice",
+  () => {
+    const removed: string[] = [];
+    return Effect.gen(function* () {
+      const server = yield* McpServer.McpServer;
+      expect(
+        server.tools.find(({ tool }) => tool.name === "html_render")?.tool.annotations
+          ?.readOnlyHint,
+      ).toBe(true);
+      const scope = { ...invocation, capabilities: new Set(["html"] as const) };
+      const call = (html: string) =>
+        server
+          .callTool({ name: "html_preview", arguments: { html } })
+          .pipe(Effect.provideService(McpInvocationContext.McpInvocationContext, scope));
+      const result = yield* call("<p>Chart</p>");
+      expect(result.isError).toBe(false);
+      expect(result.content.filter((block) => block.type === "image")).toEqual([
+        { type: "image", mimeType: "image/png", data: new Uint8Array(Buffer.from("png")) },
+      ]);
+      expect(result.structuredContent).toMatchObject({
+        contentHeight: 420,
+        screenshot: { mimeType: "image/png", width: 728, height: 420 },
+      });
+      expect(yield* encodeJsonText(result.structuredContent)).not.toContain("cG5n");
+      const failed = yield* call("missing");
+      expect(failed.isError).toBe(true);
+      expect(failed.content).toEqual([
+        {
+          type: "text",
+          text: "These local images could not be read: /missing/chart.png. Use absolute paths to existing image files, or remove them.",
+        },
+      ]);
+      const stopped = yield* server
+        .callTool({ name: "html_render", arguments: { html: "<p>x</p>", title: "X", height: 100 } })
+        .pipe(Effect.provideService(McpInvocationContext.McpInvocationContext, scope));
+      expect(stopped.isError).toBe(true);
+      expect(removed).toEqual(["pending-page"]);
+      const denied = yield* server
+        .callTool({ name: "html_render", arguments: { html: "<p>x</p>", title: "X", height: 100 } })
+        .pipe(Effect.provideService(McpInvocationContext.McpInvocationContext, invocation));
+      expect(denied.isError).toBe(true);
+    }).pipe(
+      Effect.provide(
+        McpHttpServer.HtmlToolkitRegistrationLive.pipe(
+          Layer.provideMerge(McpServer.McpServer.layer),
+          Layer.provide(
+            Layer.mock(HtmlRender)({
+              publish: () =>
+                Effect.succeed({ attachmentId: "pending-page", title: "X", height: 100 }),
+              remove: (id) =>
+                Effect.sync(() => {
+                  removed.push(id);
+                }),
+              preview: ({ html }) =>
+                html === "missing"
+                  ? Effect.fail(
+                      new HtmlRenderImagesNotFoundError({ paths: ["/missing/chart.png"] }),
+                    )
+                  : Effect.succeed({
+                      png: "cG5n",
+                      width: 728,
+                      contentHeight: 420,
+                      capturedHeight: 420,
+                      consoleMessages: [],
+                    }),
+            }),
+          ),
+          Layer.provide(
+            Layer.mock(ThreadManagementService)({
+              dispatch: (command) =>
+                Effect.fail(
+                  new OrchestratorCommandRejectedError({
+                    commandId: command.commandId,
+                    commandType: command.type,
+                  }),
+                ),
+              getThreadRecords: () =>
+                Effect.succeed({
+                  thread: { archivedAt: null },
+                  runs: [
+                    {
+                      id: "run",
+                      rootNodeId: "root",
+                      providerInstanceId: invocation.providerInstanceId,
+                      status: "running",
+                      ordinal: 1,
+                    },
+                  ],
+                  turnItems: [],
+                } as never),
+            }),
+          ),
+        ),
+      ),
+    );
+  },
+);
 
 /** Answers every snapshot request on a fresh broker host with the given result. */
 const serveSnapshots = (clientId: string, result: unknown) =>

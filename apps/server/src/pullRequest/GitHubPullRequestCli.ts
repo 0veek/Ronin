@@ -1,8 +1,10 @@
+import { removeAgentCredits } from "./mergeMessage.ts";
 import { runGitHubStackAction, type GitHubStackActionError } from "./githubStackActions.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
+import * as Encoding from "effect/Encoding";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -677,6 +679,7 @@ export class GitHubPullRequestCli extends Context.Service<
       readonly action: PullRequestAction;
       readonly stackNumber?: number;
       readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
+      readonly removeAgentCreditsOnMerge?: boolean;
       readonly mergeMethod?: PullRequestMergeMethod;
       readonly updateMethod?: PullRequestUpdateMethod;
     }) => Effect.Effect<void, GitHubPullRequestCliError>;
@@ -995,6 +998,35 @@ function cursorVariable(cursor: string | null): readonly [string, string] {
   return cursor === null ? ["-F", "cursor=null"] : ["-f", `cursor=${cursor}`];
 }
 
+const MERGE_MESSAGE_GRAPHQL_QUERY = `
+query PullRequestMergeMessage($owner: String!, $name: String!, $number: Int!, $method: PullRequestMergeMethod!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      isMergeQueueEnabled
+      headRefOid
+      viewerMergeBodyText(mergeType: $method)
+    }
+  }
+}`;
+
+const decodeMergeMessageResponse = Schema.decodeUnknownResult(
+  Schema.fromJsonString(
+    Schema.Struct({
+      data: Schema.Struct({
+        repository: Schema.Struct({
+          pullRequest: Schema.Struct({
+            isMergeQueueEnabled: Schema.Boolean,
+            headRefOid: Schema.String,
+            viewerMergeBodyText: Schema.String,
+          }),
+        }),
+      }),
+    }),
+  ),
+);
+const decodeMergeMessage = (raw: string) =>
+  Result.map(decodeMergeMessageResponse(raw), (response) => response.data.repository.pullRequest);
+
 function actionArgs(
   action: PullRequestAction,
   mergeMethod: PullRequestMergeMethod | undefined,
@@ -1032,6 +1064,7 @@ function actionArgs(
 export const make = Effect.gen(function* () {
   const github = yield* GitHubCli.GitHubCli;
   const graphQlBudget = yield* GitHubGraphQlBudget.GitHubGraphQlBudget;
+  const crypto = yield* Crypto.Crypto;
   const routingIdentities = new Map<
     string,
     {
@@ -1067,7 +1100,10 @@ export const make = Effect.gen(function* () {
               })
               .pipe(Effect.mapError(unavailable))).stdout.trim();
       if (!token) return yield* unavailable();
-      const key = `${host}:${NodeCrypto.createHash("sha256").update(token).digest("hex")}`;
+      const digest = yield* crypto
+        .digest("SHA-256", new TextEncoder().encode(token))
+        .pipe(Effect.map(Encoding.encodeHex), Effect.orDie);
+      const key = `${host}:${digest}`;
       const credential = { host, token: Redacted.make(token), credentialFingerprint: key };
       // A cold page may ask several times. Wait per credential and check again after the
       // first verification; cancellation releases the next waiter without losing its request.
@@ -2169,6 +2205,7 @@ export const make = Effect.gen(function* () {
         let reviewers: ReadonlyArray<PullRequestActor> = [];
         let reactions: GitHubReviewThreadPage["reactions"] = [];
         const reactionsById = new Map<string, ReadonlyArray<PullRequestReaction>>();
+        const editedAtById = new Map<string, string>();
         let commits: GitHubReviewThreadPage["commits"] = [];
         let viewer: GitHubReviewThreadPage["viewer"] = { canUpdate: true, didAuthor: false };
         const dismissalsByReviewId = new Map<string, string>();
@@ -2186,6 +2223,7 @@ export const make = Effect.gen(function* () {
             reviewers = read.reviewers;
             reactions = read.reactions;
             for (const [id, entry] of read.reactionsById) reactionsById.set(id, entry);
+            for (const [id, editedAt] of read.editedAtById) editedAtById.set(id, editedAt);
             commits = read.commits;
             viewer = read.viewer;
             for (const [id, message] of read.dismissalsByReviewId)
@@ -2242,6 +2280,7 @@ export const make = Effect.gen(function* () {
           reviewThreadsTruncated: cursor !== null,
           reactions,
           reactionsById,
+          editedAtById,
           reviewers,
           avatarsByLogin,
           commitStats,
@@ -2510,12 +2549,52 @@ export const make = Effect.gen(function* () {
         input.mergeMethod,
         input.updateMethod,
       );
-      return github
-        .execute({
+      return Effect.gen(function* () {
+        let body: string | undefined;
+        let expectedHead: string | undefined;
+        if (
+          input.removeAgentCreditsOnMerge === true &&
+          (input.action === "merge" || input.action === "enable-auto-merge") &&
+          input.mergeMethod !== "rebase"
+        ) {
+          const { owner, name } = parseRepositorySelector(input.repository);
+          const message = yield* graphqlRead({
+            cwd: input.cwd,
+            host: input.host,
+            operation: "runPullRequestAction",
+            allowReserve: true,
+            query: MERGE_MESSAGE_GRAPHQL_QUERY,
+            variables: [
+              ["-f", `owner=${owner}`],
+              ["-f", `name=${name}`],
+              ["-F", `number=${input.number}`],
+              ["-f", `method=${input.mergeMethod === "squash" ? "SQUASH" : "MERGE"}`],
+            ],
+            decode: decodeMergeMessage,
+          });
+          // GitHub's merge queue chooses its own message and ignores custom text.
+          if (!message.isMergeQueueEnabled) {
+            const cleaned = removeAgentCredits(message.viewerMergeBodyText);
+            if (cleaned !== message.viewerMergeBodyText) {
+              body = cleaned;
+              expectedHead = message.headRefOid;
+            }
+          }
+        }
+        yield* github.execute({
           cwd: input.cwd,
-          args: ["pr", subcommand!, String(input.number), ...repositoryArgs(input), ...flags],
-        })
-        .pipe(Effect.asVoid);
+          args: [
+            "pr",
+            subcommand!,
+            String(input.number),
+            ...repositoryArgs(input),
+            ...flags,
+            ...(expectedHead === undefined ? [] : ["--match-head-commit", expectedHead]),
+            ...(body === undefined ? [] : ["--body-file", "-"]),
+          ],
+          ...(body === undefined ? {} : { stdin: body }),
+        });
+      });
     },
 
     commentOnPullRequest: (input) =>

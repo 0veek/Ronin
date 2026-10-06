@@ -3,6 +3,7 @@ import {
   PositiveInt,
   PullRequestState,
   ThreadPullRequestLinkSource,
+  ThreadId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -28,6 +29,9 @@ const REGISTER_EVERY_PR =
  * the host CLI handed back.
  */
 export const PullRequestTargetInput = Schema.Struct({
+  threadId: Schema.optional(
+    ThreadId.annotate({ description: "Thread to act on. Omit for this thread." }),
+  ),
   url: Schema.optional(
     TrimmedNonEmptyString.annotate({
       description:
@@ -90,6 +94,15 @@ export class PullRequestThreadNotFoundError extends Schema.TaggedErrorClass<Pull
   }
 }
 
+export class PullRequestThreadAboveLimitsError extends Schema.TaggedErrorClass<PullRequestThreadAboveLimitsError>()(
+  "PullRequestThreadAboveLimitsError",
+  { threadId: ThreadId },
+) {
+  override get message(): string {
+    return `Thread ${this.threadId} cannot be changed from here: it runs with broader permissions than this caller, or the calling thread has no active turn.`;
+  }
+}
+
 export class PullRequestLinkFailedError extends Schema.TaggedErrorClass<PullRequestLinkFailedError>()(
   "PullRequestLinkFailedError",
   { cause: Schema.Defect() },
@@ -123,6 +136,7 @@ export const PullRequestToolError = Schema.Union([
   PullRequestTargetIncompleteError,
   PullRequestHostRequiredError,
   PullRequestThreadNotFoundError,
+  PullRequestThreadAboveLimitsError,
   PullRequestLinkFailedError,
   PullRequestUnlinkFailedError,
   PullRequestListFailedError,
@@ -186,7 +200,7 @@ export const ListThreadPullRequestsResult = Schema.Struct({
 export type ListThreadPullRequestsResult = typeof ListThreadPullRequestsResult.Type;
 
 const LinkPullRequestTool = Tool.make("link_pull_request", {
-  description: `${REGISTER_EVERY_PR} Links a pull request to this thread so T3 Code tracks it, shows its status beside the thread, and settles the thread when it merges. Pass the URL, or repository plus number. Linking an already-linked pull request succeeds with alreadyLinked=true.`,
+  description: `${REGISTER_EVERY_PR} Links a pull request to a thread (omit threadId for this thread) so Ronin tracks it, shows its status beside the thread, and settles the thread when it merges. Pass the URL, or repository plus number. Linking an already-linked pull request succeeds with alreadyLinked=true.`,
   parameters: PullRequestTargetInput,
   success: LinkPullRequestResult,
   failure: PullRequestToolError,
@@ -200,7 +214,7 @@ const LinkPullRequestTool = Tool.make("link_pull_request", {
 
 const UnlinkPullRequestTool = Tool.make("unlink_pull_request", {
   description:
-    "Remove a pull request link from this thread, for example after closing a pull request you opened by mistake. Pass the URL, or repository plus number. Unlinking a pull request that is not linked succeeds with wasLinked=false.",
+    "Remove a pull request link from a thread (omit threadId for this thread), for example after closing a pull request you opened by mistake. Pass the URL, or repository plus number. Unlinking a pull request that is not linked succeeds with wasLinked=false.",
   parameters: PullRequestTargetInput,
   success: UnlinkPullRequestResult,
   failure: PullRequestToolError,
@@ -213,7 +227,12 @@ const UnlinkPullRequestTool = Tool.make("unlink_pull_request", {
   .annotate(Tool.OpenWorld, false);
 
 const ListThreadPullRequestsTool = Tool.make("list_thread_pull_requests", {
-  description: `List the pull requests linked to this thread with their last known host state, and how they chain into stacks (bottom to top). ${REGISTER_EVERY_PR}`,
+  description: `List the pull requests linked to a thread (omit threadId for this thread) with their last known host state, and how they chain into stacks (bottom to top). ${REGISTER_EVERY_PR}`,
+  parameters: Schema.Struct({
+    threadId: Schema.optional(
+      ThreadId.annotate({ description: "Thread to list. Omit for this thread." }),
+    ),
+  }),
   success: ListThreadPullRequestsResult,
   failure: PullRequestToolError,
   dependencies,

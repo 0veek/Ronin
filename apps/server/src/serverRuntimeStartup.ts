@@ -860,8 +860,8 @@ export const make = (options?: StartupOptions) =>
       }
       yield* runStartupPhase("worktree-setups.reconcile", reconcileWorktreeSetups);
 
-      yield* Effect.logDebug("startup phase: syncing clean projects");
-      yield* runStartupPhase("projects.auto-pull", syncAutoPullProjects);
+      // Fetching project remotes starts after activation and cannot hold command readiness.
+      yield* runStartupPhase("projects.auto-pull", syncAutoPullProjects).pipe(forkParked);
 
       const welcomeBase = yield* resolveWelcomeBase;
       const environment = yield* serverEnvironment.getDescriptor;

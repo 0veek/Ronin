@@ -9,7 +9,7 @@ import {
   OrchestrationEventMetadata,
   OrchestrationEventType,
   ProjectId,
-  ProjectIconOverride,
+  StoredProjectIcon,
   ThreadId,
 } from "@t3tools/contracts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -30,7 +30,7 @@ import {
   type OrchestrationEventStoreShape,
 } from "../Services/OrchestrationEventStore.ts";
 
-const encodeProjectIcon = Schema.encodeSync(ProjectIconOverride);
+const encodeProjectIcon = Schema.encodeSync(StoredProjectIcon);
 const decodeEvent = Schema.decodeUnknownEffect(OrchestrationEvent);
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
 const EventMetadataFromJsonString = Schema.fromJsonString(OrchestrationEventMetadata);

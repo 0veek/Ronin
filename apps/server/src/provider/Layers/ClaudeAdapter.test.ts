@@ -373,6 +373,77 @@ const sendCompletedClaudeTurn = (
   });
 
 describe("ClaudeAdapterLive", () => {
+  for (const scenario of ["complete", "command-only", "interrupted", "different-hook"] as const) {
+    it.effect(`tracks a native Claude goal through ${scenario}`, () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const events = yield* adapter.streamEvents.pipe(
+          Stream.takeUntil((event) => event.type === "turn.completed"),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({ threadId: THREAD_ID, input: "/goal Finish the work" });
+        const frame = (text: string, model: string) =>
+          ({
+            type: "assistant",
+            session_id: CLAUDE_ORIGINAL_SESSION_ID,
+            uuid: `goal-${model}`,
+            parent_tool_use_id: null,
+            message: {
+              id: `message-${model}`,
+              role: "assistant",
+              model,
+              content: [{ type: "text", text }],
+              usage: { input_tokens: 0, output_tokens: 0 },
+            },
+          }) as unknown as SDKMessage;
+        harness.query.emit(frame("Goal set: Finish the work", "<synthetic>"));
+        if (scenario !== "command-only") {
+          harness.query.emit({
+            type: "user",
+            session_id: CLAUDE_ORIGINAL_SESSION_ID,
+            uuid: "goal-check",
+            isSynthetic: true,
+            parent_tool_use_id: null,
+            message: {
+              role: "user",
+              content: "Stop hook feedback:\n[Finish the work]: One test remains",
+            },
+          } as unknown as SDKMessage);
+          harness.query.emit(frame("The remaining test is fixed", "claude-test-model"));
+        }
+        harness.query.emit({
+          type: "result",
+          subtype: scenario === "interrupted" ? "error_during_execution" : "success",
+          is_error: false,
+          errors: scenario === "interrupted" ? ["Error: Request was aborted."] : [],
+          terminal_reason: scenario === "different-hook" ? "stop_hook" : "completed",
+          session_id: CLAUDE_ORIGINAL_SESSION_ID,
+          uuid: "goal-result",
+        } as unknown as SDKMessage);
+        const received = Array.from(yield* Fiber.join(events));
+        const goals = received.flatMap((event) =>
+          event.type === "thread.goal.updated" ? [event.payload.goal] : [],
+        );
+        assert.equal(goals[0]?.objective, "Finish the work");
+        assert.equal(goals.at(-1)?.status, scenario === "complete" ? "complete" : "active");
+        assert.equal(goals.at(-1)?.checks, scenario === "command-only" ? 0 : 1);
+        const session = (yield* adapter.listSessions())[0];
+        assert.equal(session?.goal?.status, scenario === "complete" ? "complete" : "active");
+        assert.deepEqual((session?.resumeCursor as { goal?: unknown })?.goal, session?.goal);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    });
+  }
+
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -6023,65 +6094,83 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("resets Claude transcript state and resume identity on conversation_reset", () => {
-    const harness = makeHarness();
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-      const session = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
+  it.effect(
+    "resets Claude transcript, native goal and resume identity on conversation_reset",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
 
-      yield* adapter.sendTurn({
-        threadId: session.threadId,
-        input: "before reset",
-        attachments: [],
-      });
-      const completedFiber = yield* Stream.filter(
-        adapter.streamEvents,
-        (event) => event.type === "turn.completed",
-      ).pipe(Stream.runHead, Effect.forkChild);
-      harness.query.emit({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        errors: [],
-        session_id: "550e8400-e29b-41d4-a716-446655440000",
-        uuid: "result-before-reset",
-      } as unknown as SDKMessage);
-      yield* Fiber.join(completedFiber);
-      assert.equal((yield* adapter.readThread(session.threadId)).turns.length, 1);
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "/goal Finish before reset",
+          attachments: [],
+        });
+        const completedFiber = yield* Stream.filter(
+          adapter.streamEvents,
+          (event) => event.type === "turn.completed",
+        ).pipe(Stream.runHead, Effect.forkChild);
+        harness.query.emit({
+          type: "assistant",
+          session_id: "550e8400-e29b-41d4-a716-446655440000",
+          uuid: "goal-before-reset",
+          parent_tool_use_id: null,
+          message: {
+            id: "goal-before-reset",
+            role: "assistant",
+            model: "<synthetic>",
+            content: [{ type: "text", text: "Goal set: Finish before reset" }],
+          },
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          session_id: "550e8400-e29b-41d4-a716-446655440000",
+          uuid: "result-before-reset",
+        } as unknown as SDKMessage);
+        yield* Fiber.join(completedFiber);
+        assert.equal((yield* adapter.readThread(session.threadId)).turns.length, 1);
+        assert.equal((yield* adapter.listSessions())[0]?.goal?.status, "active");
 
-      const newConversationId = "7368d0c7-40a3-4d8a-bcc1-ac80c49f2719";
-      const resetThreadStartedFiber = yield* Stream.filter(
-        adapter.streamEvents,
-        (event) =>
-          event.type === "thread.started" && event.payload.providerThreadId === newConversationId,
-      ).pipe(Stream.runHead, Effect.forkChild);
-      harness.query.emit({
-        type: "conversation_reset",
-        new_conversation_id: newConversationId,
-        session_id: "550e8400-e29b-41d4-a716-446655440000",
-        uuid: "conversation-reset-1",
-      } as unknown as SDKMessage);
-      const resetThreadStarted = yield* Fiber.join(resetThreadStartedFiber);
+        const newConversationId = "7368d0c7-40a3-4d8a-bcc1-ac80c49f2719";
+        const resetThreadStartedFiber = yield* Stream.filter(
+          adapter.streamEvents,
+          (event) =>
+            event.type === "thread.started" && event.payload.providerThreadId === newConversationId,
+        ).pipe(Stream.runHead, Effect.forkChild);
+        harness.query.emit({
+          type: "conversation_reset",
+          new_conversation_id: newConversationId,
+          session_id: "550e8400-e29b-41d4-a716-446655440000",
+          uuid: "conversation-reset-1",
+        } as unknown as SDKMessage);
+        const resetThreadStarted = yield* Fiber.join(resetThreadStartedFiber);
 
-      assert.equal(resetThreadStarted._tag, "Some");
-      assert.equal((yield* adapter.readThread(session.threadId)).turns.length, 0);
-      const activeSession = (yield* adapter.listSessions())[0];
-      assert.equal(activeSession?.status, "ready");
-      assert.deepEqual(activeSession?.resumeCursor, {
-        threadId: session.threadId,
-        resume: newConversationId,
-        turnCount: 0,
-        turnStartMessageIds: [],
-      });
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
+        assert.equal(resetThreadStarted._tag, "Some");
+        assert.equal((yield* adapter.readThread(session.threadId)).turns.length, 0);
+        const activeSession = (yield* adapter.listSessions())[0];
+        assert.equal(activeSession?.status, "ready");
+        assert.equal(activeSession?.goal, null);
+        assert.deepEqual(activeSession?.resumeCursor, {
+          threadId: session.threadId,
+          resume: newConversationId,
+          turnCount: 0,
+          turnStartMessageIds: [],
+          goal: null,
+        });
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
 
   it.effect("completed turns keep their ids but not the SDK messages", () => {
     const harness = makeHarness();

@@ -81,13 +81,14 @@ function makeExecutorLayer(input: {
   readonly failFirstStart?: Ref.Ref<boolean>;
   readonly threads?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
   readonly continueAfterRestart?: boolean;
+  readonly interrupt?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["interrupt"];
 }) {
   const record = (event: string) => Ref.update(input.events, (events) => [...events, event]);
   const dependencies = Layer.mergeAll(
     Layer.succeed(
       ProviderTurnControlService.ProviderTurnControlServiceV2,
       ProviderTurnControlService.ProviderTurnControlServiceV2.of({
-        interrupt: () => Effect.void,
+        interrupt: input.interrupt ?? (() => Effect.void),
         steer: () => Effect.void,
         interruptAndAwaitTerminal: (request) =>
           record(
@@ -798,5 +799,41 @@ it.effect("settles a delegated child once its restart continuation fails for goo
       );
       assert.deepEqual(yield* Ref.get(recovered), [threadId]);
     }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect("settles a stopped run when its adapter has already lost the native turn", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const events = yield* Ref.make<ReadonlyArray<string>>([]);
+    const layer = makeExecutorLayer({
+      events,
+      interrupt: () =>
+        new ProviderTurnControlService.ProviderTurnControlError({
+          threadId,
+          operation: "interrupt",
+          providerTurnId,
+          cause: "Provider turn is not active.",
+        }),
+      threads: {
+        dispatch: (command) =>
+          Ref.update(events, (current) => [...current, command.type]).pipe(
+            Effect.as({ sequence: 1, storedEvents: [] }),
+          ),
+      },
+    });
+    yield* Effect.gen(function* () {
+      const executor = yield* EffectWorker.OrchestrationEffectExecutorV2;
+      yield* executor.execute({
+        ...restartEffect(now, { type: "detach" }),
+        request: {
+          type: "provider-turn.interrupt",
+          providerSessionId: oldSessionId,
+          providerThreadId,
+          providerTurnId,
+        },
+      });
+    }).pipe(Effect.provide(layer));
+    assert.deepEqual(yield* Ref.get(events), ["thread.background-work.settle"]);
   }),
 );

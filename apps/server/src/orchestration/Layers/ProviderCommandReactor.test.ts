@@ -820,6 +820,39 @@ describe("ProviderCommandReactor", () => {
     expect(request?.input).not.toContain(PROVIDER_DEBUG_MODE_PROMPT_PREFIX);
   });
 
+  it.each(["/goal pause", "/goal Finish the feature"])(
+    "preserves the native goal command %s in debug mode",
+    async (text) => {
+      const harness = await createHarness();
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.interaction-mode.set",
+          commandId: CommandId.make("goal-mode"),
+          threadId: ThreadId.make("thread-1"),
+          interactionMode: "debug",
+          createdAt: "2026-10-06T00:00:00.000Z",
+        }),
+      );
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("goal-start"),
+          threadId: ThreadId.make("thread-1"),
+          message: { messageId: asMessageId("goal-message"), role: "user", text, attachments: [] },
+          runtimeMode: "approval-required",
+          interactionMode: "debug",
+          createdAt: "2026-10-06T00:00:00.000Z",
+        }),
+      );
+      await harness.drain();
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+        input: text,
+        interactionMode: "debug",
+      });
+    },
+  );
+
   it("does not inline a disabled skill", async () => {
     const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-skill-disabled-"));
     const workspaceRoot = NodePath.join(baseDir, "workspace");

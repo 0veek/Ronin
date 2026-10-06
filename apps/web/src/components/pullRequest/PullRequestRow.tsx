@@ -84,6 +84,7 @@ function PullRequestRowImpl({
   onSelect,
   speedMode,
   onActed,
+  ...closeSweepProps
 }: {
   entry: EnvironmentPullRequestEntry;
   selected: boolean;
@@ -103,12 +104,16 @@ function PullRequestRowImpl({
   onSelect: (entry: PullRequestRowTarget) => void;
   speedMode: boolean;
   onActed: (result: PullRequestSpeedActionResult) => void;
+  closing?: boolean;
+  sweeping?: boolean;
+  onCloseSweepStart?: (entry: EnvironmentPullRequestEntry, event: PointerEvent) => void;
 }) {
   const { Icon, providerName } = getSourceControlPresentationForKind(entry.provider);
   return (
     <div
       ref={statsRef}
       data-pull-request-stats-key={statsKey}
+      data-pull-request-key={statsKey}
       className="flex items-center rounded-lg [contain-intrinsic-block-size:54px] [content-visibility:auto]"
     >
       <button
@@ -243,7 +248,12 @@ function PullRequestRowImpl({
         </span>
       </button>
       {entry.state !== "merged" && entry.provider === "github" ? (
-        <PullRequestSpeedActions entry={entry} visible={speedMode} onActed={onActed} />
+        <PullRequestSpeedActions
+          entry={entry}
+          visible={speedMode}
+          onActed={onActed}
+          {...closeSweepProps}
+        />
       ) : null}
     </div>
   );

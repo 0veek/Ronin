@@ -287,7 +287,11 @@ function ComposerBannerStackAlert({
     >
       {item.icon}
       <AlertTitle>{item.title}</AlertTitle>
-      {item.description ? <AlertDescription>{item.description}</AlertDescription> : null}
+      {item.description ? (
+        <AlertDescription className="whitespace-normal wrap-anywhere [--inline-button-text-align:start] [--inline-button-white-space:normal] [&_[data-slot=inline-button]]:max-w-full">
+          {item.description}
+        </AlertDescription>
+      ) : null}
       {item.actions || item.onDismiss ? (
         <AlertAction
           className={cn(

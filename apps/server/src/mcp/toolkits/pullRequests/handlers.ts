@@ -32,6 +32,7 @@ import {
   PullRequestListFailedError,
   type PullRequestTargetInput,
   PullRequestThreadNotFoundError,
+  PullRequestThreadAboveLimitsError,
   PullRequestsToolkit,
   type ThreadPullRequestEntry,
 } from "./tools.ts";
@@ -159,15 +160,49 @@ const make = Effect.gen(function* () {
       | typeof PullRequestLinkFailedError
       | typeof PullRequestUnlinkFailedError
       | typeof PullRequestListFailedError,
+    requested: ThreadId | undefined,
   ) {
     const scope = yield* McpInvocationContext.requireMcpCapability("pull-requests");
+    const threadId = requested ?? scope.threadId;
     const thread = yield* snapshots
-      .getThreadShellById(scope.threadId)
+      .getThreadShellById(threadId)
       .pipe(Effect.mapError((cause) => new Failure({ cause })));
     if (Option.isNone(thread)) {
-      return yield* new PullRequestThreadNotFoundError({ threadId: scope.threadId });
+      return yield* new PullRequestThreadNotFoundError({ threadId });
     }
     return thread.value;
+  });
+
+  const runtimeModeRank = {
+    "approval-required": 0,
+    "auto-accept-edits": 1,
+    auto: 2,
+    "full-access": 3,
+  } satisfies Record<OrchestrationThreadShell["runtimeMode"], number>;
+
+  /** Other threads may be changed only during the caller's turn, within its modes. */
+  const requireWritableThread = Effect.fn("PullRequestsToolkit.requireWritableThread")(function* (
+    Failure: typeof PullRequestLinkFailedError | typeof PullRequestUnlinkFailedError,
+    requested: ThreadId | undefined,
+  ) {
+    const thread = yield* requireThread(Failure, requested);
+    const scope = yield* McpInvocationContext.McpInvocationContext;
+    if (thread.id === scope.threadId) return thread;
+    const caller = yield* snapshots
+      .getThreadShellById(scope.threadId)
+      .pipe(Effect.mapError((cause) => new Failure({ cause })));
+    if (
+      Option.isNone(caller) ||
+      caller.value.archivedAt !== null ||
+      caller.value.latestTurn?.state !== "running" ||
+      (caller.value.session?.providerInstanceId ?? caller.value.modelSelection.instanceId) !==
+        scope.providerInstanceId ||
+      runtimeModeRank[thread.runtimeMode] > runtimeModeRank[caller.value.runtimeMode] ||
+      (caller.value.interactionMode === "plan" && thread.interactionMode !== "plan")
+    ) {
+      return yield* new PullRequestThreadAboveLimitsError({ threadId: thread.id });
+    }
+    return thread;
   });
 
   const projectOf = (
@@ -191,7 +226,7 @@ const make = Effect.gen(function* () {
   return PullRequestsToolkit.of({
     link_pull_request: (input) =>
       Effect.gen(function* () {
-        const thread = yield* requireThread(PullRequestLinkFailedError);
+        const thread = yield* requireWritableThread(PullRequestLinkFailedError, input.threadId);
         const project = yield* projectOf(thread, PullRequestLinkFailedError);
         const target = yield* resolveTarget(input, project);
         const alreadyLinked = yield* engine
@@ -216,7 +251,7 @@ const make = Effect.gen(function* () {
       }),
     unlink_pull_request: (input) =>
       Effect.gen(function* () {
-        const thread = yield* requireThread(PullRequestUnlinkFailedError);
+        const thread = yield* requireWritableThread(PullRequestUnlinkFailedError, input.threadId);
         const project = yield* projectOf(thread, PullRequestUnlinkFailedError);
         const target = yield* resolveTarget(input, project);
         const wasLinked = yield* engine
@@ -240,8 +275,10 @@ const make = Effect.gen(function* () {
           wasLinked,
         };
       }),
-    list_thread_pull_requests: () =>
-      requireThread(PullRequestListFailedError).pipe(Effect.map(listThreadPullRequests)),
+    list_thread_pull_requests: (input) =>
+      requireThread(PullRequestListFailedError, input.threadId).pipe(
+        Effect.map(listThreadPullRequests),
+      ),
   });
 });
 

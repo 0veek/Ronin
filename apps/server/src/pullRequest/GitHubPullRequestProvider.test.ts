@@ -740,6 +740,7 @@ describe("getChangeRequest commits", () => {
     reviewThreadsTruncated: false,
     reactions: [],
     reactionsById: new Map<string, ReadonlyArray<PullRequestReaction>>(),
+    editedAtById: new Map<string, string>(),
     reviewers: [],
     avatarsByLogin: new Map<string, string>(),
     commitStats: new Map<string, { readonly additions: number; readonly deletions: number }>(),
@@ -824,6 +825,7 @@ describe("getChangeRequestActivity dismissed reviews", () => {
     reviewThreadsTruncated: false,
     reactions: [],
     reactionsById: new Map(),
+    editedAtById: new Map([["PRR_1", "2026-07-04T00:00:00Z"]]),
     reviewers: [],
     avatarsByLogin: new Map(),
     commitStats: new Map(),
@@ -852,6 +854,7 @@ describe("getChangeRequestActivity dismissed reviews", () => {
     readActivity.pipe(
       Effect.map((activity) => {
         expect(activity.comments[0]?.body).toBe("Dismissing prior approval to re-evaluate 9b66581");
+        expect(activity.comments[0]?.editedAt).toBe("2026-07-04T00:00:00Z");
       }),
       Effect.provide(layerFor("<!-- Macroscope (Approvability) review body marker -->")),
     ),

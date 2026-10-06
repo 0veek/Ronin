@@ -31,7 +31,7 @@ import {
   newPreviewTabId,
   normalizePreviewUrl,
 } from "@t3tools/shared/preview";
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -154,7 +154,7 @@ const buildIdleSnapshot = (input: {
 });
 
 export const make = Effect.gen(function* PreviewManagerMake() {
-  const serverEpoch = NodeCrypto.randomUUID();
+  const serverEpoch = yield* (yield* Crypto.Crypto).randomUUIDv4.pipe(Effect.orDie);
   const stateRef = yield* SynchronizedRef.make<ManagerState>(initialState);
   // Unbounded PubSub is fine here — events are tiny and we don't want to
   // block publishers if a subscriber is slow. WS clients backpressure on
@@ -433,15 +433,13 @@ export const make = Effect.gen(function* PreviewManagerMake() {
   const list: PreviewManager["Service"]["list"] = Effect.fn("PreviewManager.list")(
     function* (input) {
       return yield* SynchronizedRef.get(stateRef).pipe(
-        Effect.map(
-          (state): PreviewListResult => ({
-            sessions: sessionsForThread(state, input.threadId)
-              .map((s) => s.snapshot)
-              .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt)),
-            serverEpoch,
-            revision: state.revision,
-          }),
-        ),
+        Effect.map((state): PreviewListResult => ({
+          sessions: sessionsForThread(state, input.threadId)
+            .map((s) => s.snapshot)
+            .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt)),
+          serverEpoch,
+          revision: state.revision,
+        })),
       );
     },
   );

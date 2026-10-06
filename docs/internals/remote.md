@@ -140,6 +140,10 @@ and correlation only, never for routing. `Project` remains environment-local: a 
 remote clone are different projects that may share a `RepositoryIdentity`, and threads bind to one
 project in one environment.
 
+The canonical repository key follows `upstream` when present, so pull request features target the
+repository a fork tracks. A fork also reports its own `origin`; clients group and label by that
+identity, keeping fork checkouts separate from upstream checkouts across environments.
+
 ### Automations
 
 Automation configuration, runs, and scheduler state live on the owning environment's server.

@@ -82,6 +82,9 @@ layer("ProjectionThreadActivityRepository", (it) => {
         threadId,
         taskId: "task-1",
       });
+      const byId = yield* repository.getById(EventId.make("activity-task-progress"));
+      assert.deepEqual(byId, activity);
+      assert.equal((yield* repository.getById(EventId.make("missing")))._tag, "None");
       assert.equal(activity._tag, "Some");
       if (activity._tag === "Some") {
         assert.equal(activity.value.activityId, EventId.make("activity-task-progress"));

@@ -92,7 +92,14 @@ describe("buildAntigravityTextGenerationArgs", () => {
 describe("AntigravityTextGeneration requirements", () => {
   it.effect("keeps working when the caller supplies no process spawner", () =>
     Effect.gen(function* () {
-      const binaryPath = makeFakeAgy({ stdout: printResult('{"title":"Fix the lint job"}') });
+      const argsLogPath = NodePath.join(
+        NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3code-agy-title-")),
+        "args.txt",
+      );
+      const binaryPath = makeFakeAgy({
+        argsLogPath,
+        stdout: printResult('{"title":"Fix the lint job","needsRefinement":true}'),
+      });
       // Construction is the only point where a spawner is in scope, because
       // `TextGeneration`'s methods declare no requirements of their own.
       const textGeneration = yield* makeAntigravityTextGeneration(
@@ -102,10 +109,15 @@ describe("AntigravityTextGeneration requirements", () => {
       const generated = yield* textGeneration.generateThreadTitle({
         cwd: process.cwd(),
         message: "the lint job is red",
+        linkedContext: "PR #12: Retry the lint job after upgrading the parser",
         modelSelection,
       });
 
       expect(generated.title).toBe("Fix the lint job");
+      expect(generated.needsRefinement).toBe(true);
+      expect(NodeFS.readFileSync(argsLogPath, "utf8")).toContain(
+        "PR #12: Retry the lint job after upgrading the parser",
+      );
     }),
   );
 });

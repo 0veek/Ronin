@@ -1117,6 +1117,16 @@ export const ServerSettings = Schema.Struct({
       }),
     ),
   ),
+  removeAgentCreditsOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Absolute machine-local parent for new worktrees. Empty uses the Ronin home folder. */
+  worktreesDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  /** Former locations remain eligible for reviewing existing worktrees. */
+  previousWorktreesDirectories: Schema.Array(TrimmedString).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  removeAgentCreditsOnMergeOverrides: Schema.Record(TrimmedNonEmptyString, Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   sourceControlWritingStyle: SourceControlWritingStyleSettings.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1357,6 +1367,11 @@ export const ServerSettingsPatch = Schema.Struct({
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
   addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  removeAgentCreditsOnMerge: Schema.optionalKey(Schema.Boolean),
+  worktreesDirectory: Schema.optionalKey(TrimmedString),
+  removeAgentCreditsOnMergeOverrides: Schema.optionalKey(
+    Schema.Record(TrimmedNonEmptyString, Schema.Boolean),
+  ),
   sourceControlWritingStyle: Schema.optionalKey(
     Schema.Struct({
       mode: Schema.optionalKey(SourceControlWritingStyleMode),

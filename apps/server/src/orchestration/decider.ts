@@ -2019,7 +2019,17 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         type: "thread.session-set",
         payload: {
           threadId: command.threadId,
-          session: command.session,
+          session: {
+            ...command.session,
+            // Routine lifecycle writes do not replace a provider's native goal.
+            goal:
+              command.session.goal !== undefined
+                ? command.session.goal
+                : thread.session?.providerInstanceId === command.session.providerInstanceId &&
+                    thread.session?.providerName === command.session.providerName
+                  ? (thread.session?.goal ?? null)
+                  : null,
+          },
         },
       };
       // Only a session coming alive is activity worth waking a settled thread
@@ -2225,7 +2235,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       // never stay hidden inside a settled slim row.
       const wakesSettledThread =
         command.activity.kind === "approval.requested" ||
-        command.activity.kind === "user-input.requested";
+        command.activity.kind === "user-input.requested" ||
+        (command.activity.kind === "secret-request.updated" &&
+          typeof command.activity.payload === "object" &&
+          command.activity.payload !== null &&
+          "secretStatus" in command.activity.payload &&
+          command.activity.payload.secretStatus === "pending");
       // Real activity resets ANY override (settled wakes, active unpins).
       if (thread.settledOverride === null || !wakesSettledThread) {
         return activityAppendedEvent;

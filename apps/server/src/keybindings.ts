@@ -433,13 +433,13 @@ const make = Effect.gen(function* () {
     })),
   );
 
-  const resolvedConfigCache = yield* Cache.make<
+  const resolvedConfigCache = yield* Cache.makeWith<
     typeof resolvedConfigCacheKey,
     KeybindingsConfigState,
     KeybindingsConfigError
-  >({
+  >(() => loadConfigStateFromDisk, {
     capacity: 1,
-    lookup: () => loadConfigStateFromDisk,
+    timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
   });
 
   const loadConfigStateFromCacheOrDisk = Cache.get(resolvedConfigCache, resolvedConfigCacheKey);

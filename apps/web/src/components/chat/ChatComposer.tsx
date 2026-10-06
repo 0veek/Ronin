@@ -1327,8 +1327,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedWorkspaceCommands = discoveredSkillsCatalog.workspaceCommands.find(
     (entry) => entry.instanceId === selectedProviderStatus?.instanceId,
   );
-  const selectedProviderSlashCommands =
-    selectedWorkspaceCommands?.slashCommands ?? selectedProviderStatus?.slashCommands ?? [];
+  const selectedProviderSlashCommands = useMemo(
+    () => selectedWorkspaceCommands?.slashCommands ?? selectedProviderStatus?.slashCommands ?? [],
+    [selectedWorkspaceCommands?.slashCommands, selectedProviderStatus?.slashCommands],
+  );
   const selectedProviderSkills = useMemo(
     () =>
       mergeProviderSkillCatalogs(

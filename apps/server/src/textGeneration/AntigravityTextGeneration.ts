@@ -286,6 +286,7 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
         attachments: input.attachments,
       });
 
@@ -299,6 +300,7 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
 
       return {
         title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 

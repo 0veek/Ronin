@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import { WS_METHODS } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -233,6 +234,38 @@ describe("RpcInstrumentation", () => {
         }),
         true,
       );
+    }),
+  );
+
+  it.effect("counts interruption before a stream is produced exactly once", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const fiber = yield* Stream.runDrain(
+        observeRpcStreamEffect(
+          "rpc.instrumentation.stream.setup.interrupt",
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.as(Stream.empty),
+          ),
+        ),
+      ).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* TestClock.adjust("5 millis");
+      yield* Fiber.interrupt(fiber);
+      const snapshots = yield* Metric.snapshot;
+      const counter = snapshots.find(
+        (snapshot) =>
+          snapshot.type === "Counter" &&
+          snapshot.id === "t3_rpc_requests_total" &&
+          snapshot.attributes?.method === "rpc.instrumentation.stream.setup.interrupt" &&
+          snapshot.attributes?.outcome === "interrupt",
+      );
+      assert.equal(counter?.type === "Counter" ? counter.state.count : undefined, 1);
+      const duration = findHistogramSnapshot(snapshots, "t3_rpc_request_duration", {
+        method: "rpc.instrumentation.stream.setup.interrupt",
+      });
+      assert.equal(duration?.state.count, 1);
+      assert.equal(duration?.state.sum, 5);
     }),
   );
 

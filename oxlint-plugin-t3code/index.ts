@@ -6,6 +6,9 @@ import noInlineSchemaCompile from "./rules/no-inline-schema-compile.ts";
 import noManualEffectRuntimeInTests from "./rules/no-manual-effect-runtime-in-tests.ts";
 import noNativeTitleTooltip from "./rules/no-native-title-tooltip.ts";
 import noUnscopedHas from "./rules/no-unscoped-has.ts";
+import preferCatchTags from "./rules/prefer-catch-tags.ts";
+
+import requireSuppressionReason from "./rules/require-suppression-reason.ts";
 
 export default definePlugin({
   meta: {
@@ -18,5 +21,7 @@ export default definePlugin({
     "no-manual-effect-runtime-in-tests": noManualEffectRuntimeInTests,
     "no-native-title-tooltip": noNativeTitleTooltip,
     "no-unscoped-has": noUnscopedHas,
+    "prefer-catch-tags": preferCatchTags,
+    "require-suppression-reason": requireSuppressionReason,
   },
 });

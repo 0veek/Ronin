@@ -21,6 +21,20 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("ServerSettings.removeAgentCreditsOnMerge", () => {
+  it("keeps credits by default and accepts environment and checkout overrides", () => {
+    expect(decodeServerSettings({}).removeAgentCreditsOnMerge).toBe(false);
+    expect(decodeServerSettings({}).removeAgentCreditsOnMergeOverrides).toEqual({});
+    expect(
+      decodeServerSettingsPatch({ removeAgentCreditsOnMerge: true }).removeAgentCreditsOnMerge,
+    ).toBe(true);
+    expect(
+      decodeServerSettings({ removeAgentCreditsOnMergeOverrides: { project: true } })
+        .removeAgentCreditsOnMergeOverrides.project,
+    ).toBe(true);
+  });
+});
+
 describe("ClaudeSettings auto-compaction", () => {
   it("uses Claude's default threshold when no override is configured", () => {
     expect(decodeClaudeSettings({}).autoCompactWindow).toBe("");

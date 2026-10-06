@@ -12,6 +12,8 @@ import type {
   AutomationCreateInput,
   AutomationId,
   AutomationSchedule,
+  AutomationScheduleInput,
+  AutomationWebhookSignatureInput,
   AutomationUpdateInput,
   ModelSelection,
   ProjectId,
@@ -41,6 +43,9 @@ export interface AutomationDraftState {
   readonly timeOfDayText: string;
   readonly weekdays: ReadonlyArray<number>;
   readonly onceAtText: string;
+  /** A signing value lives only in the open form, never in saved draft preferences. */
+  readonly webhookSignature?: AutomationWebhookSignatureInput | null;
+  readonly webhookHasSecret?: boolean;
   /** Keep the exact instant while its displayed local time is unchanged, including DST overlaps. */
   readonly originalOnceAt?: { readonly at: string; readonly text: string };
   readonly envMode: ThreadEnvMode;
@@ -123,8 +128,17 @@ export function resolveAutomationEnvironmentId(input: {
  * Returning null rather than a partial schedule is what lets the Save button
  * stay disabled on a half-typed time instead of saving something surprising.
  */
-export function draftSchedule(draft: AutomationDraftState): AutomationSchedule | null {
+export function draftSchedule(draft: AutomationDraftState): AutomationScheduleInput | null {
   switch (draft.kind) {
+    case "webhook": {
+      const signature = draft.webhookSignature;
+      if (
+        signature != null &&
+        (!signature.header.trim() || (!signature.secret?.trim() && !draft.webhookHasSecret))
+      )
+        return null;
+      return { _tag: "webhook", signature: signature ?? null };
+    }
     case "interval": {
       if (
         !Number.isInteger(draft.everyMinutes) ||
@@ -175,6 +189,12 @@ export function draftFromAutomation(automation: Automation): AutomationDraftStat
     modelSelection: automation.modelSelection,
     stopAfterConsecutiveFailures: automation.stopAfterConsecutiveFailures,
     kind: automation.schedule._tag,
+    ...(automation.schedule._tag === "webhook"
+      ? {
+          webhookSignature: automation.schedule.signature,
+          webhookHasSecret: automation.webhook?.hasSecret ?? false,
+        }
+      : {}),
     ...(automation.schedule._tag === "interval"
       ? { everyMinutes: automation.schedule.everyMinutes }
       : {}),
@@ -217,6 +237,7 @@ export function duplicateAutomationDraft(
     ...draft,
     editing: null,
     title,
+    ...(draft.kind === "webhook" ? { webhookHasSecret: false } : {}),
     ...(draft.kind === "once" ? { onceAtText: "" } : originalOnceAt ? { originalOnceAt } : {}),
   };
 }

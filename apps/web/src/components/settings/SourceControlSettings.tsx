@@ -2,6 +2,7 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { ChevronDownIcon, InfoIcon } from "lucide-react";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
+import { useRef } from "react";
 import { useState, type ReactNode } from "react";
 import type {
   BackgroundActivitySettings,
@@ -44,6 +45,7 @@ import {
   NumberFieldInput,
 } from "../ui/number-field";
 import { Switch } from "../ui/switch";
+import { Input } from "../ui/input";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   AzureDevOpsIcon,
@@ -61,6 +63,7 @@ import { SourceControlWritingSettingsSection } from "./SourceControlWritingSetti
 import {
   SettingResetButton,
   SettingsPageContainer,
+  SettingsRow,
   SettingsSection,
   useSettingsSearchTarget,
   useSettingsSearchTargetId,
@@ -528,6 +531,9 @@ function EmptySourceControlDiscovery({
 }
 
 export function SourceControlSettingsPanel() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  const worktreeLocationEdited = useRef(false);
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const fallbackEnvironment =
@@ -575,6 +581,41 @@ export function SourceControlSettingsPanel() {
   return (
     <SettingsPageContainer>
       <SharedSettingsMismatchAlert />
+      {primaryEnvironment?.serverConfig?.environment.capabilities.worktreesDirectory === true ? (
+        <SettingsSection title="Worktrees">
+          <SettingsRow
+            {...searchableSetting("source-control-worktrees-location")}
+            description="Folder where new worktrees are created on this machine, such as D:\\worktrees or ~/worktrees. Leave empty to use the Ronin home folder. Existing worktrees stay where they are."
+            resetAction={
+              settings.worktreesDirectory !== "" ? (
+                <SettingResetButton
+                  label="worktree location"
+                  onClick={() => updateSettings({ worktreesDirectory: "" })}
+                />
+              ) : null
+            }
+            control={
+              <Input
+                key={`${environmentId}:${settings.worktreesDirectory}`}
+                aria-label="Worktree location"
+                autoCapitalize="none"
+                spellCheck={false}
+                placeholder="Default"
+                defaultValue={settings.worktreesDirectory}
+                onChange={() => {
+                  worktreeLocationEdited.current = true;
+                }}
+                onBlur={(event) => {
+                  const value = event.target.value.trim();
+                  if (worktreeLocationEdited.current && value !== settings.worktreesDirectory)
+                    updateSettings({ worktreesDirectory: value });
+                  worktreeLocationEdited.current = false;
+                }}
+              />
+            }
+          />
+        </SettingsSection>
+      ) : null}
       {isInitialScanPending ? (
         <>
           <SourceControlSectionSkeleton title="Version Control" headerAction={scanButton} />
@@ -629,6 +670,28 @@ export function SourceControlSettingsPanel() {
       {/* Its rows are serverScoped: without a primary they render inert with
           an explanation, which beats disappearing. */}
       <SourceControlWritingSettingsSection />
+      <SettingsSection title="Pull requests">
+        <SettingsRow
+          serverScoped
+          {...searchableSetting("remove-agent-credits-on-merge")}
+          description="Remove recognized agent credits from GitHub merge and squash messages, keeping human co-authors. Includes auto-merge; excludes merge queues, stack merges and existing commits."
+          resetAction={
+            settings.removeAgentCreditsOnMerge ? (
+              <SettingResetButton
+                label="agent credit removal"
+                onClick={() => updateSettings({ removeAgentCreditsOnMerge: false })}
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              aria-label="Remove agent credits when merging"
+              checked={settings.removeAgentCreditsOnMerge}
+              onCheckedChange={(enabled) => updateSettings({ removeAgentCreditsOnMerge: enabled })}
+            />
+          }
+        />
+      </SettingsSection>
     </SettingsPageContainer>
   );
 }

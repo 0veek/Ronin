@@ -203,6 +203,27 @@ describe("startAutomationDraftFromSearch", () => {
 });
 
 describe("draftFromAutomation", () => {
+  it("retains a stored webhook signature on edit but requires a fresh secret for a copy", () => {
+    const signature = { header: "x-signature", encoding: "hex", prefix: "sha256=" } as const;
+    const source = automation({
+      schedule: { _tag: "webhook", signature },
+      webhook: { path: "/api/hooks/auto-1/private-token", hasSecret: true },
+      nextRunAt: null,
+    });
+    const edit = draftFromAutomation(source);
+    expect(draftToUpdateInput(edit)?.schedule).toEqual({ _tag: "webhook", signature });
+    const copy = duplicateAutomationDraft(source, [source.title]);
+    expect(draftToCreateInput(copy)).toBeNull();
+    expect(
+      draftToCreateInput({ ...copy, webhookSignature: { ...signature, secret: "new-secret" } })
+        ?.schedule,
+    ).toEqual({ _tag: "webhook", signature: { ...signature, secret: "new-secret" } });
+    expect(draftToCreateInput({ ...copy, webhookSignature: null })?.schedule).toEqual({
+      _tag: "webhook",
+      signature: null,
+    });
+  });
+
   it.each(["Asia/Kolkata", "America/New_York"])(
     "keeps a one-time instant when edited in %s",
     (timezone) => {

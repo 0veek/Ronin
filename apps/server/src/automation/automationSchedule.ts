@@ -73,6 +73,8 @@ export function nextRunAtMs({
   readonly lastRunAtMs: number | null;
 }): number | null {
   switch (schedule._tag) {
+    case "webhook":
+      return null;
     case "once": {
       const at = Date.parse(schedule.at);
       if (Number.isNaN(at)) return null;

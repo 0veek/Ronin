@@ -50,6 +50,17 @@ selection; with nothing staged, Ronin stages the current changes as before.
 
 **Stay on top of open reviews**
 
+Agents can list, link, or unlink a pull request on another thread on the same machine, including
+one in another project. Without an explicit target, these actions use the agent's own thread.
+Changing another thread's links requires an active turn and cannot exceed the calling thread's
+permission mode; an agent in plan mode can change links only on other plan-mode threads.
+
+Enable **Remove agent credits when merging** in Settings → Source Control to remove recognized
+agent co-author and generated-by lines from GitHub merge and squash commit messages. Human
+co-authors stay credited. It is off by default. Project Settings → Checkout lets each checkout
+override its environment's default or return to it. This also applies to auto-merge, but excludes
+merge queues and native stack merges. Original commits retain their messages.
+
 - See if your current branch already has an open PR/MR
 - When an agent finishes a turn on your thread's branch, Ronin checks for a newly opened
   PR/MR if background activity is enabled for that repository. Known reviews keep their normal
@@ -57,6 +68,9 @@ selection; with nothing staged, Ronin stages the current changes as before.
 - Hold **Shift** on the pull request list or a thread's pull request toolbar to reveal quick
   **Close**, **Merge**, **Ready for review**, or **Reopen** actions. These act immediately. Stacked pull requests require opening their detail
   panel to merge the stack.
+- In the GitHub list, drag from **Close** across rows in the same group and release to close
+  several reviews. Press **Escape** before releasing to cancel. Failed closes remain available
+  to retry, and queued actions continue after a failure.
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - Your authored reviews stay at the top and use the selected sort within their group. By default,
   see passing and approved reviews first, passing reviews awaiting approval next, and conflicting

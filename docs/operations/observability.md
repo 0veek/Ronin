@@ -27,6 +27,13 @@ If you want a log message to show up in the trace file, emit it inside an active
 
 ### Traces
 
+The desktop also keeps `renderer-history.ndjson` in its log directory, with two rotated
+files of up to 256 KiB each alongside the current file. It records main-window, preview,
+and DevTools identities, renderer replacement and crashes, and process working sets at
+most once every 30 seconds. It never reads page URLs or content. Working sets are per
+process, so rows sharing a renderer PID must not be added together. The quit handshake
+drains pending records before exiting.
+
 Completed spans are written as NDJSON records to `serverTracePath`. The default depends on how the
 server starts: production and explicitly configured homes use
 `<home>/userdata/logs/server.trace.ndjson` (so `~/.ronin/userdata/...` by default, or
@@ -344,7 +351,7 @@ Good metric families to watch:
 - `t3_rpc_request_duration`
 - `t3_orchestration_command_duration`
 - `t3_orchestration_command_ack_duration`
-- `t3_provider_turn_duration`
+- `t3_provider_turn_duration` (how long the provider adapter takes to start a turn, not the turn's run time)
 - `t3_git_command_duration`
 
 Counters tell you volume and failure rate:
@@ -540,7 +547,7 @@ Local trace file:
 - `T3CODE_TRACE_FILE`: override trace file path
 - `T3CODE_TRACE_MAX_BYTES`: per-file rotation size, default `10485760`
 - `T3CODE_TRACE_MAX_FILES`: rotated file count, default `10`
-- `T3CODE_TRACE_BATCH_WINDOW_MS`: flush window, default `200`
+- `T3CODE_TRACE_BATCH_WINDOW_MS`: flush window, default `1000`
 - `T3CODE_TRACE_MIN_LEVEL`: minimum trace level, default `Info`
 - `T3CODE_TRACE_TIMING_ENABLED`: enable timing metadata, default `true`
 

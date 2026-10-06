@@ -58,6 +58,11 @@ export type DeleteProjectionThreadActivitiesInput =
  * ProjectionThreadActivityRepositoryShape - Service API for projected thread activity.
  */
 export interface ProjectionThreadActivityRepositoryShape {
+  /** Read one stored payload by its indexed activity identity. */
+  readonly getById: (
+    activityId: EventId,
+  ) => Effect.Effect<Option.Option<ProjectionThreadActivity>, ProjectionRepositoryError>;
+
   /**
    * Insert or replace a projected thread activity row.
    *

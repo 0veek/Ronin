@@ -1141,6 +1141,20 @@ const make = Effect.gen(function* () {
     if (input.modelSelection !== undefined) {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
+    // Native goal commands must reach the provider's command parser verbatim.
+    // Appending skill, handoff or debug prose would change the objective or control verb.
+    if (
+      (ensured.boundProviderName === "codex" || ensured.boundProviderName === "claudeAgent") &&
+      (input.attachments?.length ?? 0) === 0 &&
+      /^\/goal(?:\s|$)/u.test(input.messageText.trim())
+    ) {
+      return {
+        threadId: input.threadId,
+        input: input.messageText.trim(),
+        ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
+        ...(input.interactionMode === undefined ? {} : { interactionMode: input.interactionMode }),
+      };
+    }
     const project = yield* resolveProject(thread.projectId);
     const skillCwd =
       resolveThreadWorkspaceCwd({

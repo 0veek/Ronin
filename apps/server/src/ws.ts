@@ -123,6 +123,7 @@ import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
+import { skipUnchangedThreadShells } from "./orchestration/ShellStream.ts";
 import { deletePendingAttachment, issueAttachmentUploadUrl } from "./assets/AttachmentUpload.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
@@ -150,7 +151,10 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as RateLimitService from "./rateLimits/RateLimitService.ts";
 import * as QuotaResumeService from "./quotaResume/QuotaResumeService.ts";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as AutomationService from "./automation/AutomationService.ts";
+import * as SecretRequests from "./secrets/SecretRequests.ts";
+import { AutomationWebhooks } from "./automation/AutomationWebhooks.ts";
 import * as BuildSystemService from "./buildSystem/BuildSystemService.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
@@ -653,6 +657,8 @@ const makeWsRpcLayer = (
       const rateLimits = yield* RateLimitService.RateLimitService;
       const quotaResume = yield* QuotaResumeService.QuotaResumeService;
       const automations = yield* AutomationService.AutomationService;
+      const secretRequests = yield* SecretRequests.SecretRequests;
+      const webhooks = yield* AutomationWebhooks;
       const buildSystems = yield* BuildSystemService.BuildSystemService;
       const speechToText = yield* SpeechToTextService.SpeechToTextService;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
@@ -988,6 +994,7 @@ const makeWsRpcLayer = (
           Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
           Stream.mapEffect(coalesceShellEvents),
           Stream.flatMap((items) => Stream.fromIterable(items)),
+          skipUnchangedThreadShells,
         );
 
       type ShellLiveInput =
@@ -1053,6 +1060,7 @@ const makeWsRpcLayer = (
           Stream.groupedWithin(SHELL_COALESCE_MAX_CHUNK, SHELL_COALESCE_WINDOW),
           Stream.mapEffect(coalesceShellLiveInputs),
           Stream.flatMap((items) => Stream.fromIterable(items)),
+          skipUnchangedThreadShells,
         );
 
       type ThreadLiveInput =
@@ -2705,9 +2713,13 @@ const makeWsRpcLayer = (
         [WS_METHODS.automationsList]: (input) =>
           observeRpcEffect(
             WS_METHODS.automationsList,
-            automations
-              .list(input.projectId ?? null)
-              .pipe(Effect.map((list) => ({ automations: list }))),
+            automations.list(input.projectId ?? null).pipe(
+              Effect.map((list) => ({
+                automations: currentSession.scopes.includes(AuthOrchestrationOperateScope)
+                  ? list
+                  : list.map(({ webhook: _webhook, ...automation }) => automation),
+              })),
+            ),
             { "rpc.aggregate": "automations" },
           ),
         [WS_METHODS.automationsCreate]: (input) =>
@@ -2734,6 +2746,15 @@ const makeWsRpcLayer = (
             automations.runNow(input.id).pipe(Effect.map((run) => ({ run }))),
             { "rpc.aggregate": "automations" },
           ),
+        [WS_METHODS.secretsAnswerRequest]: (input) => secretRequests.answer(input),
+        [WS_METHODS.automationsRotateWebhookToken]: (input) =>
+          automations
+            .rotateWebhookToken(input.id)
+            .pipe(Effect.map((automation) => ({ automation }))),
+        [WS_METHODS.automationsListWebhookDeliveries]: (input) =>
+          webhooks.list(input.id).pipe(Effect.map((deliveries) => ({ deliveries }))),
+        [WS_METHODS.automationsGetWebhookDelivery]: (input) =>
+          webhooks.get(input.id, input.deliveryId).pipe(Effect.map((delivery) => ({ delivery }))),
         [WS_METHODS.automationsRuns]: (input) =>
           observeRpcEffect(
             WS_METHODS.automationsRuns,
@@ -3335,7 +3356,10 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.assetsCreateUrl,
             Effect.gen(function* () {
-              if (input.resource._tag === "attachment") {
+              if (
+                input.resource._tag === "attachment" ||
+                input.resource._tag === "tool-output-image"
+              ) {
                 return yield* issueAssetUrl({ resource: input.resource });
               }
               if (input.resource._tag === "draft-workspace-file") {

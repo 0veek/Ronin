@@ -3,6 +3,7 @@ import { projectComposerContextForProvider } from "@t3tools/shared/composerConte
 import { CommandId, RunId, ThreadId } from "@t3tools/contracts";
 import {
   type OrchestrationV2DomainEvent,
+  latestProviderTurnForAttempt,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2Run,
@@ -615,11 +616,11 @@ export const layer: Layer.Layer<
           const sourceAttempt = sourceProjection.attempts.find(
             (candidate) => candidate.id === sourceRun?.activeAttemptId,
           );
-          const sourceProviderTurn = sourceProjection.providerTurns.find(
-            (candidate) =>
-              candidate.id === sourceAttempt?.providerTurnId ||
-              candidate.runAttemptId === sourceAttempt?.id,
-          );
+          const sourceProviderTurn =
+            latestProviderTurnForAttempt(sourceProjection.providerTurns, sourceAttempt?.id) ??
+            sourceProjection.providerTurns.find(
+              (candidate) => candidate.id === sourceAttempt?.providerTurnId,
+            );
           if (sourceRun === undefined || sourceProviderThread === undefined) {
             return yield* new ProviderTurnStartError({
               runId,

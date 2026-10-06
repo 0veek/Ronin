@@ -1,11 +1,15 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import {
   CommandId,
   EnvironmentId,
   EventId,
   NodeId,
   MessageId,
+  RunAttemptId,
+  RunId,
+  ProviderThreadId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -14,6 +18,8 @@ import {
   type ProviderSession,
   ThreadId,
   TurnId,
+  TurnItemId,
+  SecretRef,
 } from "@t3tools/contracts";
 import { type OrchestrationV2DomainEvent } from "@t3tools/contracts/orchestration-v2";
 import * as DateTime from "effect/DateTime";
@@ -25,6 +31,7 @@ import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as ServerConfig from "../../config.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
@@ -50,6 +57,7 @@ import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { PullRequestService } from "../../pullRequest/PullRequestService.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import { OrchestrationEffectWorkerV2 } from "../EffectWorker.ts";
+import { ProviderSessionManagerV2 } from "../ProviderSessionManager.ts";
 import { EventSinkV2 } from "../EventSink.ts";
 import { OrchestratorV2 } from "../Orchestrator.ts";
 import { ProviderAdapterRegistryV2 } from "../ProviderAdapterRegistry.ts";
@@ -57,6 +65,16 @@ import { layerWithAdapters } from "../runtimeLayer.ts";
 import { makeLegacyProviderAdapterV2 } from "./LegacyProviderAdapter.ts";
 import { PreparedTurnRequests } from "./PreparedTurnRequests.ts";
 import * as RoninOrchestration from "./RoninOrchestration.ts";
+import { SecretsToolkit } from "../../mcp/toolkits/secrets/tools.ts";
+import { SecretsToolkitHandlersLive } from "../../mcp/toolkits/secrets/handlers.ts";
+import { SecretRequests } from "../../secrets/SecretRequests.ts";
+import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
+import { HtmlRenderToolkit } from "../../mcp/toolkits/html/tools.ts";
+import { HtmlRenderToolkitHandlersLive } from "../../mcp/toolkits/html/handlers.ts";
+import { HtmlRender } from "../../htmlRender/HtmlRender.ts";
+import { createAttachmentId } from "../../attachmentStore.ts";
+import { ProjectionStoreV2 } from "../ProjectionStore.ts";
+import * as Fiber from "effect/Fiber";
 
 const drivers = [
   "codex",
@@ -70,19 +88,36 @@ const drivers = [
   "pi",
 ] as const;
 const decodeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
+const encodeJsonText = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 const testBridge = (
   driverName: (typeof drivers)[number],
   scenario:
     | "automatic-completion"
+    | "goal"
+    | "goal-stop"
+    | "goal-timeout"
+    | "goal-control"
+    | "secret"
+    | "secret-stop"
+    | "secret-timeout"
+    | "html"
     | "basic"
     | "steer"
     | "background"
     | "background-exit"
     | "failed-background-stop"
+    | "queued-background-stop"
     | "native-wake"
     | "failed-start"
     | "history"
+    | "stalled-return"
+    | "stalled-terminal"
+    | "stalled-missing"
+    | "stalled-missing-terminal"
+    | "stalled-superseded"
+    | "stalled-restart"
+    | "stalled-starting-background"
     | "interrupt"
     | "revert"
     | "delete-project" = "basic",
@@ -93,7 +128,9 @@ const testBridge = (
     const threadId = ThreadId.make(`bridge:${driverName}`);
     const projectId = ProjectId.make("bridge-project");
     const messageId = MessageId.make("bridge-message");
-    const turnId = TurnId.make("native-turn");
+    const turnId = TurnId.make(
+      scenario === "goal-control" ? "goal-command:test-control" : "native-turn",
+    );
     const now = "2026-10-04T00:00:00.000Z";
     const modelSelection = { instanceId, model: "test-model" };
     const source = yield* PubSub.unbounded<ProviderRuntimeEvent>();
@@ -368,11 +405,225 @@ const testBridge = (
       };
       yield* PubSub.publish(
         source,
-        decodeEvent({ ...base, eventId: "started", type: "turn.started", payload: {} }),
+        decodeEvent({
+          ...base,
+          eventId: "started",
+          type: "turn.started",
+          payload: scenario === "goal-control" ? { native: false } : {},
+        }),
       );
       yield* awaitEvent(
         (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
       );
+      if (scenario === "html") {
+        const reference = {
+          attachmentId: createAttachmentId(threadId, "html")!,
+          title: "Revenue",
+          height: 420,
+          fitContent: true,
+        };
+        const renderer = Layer.mock(HtmlRender)({ publish: () => Effect.succeed(reference) });
+        const toolkit = yield* HtmlRenderToolkit.pipe(
+          Effect.provide(HtmlRenderToolkitHandlersLive),
+        );
+        const response = yield* toolkit
+          .handle("html_render", {
+            html: "<p>Private page bytes</p>",
+            title: "Revenue",
+          })
+          .pipe(
+            Stream.unwrap,
+            Stream.runCollect,
+            Effect.provide(renderer),
+            Effect.provideService(McpInvocationContext, {
+              environmentId: EnvironmentId.make("test-environment"),
+              threadId,
+              providerSessionId: "test-session",
+              providerInstanceId: instanceId,
+              capabilities: new Set(["html"] as const),
+              issuedAt: 0,
+            }),
+          );
+        assert.deepEqual(response.at(-1)?.result, {
+          htmlRender: reference,
+          message:
+            "Shown to the reader above your reply. Reply with only what the page does not already say.",
+        });
+        const card = yield* domainEvents.pipe(
+          Stream.filter(
+            (event) =>
+              event.type === "thread.activity-appended" &&
+              event.payload.activity.kind === "html-render.published",
+          ),
+          Stream.runHead,
+        );
+        assert.isTrue(Option.isSome(card));
+        const projection = yield* v2.getThreadProjection(threadId);
+        const rendered = projection.turnItems.find(
+          (item) => item.type === "dynamic_tool" && item.toolName === "html_render",
+        );
+        assert.isTrue(rendered?.type === "dynamic_tool");
+        if (rendered?.type === "dynamic_tool") {
+          assert.equal(rendered.input, null);
+          assert.deepEqual(rendered.output, { htmlRender: reference });
+        }
+        const store = yield* ProjectionStoreV2;
+        assert.deepEqual(yield* store.getThreadAttachmentIds(threadId), [reference.attachmentId]);
+        const current = yield* shells.getThreadDetailById(threadId);
+        assert.isTrue(Option.isSome(current));
+        if (Option.isSome(current)) {
+          const cards = current.value.activities.filter(
+            (item) => item.kind === "html-render.published",
+          );
+          assert.equal(cards.length, 1);
+          assert.deepEqual(cards[0]?.payload, { htmlRender: reference });
+          assert.isFalse((yield* encodeJsonText(cards)).includes("Private page bytes"));
+        }
+        const run = projection.runs.find((run) => run.status === "running")!;
+        const denied = yield* v2
+          .dispatch({
+            type: "html_render.record",
+            commandId: CommandId.make("wrong-html-owner"),
+            threadId,
+            runId: run.id,
+            nodeId: run.rootNodeId!,
+            providerInstanceId: ProviderInstanceId.make("another-provider"),
+            turnItemId: TurnItemId.make("unowned-page"),
+            htmlRender: reference,
+          })
+          .pipe(Effect.flip);
+        assert.equal(denied._tag, "OrchestratorDispatchError");
+        yield* v2.dispatch({
+          type: "run.interrupt",
+          commandId: CommandId.make("stop-html"),
+          threadId,
+          runId: run.id,
+        });
+        const stopped = yield* v2
+          .dispatch({
+            type: "html_render.record",
+            commandId: CommandId.make("stopped-html-owner"),
+            threadId,
+            runId: run.id,
+            nodeId: run.rootNodeId!,
+            providerInstanceId: instanceId,
+            turnItemId: TurnItemId.make("stopped-page"),
+            htmlRender: reference,
+          })
+          .pipe(Effect.flip);
+        assert.equal(stopped._tag, "OrchestratorDispatchError");
+        return;
+      }
+      if (scenario === "secret" || scenario === "secret-stop" || scenario === "secret-timeout") {
+        const current = yield* v2.getThreadProjection(threadId);
+        const run = current.runs.find((candidate) => candidate.status === "running")!;
+        const turnItemId = TurnItemId.make(
+          `turn-item:secret-request:${encodeURIComponent(threadId)}:private-card`,
+        );
+        const secretRef = SecretRef.make("secret-ref:0123456789abcdef0123456789abcdef");
+        const secretStore = Layer.mock(SecretRequests)({
+          savedRef: () => Effect.succeed(Option.some(secretRef)),
+        });
+        const toolkit = yield* SecretsToolkit.pipe(
+          Effect.provide(
+            SecretsToolkitHandlersLive.pipe(
+              Layer.provide(secretStore),
+              Layer.provide(NodeCrypto.layer),
+            ),
+          ),
+        );
+        const response = yield* toolkit
+          .handle("request_secret", {
+            label: "Signing secret",
+            reason: "Authenticate webhook deliveries",
+            clientRequestId: "private-card",
+            timeoutMs: 1000,
+          })
+          .pipe(
+            Stream.unwrap,
+            Stream.runCollect,
+            Effect.provide(secretStore),
+            Effect.provideService(McpInvocationContext, {
+              environmentId: EnvironmentId.make("test-environment"),
+              threadId,
+              providerSessionId: "test-session",
+              providerInstanceId: instanceId,
+              capabilities: new Set(["secrets"] as const),
+              issuedAt: 0,
+            }),
+            Effect.forkChild,
+          );
+        const awaitSecretActivity = (status: string) =>
+          domainEvents.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "thread.activity-appended" &&
+                event.payload.activity.kind === "secret-request.updated" &&
+                (event.payload.activity.payload as { secretStatus?: string }).secretStatus ===
+                  status,
+            ),
+            Stream.runHead,
+          );
+        yield* awaitSecretActivity("pending");
+        const waiting = yield* shells.getThreadShellById(threadId);
+        assert.isTrue(Option.isSome(waiting) && waiting.value.hasPendingUserInput);
+        const v2Waiting = yield* v2.getThreadShell(threadId);
+        assert.equal(v2Waiting?.pendingRuntimeRequest?.kind, "user_input");
+        if (scenario !== "secret") {
+          if (scenario === "secret-timeout") {
+            yield* TestClock.adjust("1 second");
+          } else {
+            yield* bridge.interrupt(threadId, CommandId.make("stop-private-request"));
+            yield* Queue.take(interrupted);
+            yield* PubSub.publish(
+              source,
+              decodeEvent({
+                ...base,
+                eventId: "secret-stop-completed",
+                type: "turn.completed",
+                payload: { state: "interrupted" },
+              }),
+            );
+          }
+          yield* awaitSecretActivity("cancelled");
+          const result = yield* Fiber.join(response);
+          assert.deepEqual(result.at(-1)?.result, {
+            status: scenario === "secret-timeout" ? "timed_out" : "cancelled",
+          });
+          const closed = yield* shells.getThreadShellById(threadId);
+          assert.isTrue(Option.isSome(closed) && !closed.value.hasPendingUserInput);
+          return;
+        }
+        yield* v2.dispatch({
+          type: "secret_request.record",
+          commandId: CommandId.make("secret:answer"),
+          threadId,
+          runId: run.id,
+          nodeId: run.rootNodeId!,
+          turnItemId,
+          label: "Signing secret",
+          reason: "Authenticate webhook deliveries",
+          secretStatus: "saved",
+        });
+        yield* awaitSecretActivity("saved");
+        const results = yield* Fiber.join(response);
+        assert.deepEqual(results.at(-1)?.result, { status: "saved", secretRef });
+        const answered = yield* shells.getThreadDetailById(threadId);
+        assert.isTrue(Option.isSome(answered));
+        const cards = Option.getOrThrow(answered).activities.filter(
+          (activity) => activity.kind === "secret-request.updated",
+        );
+        assert.equal(cards.length, 1, "status updates replace the same card");
+        assert.equal((cards[0]!.payload as { secretStatus: string }).secretStatus, "saved");
+        const settled = yield* shells.getThreadShellById(threadId);
+        assert.isTrue(Option.isSome(settled) && !settled.value.hasPendingUserInput);
+        assert.equal(
+          yield* Queue.size(sent),
+          0,
+          "answering a private card must not submit a provider prompt",
+        );
+        return;
+      }
       if (scenario === "automatic-completion") {
         const current = yield* v2.getThreadProjection(threadId);
         const run = current.runs.find((candidate) => candidate.status === "running")!;
@@ -457,6 +708,171 @@ const testBridge = (
         assert.equal(yield* Queue.size(interrupted), 0);
         return;
       }
+      if (scenario === "goal" || scenario === "goal-stop" || scenario === "goal-timeout") {
+        const goal = {
+          objective: "Finish the native goal",
+          status: "active" as const,
+          tokensUsed: 500,
+        };
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...base,
+            eventId: "goal-active",
+            type: "thread.goal.updated",
+            payload: { goal },
+          }),
+        );
+        yield* awaitEvent(
+          (event) =>
+            event.type === "provider-thread.updated" && event.payload.goal?.status === "active",
+        );
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...base,
+            eventId: "goal-first-output",
+            itemId: "goal-first-output",
+            type: "content.delta",
+            payload: { streamKind: "assistant_text", delta: "First goal step finished" },
+          }),
+        );
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...base,
+            eventId: "first-done",
+            type: "turn.completed",
+            payload: { state: "completed" },
+          }),
+        );
+        // A later provider receipt proves the completion and its timer were consumed.
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...base,
+            eventId: "goal-progress",
+            type: "thread.goal.updated",
+            payload: { goal: { ...goal, tokensUsed: 501 } },
+          }),
+        );
+        yield* awaitEvent(
+          (event) =>
+            event.type === "provider-thread.updated" && event.payload.goal?.tokensUsed === 501,
+        );
+        yield* ingestion.drain;
+        const betweenTurns = yield* shells.getThreadShellById(threadId);
+        assert.isTrue(Option.isSome(betweenTurns));
+        if (Option.isSome(betweenTurns))
+          assert.equal(betweenTurns.value.session?.status, "running");
+        if (scenario !== "goal") {
+          if (scenario === "goal-stop") {
+            assert.isTrue(yield* bridge.interrupt(threadId, CommandId.make("stop-goal")));
+            assert.equal(yield* Queue.take(interrupted), threadId);
+          } else {
+            yield* TestClock.adjust("5 seconds");
+          }
+          const finalStatus = scenario === "goal-stop" ? "interrupted" : "completed";
+          yield* awaitEvent(
+            (event) => event.type === "run.updated" && event.payload.status === finalStatus,
+          );
+          const settled = yield* v2.getThreadProjection(threadId);
+          assert.equal(settled.runs[0]?.status, finalStatus);
+          if (scenario === "goal-timeout") {
+            yield* PubSub.publish(
+              source,
+              decodeEvent({
+                ...base,
+                turnId: "unowned-goal-turn",
+                eventId: "late-goal-turn",
+                type: "turn.started",
+                payload: {},
+              }),
+            );
+            assert.equal(
+              yield* Queue.take(interrupted),
+              threadId,
+              "a late goal continuation must not run invisibly",
+            );
+          }
+          return;
+        }
+        const nextBase = { ...base, turnId: TurnId.make("native-goal-continuation") };
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...nextBase,
+            eventId: "second-started",
+            type: "turn.started",
+            payload: {},
+          }),
+        );
+        yield* awaitEvent(
+          (event) =>
+            event.type === "provider-turn.updated" &&
+            event.payload.nativeTurnRef?.nativeId === nextBase.turnId,
+        );
+        const running = yield* v2.getThreadProjection(threadId);
+        assert.equal(running.runs.length, 1);
+        assert.equal(running.runs[0]?.status, "running");
+        const first = running.providerTurns.find(
+          (turn) => turn.nativeTurnRef?.nativeId === turnId,
+        )!;
+        const second = running.providerTurns.find(
+          (turn) => turn.nativeTurnRef?.nativeId === nextBase.turnId,
+        )!;
+        assert.equal(first.status, "completed");
+        assert.equal(second.status, "running");
+        assert.isAbove(second.ordinal, first.ordinal);
+        assert.equal(second.runAttemptId, first.runAttemptId);
+        assert.equal(
+          running.messages.find((message) => message.text === "First goal step finished")
+            ?.streaming,
+          false,
+        );
+        yield* ingestion.drain;
+        const activeShell = yield* shells.getThreadShellById(threadId);
+        assert.isTrue(Option.isSome(activeShell));
+        if (Option.isSome(activeShell))
+          assert.deepEqual(activeShell.value.session?.goal, { ...goal, tokensUsed: 501 });
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...nextBase,
+            eventId: "goal-complete",
+            type: "thread.goal.updated",
+            payload: { goal: { ...goal, status: "complete" } },
+          }),
+        );
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...nextBase,
+            eventId: "second-done",
+            type: "turn.completed",
+            payload: { state: "completed" },
+          }),
+        );
+        yield* awaitEvent(
+          (event) => event.type === "run.updated" && event.payload.status === "completed",
+        );
+        yield* ingestion.drain;
+        const done = yield* v2.getThreadProjection(threadId);
+        assert.equal(done.runs.length, 1);
+        assert.equal(done.runs[0]?.status, "completed");
+        const finishedShell = yield* shells.getThreadShellById(threadId);
+        assert.isTrue(Option.isSome(finishedShell));
+        if (Option.isSome(finishedShell))
+          assert.equal(finishedShell.value.session?.goal?.status, "complete");
+        yield* Deferred.await(checkpointDone);
+        yield* checkpointReactor.drain;
+        assert.equal(
+          captures.filter((ref) => ref === checkpointRefForThreadTurn(threadId, 1)).length,
+          1,
+        );
+        assert.equal(yield* bridge.nativeRollbackCount(threadId, [nextBase.turnId]), 2);
+        return;
+      }
       if (scenario === "steer") {
         const followup = MessageId.make("followup");
         yield* legacy.dispatch({
@@ -532,6 +948,357 @@ const testBridge = (
           event.payload.id === "question-1" &&
           event.payload.status === "pending",
       );
+      if (scenario.startsWith("stalled-")) {
+        const before = yield* v2.getThreadProjection(threadId);
+        const run = before.runs.at(-1)!;
+        const attempt = before.attempts.find((row) => row.id === run.activeAttemptId)!;
+        const node = before.nodes.find((row) => row.id === run.rootNodeId)!;
+        const turn = before.providerTurns.at(-1)!;
+        const at = yield* DateTime.now;
+        if (scenario === "stalled-starting-background") {
+          const startingRunId = RunId.make("starting-after-switch");
+          const startingNodeId = NodeId.make("starting-after-switch-root");
+          const startingAttemptId = RunAttemptId.make("starting-after-switch-attempt");
+          const startingProviderId = ProviderThreadId.make("starting-after-switch-provider");
+          const oldProvider = before.providerThreads.find(
+            (row) => row.id === turn.providerThreadId,
+          )!;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("old-run-completed"),
+                type: "run.updated",
+                threadId,
+                occurredAt: at,
+                payload: { ...run, status: "completed", completedAt: at },
+              },
+              {
+                id: EventId.make("old-turn-completed"),
+                type: "provider-turn.updated",
+                threadId,
+                occurredAt: at,
+                payload: { ...turn, status: "completed", completedAt: at },
+              },
+              {
+                id: EventId.make("new-provider"),
+                type: "provider-thread.updated",
+                threadId,
+                occurredAt: at,
+                payload: {
+                  ...oldProvider,
+                  id: startingProviderId,
+                  providerSessionId: null,
+                  status: "idle",
+                  lastRunOrdinal: run.ordinal + 1,
+                },
+              },
+              {
+                id: EventId.make("new-root"),
+                type: "node.updated",
+                threadId,
+                occurredAt: at,
+                payload: {
+                  ...node,
+                  id: startingNodeId,
+                  runId: startingRunId,
+                  providerThreadId: startingProviderId,
+                  status: "pending",
+                },
+              },
+              {
+                id: EventId.make("new-attempt"),
+                type: "run-attempt.updated",
+                threadId,
+                occurredAt: at,
+                payload: {
+                  ...attempt,
+                  id: startingAttemptId,
+                  runId: startingRunId,
+                  status: "pending",
+                },
+              },
+              {
+                id: EventId.make("new-run-starting"),
+                type: "run.updated",
+                threadId,
+                occurredAt: at,
+                payload: {
+                  ...run,
+                  id: startingRunId,
+                  rootNodeId: startingNodeId,
+                  activeAttemptId: startingAttemptId,
+                  providerThreadId: startingProviderId,
+                  ordinal: run.ordinal + 1,
+                  status: "starting",
+                },
+              },
+              {
+                id: EventId.make("old-background"),
+                type: "turn-item.updated",
+                threadId,
+                occurredAt: at,
+                payload: {
+                  id: TurnItemId.make("old-background"),
+                  threadId,
+                  runId: run.id,
+                  nodeId: node.id,
+                  providerThreadId: turn.providerThreadId,
+                  providerTurnId: turn.id,
+                  nativeItemRef: null,
+                  parentItemId: null,
+                  ordinal: 100,
+                  status: "running",
+                  title: "Old provider server",
+                  startedAt: at,
+                  completedAt: null,
+                  updatedAt: at,
+                  type: "dynamic_tool",
+                  toolName: "background-server",
+                  input: null,
+                },
+              },
+            ],
+          });
+          yield* v2.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop-new-starting"),
+            threadId,
+            runId: startingRunId,
+            holdQueue: true,
+          });
+          yield* (yield* OrchestrationEffectWorkerV2).drain();
+          assert.equal(yield* Queue.take(interrupted), threadId);
+          const stopped = yield* v2.getThreadProjection(threadId);
+          assert.equal(stopped.runs.find((row) => row.id === startingRunId)?.status, "interrupted");
+          assert.equal(stopped.runs.find((row) => row.id === run.id)?.status, "completed");
+          assert.equal(
+            stopped.turnItems.find((row) => row.id === "old-background")?.status,
+            "interrupted",
+          );
+          assert.equal(sends, 1);
+          return;
+        }
+        if (scenario.startsWith("stalled-missing")) {
+          yield* (yield* ProviderSessionManagerV2).release({
+            providerSessionId: before.providerThreads.find(
+              (row) => row.id === turn.providerThreadId,
+            )!.providerSessionId!,
+            reason: "runtime_error",
+          });
+          yield* awaitEvent(
+            (event) => event.type === "run.updated" && event.payload.status === "failed",
+          );
+          // Reproduce terminal writes lost after the process died.
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("stale-run"),
+                type: "run.updated",
+                threadId,
+                occurredAt: at,
+                payload: run,
+              },
+              {
+                id: EventId.make("stale-attempt"),
+                type: "run-attempt.updated",
+                threadId,
+                occurredAt: at,
+                payload: attempt,
+              },
+              {
+                id: EventId.make("stale-node"),
+                type: "node.updated",
+                threadId,
+                occurredAt: at,
+                payload: node,
+              },
+            ],
+          });
+        }
+        const terminal = scenario.endsWith("terminal");
+        const partialId = MessageId.make("stalled-partial");
+        yield* sink.write({
+          events: [
+            ...(terminal
+              ? [
+                  {
+                    id: EventId.make("native-terminal"),
+                    type: "provider-turn.updated" as const,
+                    threadId,
+                    occurredAt: at,
+                    payload: { ...turn, status: "completed" as const, completedAt: at },
+                  },
+                ]
+              : []),
+            {
+              id: EventId.make("partial-message"),
+              type: "message.updated",
+              threadId,
+              runId: run.id,
+              occurredAt: at,
+              payload: {
+                id: partialId,
+                threadId,
+                runId: run.id,
+                nodeId: node.id,
+                role: "assistant",
+                text: "Partial output",
+                attachments: [],
+                streaming: true,
+                createdBy: "agent",
+                creationSource: "provider",
+                createdAt: at,
+                updatedAt: at,
+              },
+            },
+            {
+              id: EventId.make("partial-item"),
+              type: "turn-item.updated",
+              threadId,
+              runId: run.id,
+              occurredAt: at,
+              payload: {
+                id: TurnItemId.make("stalled-output"),
+                threadId,
+                runId: run.id,
+                nodeId: node.id,
+                providerThreadId: turn.providerThreadId,
+                providerTurnId: turn.id,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 100,
+                status: "running",
+                title: null,
+                startedAt: at,
+                completedAt: null,
+                updatedAt: at,
+                type: "assistant_message",
+                messageId: partialId,
+                text: "Partial output",
+                streaming: true,
+              },
+            },
+          ],
+        });
+        const superseded = scenario === "stalled-superseded";
+        if (superseded) {
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("superseding-attempt"),
+                type: "run.updated",
+                threadId,
+                occurredAt: at,
+                payload: { ...run, activeAttemptId: RunAttemptId.make("new-attempt") },
+              },
+            ],
+          });
+        }
+        yield* v2.dispatch(
+          superseded
+            ? {
+                type: "thread.background-work.settle",
+                commandId: CommandId.make("stale-stop-settle"),
+                threadId,
+                providerThreadId: turn.providerThreadId,
+                providerTurnId: turn.id,
+              }
+            : {
+                type: "run.interrupt",
+                commandId: CommandId.make("stop-stalled"),
+                threadId,
+                runId: run.id,
+              },
+        );
+        yield* (yield* OrchestrationEffectWorkerV2).drain();
+        if (superseded) {
+          const late = yield* sink.writeIfRunCurrent({
+            threadId,
+            runId: run.id,
+            activeAttemptId: attempt.id,
+            expectedStatus: run.status,
+            events: [
+              {
+                id: EventId.make("late-terminal"),
+                type: "run.updated",
+                threadId,
+                occurredAt: at,
+                payload: { ...run, status: "completed" },
+              },
+            ],
+            effects: [
+              {
+                id: "late-checkpoint",
+                commandId: CommandId.make("late-checkpoint"),
+                threadId,
+                request: {
+                  type: "checkpoint.capture",
+                  runId: run.id,
+                  scopeId: before.checkpointScopes[0]!.id,
+                },
+              },
+            ],
+          });
+          assert.isFalse(late.committed);
+          assert.deepEqual(late.storedEvents, []);
+          const rows =
+            yield* sql`SELECT effect_id FROM orchestration_v2_effect_outbox WHERE effect_id = 'late-checkpoint'`;
+          assert.equal(rows.length, 0);
+        }
+        const after = yield* v2.getThreadProjection(threadId);
+        assert.equal(after.runs.at(-1)?.status, superseded ? run.status : "interrupted");
+        assert.equal(
+          after.attempts.find((row) => row.id === attempt.id)?.status,
+          superseded ? attempt.status : "interrupted",
+        );
+        assert.equal(
+          after.providerTurns.find((row) => row.id === turn.id)?.status,
+          terminal ? "completed" : superseded ? turn.status : "interrupted",
+        );
+        assert.equal(
+          after.nodes.find((row) => row.id === node.id)?.status,
+          superseded ? node.status : "interrupted",
+        );
+        assert.equal(after.messages.find((row) => row.id === partialId)?.streaming, superseded);
+        assert.equal(after.messages.find((row) => row.id === partialId)?.text, "Partial output");
+        assert.equal(
+          after.runtimeRequests.find((row) => row.id === "question-1")?.status,
+          superseded ? "pending" : "cancelled",
+        );
+        assert.equal(
+          after.turnItems.filter((row) => row.type === "run_interrupt_result").length,
+          superseded ? 0 : 1,
+        );
+        if (scenario === "stalled-restart") {
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("restart-cut-run"),
+                type: "run.updated",
+                threadId,
+                occurredAt: at,
+                payload: { ...run, status: "cancelled", completedAt: at },
+              },
+            ],
+          });
+          yield* v2.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("late-restart-continuation"),
+            threadId,
+            messageId: MessageId.make("late-restart-message"),
+            text: "Continue where you left off.",
+            attachments: [],
+            createdBy: "agent",
+            creationSource: "server",
+            dispatchMode: { type: "start_immediately" },
+            restartContinuationOfRunId: run.id,
+          });
+          yield* (yield* OrchestrationEffectWorkerV2).drain();
+          assert.equal((yield* v2.getThreadProjection(threadId)).runs.length, before.runs.length);
+          assert.equal(sends, 1);
+        }
+        return;
+      }
       yield* PubSub.publish(
         source,
         decodeEvent({
@@ -546,6 +1313,7 @@ const testBridge = (
         scenario === "background" ||
         scenario === "background-exit" ||
         scenario === "failed-background-stop" ||
+        scenario === "queued-background-stop" ||
         scenario === "native-wake"
       ) {
         yield* PubSub.publish(
@@ -568,9 +1336,25 @@ const testBridge = (
           eventId: "delta",
           itemId: "assistant",
           type: "content.delta",
-          payload: { streamKind: "assistant_text", delta: "Done" },
+          payload: {
+            streamKind: "assistant_text",
+            delta: scenario === "basic" ? "Done\n\n" : "Done",
+          },
         }),
       );
+      if (scenario === "basic") {
+        yield* awaitEvent(
+          (event) =>
+            event.type === "turn-item.updated" &&
+            event.payload.type === "assistant_message" &&
+            event.payload.text === "Done\n\n",
+        );
+        assert.isFalse(
+          (yield* v2.getThreadProjection(threadId)).messages.some(
+            (message) => message.role === "assistant" && message.streaming,
+          ),
+        );
+      }
       if (scenario === "interrupt") {
         assert.isTrue(yield* bridge.interrupt(threadId, CommandId.make("interrupt")));
         assert.equal(yield* Queue.take(interrupted), threadId);
@@ -581,7 +1365,10 @@ const testBridge = (
           ...base,
           eventId: "completed",
           type: "turn.completed",
-          payload: { state: scenario === "interrupt" ? "interrupted" : "completed" },
+          payload: {
+            state: scenario === "interrupt" ? "interrupted" : "completed",
+            ...(scenario === "goal-control" ? { native: false } : {}),
+          },
         }),
       );
       yield* Deferred.await(checkpointDone);
@@ -594,13 +1381,17 @@ const testBridge = (
         "V2 and the existing checkpoint reactor must capture a turn only once",
       );
       const projection = yield* v2.getThreadProjection(threadId);
+      if (scenario === "goal-control") {
+        assert.equal(projection.providerTurns[0]?.nativeTurnRef, null);
+        assert.equal(yield* bridge.nativeRollbackCount(threadId, [turnId]), 0);
+      }
       assert.strictEqual(
         projection.runs.at(-1)?.status,
         scenario === "interrupt" ? "interrupted" : "completed",
       );
       assert.strictEqual(
         projection.messages.findLast((message) => message.role === "assistant")?.text,
-        "Done",
+        scenario === "basic" ? "Done\n\n" : "Done",
       );
       assert.equal(
         projection.messages.find((message) => message.id === messageId)?.text,
@@ -613,6 +1404,7 @@ const testBridge = (
         scenario === "background" ||
         scenario === "background-exit" ||
         scenario === "failed-background-stop" ||
+        scenario === "queued-background-stop" ||
         scenario === "native-wake"
       ) {
         assert.equal(
@@ -620,6 +1412,53 @@ const testBridge = (
           "running",
           "Background work can outlive its root turn",
         );
+        if (scenario === "queued-background-stop") {
+          const owner = projection.runs.at(-1)!;
+          const sink = yield* EventSinkV2;
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("background-checkpoint-pending"),
+                type: "run.updated",
+                threadId,
+                runId: owner.id,
+                occurredAt: yield* DateTime.now,
+                payload: { ...owner, status: "waiting", completedAt: null },
+              },
+            ],
+          });
+          yield* v2.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("queue-background-follow-up"),
+            threadId,
+            messageId: MessageId.make("queued-background-message"),
+            text: "Continue after the background work",
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          assert.equal((yield* v2.getThreadProjection(threadId)).runs.at(-1)?.status, "queued");
+          yield* v2.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop-with-background-queue"),
+            threadId,
+            runId: owner.id,
+            holdQueue: true,
+          });
+          assert.equal(yield* Queue.take(interrupted), threadId);
+          const worker = yield* OrchestrationEffectWorkerV2;
+          yield* worker.drain();
+          const after = yield* v2.getThreadProjection(threadId);
+          assert.equal(after.runs.at(-1)?.status, "queued");
+          assert.equal(after.runs.at(-1)?.queueHeld, true);
+          assert.equal(
+            after.turnItems.find((item) => item.type === "subagent")?.status,
+            "interrupted",
+          );
+          assert.equal(sends, 1);
+          return;
+        }
         if (scenario === "failed-background-stop") {
           yield* bridge.startTurn({
             threadId,
@@ -756,7 +1595,7 @@ const testBridge = (
           shell.value.messages.findLast(
             (message) => message.role === "assistant" && message.turnId === turnId,
           )?.text,
-          "Done",
+          scenario === "basic" ? "Done\n\n" : "Done",
         );
       }
       if (scenario === "revert") {
@@ -870,6 +1709,10 @@ for (const driver of drivers)
   it.effect(`runs ${driver} through V2 while retaining Ronin's client and prepared prompt`, () =>
     testBridge(driver),
   );
+for (const driver of drivers)
+  it.effect(`publishes an inline page through ${driver} with ownership and Stop checks`, () =>
+    testBridge(driver, "html"),
+  );
 it.effect("retains prepared skill instructions when steering an active Claude turn", () =>
   testBridge("claudeAgent", "steer"),
 );
@@ -878,6 +1721,9 @@ it.effect("continues ingesting background tasks after checkpointing the root tur
 );
 it.effect("cancels background tasks when their provider exits", () =>
   testBridge("claudeAgent", "background-exit"),
+);
+it.effect("Stop holds a later queued message and still reaches native background work", () =>
+  testBridge("claudeAgent", "queued-background-stop"),
 );
 it.effect(
   "Stop reaches earlier background work after a follow-up fails before provider start",
@@ -905,4 +1751,38 @@ it.effect("deletes V2 sessions and threads when a Ronin project is deleted", () 
 it.effect(
   "queues automatic completion messages while Claude is running without interrupting tools",
   () => testBridge("claudeAgent", "automatic-completion"),
+);
+it.effect(
+  "keeps repeated native goal turns in one run and projects progress to Ronin's client",
+  () => testBridge("codex", "goal"),
+);
+it.effect("Stop ends a goal while it waits between native turns", () =>
+  testBridge("codex", "goal-stop"),
+);
+it.effect("settles a declined goal continuation and stops a late unowned native turn", () =>
+  testBridge("codex", "goal-timeout"),
+);
+it.effect("checkpoints local goal controls without consuming native rollback turns", () =>
+  testBridge("codex", "goal-control"),
+);
+it.effect("shows and answers a private secret card through Ronin without a provider prompt", () =>
+  testBridge("codex", "secret"),
+);
+it.effect("Stop closes the private secret card and settles its MCP wait", () =>
+  testBridge("codex", "secret-stop"),
+);
+it.effect("a private secret card timeout clears its needs-input badge", () =>
+  testBridge("codex", "secret-timeout"),
+);
+
+it.effect.each([
+  "stalled-return",
+  "stalled-terminal",
+  "stalled-missing",
+  "stalled-missing-terminal",
+  "stalled-superseded",
+  "stalled-restart",
+  "stalled-starting-background",
+] as const)("Stop repairs %s through Ronin without changing a newer attempt", (scenario) =>
+  testBridge("codex", scenario),
 );

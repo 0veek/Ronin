@@ -1,4 +1,6 @@
 import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
+import { readHtmlRenderReference, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
+import { AssetResource, SecretRequestActivity } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
 import * as Schema from "effect/Schema";
@@ -17,7 +19,6 @@ import {
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
   isToolLifecycleItemType,
-  type AssetResource,
   type ChatAttachment,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
@@ -193,7 +194,12 @@ export const PROVIDER_OPTIONS: Array<{
   },
 ];
 
+const decodeSecretRequestActivity = Schema.decodeUnknownOption(SecretRequestActivity);
+const decodeToolOutputImages = Schema.decodeUnknownOption(Schema.Array(AssetResource));
+
 export interface WorkLogEntry {
+  htmlRender?: HtmlRenderReference;
+  secretRequest?: SecretRequestActivity;
   questionAnswer?: UserInputAttachmentAnswerPayload;
   id: string;
   createdAt: string;
@@ -201,6 +207,7 @@ export interface WorkLogEntry {
   label: string;
   detail?: string;
   viewedImagePath?: string;
+  outputImages?: ReadonlyArray<Extract<AssetResource, { _tag: "tool-output-image" }>>;
   command?: string;
   rawCommand?: string;
   changedFiles?: ReadonlyArray<string>;
@@ -736,6 +743,7 @@ export function deriveWorkLogEntries(
     }
   }
   const entries: DerivedWorkLogEntry[] = [];
+  const renderedAttachmentIds = new Set<string>();
   for (const activity of foldUserInputActivities(ordered)) {
     if (activity.kind === "tool.started") continue;
     // Agent task.started rows are CTA seeds: they carry the true spawn turn,
@@ -751,6 +759,10 @@ export function deriveWorkLogEntries(
     if (isPlanBoundaryToolActivity(activity)) continue;
     if (isAgentInternalActivity(activity)) continue;
     const entry = toDerivedWorkLogEntry(activity, options);
+    if (entry.htmlRender) {
+      if (renderedAttachmentIds.has(entry.htmlRender.attachmentId)) continue;
+      renderedAttachmentIds.add(entry.htmlRender.attachmentId);
+    }
     // Native agent launches get their visible row from task.started. Defer
     // their active tool row so another launch cannot duplicate the batch.
     if (
@@ -934,6 +946,14 @@ function toDerivedWorkLogEntry(
     const answer = decodeQuestionAttachmentAnswer(payload);
     if (Option.isSome(answer)) entry.questionAnswer = answer.value;
   }
+  if (activity.kind === "secret-request.updated") {
+    const request = decodeSecretRequestActivity(activity.payload);
+    if (Option.isSome(request)) entry.secretRequest = request.value;
+  }
+  if (activity.kind === "html-render.published") {
+    const reference = readHtmlRenderReference(payload?.htmlRender);
+    if (reference) entry.htmlRender = reference;
+  }
   const providerBoundary = extractProviderBoundary(activity, payload, options);
   if (providerBoundary) {
     entry.providerBoundary = providerBoundary;
@@ -954,6 +974,12 @@ function toDerivedWorkLogEntry(
   }
   if (viewedImagePath) {
     entry.viewedImagePath = viewedImagePath;
+  }
+  const outputImages = decodeToolOutputImages(payload?.outputImages);
+  if (Option.isSome(outputImages)) {
+    entry.outputImages = outputImages.value.filter(
+      (resource) => resource._tag === "tool-output-image",
+    );
   }
   if (commandPreview.command) {
     entry.command = commandPreview.command;
@@ -1150,6 +1176,7 @@ function mergeDerivedWorkLogEntries(
   const changedFiles = mergeChangedFiles(previous.changedFiles, next.changedFiles);
   const detail = next.detail ?? previous.detail;
   const viewedImagePath = next.viewedImagePath ?? previous.viewedImagePath;
+  const outputImages = next.outputImages ?? previous.outputImages;
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
@@ -1164,6 +1191,7 @@ function mergeDerivedWorkLogEntries(
     ...next,
     ...(detail ? { detail } : {}),
     ...(viewedImagePath ? { viewedImagePath } : {}),
+    ...(outputImages ? { outputImages } : {}),
     ...(command ? { command } : {}),
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),

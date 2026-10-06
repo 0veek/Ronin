@@ -100,7 +100,7 @@ function Button({ className, variant, size, render, ...props }: ButtonProps) {
 
 export { Button, buttonVariants };
 
-/** An inline action that keeps the geometry of surrounding text or a graph node. */
+/** An inline action. Set --inline-button-white-space to normal in wrapping prose containers. */
 export function InlineButton({
   className,
   underline = false,
@@ -111,7 +111,7 @@ export function InlineButton({
       type="button"
       data-slot="inline-button"
       className={cn(
-        "inline-flex shrink-0 cursor-pointer items-center gap-0.5 whitespace-nowrap focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-64",
+        "inline-flex shrink-0 cursor-pointer items-center gap-0.5 [text-align:var(--inline-button-text-align,center)] [white-space:var(--inline-button-white-space,nowrap)] focus-visible:outline-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-64",
         underline && "border-b border-transparent hover:border-current",
         className,
       )}

@@ -1,5 +1,5 @@
 // @effect-diagnostics globalTimers:off -- The Node socket client owns its response deadline and clears it on every completion path.
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
@@ -214,7 +214,7 @@ const runAppCommand = Effect.fn("cli.app")(function* (flags: {
     }).address;
   const request: DesktopAppActivationRequest = {
     version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
-    requestId: NodeCrypto.randomUUID(),
+    requestId: yield* (yield* Crypto.Crypto).randomUUIDv4.pipe(Effect.orDie),
     type: "open-workspace",
     workspaceRoot,
     platform: hostPlatform,

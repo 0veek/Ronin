@@ -64,7 +64,7 @@ for (const driverName of [
             providerThreadId: providerThread.id,
             nodeId: NodeId.make(`node-${n}`),
             runAttemptId: null,
-            nativeTurnRef: null,
+            nativeTurnRef: { driver, nativeId: `native-${n}`, strength: "strong" as const },
             ordinal: n,
             status: "completed" as const,
             startedAt: providerThread.createdAt,

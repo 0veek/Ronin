@@ -127,14 +127,11 @@ export const observeRpcStreamEffect = <A, StreamError, StreamContext, EffectErro
   const instrumented = Stream.unwrap(
     Effect.gen(function* () {
       const startedAt = yield* Clock.currentTimeNanos;
-      const exit = yield* Effect.exit(effect);
-
-      if (Exit.isFailure(exit)) {
-        yield* recordRpcStreamMetrics(method, startedAt, exit);
-        return yield* Effect.failCause(exit.cause);
-      }
-
-      return exit.value.pipe(
+      // onError also runs when the stream is interrupted before it is produced.
+      const stream = yield* effect.pipe(
+        Effect.onError((cause) => recordRpcStreamMetrics(method, startedAt, Exit.failCause(cause))),
+      );
+      return stream.pipe(
         Stream.onExit((streamExit) => recordRpcStreamMetrics(method, startedAt, streamExit)),
       );
     }),

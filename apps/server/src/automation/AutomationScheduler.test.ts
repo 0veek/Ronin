@@ -25,6 +25,8 @@ function makeAutomationServiceLayer(options?: {
     update: () => unsupported(),
     remove: () => unsupported(),
     runNow: () => unsupported(),
+    rotateWebhookToken: () => unsupported(),
+    runWebhook: () => unsupported(),
     listRuns: () => unsupported(),
     tick: Effect.gen(function* () {
       const count = yield* Ref.updateAndGet(ticksRef, (previous) => previous + 1);

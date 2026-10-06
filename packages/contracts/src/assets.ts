@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { EventId, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
@@ -45,6 +45,11 @@ export const AssetResource = Schema.Union([
     // A cache-key hint only. The server reads the authoritative path from the
     // project projection before it issues the signed URL.
     path: Schema.optional(ProjectFaviconPath),
+  }),
+  // Stored tool output is read by activity identity; bytes stay off the timeline wire.
+  Schema.TaggedStruct("tool-output-image", {
+    activityId: EventId,
+    index: NonNegativeInt,
   }),
 ]);
 export type AssetResource = typeof AssetResource.Type;
@@ -207,7 +212,9 @@ export class AssetWorkspaceAssetNotFoundError extends Schema.TaggedErrorClass<As
   override get message(): string {
     return this.resource._tag === "media-file"
       ? "Media file was not found."
-      : "Workspace asset was not found.";
+      : this.resource._tag === "tool-output-image"
+        ? "Tool output image was not found."
+        : "Workspace asset was not found.";
   }
 }
 

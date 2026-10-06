@@ -1,4 +1,5 @@
 import { openUrlInPreview } from "../browser/openFileInPreview";
+import { presentProviderGoal } from "@t3tools/client-runtime/provider-goals";
 import { resolveDiscoveredServerUrl } from "../browser/browserTargetResolver";
 import { useLoadBalancedEnvironment } from "../hooks/useLoadBalancedEnvironment";
 import { useScratchProject } from "../hooks/useScratchProject";
@@ -26,6 +27,7 @@ import {
   type TurnId,
   type KeybindingCommand,
   OrchestrationThreadActivity,
+  SecretRequestActivity,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
@@ -101,6 +103,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
+import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -227,6 +230,7 @@ import {
   FileDiffIcon,
   FolderGit2Icon,
   GitBranchIcon,
+  TargetIcon,
   GitCompareIcon,
   LaptopIcon,
   Minimize2Icon,
@@ -674,6 +678,8 @@ type EnvironmentUnavailableState = {
   readonly connection: EnvironmentConnectionPresentation;
 };
 
+const decodeSecretRequestActivity = Schema.decodeUnknownOption(SecretRequestActivity);
+
 function eventPathContainsSelector(event: Event, selector: string): boolean {
   const path = event.composedPath();
   if (path.length === 0 && event.target) {
@@ -688,6 +694,7 @@ function shouldTypeToFocusComposer(event: KeyboardEvent): boolean {
   if (event.key.length !== 1) return false;
 
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR)) return false;
+  if (eventPathContainsSelector(event, "[data-secret-request]")) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_INTERACTIVE_SELECTOR)) return false;
   if (document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)) return false;
 
@@ -3215,6 +3222,19 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  const pendingSecretCount = useMemo(
+    () =>
+      threadActivities.filter((activity) => {
+        if (activity.kind !== "secret-request.updated") return false;
+        const request = decodeSecretRequestActivity(activity.payload);
+        return (
+          Option.isSome(request) &&
+          request.value.threadId === activeThreadId &&
+          request.value.secretStatus === "pending"
+        );
+      }).length,
+    [threadActivities, activeThreadId],
+  );
   const activePendingRequestKey = JSON.stringify([
     environmentId,
     activeThreadId,
@@ -3284,7 +3304,8 @@ export default function ChatView(props: ChatViewProps) {
   // the thread is on rather than offering a choice that would bounce.
   const providerSwitchBlockReason = deriveProviderSwitchBlockReason({
     thread: activeThread,
-    hasOpenBlockingRequest: pendingApprovals.length > 0 || pendingUserInputs.length > 0,
+    hasOpenBlockingRequest:
+      pendingApprovals.length > 0 || pendingUserInputs.length > 0 || pendingSecretCount > 0,
   });
   const pickerLockedProvider = providerSwitchBlockReason === null ? null : lockedProvider;
   // The instance the thread is actually on. A stopped session is skipped for
@@ -3385,7 +3406,7 @@ export default function ChatView(props: ChatViewProps) {
     );
   }, [activeLatestTurn?.turnId, activePlan]);
   const showPlanFollowUpPrompt = shouldShowPlanFollowUpPrompt({
-    pendingUserInputCount: pendingUserInputs.length,
+    pendingUserInputCount: pendingUserInputs.length + pendingSecretCount,
     interactionMode,
     latestTurnSettled,
     hasActionableProposedPlan: hasActionableProposedPlan(activeProposedPlan),
@@ -6531,6 +6552,127 @@ export default function ChatView(props: ChatViewProps) {
     switchGitRef,
     updateThreadMetadata,
   ]);
+  const sendStandaloneCommand = useCallback(
+    async (text: string, failureMessage: string) => {
+      if (!activeThread || !clientSettingsHydrated || sendInFlightRef.current) {
+        return;
+      }
+      const context = composerRef.current?.getSendContext();
+      if (!context?.providerAvailable) return;
+
+      // Native commands run in their own turn; the draft and its attachments stay local.
+      const threadId = activeThread.id;
+      const messageId = newMessageId();
+      const createdAt = new Date().toISOString();
+      sendInFlightRef.current = true;
+      beginLocalDispatch();
+      setThreadError(threadId, null);
+      setOptimisticUserMessages((messages) => [
+        ...messages,
+        {
+          id: messageId,
+          role: "user",
+          text,
+          turnId: null,
+          createdAt,
+          updatedAt: createdAt,
+          streaming: false,
+        },
+      ]);
+      scrollToEnd();
+      try {
+        const settingsResult = await persistThreadSettingsForNextTurn({
+          threadId,
+          createdAt,
+          modelSelection: context.selectedModelSelection,
+          ...(localCheckoutBranchMismatch
+            ? { branch: localCheckoutBranchMismatch.currentBranch }
+            : {}),
+          runtimeMode,
+          interactionMode: context.interactionMode,
+        });
+        const result =
+          settingsResult._tag === "Failure"
+            ? settingsResult
+            : await startThreadTurn({
+                environmentId,
+                input: {
+                  threadId,
+                  message: { messageId, role: "user", text, attachments: [] },
+                  modelSelection: context.selectedModelSelection,
+                  runtimeMode,
+                  interactionMode: context.interactionMode,
+                  createdAt,
+                },
+              });
+        if (result._tag === "Failure") {
+          setOptimisticUserMessages((messages) =>
+            messages.filter((message) => message.id !== messageId),
+          );
+          resetLocalDispatch();
+          if (!isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            setThreadError(threadId, error instanceof Error ? error.message : failureMessage);
+          }
+        }
+      } finally {
+        sendInFlightRef.current = false;
+      }
+    },
+    [
+      activeThread,
+      clientSettingsHydrated,
+      composerRef,
+      sendInFlightRef,
+      beginLocalDispatch,
+      setThreadError,
+      scrollToEnd,
+      persistThreadSettingsForNextTurn,
+      localCheckoutBranchMismatch,
+      runtimeMode,
+      startThreadTurn,
+      environmentId,
+      resetLocalDispatch,
+    ],
+  );
+
+  const activeGoal = activeThreadShell?.session?.goal ?? null;
+  const goalBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
+    if (!activeThread || activeGoal === null) return null;
+    const presentation = presentProviderGoal(activeGoal, isWorking);
+    return {
+      id: `goal:${activeThread.id}`,
+      variant: "default",
+      priority: "activity",
+      icon: <TargetIcon />,
+      title:
+        presentation.usage === null
+          ? presentation.title
+          : `${presentation.title} · ${presentation.usage}`,
+      description: presentation.objective,
+      actions: isWorking ? undefined : (
+        <>
+          {presentation.canResume ? (
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => void sendStandaloneCommand("/goal resume", "Failed to resume goal.")}
+            >
+              Resume
+            </Button>
+          ) : null}
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => void sendStandaloneCommand("/goal clear", "Failed to clear goal.")}
+          >
+            Clear
+          </Button>
+        </>
+      ),
+    };
+  }, [activeGoal, activeThread, isWorking, sendStandaloneCommand]);
+
   // Background work (subagent fleets, workflow runs, watch loops) can outlive
   // the turn; once it settles, the composer stop button is gone, so this
   // banner is the only visible stop affordance. Stop routes through the
@@ -6721,6 +6863,7 @@ export default function ChatView(props: ChatViewProps) {
     activeEnvironmentUnavailable ||
     pendingApprovals.length > 0 ||
     pendingUserInputs.length > 0 ||
+    pendingSecretCount > 0 ||
     showPlanFollowUpPrompt;
   const compactDisabled = compactThreadUnavailable;
   const compactDisabledReason = compactDisabled
@@ -6739,6 +6882,7 @@ export default function ChatView(props: ChatViewProps) {
       resumeCompactionPermanentlyDismissed ||
       nativeResumeCompactionDismissed ||
       pendingUserInputs.length > 0 ||
+      pendingSecretCount > 0 ||
       phase === "running" ||
       !shouldOfferResumeCompaction({
         provider: selectedProvider,
@@ -6792,6 +6936,7 @@ export default function ChatView(props: ChatViewProps) {
     nativeResumeCompactionDismissed,
     nowMinute,
     pendingUserInputs.length,
+    pendingSecretCount,
     phase,
     resumeCompactionKey,
     resumeCompactionPermanentlyDismissed,
@@ -6809,8 +6954,9 @@ export default function ChatView(props: ChatViewProps) {
       item.urgent === true || item.variant === "error" || item.variant === "warning";
     const urgentSystemItems = systemComposerBannerItems.filter(isUrgentSystemItem);
     const calmSystemItems = systemComposerBannerItems.filter((item) => !isUrgentSystemItem(item));
-    const backgroundLivenessItems =
-      backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
+    const backgroundLivenessItems = [goalBannerItem, backgroundLivenessBannerItem].filter(
+      (item) => item !== null,
+    );
     // Ahead of background liveness: a queued resume is the only banner that
     // explains why an idle-looking thread is about to start work by itself,
     // and its Cancel is the only way to stop that before it happens.
@@ -6884,6 +7030,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [
     activeBranchMismatchKey,
     backgroundLivenessBannerItem,
+    goalBannerItem,
     handleRestoreThreadBranch,
     isRestoringThreadBranch,
     localCheckoutBranchMismatch,
@@ -7465,74 +7612,8 @@ export default function ChatView(props: ChatViewProps) {
     ],
   );
 
-  const onCompactContext = async () => {
-    if (compactDisabled || !activeThread || !clientSettingsHydrated || sendInFlightRef.current) {
-      return;
-    }
-    const context = composerRef.current?.getSendContext();
-    if (!context?.providerAvailable) return;
-
-    // Compaction is a standalone command; the draft and its attachments stay local.
-    const threadId = activeThread.id;
-    const messageId = newMessageId();
-    const createdAt = new Date().toISOString();
-    sendInFlightRef.current = true;
-    beginLocalDispatch();
-    setThreadError(threadId, null);
-    setOptimisticUserMessages((messages) => [
-      ...messages,
-      {
-        id: messageId,
-        role: "user",
-        text: "/compact",
-        turnId: null,
-        createdAt,
-        updatedAt: createdAt,
-        streaming: false,
-      },
-    ]);
-    scrollToEnd();
-    try {
-      const settingsResult = await persistThreadSettingsForNextTurn({
-        threadId,
-        createdAt,
-        modelSelection: context.selectedModelSelection,
-        ...(localCheckoutBranchMismatch
-          ? { branch: localCheckoutBranchMismatch.currentBranch }
-          : {}),
-        runtimeMode,
-        interactionMode: context.interactionMode,
-      });
-      const result =
-        settingsResult._tag === "Failure"
-          ? settingsResult
-          : await startThreadTurn({
-              environmentId,
-              input: {
-                threadId,
-                message: { messageId, role: "user", text: "/compact", attachments: [] },
-                modelSelection: context.selectedModelSelection,
-                runtimeMode,
-                interactionMode: context.interactionMode,
-                createdAt,
-              },
-            });
-      if (result._tag === "Failure") {
-        setOptimisticUserMessages((messages) =>
-          messages.filter((message) => message.id !== messageId),
-        );
-        resetLocalDispatch();
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          setThreadError(
-            threadId,
-            error instanceof Error ? error.message : "Failed to compact context.",
-          );
-        }
-      }
-    } finally {
-      sendInFlightRef.current = false;
-    }
+  const onCompactContext = () => {
+    if (!compactDisabled) void sendStandaloneCommand("/compact", "Failed to compact context.");
   };
 
   const queuedMessages = useQueuedMessages(activeThreadKey ?? "");
@@ -8532,7 +8613,7 @@ export default function ChatView(props: ChatViewProps) {
   };
 
   const queueBlockedByPendingRequest =
-    activePendingApproval !== null || pendingUserInputs.length > 0;
+    activePendingApproval !== null || pendingUserInputs.length > 0 || pendingSecretCount > 0;
 
   // The row handlers are read from refs at call-time so their identity stays
   // stable and does not bust TimelineRowCtx on every ChatView render.

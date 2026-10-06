@@ -14,6 +14,7 @@ import type {
   OrchestrationThread,
   OrchestrationThreadSearchScope,
   ProjectContentMatch,
+  ProjectEntry,
   ProjectEntryKind,
   ThreadId,
   VcsListRefsResult,
@@ -39,6 +40,7 @@ const PROJECT_CONTENT_SEARCH_LIMIT = 500;
 const THREAD_SEARCH_DEBOUNCE_MS = 200;
 const VCS_REF_LIST_LIMIT = 100;
 const EMPTY_REFS: ReadonlyArray<VcsRef> = [];
+const EMPTY_PROJECT_ENTRIES: ReadonlyArray<ProjectEntry> = [];
 const EMPTY_CONTENT_MATCHES: ReadonlyArray<ProjectContentMatch> = [];
 const INITIAL_BRANCH_CURSORS = [undefined] as const;
 const EMPTY_THREAD_SEARCH_MATCHES: ReadonlyArray<EnvironmentThreadSearchMatch> = Object.freeze([]);
@@ -294,7 +296,7 @@ export function useProjectPathSearch(
   );
 
   return {
-    entries: result.data?.entries ?? [],
+    entries: result.data?.entries ?? EMPTY_PROJECT_ENTRIES,
     error: result.error,
     isPending:
       !areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget) || result.isPending,

@@ -3,6 +3,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
   type OrchestrationCommand,
   type OrchestrationProjectShell,
   type OrchestrationThreadShell,
@@ -29,6 +30,8 @@ import { PullRequestLinkFailedError, PullRequestsToolkit } from "./tools.ts";
 
 const PROJECT_ID = ProjectId.make("project-1");
 const THREAD_ID = ThreadId.make("thread-1");
+const OTHER_THREAD_ID = ThreadId.make("thread-2");
+const OTHER_PROJECT_ID = ProjectId.make("project-2");
 
 const testCrypto = Crypto.make({
   randomBytes: (size) => new Uint8Array(size).fill(7),
@@ -132,6 +135,8 @@ function makeLink(
 interface HarnessOptions {
   readonly thread?: OrchestrationThreadShell | null;
   readonly project?: OrchestrationProjectShell | null;
+  readonly otherThread?: OrchestrationThreadShell;
+  readonly otherProject?: OrchestrationProjectShell;
   readonly reject?: (command: OrchestrationCommand) => OrchestrationCommandInvariantError | null;
 }
 
@@ -151,8 +156,19 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
   const dependencies = Layer.mergeAll(
     Layer.mock(ProjectionSnapshotQuery)({
       getThreadShellById: (threadId) =>
-        Effect.succeed(threadId === THREAD_ID ? Option.fromNullishOr(thread) : Option.none()),
-      getProjectShellById: () => Effect.succeed(Option.fromNullishOr(project)),
+        Effect.succeed(
+          Option.fromNullishOr(
+            threadId === THREAD_ID
+              ? thread
+              : threadId === options.otherThread?.id
+                ? options.otherThread
+                : undefined,
+          ),
+        ),
+      getProjectShellById: (projectId) =>
+        Effect.succeed(
+          Option.fromNullishOr(projectId === PROJECT_ID ? project : options.otherProject),
+        ),
     }),
     Layer.mock(OrchestrationEngineService)({
       readEvents: () => Stream.empty,
@@ -184,6 +200,127 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
 });
 
 describe("pull request toolkit handlers", () => {
+  const activeCaller = (): OrchestrationThreadShell => ({
+    ...makeThread([]),
+    latestTurn: {
+      turnId: TurnId.make("caller-turn"),
+      state: "running",
+      requestedAt: "2026-08-20T00:00:00.000Z",
+      startedAt: "2026-08-20T00:00:00.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    },
+  });
+  const otherThread = (): OrchestrationThreadShell => ({
+    ...makeThread([makeLink(7)]),
+    id: OTHER_THREAD_ID,
+    projectId: OTHER_PROJECT_ID,
+  });
+
+  it.effect("reads an explicit thread in another project without changing it", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ otherThread: otherThread() });
+      const result = yield* harness.call("list_thread_pull_requests", {
+        threadId: OTHER_THREAD_ID,
+      });
+      expect(result.pullRequests.map((link) => link.number)).toEqual([7]);
+      expect(yield* Ref.get(harness.commands)).toEqual([]);
+      const missing = yield* harness
+        .call("list_thread_pull_requests", { threadId: ThreadId.make("deleted-thread") })
+        .pipe(Effect.flip);
+      expect(missing).toMatchObject({
+        _tag: "PullRequestThreadNotFoundError",
+        threadId: "deleted-thread",
+      });
+    }),
+  );
+
+  it.effect("links and unlinks on an explicit thread using that thread's project host", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        thread: activeCaller(),
+        otherThread: otherThread(),
+        otherProject: {
+          ...makeProject({
+            canonicalKey: "gitlab.com/team/other",
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "git@gitlab.com:team/other.git",
+            },
+            provider: "gitlab",
+            displayName: "team/other",
+          }),
+          id: OTHER_PROJECT_ID,
+        },
+      });
+      const target = { threadId: OTHER_THREAD_ID, repository: "team/other", number: 12 };
+      const linked = yield* harness.call("link_pull_request", target);
+      expect(linked.url).toBe("https://gitlab.com/team/other/-/merge_requests/12");
+      yield* harness.call("unlink_pull_request", target);
+      expect(yield* Ref.get(harness.commands)).toMatchObject([
+        { type: "thread.pull-request.link", threadId: OTHER_THREAD_ID, host: "gitlab.com" },
+        { type: "thread.pull-request.unlink", threadId: OTHER_THREAD_ID, host: "gitlab.com" },
+      ]);
+    }),
+  );
+
+  const blockedCallers: ReadonlyArray<[string, Partial<OrchestrationThreadShell> | null]> = [
+    ["missing", null],
+    ["idle", { latestTurn: null }],
+    ["finished", { latestTurn: { ...activeCaller().latestTurn!, state: "completed" } }],
+    ["archived", { archivedAt: "2026-08-20T01:00:00.000Z" }],
+    [
+      "a different provider",
+      { modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "sonnet" } },
+    ],
+    ["approval-required", { runtimeMode: "approval-required" }],
+    ["auto-accept-edits", { runtimeMode: "auto-accept-edits" }],
+    ["auto", { runtimeMode: "auto" }],
+    ["plan mode", { interactionMode: "plan" }],
+  ];
+  for (const [description, override] of blockedCallers) {
+    it.effect(`blocks cross-thread writes from ${description} callers`, () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({
+          thread: override === null ? null : { ...activeCaller(), ...override },
+          otherThread: otherThread(),
+        });
+        for (const tool of ["link_pull_request", "unlink_pull_request"] as const) {
+          const error = yield* harness
+            .call(tool, { threadId: OTHER_THREAD_ID, url: "https://github.com/team/repo/pull/12" })
+            .pipe(Effect.flip);
+          expect(error).toMatchObject({
+            _tag: "PullRequestThreadAboveLimitsError",
+            threadId: OTHER_THREAD_ID,
+          });
+        }
+        expect(yield* Ref.get(harness.commands)).toEqual([]);
+      }),
+    );
+  }
+
+  it.effect("allows writes within the caller's modes, including Ronin debug mode", () =>
+    Effect.gen(function* () {
+      for (const [callerMode, targetMode] of [
+        ["approval-required", "approval-required"],
+        ["auto-accept-edits", "approval-required"],
+        ["auto", "auto-accept-edits"],
+        ["full-access", "auto"],
+      ] as const) {
+        const harness = yield* makeHarness({
+          thread: { ...activeCaller(), runtimeMode: callerMode, interactionMode: "debug" },
+          otherThread: { ...otherThread(), runtimeMode: targetMode },
+        });
+        yield* harness.call("link_pull_request", {
+          threadId: OTHER_THREAD_ID,
+          url: "https://github.com/team/repo/pull/12",
+        });
+        expect(yield* Ref.get(harness.commands)).toHaveLength(1);
+      }
+    }),
+  );
+
   it.effect("refuses a credential without the pull-requests capability", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness();

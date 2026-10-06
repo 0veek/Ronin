@@ -19,6 +19,8 @@ import {
   AutomationRunId,
   type AutomationCreateInput,
   type AutomationUpdateInput,
+  type AutomationSchedule,
+  type AutomationScheduleInput,
   CommandId,
   DEFAULT_AUTOMATION_STOP_AFTER_CONSECUTIVE_FAILURES,
   MessageId,
@@ -40,9 +42,15 @@ import { prepareThreadWorktree } from "../git/prepareThreadWorktree.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { AutomationStore } from "./AutomationStore.ts";
+import {
+  AutomationStore,
+  automationWebhookPath,
+  type AutomationWebhookCredentials,
+} from "./AutomationStore.ts";
+import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { isStale, nextRunAtMs, shouldFireNow } from "./automationSchedule.ts";
+import { constantTimeEquals } from "./webhookVerification.ts";
 
 export interface AutomationServiceShape {
   readonly list: (projectId: ProjectId | null) => Effect.Effect<ReadonlyArray<Automation>>;
@@ -50,6 +58,13 @@ export interface AutomationServiceShape {
   readonly update: (input: AutomationUpdateInput) => Effect.Effect<Automation, AutomationError>;
   readonly remove: (id: AutomationId) => Effect.Effect<boolean, AutomationError>;
   readonly runNow: (id: AutomationId) => Effect.Effect<AutomationRun, AutomationError>;
+  readonly rotateWebhookToken: (id: AutomationId) => Effect.Effect<Automation, AutomationError>;
+  /** Called only after the ingress verified the request; rechecks edits made while it queued. */
+  readonly runWebhook: (input: {
+    readonly id: AutomationId;
+    readonly token: string;
+    readonly prompt: string;
+  }) => Effect.Effect<AutomationRun, AutomationError>;
   readonly listRuns: (input: {
     readonly automationId: AutomationId | null;
     readonly limit: number;
@@ -86,6 +101,7 @@ export const make = Effect.gen(function* () {
   const gitWorkflow = yield* GitWorkflowService;
   const settingsService = yield* ServerSettings.ServerSettingsService;
   const crypto = yield* Crypto.Crypto;
+  const secretRequests = yield* SecretRequests;
   // `orDie` because the only failure is the platform refusing to produce a
   // UUID. There is no automation behaviour that could recover from that, and a
   // live error channel would widen every caller's signature for nothing.
@@ -139,18 +155,74 @@ export const make = Effect.gen(function* () {
       }
     });
 
+  const resolveSchedule = (
+    input: AutomationScheduleInput,
+    projectId: ProjectId,
+    current: AutomationWebhookCredentials | null,
+  ) =>
+    Effect.gen(function* () {
+      if (input._tag !== "webhook") return { schedule: input, credentials: null };
+      const signature = input.signature;
+      if (signature?.secret !== undefined && signature.secretRef !== undefined) {
+        return yield* new AutomationError({
+          reason: "writeFailed",
+          detail: "Pass either a signing secret or a secret reference, not both.",
+        });
+      }
+      const secret =
+        signature == null
+          ? null
+          : signature.secretRef !== undefined
+            ? yield* secretRequests
+                .consume({ ref: signature.secretRef, projectId })
+                .pipe(
+                  Effect.mapError(
+                    (error) =>
+                      new AutomationError({ reason: "writeFailed", detail: error.message }),
+                  ),
+                )
+            : (signature.secret ?? current?.secret ?? null);
+      if (signature != null && secret === null) {
+        return yield* new AutomationError({
+          reason: "writeFailed",
+          detail: "Provide a signing secret before enabling signature verification.",
+        });
+      }
+      const token =
+        current?.token ??
+        Buffer.from(yield* crypto.randomBytes(32).pipe(Effect.orDie)).toString("hex");
+      const schedule: AutomationSchedule = {
+        _tag: "webhook",
+        signature:
+          signature == null
+            ? null
+            : { header: signature.header, encoding: signature.encoding, prefix: signature.prefix },
+      };
+      return { schedule, credentials: { token, secret } };
+    });
+
   const create: AutomationServiceShape["create"] = Effect.fn("create")(function* (
     input: AutomationCreateInput,
   ) {
     yield* requireProject(input.projectId);
     const nowMs = yield* Clock.currentTimeMillis;
     const createdAt = yield* nowIso;
+    const id = AutomationId.make(yield* randomUUID);
+    const webhook = yield* resolveSchedule(input.schedule, input.projectId, null);
     const base: Automation = {
-      id: AutomationId.make(yield* randomUUID),
+      id,
       projectId: input.projectId,
       title: input.title,
       prompt: input.prompt,
-      schedule: input.schedule,
+      schedule: webhook.schedule,
+      ...(webhook.credentials === null
+        ? {}
+        : {
+            webhook: {
+              path: automationWebhookPath(id, webhook.credentials.token),
+              hasSecret: webhook.credentials.secret !== null,
+            },
+          }),
       envMode: input.envMode,
       modelSelection: input.modelSelection ?? null,
       enabled: input.enabled ?? true,
@@ -167,9 +239,9 @@ export const make = Effect.gen(function* () {
       nextRunAt: null,
     };
     const automation = reschedule(base, nowMs);
-    yield* store.upsert(automation);
+    yield* store.upsert(automation, webhook.credentials);
     return automation;
-  });
+  }, Effect.uninterruptible);
 
   const update: AutomationServiceShape["update"] = Effect.fn("update")(
     function* (input: AutomationUpdateInput) {
@@ -190,11 +262,32 @@ export const make = Effect.gen(function* () {
               enabled: input.enabled,
               nowIso: updatedAt,
             });
+      const webhook =
+        input.schedule === undefined
+          ? undefined
+          : yield* resolveSchedule(
+              input.schedule,
+              existing.value.projectId,
+              yield* store.getWebhookCredentials(input.id),
+            );
+      const { webhook: previousWebhook, ...prior } = withToggle;
       const merged: Automation = {
-        ...withToggle,
+        ...prior,
+        ...(webhook === undefined
+          ? previousWebhook === undefined
+            ? {}
+            : { webhook: previousWebhook }
+          : webhook.credentials === null
+            ? {}
+            : {
+                webhook: {
+                  path: automationWebhookPath(input.id, webhook.credentials.token),
+                  hasSecret: webhook.credentials.secret !== null,
+                },
+              }),
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.prompt === undefined ? {} : { prompt: input.prompt }),
-        ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
+        ...(webhook === undefined ? {} : { schedule: webhook.schedule }),
         ...(input.envMode === undefined ? {} : { envMode: input.envMode }),
         ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),
         ...(input.stopAfterConsecutiveFailures === undefined
@@ -206,10 +299,10 @@ export const make = Effect.gen(function* () {
       // schedule from "every 6 hours" to "every 15 minutes" should take effect
       // now, not after the six hours already elapsed.
       const automation = reschedule(merged, nowMs);
-      yield* store.upsert(automation);
+      yield* store.upsert(automation, webhook?.credentials);
       return automation;
     },
-    (effect, input) => withAutomationLock(input.id, effect),
+    (effect, input) => withAutomationLock(input.id, effect.pipe(Effect.uninterruptible)),
   );
 
   const remove = (id: AutomationId) => withAutomationLock(id, store.remove(id));
@@ -244,7 +337,7 @@ export const make = Effect.gen(function* () {
    * A failure after the thread exists deletes it again, so a run that could
    * not start leaves no empty thread behind in the sidebar.
    */
-  const fire = (automation: Automation) =>
+  const fire = (automation: Automation, prompt = automation.prompt) =>
     Effect.gen(function* () {
       const project = yield* snapshotQuery
         .getProjectShellById(automation.projectId)
@@ -335,7 +428,7 @@ export const make = Effect.gen(function* () {
           message: {
             messageId: MessageId.make(yield* randomUUID),
             role: "user",
-            text: automation.prompt,
+            text: prompt,
             attachments: [],
           },
           modelSelection,
@@ -374,6 +467,12 @@ export const make = Effect.gen(function* () {
         });
       }
       const automation = existing.value;
+      if (automation.schedule._tag === "webhook") {
+        return yield* new AutomationError({
+          reason: "writeFailed",
+          detail: "Send a request to this automation's webhook URL to run it.",
+        });
+      }
       const run = yield* fire(automation);
       const nowMs = yield* Clock.currentTimeMillis;
       const lastRunAt = DateTime.formatIso(DateTime.makeUnsafe(nowMs));
@@ -393,6 +492,68 @@ export const make = Effect.gen(function* () {
   );
 
   const listRuns: AutomationServiceShape["listRuns"] = (input) => store.listRuns(input);
+
+  const rotateWebhookToken: AutomationServiceShape["rotateWebhookToken"] = (id) =>
+    withAutomationLock(
+      id,
+      Effect.gen(function* () {
+        const existing = yield* store.get(id);
+        const credentials = yield* store.getWebhookCredentials(id);
+        if (
+          Option.isNone(existing) ||
+          existing.value.schedule._tag !== "webhook" ||
+          credentials === null
+        ) {
+          return yield* new AutomationError({
+            reason: "notFound",
+            detail: "That webhook automation no longer exists.",
+          });
+        }
+        const token = Buffer.from(yield* crypto.randomBytes(32).pipe(Effect.orDie)).toString("hex");
+        const automation: Automation = {
+          ...existing.value,
+          updatedAt: yield* nowIso,
+          webhook: {
+            path: automationWebhookPath(id, token),
+            hasSecret: credentials.secret !== null,
+          },
+        };
+        yield* store.upsert(automation, { token, secret: credentials.secret });
+        return automation;
+      }).pipe(Effect.uninterruptible),
+    );
+
+  const runWebhook: AutomationServiceShape["runWebhook"] = (input) =>
+    withAutomationLock(
+      input.id,
+      Effect.gen(function* () {
+        const existing = yield* store.get(input.id);
+        const credentials = yield* store.getWebhookCredentials(input.id);
+        if (
+          Option.isNone(existing) ||
+          !existing.value.enabled ||
+          existing.value.schedule._tag !== "webhook" ||
+          credentials === null ||
+          !constantTimeEquals(credentials.token, input.token)
+        ) {
+          return yield* new AutomationError({
+            reason: "notFound",
+            detail: "This webhook was disabled, removed, or changed before its run started.",
+          });
+        }
+        const automation = existing.value;
+        const run = yield* fire(automation, input.prompt);
+        const lastRunAt = yield* nowIso;
+        yield* store.upsert(
+          applyAutomationRunOutcome({
+            automation: { ...automation, lastRunAt },
+            outcome: run.outcome,
+            nowIso: lastRunAt,
+          }),
+        );
+        return run;
+      }),
+    );
 
   const tick = Effect.gen(function* () {
     const nowMs = yield* Clock.currentTimeMillis;
@@ -460,7 +621,17 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  return AutomationService.of({ list, create, update, remove, runNow, listRuns, tick });
+  return AutomationService.of({
+    list,
+    create,
+    update,
+    remove,
+    runNow,
+    rotateWebhookToken,
+    runWebhook,
+    listRuns,
+    tick,
+  });
 });
 
 export const layer = Layer.effect(AutomationService, make);
@@ -476,6 +647,10 @@ export const layerTest = Layer.succeed(
       Effect.fail(new AutomationError({ reason: "notFound", detail: "Not available." })),
     remove: () => Effect.succeed(false),
     runNow: () =>
+      Effect.fail(new AutomationError({ reason: "notFound", detail: "Not available." })),
+    rotateWebhookToken: () =>
+      Effect.fail(new AutomationError({ reason: "notFound", detail: "Not available." })),
+    runWebhook: () =>
       Effect.fail(new AutomationError({ reason: "notFound", detail: "Not available." })),
     listRuns: () => Effect.succeed([]),
     tick: Effect.void,

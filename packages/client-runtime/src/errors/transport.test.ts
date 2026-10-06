@@ -21,6 +21,7 @@ describe("isTransportConnectionErrorMessage", () => {
 
   it("recognizes connection errors emitted by the Effect RPC session", () => {
     expect(isTransportConnectionErrorMessage("Test environment disconnected.")).toBe(true);
+    expect(isTransportConnectionErrorMessage("Test environment stopped responding.")).toBe(true);
     expect(
       isTransportConnectionErrorMessage(
         "Test environment could not establish a WebSocket connection.",

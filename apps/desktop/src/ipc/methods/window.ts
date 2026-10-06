@@ -22,6 +22,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Electron from "electron";
 
+import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "../../backend/DesktopLocalEnvironmentAuth.ts";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
@@ -112,6 +113,7 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
   result: Schema.Array(DesktopEnvironmentBootstrapSchema),
   handler: Effect.fn("desktop.ipc.window.getLocalEnvironmentBootstraps")(function* () {
     const pool = yield* DesktopBackendPool.DesktopBackendPool;
+    const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
     const instances = yield* pool.list;
     const bootstraps: DesktopEnvironmentBootstrap[] = [];
     for (const instance of instances) {
@@ -154,9 +156,11 @@ export const getLocalEnvironmentBootstraps = DesktopIpc.makeSyncIpcMethod({
         runningDistro,
         httpBaseUrl: httpBaseUrl.href,
         wsBaseUrl: toWebSocketBaseUrl(httpBaseUrl),
-        ...(bootstrap.desktopBootstrapToken
-          ? { bootstrapToken: bootstrap.desktopBootstrapToken }
-          : {}),
+        ...(bootstrap.desktopBootstrapSecret
+          ? { bootstrapToken: yield* configuration.currentBootstrapToken }
+          : bootstrap.desktopBootstrapToken
+            ? { bootstrapToken: bootstrap.desktopBootstrapToken }
+            : {}),
       });
     }
     return bootstraps;

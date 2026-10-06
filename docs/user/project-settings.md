@@ -26,6 +26,13 @@ When no image is found, web and desktop show a two-character monogram with a col
 from the icon palette, derived from the saved project name. For example, `Nebula` becomes `NA`,
 `Silver Orchard` becomes `SO`, and `M7 Forge` becomes `M7`.
 
+## Worktree location
+
+New worktrees are created in the `worktrees` folder in Ronin's home directory. To use another
+folder or drive, set **Settings → Source Control → Worktree location** to an absolute path such
+as `D:\worktrees` or `~/worktrees`. The setting belongs to the selected machine. Existing
+worktrees stay where they are and remain available for review. Clear the setting to use the default.
+
 ## Keep the default branch current
 
 Turn on **Automatically pull** in a project's settings to keep its default-branch checkout current.

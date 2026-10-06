@@ -44,6 +44,7 @@ import { isElectron } from "../../env";
 import {
   useClientSettings,
   useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
   useUpdateClientSettings,
   usePrimarySettings,
 } from "../../hooks/useSettings";
@@ -522,6 +523,16 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
   const selectedCheckout =
     group.memberProjects.find((member) => member.physicalProjectKey === selectedCheckoutKey) ??
     representative;
+  const checkoutSettings = useEnvironmentSettings(selectedCheckout.environmentId);
+  const updateCheckoutSettings = useUpdateEnvironmentSettings(selectedCheckout.environmentId);
+  const agentCreditsOverride =
+    checkoutSettings.removeAgentCreditsOnMergeOverrides[selectedCheckout.id];
+  const setAgentCreditsOverride = (value: boolean | null) => {
+    const overrides = { ...checkoutSettings.removeAgentCreditsOnMergeOverrides };
+    if (value === null) delete overrides[selectedCheckout.id];
+    else overrides[selectedCheckout.id] = value;
+    updateCheckoutSettings({ removeAgentCreditsOnMergeOverrides: overrides });
+  };
   const selectedServerConfig = useAtomValue(
     serverEnvironment.configValueAtom(selectedCheckout.environmentId),
   );
@@ -1104,6 +1115,47 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
               </div>
             </div>
           </div>
+          <SettingsRow
+            title="Remove agent credits when merging"
+            description="Override the environment's GitHub merge and squash message setting for this checkout. Human co-authors remain credited."
+            resetAction={
+              agentCreditsOverride !== undefined ? (
+                <SettingResetButton
+                  label="agent credit override"
+                  onClick={() => setAgentCreditsOverride(null)}
+                />
+              ) : null
+            }
+            control={
+              <Select
+                value={
+                  agentCreditsOverride === undefined
+                    ? "inherit"
+                    : agentCreditsOverride
+                      ? "remove"
+                      : "keep"
+                }
+                onValueChange={(value) =>
+                  setAgentCreditsOverride(value === "inherit" ? null : value === "remove")
+                }
+              >
+                <SelectTrigger aria-label="Project agent credit removal">
+                  <SelectValue>
+                    {agentCreditsOverride === undefined
+                      ? `Default (${checkoutSettings.removeAgentCreditsOnMerge ? "remove" : "keep"})`
+                      : agentCreditsOverride
+                        ? "Remove agent credits"
+                        : "Keep agent credits"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="inherit">Environment default</SelectItem>
+                  <SelectItem value="remove">Remove agent credits</SelectItem>
+                  <SelectItem value="keep">Keep agent credits</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
           <SettingsRow
             title="Project grouping"
             description="How this checkout joins project groups in the sidebar. Changing it can move you to a different project group."

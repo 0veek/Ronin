@@ -4,7 +4,7 @@ import {
   IsoDateTime,
   NonNegativeInt,
   ProjectId,
-  ProjectIconOverride,
+  StoredProjectIcon,
   ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -33,7 +33,7 @@ import {
 } from "../../persistence/Errors.ts";
 import * as OrchestrationEventStore from "./ApplicationEventStoreService.ts";
 
-const encodeProjectIcon = Schema.encodeSync(ProjectIconOverride);
+const encodeProjectIcon = Schema.encodeSync(StoredProjectIcon);
 const decodeProjectEvent = Schema.decodeUnknownEffect(ApplicationProjectEvent);
 const UnknownFromJsonString = Schema.fromJsonString(Schema.Unknown);
 const EventMetadataFromJsonString = Schema.fromJsonString(ApplicationEventMetadata);

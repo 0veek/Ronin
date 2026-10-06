@@ -25,6 +25,35 @@ import {
 
 let nextActivityId = 0;
 
+it("keeps a published page as its own timeline entry without retaining page bytes", () => {
+  const htmlRender = { attachmentId: "thread-page", title: "Chart", height: 420 };
+  const entries = deriveWorkLogEntries([
+    makeActivity({ kind: "html-render.published", payload: { htmlRender } }),
+    makeActivity({ kind: "html-render.published", payload: { htmlRender } }),
+    makeActivity({ kind: "html-render.published", payload: { htmlRender: { height: "wrong" } } }),
+  ]);
+  expect(entries.filter((entry) => entry.htmlRender)).toHaveLength(1);
+  expect(entries.find((entry) => entry.htmlRender)?.htmlRender).toEqual(htmlRender);
+});
+
+it("keeps stored screenshot references when tool lifecycle rows collapse", () => {
+  const outputImages = [
+    { _tag: "tool-output-image", activityId: EventId.make("completed-screenshot"), index: 0 },
+  ];
+  const entries = deriveWorkLogEntries([
+    makeActivity({
+      kind: "tool.started",
+      payload: { itemType: "mcp_tool_call", toolCallId: "screenshot" },
+    }),
+    makeActivity({
+      kind: "tool.completed",
+      payload: { itemType: "mcp_tool_call", toolCallId: "screenshot", outputImages },
+    }),
+  ]);
+  expect(entries).toHaveLength(1);
+  expect(entries[0]?.outputImages).toEqual(outputImages);
+});
+
 function makeActivity(overrides: {
   id?: string;
   createdAt?: string;

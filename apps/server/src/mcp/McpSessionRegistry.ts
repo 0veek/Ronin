@@ -131,6 +131,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
         providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
         capabilities: new Set<McpInvocationContext.McpCapability>([
           "pull-requests",
+          "secrets",
+          "automations",
+          "html",
           ...request.capabilities,
         ]),
         issuedAt,

@@ -129,6 +129,10 @@ vi.mock("../../state/automations", () => ({
 function makeAutomation(input: AutomationCreateInput): Automation {
   return {
     ...input,
+    schedule:
+      input.schedule._tag === "webhook"
+        ? { _tag: "webhook", signature: input.schedule.signature ?? null }
+        : input.schedule,
     id: AutomationId.make("automation-1"),
     enabled: true,
     modelSelection: input.modelSelection ?? null,

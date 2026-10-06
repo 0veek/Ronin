@@ -7,6 +7,7 @@ const TRANSPORT_ERROR_PATTERNS = [
   /Unable to connect to the (?:T3|Ronin) server WebSocket\./i,
   /\bis not connected\.$/i,
   /\bdisconnected\.$/i,
+  /\bstopped responding\.$/i,
   /\bcould not establish a WebSocket connection\.$/i,
   /\bClientProtocolError\b/i,
   /\bRpcClientError\b/i,

@@ -24,6 +24,13 @@ Ordinary pairing links grant the four client-operation scopes:
 The desktop bootstrap credential and command-line administrative bootstrap
 credentials additionally grant `access:read access:write`.
 
+The desktop derives its bootstrap token from a process-owned secret every 12 hours.
+Only that token crosses renderer IPC; the secret travels to the bundled backend over
+its bootstrap channel. The backend accepts the previous, current and next window
+for clock skew, then grants a 12-hour bearer session. Older desktops retain the
+fixed-token fallback. A rotated token refreshes a rejected connection attempt while
+an already connected environment keeps its socket and drafts.
+
 ## Authentication Flows
 
 ### Browser Session

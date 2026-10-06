@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import { ProviderGoal } from "./providerGoal.ts";
 import * as Schema from "effect/Schema";
 import {
   EventId,
@@ -156,6 +157,7 @@ const ProviderRuntimeEventType = Schema.Literals([
   "thread.state.changed",
   "thread.metadata.updated",
   "thread.token-usage.updated",
+  "thread.goal.updated",
   "thread.realtime.started",
   "thread.realtime.item-added",
   "thread.realtime.audio.delta",
@@ -362,6 +364,8 @@ const ThreadRealtimeClosedPayload = Schema.Struct({
 export type ThreadRealtimeClosedPayload = typeof ThreadRealtimeClosedPayload.Type;
 
 const TurnStartedPayload = Schema.Struct({
+  /** False for a provider command that does not create a native conversation turn. */
+  native: Schema.optional(Schema.Boolean),
   model: Schema.optional(TrimmedNonEmptyStringSchema),
   effort: Schema.optional(TrimmedNonEmptyStringSchema),
 });
@@ -397,6 +401,8 @@ export const TurnTokenUsage = Schema.Union([
 export type TurnTokenUsage = typeof TurnTokenUsage.Type;
 
 const TurnCompletedPayload = Schema.Struct({
+  /** False for a local command with no native conversation turn. */
+  native: Schema.optional(Schema.Boolean),
   state: RuntimeTurnState,
   stopReason: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
   usage: Schema.optional(Schema.Unknown),
@@ -1222,6 +1228,11 @@ const ProviderRuntimeErrorEvent = Schema.Struct({
 export type ProviderRuntimeErrorEvent = typeof ProviderRuntimeErrorEvent.Type;
 
 export const ProviderRuntimeEventV2 = Schema.Union([
+  Schema.Struct({
+    ...ProviderRuntimeEventBase.fields,
+    type: Schema.Literal("thread.goal.updated"),
+    payload: Schema.Struct({ goal: Schema.NullOr(ProviderGoal) }),
+  }),
   ProviderRuntimeSessionStartedEvent,
   ProviderRuntimeSessionConfiguredEvent,
   ProviderRuntimeSessionStateChangedEvent,

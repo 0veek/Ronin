@@ -3,6 +3,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./desktopBootstrapToken": {
+      "types": "./src/desktopBootstrapToken.ts",
+      "import": "./src/desktopBootstrapToken.ts"
+    },
+    "./htmlRender": {
+      "types": "./src/htmlRender.ts",
+      "import": "./src/htmlRender.ts"
+    },
     "./legacyCliLauncher": {
       "types": "./src/legacyCliLauncher.ts",
       "import": "./src/legacyCliLauncher.ts"

@@ -499,7 +499,10 @@ function deriveTurnFolds(input: {
       // User input and subagent batches stay visible after their turn settles.
       if (
         entry.kind === "work" &&
-        (entry.entry.questionAnswer !== undefined || entry.entry.agentSpawn !== undefined)
+        (entry.entry.questionAnswer !== undefined ||
+          entry.entry.agentSpawn !== undefined ||
+          entry.entry.secretRequest !== undefined ||
+          entry.entry.htmlRender !== undefined)
       ) {
         continue;
       }
@@ -698,7 +701,11 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
-      if (timelineEntry.entry.questionAnswer !== undefined) {
+      if (
+        timelineEntry.entry.questionAnswer !== undefined ||
+        timelineEntry.entry.secretRequest !== undefined ||
+        timelineEntry.entry.htmlRender !== undefined
+      ) {
         nextRows.push({
           kind: "work",
           id: timelineEntry.id,
@@ -715,6 +722,8 @@ export function deriveMessagesTimelineRows(input: {
           !nextEntry ||
           nextEntry.kind !== "work" ||
           nextEntry.entry.questionAnswer !== undefined ||
+          nextEntry.entry.secretRequest !== undefined ||
+          nextEntry.entry.htmlRender !== undefined ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)
         ) {

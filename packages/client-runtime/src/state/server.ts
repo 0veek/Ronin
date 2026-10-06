@@ -805,6 +805,23 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:run-automation-now",
       tag: WS_METHODS.automationsRunNow,
     }),
+    answerSecretRequest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:answer-secret-request",
+      tag: WS_METHODS.secretsAnswerRequest,
+    }),
+    rotateAutomationWebhookToken: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:rotate-automation-webhook-token",
+      tag: WS_METHODS.automationsRotateWebhookToken,
+    }),
+    automationWebhookDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:automation-webhook-deliveries",
+      tag: WS_METHODS.automationsListWebhookDeliveries,
+      staleTimeMs: 5_000,
+    }),
+    automationWebhookDelivery: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:automation-webhook-delivery",
+      tag: WS_METHODS.automationsGetWebhookDelivery,
+    }),
     buildSystems: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:build-systems",
       tag: WS_METHODS.buildSystemsList,

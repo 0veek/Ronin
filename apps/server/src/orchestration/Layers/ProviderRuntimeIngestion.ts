@@ -15,6 +15,7 @@ import {
   type OrchestrationThreadActivity,
   type ProviderInstanceId,
   type ProviderRuntimeEvent,
+  ProviderGoal,
   type ResponseStreamingMode,
   RuntimeRequestId,
 } from "@t3tools/contracts";
@@ -28,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { formatTokens } from "@t3tools/shared/usageFormat";
@@ -56,6 +58,7 @@ import { canReplaceThreadTitle } from "../threadTitles.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 
 const providerTurnKey = (threadId: ThreadId, turnId: TurnId) => `${threadId}:${turnId}`;
+const providerGoalsEqual = Schema.toEquivalence(Schema.NullOr(ProviderGoal));
 const providerTaskKey = (threadId: ThreadId, taskId: string) => `${threadId}:${taskId}`;
 
 // Fallback when the in-memory description cache no longer has the task name
@@ -1671,6 +1674,44 @@ const make = Effect.gen(function* () {
       if (!thread) return;
 
       const now = event.createdAt;
+      if (event.type === "thread.goal.updated") {
+        if (
+          thread.session?.providerInstanceId !== undefined &&
+          event.providerInstanceId !== undefined &&
+          thread.session.providerInstanceId !== event.providerInstanceId
+        )
+          return;
+        if (providerGoalsEqual(thread.session?.goal ?? null, event.payload.goal)) return;
+        yield* orchestrationEngine.dispatch({
+          type: "thread.session.set",
+          commandId: yield* providerCommandId(event, "thread-goal-set"),
+          threadId: thread.id,
+          session: {
+            threadId: thread.id,
+            status:
+              event.provider === "codex" &&
+              event.payload.goal?.status === "active" &&
+              (thread.session?.goal?.status !== "active" ||
+                thread.session?.activeTurnId != null ||
+                thread.session?.status === "running")
+                ? "running"
+                : thread.session?.activeTurnId == null && thread.session?.status === "running"
+                  ? "ready"
+                  : (thread.session?.status ?? "ready"),
+            providerName: event.provider,
+            ...(event.providerInstanceId === undefined
+              ? {}
+              : { providerInstanceId: event.providerInstanceId }),
+            runtimeMode: thread.session?.runtimeMode ?? "full-access",
+            activeTurnId: thread.session?.activeTurnId ?? null,
+            lastError: thread.session?.lastError ?? null,
+            goal: event.payload.goal,
+            updatedAt: now,
+          },
+          createdAt: now,
+        });
+        return;
+      }
       const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;
       const isTerminalTurn = event.type === "turn.completed" || event.type === "turn.aborted";
@@ -1764,7 +1805,12 @@ const make = Effect.gen(function* () {
             case "turn.completed":
               return normalizeRuntimeTurnState(event.payload.state) === "failed"
                 ? "error"
-                : "ready";
+                : event.provider === "codex" &&
+                    event.payload.native !== false &&
+                    event.payload.state === "completed" &&
+                    thread.session?.goal?.status === "active"
+                  ? "running"
+                  : "ready";
             case "session.started":
             case "thread.started":
               // Provider thread/session start notifications can arrive during an

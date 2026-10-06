@@ -10,6 +10,8 @@ import {
 import {
   type OrchestrationV2DomainEvent,
   OrchestrationV2AppThread,
+  type OrchestrationV2ProviderTurn,
+  type OrchestrationV2ProviderThread,
 } from "@t3tools/contracts/orchestration-v2";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -64,6 +66,10 @@ export class RoninOrchestration extends Context.Service<
       threadId: ThreadId,
       turnId: TurnId,
     ) => Effect.Effect<boolean, RoninOrchestrationError>;
+    readonly nativeRollbackCount: (
+      threadId: ThreadId,
+      removedTurns: ReadonlyArray<TurnId>,
+    ) => Effect.Effect<number, RoninOrchestrationError>;
   }
 >()("t3/orchestration-v2/compat/RoninOrchestration") {}
 
@@ -72,6 +78,21 @@ const utc = (value: string | null | undefined) =>
 const sameThread = Schema.toEquivalence(OrchestrationV2AppThread);
 const failure = (operation: string) => (cause: unknown) =>
   new RoninOrchestrationError({ operation, cause });
+
+/** Local goal commands have a Ronin turn for transcript/checkpoints, but no native turn to rewind. */
+function legacyTurnId(
+  turn: OrchestrationV2ProviderTurn,
+  providerThreads: ReadonlyArray<OrchestrationV2ProviderThread>,
+) {
+  if (turn.nativeTurnRef?.nativeId != null) return TurnId.make(turn.nativeTurnRef.nativeId);
+  const provider = providerThreads.find((thread) => thread.id === turn.providerThreadId);
+  const prefix = provider === undefined ? null : `${provider.providerInstanceId}:`;
+  return provider?.driver === "codex" &&
+    prefix !== null &&
+    turn.id.startsWith(`${prefix}goal-command:`)
+    ? TurnId.make(turn.id.slice(prefix.length))
+    : null;
+}
 
 export const layer = Layer.effect(
   RoninOrchestration,
@@ -100,7 +121,9 @@ export const layer = Layer.effect(
         const source = shell.value;
         const current = yield* projections
           .getThread(threadId)
-          .pipe(Effect.catchTag("ProjectionStoreThreadNotFoundError", () => Effect.succeed(null)));
+          .pipe(
+            Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+          );
         if (current === null) {
           yield* orchestrator.dispatch({
             type: "thread.create",
@@ -169,7 +192,9 @@ export const layer = Layer.effect(
       function* (threadId: ThreadId) {
         const context = yield* projections
           .getThreadProviderContext(threadId)
-          .pipe(Effect.catchTag("ProjectionStoreThreadNotFoundError", () => Effect.succeed(null)));
+          .pipe(
+            Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+          );
         if (context === null) return;
         yield* prepared.clearThread(threadId);
         for (const session of context.providerSessions) {
@@ -324,18 +349,15 @@ export const layer = Layer.effect(
       const context = yield* projections.getThreadRecords(event.threadId, [
         "runs",
         "providerTurns",
+        "providerThreads",
         "checkpointScopes",
       ]);
       const run = context.runs.find((run) => run.id === checkpoint.runId);
       const scope = context.checkpointScopes.find((scope) => scope.id === checkpoint.scopeId);
       const turn = context.providerTurns.findLast((turn) => turn.nodeId === run?.rootNodeId);
-      if (
-        run === undefined ||
-        scope?.legacyTurnOffset === undefined ||
-        turn?.nativeTurnRef?.nativeId == null
-      )
-        return;
-      const turnId = TurnId.make(turn.nativeTurnRef.nativeId);
+      if (run === undefined || scope?.legacyTurnOffset === undefined || turn === undefined) return;
+      const turnId = legacyTurnId(turn, context.providerThreads);
+      if (turnId === null) return;
       const count = checkpoint.ordinalWithinScope + scope.legacyTurnOffset;
       const createdAt = DateTime.formatIso(checkpoint.capturedAt);
       const status = checkpoint.status === "stale" ? "missing" : checkpoint.status;
@@ -395,6 +417,86 @@ export const layer = Layer.effect(
       event: OrchestrationV2DomainEvent,
     ) {
       yield* reflectCheckpoint(event);
+      if (
+        event.type === "turn-item.updated" &&
+        event.payload.type === "dynamic_tool" &&
+        event.payload.id.startsWith("turn-item:html-render:") &&
+        event.payload.toolName === "html_render"
+      ) {
+        const item = event.payload;
+        const shell = yield* shells.getThreadShellById(event.threadId);
+        const createdAt = DateTime.formatIso(event.occurredAt);
+        yield* legacy.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`v2:ronin:html:${item.id}`),
+          threadId: event.threadId,
+          createdAt,
+          activity: {
+            id: EventId.make(`v2:ronin:html:${item.id}`),
+            tone: "info",
+            kind: "html-render.published",
+            summary: item.title ?? "HTML",
+            payload: item.output,
+            turnId: Option.isSome(shell) ? (shell.value.latestTurn?.turnId ?? null) : null,
+            createdAt,
+          },
+        });
+      }
+      if (event.type === "turn-item.updated" && event.payload.type === "secret_request") {
+        const item = event.payload;
+        const createdAt = DateTime.formatIso(item.startedAt ?? item.updatedAt);
+        const shell = yield* shells.getThreadShellById(event.threadId);
+        yield* legacy.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`v2:ronin:secret:${item.id}:${item.secretStatus}`),
+          threadId: event.threadId,
+          createdAt: DateTime.formatIso(event.occurredAt),
+          activity: {
+            id: EventId.make(`v2:ronin:secret:${item.id}`),
+            tone: "info",
+            kind: "secret-request.updated",
+            summary: item.label,
+            payload: {
+              id: item.id,
+              threadId: item.threadId,
+              label: item.label,
+              reason: item.reason,
+              ...(item.placeholder === undefined ? {} : { placeholder: item.placeholder }),
+              secretStatus: item.secretStatus,
+            },
+            turnId: Option.isSome(shell) ? (shell.value.latestTurn?.turnId ?? null) : null,
+            createdAt,
+          },
+        });
+      }
+      // The native goal may stop continuing without changing its status. Its
+      // completed run releases the renderer's between-turn working state.
+      if (
+        event.type === "run.updated" &&
+        ["completed", "interrupted", "failed", "cancelled"].includes(event.payload.status)
+      ) {
+        const shell = yield* shells.getThreadShellById(event.threadId);
+        const session = Option.isSome(shell) ? shell.value.session : null;
+        if (
+          session?.providerName === "codex" &&
+          session.goal != null &&
+          session.status === "running" &&
+          session.activeTurnId === null
+        ) {
+          const createdAt = DateTime.formatIso(event.occurredAt);
+          yield* legacy.dispatch({
+            type: "thread.session.set",
+            commandId: CommandId.make(`v2:ronin:goal-settled:${event.payload.id}`),
+            threadId: event.threadId,
+            createdAt,
+            session: {
+              ...session,
+              status: event.payload.status === "interrupted" ? "interrupted" : "ready",
+              updatedAt: createdAt,
+            },
+          });
+        }
+      }
       if (
         event.type !== "run.updated" ||
         (event.payload.status !== "failed" && event.payload.status !== "cancelled")
@@ -474,12 +576,12 @@ export const layer = Layer.effect(
       syncThread,
       detach,
       ownsTurn: (threadId, turnId) =>
-        projections.getThreadRecords(threadId, ["runs", "providerTurns"]).pipe(
+        projections.getThreadRecords(threadId, ["runs", "providerTurns", "providerThreads"]).pipe(
           Effect.map(
-            ({ runs, providerTurns }) =>
+            ({ runs, providerTurns, providerThreads }) =>
               providerTurns.some(
                 (turn) =>
-                  turn.nativeTurnRef?.nativeId === turnId &&
+                  legacyTurnId(turn, providerThreads) === turnId &&
                   runs.some((run) => run.rootNodeId === turn.nodeId),
               ) ||
               runs.some(
@@ -488,8 +590,37 @@ export const layer = Layer.effect(
                   !providerTurns.some((turn) => turn.nodeId === run.rootNodeId),
               ),
           ),
-          Effect.catchTag("ProjectionStoreThreadNotFoundError", () => Effect.succeed(false)),
+          Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(false) }),
           Effect.mapError(failure("resolve turn owner")),
+        ),
+      nativeRollbackCount: (threadId, removedTurns) =>
+        projections.getThreadRecords(threadId, ["runs", "providerTurns", "providerThreads"]).pipe(
+          Effect.map(({ runs, providerTurns, providerThreads }) =>
+            removedTurns.reduce((count, turnId) => {
+              const turn = providerTurns.findLast(
+                (candidate) =>
+                  legacyTurnId(candidate, providerThreads) === turnId &&
+                  runs.some(
+                    (run) => run.rootNodeId === candidate.nodeId && run.status !== "rolled_back",
+                  ),
+              );
+              // Native wake turns and pre-migration history retain their existing one-to-one mapping.
+              if (turn === undefined || turn.runAttemptId === null) return count + 1;
+              return (
+                count +
+                providerTurns.filter(
+                  (candidate) =>
+                    candidate.runAttemptId === turn.runAttemptId &&
+                    candidate.nodeId === turn.nodeId &&
+                    candidate.nativeTurnRef !== null,
+                ).length
+              );
+            }, 0),
+          ),
+          Effect.catchTags({
+            ProjectionStoreThreadNotFoundError: () => Effect.succeed(removedTurns.length),
+          }),
+          Effect.mapError(failure("count native rollback turns")),
         ),
       startTurn: (input) =>
         Effect.gen(function* () {

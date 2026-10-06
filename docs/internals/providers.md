@@ -60,6 +60,24 @@ The standard turn path delivers the message, including session resume and active
 It does not send a JSON-RPC response to Codex. Other providers and blocking Codex questions
 keep their existing response paths.
 
+## Native goals
+
+Codex and Claude use the shared `ProviderGoal` contract and normalized `thread.goal.updated`
+event. Goal state is projected into the existing session record for all clients and into the
+V2 provider thread. Other adapters retain their native command behavior without advertising
+this structured goal integration.
+
+Codex's `/goal` commands use `thread/goal/get`, `set`, and `clear`. Setting or resuming starts
+a configured turn before activation, so native continuations inherit the requested model,
+permissions, and interaction mode. Stop pauses first, then resolves the latest native turn.
+Goal-control replies have no native turn reference and do not consume native rollback turns.
+
+Claude SDK mode exposes goals through root synthetic command replies and matching Stop hook
+feedback. Ordinary assistant text and child-agent messages cannot change goal state. A root
+turn with model output completes an active goal only when it ends normally with no live tasks;
+SDK evaluator timeout and impossible outcomes remain indistinguishable from completion. The
+goal is retained with the provider's continuation cursor across session restarts.
+
 ## Registry and routing
 
 Two registries separate configuration from live processes:
@@ -271,6 +289,29 @@ messages sent in full, summarized, and left out — which the transcript boundar
 does not leave the user guessing whether the new provider lost formatting or half the thread. Both
 activities carry `turnId: null` so they render as transcript boundaries rather than folding into a
 turn's work log.
+
+## Private secret requests
+
+Every provider session receives the `secrets` MCP capability. `request_secret` requires a live
+run owned by its provider instance and records a `secret_request` turn item containing metadata
+and status only. The compatibility bridge mirrors that item into a stable `secret-request.updated`
+activity for Ronin's timeline and pending-input summary. Forks display inherited cards without
+an answer form. The answer RPC requires orchestration-operate scope and never uses a provider's
+ordinary user-input response path.
+
+`SecretRequests` stores the value separately, derives an opaque reference with the environment's
+private salt, and serializes answers and consumption. Consumption checks the project and expiry,
+then deletes the stored reference before returning the value to the consuming server service.
+Unused references expire after 24 hours and are swept hourly. MCP waits consume committed events;
+Stop, timeout, interrupted calls, and restart recovery close pending cards. Errors, events,
+metrics, and traces must not include the entered value.
+
+The `automations` capability exposes `save_webhook_automation` as the server-side consumer.
+It accepts a signing `secretRef` for the calling thread's project, requires an active full-access
+non-plan turn, and returns the webhook address and signature metadata without the signing value.
+Ronin's existing automation service owns the trigger, worktree, model, and failure policy.
+Direct environment webhook URLs use the selected environment's HTTP origin; remote clients do
+not need a localhost override. Read-only sessions cannot retrieve the bearer URL or delivery log.
 
 ## Server-side workers
 

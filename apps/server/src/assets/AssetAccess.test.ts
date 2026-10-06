@@ -1,7 +1,7 @@
 import * as NodeOS from "node:os";
 import { vi } from "vite-plus/test";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { AssetPreviewTypeValidationError, ThreadId } from "@t3tools/contracts";
+import { AssetPreviewTypeValidationError, EventId, ThreadId } from "@t3tools/contracts";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
 import { describe, expect, it } from "@effect/vitest";
 import * as Crypto from "effect/Crypto";
@@ -17,6 +17,9 @@ import * as ServerConfig from "../config.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import { ProjectionThreadActivityRepository } from "../persistence/Services/ProjectionThreadActivities.ts";
+import { ProjectionThreadActivityRepositoryLive } from "../persistence/Layers/ProjectionThreadActivities.ts";
+import { SqlitePersistenceMemory } from "../persistence/Layers/Sqlite.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, resolveAsset } from "./AssetAccess.ts";
 
 vi.mock("node:os", async (importOriginal) => {
@@ -28,6 +31,7 @@ const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-asset-access-test-",
 });
 const testLayer = Layer.mergeAll(
+  ProjectionThreadActivityRepositoryLive.pipe(Layer.provide(SqlitePersistenceMemory)),
   configLayer,
   WorkspacePaths.layer,
   ProjectFaviconResolver.layer.pipe(
@@ -38,6 +42,86 @@ const testLayer = Layer.mergeAll(
 ).pipe(Layer.provideMerge(NodeServices.layer));
 
 describe("AssetAccess", () => {
+  it.effect(
+    "serves stored screenshots by signed activity identity and rejects missing or unsafe images",
+    () =>
+      Effect.gen(function* () {
+        const activities = yield* ProjectionThreadActivityRepository;
+        const threadId = ThreadId.make("tool-output");
+        const activityId = EventId.make("screenshot-activity");
+        const png = Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRqoAAAAASUVORK5CYII=",
+          "base64",
+        );
+        const row = {
+          activityId,
+          threadId,
+          turnId: null,
+          tone: "tool" as const,
+          kind: "tool.completed",
+          summary: "Screenshot",
+          payload: {
+            data: {
+              result: {
+                content: [
+                  {
+                    type: "image",
+                    source: {
+                      type: "base64",
+                      media_type: "image/png",
+                      data: png.toString("base64"),
+                    },
+                  },
+                  {
+                    type: "image",
+                    mimeType: "image/svg+xml",
+                    data: Buffer.from("<svg/>").toString("base64"),
+                  },
+                ],
+              },
+            },
+          },
+          createdAt: "2026-10-05T12:00:00.000Z",
+        };
+        yield* activities.upsert(row);
+        const resource = { _tag: "tool-output-image" as const, activityId, index: 0 };
+        const issued = yield* issueAssetUrl({ resource });
+        expect(issued.imageDimensions).toEqual({ width: 1, height: 1 });
+        const [token, fileName] = issued.relativeUrl
+          .slice(`${ASSET_ROUTE_PREFIX}/`.length)
+          .split("/");
+        expect(yield* resolveAsset(token!, fileName!)).toEqual({
+          kind: "bytes",
+          bytes: png,
+          mimeType: "image/png",
+        });
+        expect(yield* resolveAsset(`${token}tampered`, fileName!)).toBeNull();
+        for (const invalid of [
+          { ...resource, index: 1 },
+          { ...resource, activityId: EventId.make("missing") },
+        ])
+          expect((yield* issueAssetUrl({ resource: invalid }).pipe(Effect.flip))._tag).toBe(
+            "AssetWorkspaceAssetNotFoundError",
+          );
+        yield* activities.upsert({
+          ...row,
+          payload: {
+            data: {
+              result: {
+                content: [
+                  { type: "image", mimeType: "image/png", data: "A".repeat(14 * 1024 * 1024) },
+                ],
+              },
+            },
+          },
+        });
+        expect((yield* issueAssetUrl({ resource }).pipe(Effect.flip))._tag).toBe(
+          "AssetWorkspaceAssetNotFoundError",
+        );
+        yield* activities.deleteByThreadId({ threadId });
+        expect(yield* resolveAsset(token!, fileName!)).toBeNull();
+      }).pipe(Effect.provide(testLayer)),
+  );
   it.effect("resolves home-relative media paths independently of the workspace", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

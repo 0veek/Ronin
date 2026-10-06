@@ -34,7 +34,52 @@ usage. A native background wake after a root run ends remains on this ingestion 
 checkpoint path. The V2 subscriber retains background task lifecycle ownership without
 claiming the wake as another turn in the completed run.
 
+Native Codex goals are an exception to the completed-root boundary: the adapter keeps the run
+open across successive native turns, assigning each a new provider-turn ordinal. A completed
+turn waits up to five seconds for continuation; a goal status change, Stop, or that timeout
+settles the hold. A native goal turn arriving after settlement is paused and interrupted.
+Steering, fork context, and rollback choose the latest turn in the attempt. Goal status crosses
+the retained client protocol through `OrchestrationSession.goal`, stored by migration 063.
+
 ## Persistence and import
+
+### Private input and visual replies
+
+Private secret requests use `secret_request` turn items for card metadata and status only.
+`SecretRequests` stores the value separately, checks the live owning run when answering, and
+hands the agent a project-scoped reference with one use and a 24-hour expiry. Webhook automation
+tools consume that reference server-side; RPC reads never return signing secrets. Stop and
+terminal-run cleanup close unanswered cards. Inherited cards are answered only in their source
+thread.
+
+`html_render` stores a self-contained immutable HTML attachment and records a `dynamic_tool`
+item containing its small reference. The atomic recording command checks the live run, root
+node, provider ownership, archive status, and Stop marker; failed recording removes the file.
+No HTML bytes enter the transcript or shell stream. Attachment cleanup includes published pages
+and preserves inherited pages when deleting a fork.
+
+The renderer gives pages an opaque sandbox, supplies the active theme and fonts, and sizes the
+frame from live content-height messages. Publishing without `height` records `fitContent: true`,
+so pages grow without server measurements; an explicit height keeps an intentional scroll cap.
+`html_preview` uses a scoped temporary background tab
+in the connected desktop preview browser, with signed asset URLs resolved through the existing
+environment-port proxy for local, remote, and SSH environments. It removes its tab and temporary
+page afterward without changing the agent's selected tab. This retains Ronin's existing preview
+profile and network behavior; it does not introduce upstream's dedicated headless browser profile
+or public-only SOCKS proxy. Publishing does not require a preview host.
+
+Webhook ingress belongs to `AutomationWebhooks`, behind the existing `/api/hooks` route. Direct
+requests verify exact bytes, render only named prompt fields, redact credential-looking headers
+and query fields in logs, and bound body, prompt, queue, rate, and delivery retention. Metrics
+carry outcome/source labels rather than request data. Hosted relay holding and replay proofs are
+excluded; Ronin receives deliveries while the environment is reachable.
+
+Growing tagged unions use separate receive and persistence codecs. V2 snapshots and history
+pages drop unfamiliar turn-item types; the stream marks those updates as unknown events while
+preserving their sequence so clients can advance the resume cursor. Malformed known items
+still fail decoding, and durable events remain strict. Project icons follow the same boundary:
+client snapshots fall back to the default icon for unknown kinds, while stored icons accept
+legacy monogram fields and write the plain monogram shape.
 
 Migration 062 appends the V2 schema after Ronin's migration 061. It retains the legacy
 thread, message, checkpoint, provider ledger, automation, build system, and auth tables.
@@ -66,6 +111,11 @@ continue its numbering, including after a restore. The compatibility service ref
 captured diffs and checkpoint activities into the current thread projection and publishes
 the existing completion receipts. `CheckpointReactor` skips duplicate capture for owned
 V2 turns and retains its VCS and pull request refreshes.
+
+One goal run can contain multiple native turns, while local goal-control runs contain none.
+The compatibility service translates removed app checkpoints to native rollback counts using
+their owning attempts. Native wake turns and imported history keep the existing one-to-one
+mapping. Control runs still receive transcript entries and app checkpoints.
 
 Restoring a conversation retains the existing provider rollback and filesystem restore
 path. Its `thread.reverted` event detaches V2 runtime bindings, marks removed runs and

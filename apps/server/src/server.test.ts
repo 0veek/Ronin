@@ -1,4 +1,8 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
+import { SecretRequests } from "./secrets/SecretRequests.ts";
+import { AutomationWebhooks } from "./automation/AutomationWebhooks.ts";
+import { ThreadManagementService } from "./orchestration-v2/ThreadManagementService.ts";
+import { EventSinkV2 } from "./orchestration-v2/EventSink.ts";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -9,6 +13,7 @@ import {
   AuthStandardClientScopes,
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
+  AutomationId,
   CommandId,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
@@ -118,6 +123,8 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import { ProjectionThreadActivityRepositoryLive } from "./persistence/Layers/ProjectionThreadActivities.ts";
+import { ProjectionThreadActivityRepository } from "./persistence/Services/ProjectionThreadActivities.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
@@ -459,6 +466,7 @@ const buildAppUnderTest = (options?: {
     providerRegistry?: Partial<ProviderRegistry.ProviderRegistry["Service"]>;
     providerInstances?: Partial<ProviderInstanceRegistry["Service"]>;
     serverSettings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
+    automationService?: Partial<AutomationService.AutomationService["Service"]>;
     externalLauncher?: Partial<ExternalLauncher.ExternalLauncher["Service"]>;
     vcsDriver?: Partial<VcsDriver.VcsDriver["Service"]>;
     vcsDriverRegistry?: Partial<VcsDriverRegistry.VcsDriverRegistry["Service"]>;
@@ -476,6 +484,7 @@ const buildAppUnderTest = (options?: {
     orchestrationEngine?: Partial<OrchestrationEngine.OrchestrationEngineService["Service"]>;
     threadDeletionReactor?: Partial<ThreadDeletionReactor["Service"]>;
     projectionSnapshotQuery?: Partial<ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]>;
+    threadActivities?: Partial<ProjectionThreadActivityRepository["Service"]>;
     checkpointDiffQuery?: Partial<CheckpointDiffQuery.CheckpointDiffQuery["Service"]>;
     browserTraceCollector?: Partial<BrowserTraceCollector.BrowserTraceCollector["Service"]>;
     serverLifecycleEvents?: Partial<ServerLifecycleEvents.ServerLifecycleEvents["Service"]>;
@@ -652,6 +661,14 @@ const buildAppUnderTest = (options?: {
     const vcsProvisioningLayer = VcsProvisioningService.layer.pipe(
       Layer.provide(vcsDriverRegistryLayer),
     );
+    const serverSettingsLayer = Layer.mock(ServerSettings.ServerSettingsService)({
+      start: Effect.void,
+      ready: Effect.void,
+      getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+      updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
+      streamChanges: Stream.empty,
+      ...options?.layers?.serverSettings,
+    });
     const reviewLayer = options?.layers?.reviewService
       ? Layer.mock(ReviewService.ReviewService)({
           ...options.layers.reviewService,
@@ -659,6 +676,7 @@ const buildAppUnderTest = (options?: {
       : ReviewService.layer.pipe(
           Layer.provideMerge(gitVcsDriverLayer),
           Layer.provide(vcsDriverRegistryLayer),
+          Layer.provide(serverSettingsLayer),
         );
     const vcsStatusBroadcasterLayer = options?.layers?.vcsStatusBroadcaster
       ? Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
@@ -733,16 +751,7 @@ const buildAppUnderTest = (options?: {
           }),
         ),
       ),
-      Layer.provide(
-        Layer.mock(ServerSettings.ServerSettingsService)({
-          start: Effect.void,
-          ready: Effect.void,
-          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          streamChanges: Stream.empty,
-          ...options?.layers?.serverSettings,
-        }),
-      ),
+      Layer.provide(serverSettingsLayer),
       Layer.provide(
         Layer.mergeAll(
           Layer.mock(ExternalLauncher.ExternalLauncher)({
@@ -957,11 +966,28 @@ const buildAppUnderTest = (options?: {
 
     const appLayer = servedRoutesLayer
       .pipe(
+        Layer.provide(
+          options?.layers?.threadActivities
+            ? Layer.mock(ProjectionThreadActivityRepository)(options.layers.threadActivities)
+            : ProjectionThreadActivityRepositoryLive,
+        ),
+      )
+      .pipe(
         Layer.provide(resourceTelemetryLayer),
         Layer.provide(UsageService.layerTest),
         Layer.provide(RateLimitService.layerTest),
         Layer.provide(QuotaResumeService.layerTest),
-        Layer.provide(AutomationService.layerTest),
+        Layer.provide(
+          Layer.mergeAll(
+            options?.layers?.automationService
+              ? Layer.mock(AutomationService.AutomationService)(options.layers.automationService)
+              : AutomationService.layerTest,
+            Layer.mock(SecretRequests)({}),
+            Layer.mock(AutomationWebhooks)({}),
+            Layer.mock(ThreadManagementService)({}),
+            Layer.mock(EventSinkV2)({}),
+          ),
+        ),
         Layer.provide(BuildSystemService.layerTest),
         Layer.provide(SpeechToTextService.layerTest),
         Layer.provide(
@@ -2265,6 +2291,56 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(typeof wsTicketBody.ticket, "string");
       assert.isTrue(wsTicketBody.ticket.length > 0);
       assert.equal(typeof wsTicketBody.expiresAt, "string");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("only exposes webhook bearer URLs to sessions that can operate automations", () =>
+    Effect.gen(function* () {
+      const webhook = { path: "/api/hooks/test/private-token", hasSecret: true };
+      yield* buildAppUnderTest({
+        layers: {
+          automationService: {
+            list: () =>
+              Effect.succeed([
+                {
+                  id: AutomationId.make("webhook-test"),
+                  projectId: ProjectId.make("project-1"),
+                  title: "Webhook",
+                  prompt: "Review event",
+                  schedule: { _tag: "webhook", signature: null },
+                  envMode: "local",
+                  modelSelection: null,
+                  enabled: true,
+                  stopAfterConsecutiveFailures: 3,
+                  consecutiveFailureCount: 0,
+                  disabledReason: null,
+                  disabledAt: null,
+                  createdAt: "2026-10-06T00:00:00.000Z",
+                  updatedAt: "2026-10-06T00:00:00.000Z",
+                  lastRunAt: null,
+                  nextRunAt: null,
+                  webhook,
+                },
+              ]),
+          },
+        },
+      });
+      for (const scope of ["orchestration:read", "orchestration:read orchestration:operate"]) {
+        const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, { scope });
+        const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+          headers: { authorization: `Bearer ${body.access_token ?? ""}` },
+        });
+        const ticket = (yield* ticketResponse.json) as { readonly ticket: string };
+        const url = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
+        const result = yield* Effect.scoped(
+          withWsRpcClient(url, (client) => client[WS_METHODS.automationsList]({})),
+        );
+        assert.equal(result.automations.length, 1);
+        assert.deepEqual(
+          result.automations[0]?.webhook,
+          scope.includes("orchestration:operate") ? webhook : undefined,
+        );
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -3663,6 +3739,93 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             assert.equal(response.status, 200);
             assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
             assert.equal(yield* response.text, "<p>draft</p>");
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("serves inline HTML and stored tool images through signed websocket asset URLs", () =>
+    Effect.gen(function* () {
+      const activityId = EventId.make("inline-tool-image");
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRqoAAAAASUVORK5CYII=",
+        "base64",
+      );
+      const config = yield* buildAppUnderTest({
+        layers: {
+          threadActivities: {
+            getById: (id) =>
+              Effect.succeed(
+                id === activityId
+                  ? Option.some({
+                      activityId,
+                      threadId: defaultThreadId,
+                      turnId: null,
+                      tone: "tool",
+                      kind: "tool.completed",
+                      summary: "Screenshot",
+                      createdAt: "2026-10-06T00:00:00.000Z",
+                      payload: {
+                        data: {
+                          result: {
+                            content: [
+                              {
+                                type: "image",
+                                mimeType: "image/png",
+                                data: png.toString("base64"),
+                              },
+                            ],
+                          },
+                        },
+                      },
+                    })
+                  : Option.none(),
+              ),
+          },
+        },
+      });
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const attachmentId = "inline-render-00000000-0000-4000-8000-000000000001-html";
+      const html =
+        "<!doctype html><html><body><button onclick=\"this.textContent='Clicked'\">Run</button></body></html>";
+      yield* fs.makeDirectory(config.attachmentsDir, { recursive: true });
+      const htmlPath = path.join(config.attachmentsDir, `${attachmentId}.html`);
+      yield* fs.writeFileString(htmlPath, html);
+      const wsUrl = yield* getWsServerUrl("/ws");
+      yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.gen(function* () {
+            const page = yield* client[WS_METHODS.assetsCreateUrl]({
+              resource: {
+                _tag: "attachment",
+                attachmentId,
+                fileName: "Interactive page.html",
+                mimeType: "text/html",
+                disposition: "inline",
+              },
+            });
+            const response = yield* HttpClient.get(page.relativeUrl);
+            assert.equal(response.status, 200);
+            assert.equal(response.headers["content-type"], "text/html; charset=utf-8");
+            assert.equal(response.headers["cache-control"], "private, max-age=3600");
+            assert.include(response.headers["content-security-policy"]!, "sandbox allow-scripts");
+            assert.notInclude(response.headers["content-security-policy"]!, "allow-same-origin");
+            assert.equal(yield* response.text, html);
+            const tampered = page.relativeUrl.replace("/api/assets/", "/api/assets/tampered");
+            assert.equal((yield* HttpClient.get(tampered)).status, 404);
+
+            const image = yield* client[WS_METHODS.assetsCreateUrl]({
+              resource: { _tag: "tool-output-image", activityId, index: 0 },
+            });
+            assert.deepEqual(image.imageDimensions, { width: 1, height: 1 });
+            const screenshot = yield* HttpClient.get(image.relativeUrl);
+            assert.equal(screenshot.status, 200);
+            assert.equal(screenshot.headers["content-type"], "image/png");
+            assert.deepEqual(new Uint8Array(yield* screenshot.arrayBuffer), new Uint8Array(png));
+            yield* fs.remove(htmlPath);
+            assert.equal((yield* HttpClient.get(page.relativeUrl)).status, 404);
           }),
         ),
       );

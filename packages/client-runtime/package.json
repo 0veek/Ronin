@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./provider-goals": {
+      "types": "./src/providerGoals.ts",
+      "default": "./src/providerGoals.ts"
+    },
     "./device/stream": {
       "types": "./src/device/stream.ts",
       "default": "./src/device/stream.ts"
@@ -246,7 +250,8 @@
     "./device/duo-control": {
       "types": "./src/device/duoControl.ts",
       "default": "./src/device/duoControl.ts"
-    }
+    },
+    "./secret-request": "./src/secretRequest.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

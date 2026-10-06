@@ -145,16 +145,20 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
 
     const connected = yield* Deferred.make<void>();
     const disconnected = yield* Deferred.make<never, ConnectionTransientError>();
+    const pingTimedOut = yield* Ref.make(false);
     const hooks = RpcClient.ConnectionHooks.of({
       onConnect: Deferred.succeed(connected, undefined).pipe(Effect.asVoid),
-      onDisconnect: Deferred.isDone(connected).pipe(
-        Effect.flatMap((wasConnected) =>
+      onPingTimeout: Ref.set(pingTimedOut, true),
+      onDisconnect: Effect.all([Deferred.isDone(connected), Ref.get(pingTimedOut)]).pipe(
+        Effect.flatMap(([wasConnected, timedOut]) =>
           Deferred.fail(
             disconnected,
             new ConnectionTransientErrorClass({
               reason: "transport",
               detail: wasConnected
-                ? `${connection.label} disconnected.`
+                ? timedOut
+                  ? `${connection.label} stopped responding.`
+                  : `${connection.label} disconnected.`
                 : `${connection.label} could not establish a WebSocket connection.`,
             }),
           ),

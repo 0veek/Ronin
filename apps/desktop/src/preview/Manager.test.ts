@@ -1,5 +1,6 @@
 import * as NodeVM from "node:vm";
 import { it as effectIt } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
@@ -18,6 +19,7 @@ import { TestClock } from "effect/testing";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as BrowserSession from "./BrowserSession.ts";
 import * as PreviewManager from "./Manager.ts";
@@ -267,10 +269,18 @@ const fileSystemLayer = FileSystem.layerNoop({
 });
 
 const layer = PreviewManager.layer.pipe(
+  Layer.provideMerge(
+    Layer.succeed(DesktopRendererHistory.DesktopRendererHistory, {
+      register: () => Effect.void,
+      recordMetrics: () => Effect.void,
+      shutdown: Effect.void,
+    }),
+  ),
   Layer.provideMerge(browserSessionLayer),
   Layer.provideMerge(environmentLayer),
   Layer.provideMerge(fileSystemLayer),
   Layer.provideMerge(Path.layer),
+  Layer.provideMerge(NodeCrypto.layer),
 );
 const encodePreviewManagerError = Schema.encodeSync(PreviewManager.PreviewManagerError);
 
@@ -2361,6 +2371,13 @@ describe("PreviewManager", () => {
           /\/browser-artifacts\/browser-screenshot-example-com-[^.]+\.png$/,
         );
 
+        const second = yield* manager.captureScreenshot("tab_1");
+        expect(second.createdAt).toBe(artifact.createdAt);
+        expect(second.id).not.toBe(artifact.id);
+        expect(second.path).not.toBe(artifact.path);
+        expect(writeFile).toHaveBeenCalledWith(second.path, png);
+        expect(capturePage).toHaveBeenCalledTimes(2);
+
         // Chromium reports UnknownVizError while a hidden guest warms its
         // first compositor frame, so transient failures are retried.
         capturePage.mockClear();
@@ -3856,4 +3873,85 @@ describe("Preview automation diagnostics", () => {
     expect(JSON.stringify(error)).not.toContain(selector);
     expect("locator" in error).toBe(false);
   });
+  effectIt.effect(
+    "releases evaluation objects after success, exceptions, takeover, and cancellation",
+    () =>
+      withManager((manager) =>
+        Effect.gen(function* () {
+          const retained = new Map<string, number>();
+          const pendingEvaluation = yield* Deferred.make<void>();
+          const lateRelease = yield* Deferred.make<void>();
+          let finishEvaluation: (() => void) | undefined;
+          let cancelledGroup: string | undefined;
+          let humanInput: ((event: unknown, signal: unknown) => void) | undefined;
+          const wc = makeTestPreviewWebContents(vi.fn());
+          Object.assign(wc, { isDevToolsOpened: () => false });
+          Object.assign(wc.ipc, {
+            on: vi.fn((channel: string, listener: typeof humanInput) => {
+              if (channel === "preview:human-input") humanInput = listener;
+            }),
+          });
+          Object.assign(wc.debugger, {
+            sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+              const group = String(params?.objectGroup ?? "");
+              if (method === "Runtime.releaseObjectGroup") {
+                retained.delete(group);
+                if (group === cancelledGroup) Deferred.doneUnsafe(lateRelease, Effect.void);
+              }
+              if (method !== "Runtime.evaluate") return undefined;
+              if (params?.expression === "cancelled") {
+                cancelledGroup = group;
+                Deferred.doneUnsafe(pendingEvaluation, Effect.void);
+                await new Promise<void>((resolve) => {
+                  finishEvaluation = resolve;
+                });
+              }
+              retained.set(group, 2);
+              if (params?.expression === "exception") {
+                return {
+                  result: { objectId: "exception-result" },
+                  exceptionDetails: {
+                    text: "failure",
+                    exception: { objectId: "exception-detail" },
+                  },
+                };
+              }
+              if (params?.expression === "takeover") {
+                humanInput?.({}, { kind: "pointer", x: 1, y: 2, button: 0 });
+              }
+              return { result: { value: 42 } };
+            }),
+          });
+          fromId.mockReturnValue(wc);
+          yield* manager.createTab("tab_1");
+          yield* manager.registerWebview("tab_1", 42);
+
+          expect(yield* manager.automationEvaluate("tab_1", { expression: "success" })).toBe(42);
+          expect(retained.size).toBe(0);
+          const failure = yield* Effect.exit(
+            manager.automationEvaluate("tab_1", { expression: "exception" }),
+          );
+          expect(Exit.isFailure(failure)).toBe(true);
+          expect(retained.size).toBe(0);
+          const takeover = yield* Effect.exit(
+            manager.automationEvaluate("tab_1", { expression: "takeover" }),
+          );
+          expect(Exit.isFailure(takeover)).toBe(true);
+          if (Exit.isFailure(takeover)) {
+            expect(Option.getOrThrow(Cause.findErrorOption(takeover.cause))).toMatchObject({
+              _tag: "PreviewAutomationControlInterruptedError",
+            });
+          }
+          expect(retained.size).toBe(0);
+          const cancelled = yield* manager
+            .automationEvaluate("tab_1", { expression: "cancelled" })
+            .pipe(Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(pendingEvaluation);
+          yield* Fiber.interrupt(cancelled);
+          finishEvaluation?.();
+          yield* Deferred.await(lateRelease);
+          expect(retained.size).toBe(0);
+        }),
+      ),
+  );
 });

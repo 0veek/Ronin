@@ -1,3 +1,7 @@
+import { SecretRequestCard } from "./SecretRequestCard";
+import { HtmlRenderFrame } from "./HtmlRenderFrame";
+import { ShellCommandBlock } from "./ShellCommandBlock";
+import { withVisibleControlCharacters } from "../../lib/commandHighlighting";
 import {
   deriveTimelineMinimapItems,
   resolveTimelineMinimapPreview,
@@ -3473,7 +3477,7 @@ function workEntryPreview(
   workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
   workspaceRoot: string | undefined,
 ) {
-  if (workEntry.command) return workEntry.command;
+  if (workEntry.command?.trim()) return withVisibleControlCharacters(workEntry.command);
   if (workEntry.detail) return workEntry.detail;
   if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
   const [firstPath] = workEntry.changedFiles ?? [];
@@ -3504,9 +3508,13 @@ function buildToolCallExpandedBody(
   workspaceRoot: string | undefined,
   visibleLabel: string,
   viewedImagePath: string | null,
-): string | null {
+): { command: string | null; detail: string | null } {
   const blocks: string[] = [];
   const seen = new Set<string>([visibleLabel.trim()]);
+  const command = workEntry.command?.trim();
+  const raw = workEntryRawCommand(workEntry);
+  if (command) seen.add(command);
+  if (raw) seen.add(raw);
   const addBlock = (value: string | null | undefined) => {
     const text = value?.trim();
     if (!text || seen.has(text)) return;
@@ -3515,13 +3523,6 @@ function buildToolCallExpandedBody(
   };
   if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
     addBlock(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
-  }
-  const command = workEntry.command?.trim();
-  const raw = workEntryRawCommand(workEntry);
-  if (command === visibleLabel.trim()) {
-    seen.add(command);
-  } else {
-    addBlock(raw ?? command);
   }
   const detail = workEntry.detail?.trim();
   if (detail !== viewedImagePath?.trim()) {
@@ -3544,7 +3545,10 @@ function buildToolCallExpandedBody(
   if (changedFiles.length > 0) {
     addBlock([...new Set(changedFiles)].join("\n"));
   }
-  return blocks.length > 0 ? blocks.join("\n\n") : null;
+  return {
+    command: raw ?? command ?? null,
+    detail: blocks.length > 0 ? blocks.join("\n\n") : null,
+  };
 }
 
 const toolCallExpandedBodyClassName =
@@ -3860,6 +3864,25 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workspaceRoot: string | undefined;
 }) {
   const { workEntry, workspaceRoot } = props;
+  const { threadRef } = use(TimelineRowCtx);
+  if (workEntry.htmlRender && threadRef) {
+    return (
+      <HtmlRenderFrame
+        key={`${threadRef.environmentId}:${workEntry.htmlRender.attachmentId}`}
+        environmentId={threadRef.environmentId}
+        htmlRender={workEntry.htmlRender}
+      />
+    );
+  }
+  if (workEntry.secretRequest && threadRef) {
+    return (
+      <SecretRequestCard
+        environmentId={threadRef.environmentId}
+        item={workEntry.secretRequest}
+        visibility={workEntry.secretRequest.threadId === threadRef.threadId ? "local" : "inherited"}
+      />
+    );
+  }
   // Before any hooks: spawn rows and provider boundaries render their own
   // components.
   if (workEntry.agentSpawn) {
@@ -3920,8 +3943,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const showFailedIndicator = workEntryIndicatesToolFailure(workEntry);
   const canExpand =
     Boolean(workEntry.questionAnswer) ||
-    expandedBody !== null ||
+    expandedBody.detail !== null ||
     viewedImage !== null ||
+    (workEntry.outputImages?.length ?? 0) > 0 ||
     Boolean(workEntryRawCommand(workEntry) || workEntry.command?.trim()) ||
     (showFailedIndicator && collapsedText.trim().length > 0);
   const showDestructiveRowStyle =
@@ -4013,7 +4037,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
                   {answerPreview}
                 </span>
               ) : null}
-              {preview && (
+              {preview && !(expanded && expandedBody.command) && (
                 <span
                   className={cn(
                     "min-w-0 flex-1 text-secondary-label",
@@ -4112,9 +4136,28 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               />
             </div>
           ) : null}
-          {expandedBody ? (
-            <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>
-          ) : null}
+          {threadRef
+            ? workEntry.outputImages?.map((resource) => (
+                <div className="mb-1.5" key={`${resource.activityId}:${resource.index}`}>
+                  <ChatMarkdownAssetImage
+                    environmentId={threadRef.environmentId}
+                    resource={resource}
+                    alt="Tool output image"
+                    source={`Tool output image ${resource.index + 1}`}
+                    maxHeightRem={16}
+                    onImageExpand={onImageExpand}
+                  />
+                </div>
+              ))
+            : null}
+          <div className={toolCallExpandedBodyClassName}>
+            {expandedBody.command ? <ShellCommandBlock command={expandedBody.command} /> : null}
+            {expandedBody.detail ? (
+              <div className={expandedBody.command ? "mt-1.5" : undefined}>
+                {expandedBody.detail}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </div>

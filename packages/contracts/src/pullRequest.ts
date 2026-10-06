@@ -199,6 +199,7 @@ export const PullRequestComment = Schema.Struct({
   author: Schema.NullOr(PullRequestActor),
   body: Schema.String,
   createdAt: IsoDateTime,
+  editedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   url: Schema.NullOr(Schema.String),
   path: Schema.NullOr(Schema.String),
   reviewState: Schema.NullOr(Schema.String),
@@ -224,6 +225,7 @@ export const PullRequestThreadComment = Schema.Struct({
   author: Schema.NullOr(PullRequestActor),
   body: Schema.String,
   createdAt: IsoDateTime,
+  editedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   url: Schema.NullOr(Schema.String),
   reactions: Schema.optional(Schema.Array(PullRequestReaction)),
 });

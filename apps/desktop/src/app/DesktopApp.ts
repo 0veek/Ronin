@@ -29,6 +29,7 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopShellEnvironment from "../shell/DesktopShellEnvironment.ts";
 import * as DesktopState from "./DesktopState.ts";
 import * as DesktopSnapShot from "../snapShot/DesktopSnapShot.ts";
+import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 
 const DEFAULT_DESKTOP_BACKEND_PORT = 3773;
 const MAX_TCP_PORT = 65_535;
@@ -351,12 +352,16 @@ const scopedProgram = Effect.scoped(
     yield* Effect.annotateCurrentSpan({ scope: "desktop", runId });
 
     const shutdown = yield* DesktopShutdown.DesktopShutdown;
+    const rendererHistory = yield* DesktopRendererHistory.DesktopRendererHistory;
 
     yield* Effect.addFinalizer(() =>
       // The quit path can race ahead of the layer-scope cascade. Stop every
       // backend concurrently, with a bound so one hung process cannot keep
       // the desktop app open forever.
-      stopAllPoolInstances().pipe(Effect.ensuring(shutdown.markComplete)),
+      stopAllPoolInstances().pipe(
+        Effect.ensuring(rendererHistory.shutdown),
+        Effect.ensuring(shutdown.markComplete),
+      ),
     );
 
     yield* startup;

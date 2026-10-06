@@ -826,7 +826,12 @@ const make = Effect.gen(function* () {
       yield* workspaceEntries.refresh(checkpointCwd);
     }
 
-    const rolledBackTurns = Math.max(0, currentTurnCount - event.payload.turnCount);
+    const removedTurns = thread.checkpoints
+      .filter((checkpoint) => checkpoint.checkpointTurnCount > event.payload.turnCount)
+      .map((checkpoint) => checkpoint.turnId);
+    const rolledBackTurns = Option.isSome(v2)
+      ? yield* v2.value.nativeRollbackCount(event.payload.threadId, removedTurns)
+      : Math.max(0, currentTurnCount - event.payload.turnCount);
     if (rolledBackTurns > 0) {
       yield* providerService
         .rollbackConversation({

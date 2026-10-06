@@ -1,4 +1,5 @@
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
+import * as Encoding from "effect/Encoding";
 import {
   type DeviceHostSummary,
   DevicePlatformAvailability,
@@ -79,10 +80,11 @@ const ownerFor = Effect.fn("SshDeviceHost.ownerFor")(function* (hostId: string) 
   const environmentId = yield* fs
     .readFileString(server.environmentIdPath)
     .pipe(Effect.orElseSucceed(() => server.stateDir));
-  return NodeCrypto.createHash("sha256")
-    .update(`${environmentId}\0${server.stateDir}\0${hostId}`)
-    .digest("hex")
-    .slice(0, 24);
+  const crypto = yield* Crypto.Crypto;
+  const digest = yield* crypto
+    .digest("SHA-256", new TextEncoder().encode(`${environmentId}\0${server.stateDir}\0${hostId}`))
+    .pipe(Effect.orDie);
+  return Encoding.encodeHex(digest).slice(0, 24);
 });
 
 export const probe = Effect.fn("SshDeviceHost.probe")(function* (
@@ -121,6 +123,7 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const crypto = yield* Crypto.Crypto;
   const server = yield* ServerConfig.ServerConfig;
   const net = yield* NetService.NetService;
   const http = yield* HttpClient.HttpClient;
@@ -136,12 +139,14 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
       | Path.Path
       | ChildProcessSpawner.ChildProcessSpawner
       | ServerConfig.ServerConfig
+      | Crypto.Crypto
     >,
   ) =>
     effect.pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
       Effect.provideService(ServerConfig.ServerConfig, server),
+      Effect.provideService(Crypto.Crypto, crypto),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
   const lock = yield* Semaphore.make(1);

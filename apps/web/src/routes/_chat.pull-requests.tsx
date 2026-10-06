@@ -2,6 +2,8 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import { useShortcutModifierState } from "~/shortcutModifierState";
 import type { PullRequestSpeedActionResult } from "~/components/pullRequest/PullRequestSpeedActions";
+import { usePullRequestCloseBatch } from "~/components/pullRequest/usePullRequestActions";
+import { usePullRequestCloseSweep } from "~/components/pullRequest/usePullRequestCloseSweep";
 import { pullRequestHostOf, resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import type {
   EnvironmentId,
@@ -44,6 +46,10 @@ import {
 
 import {
   filterPullRequestsByInvolvement,
+  applyPullRequestOverrides,
+  pullRequestOverrideAfterAction,
+  settlePullRequestOverrides,
+  type PullRequestListOverride,
   findScopedProject,
   collectPullRequestListFacets,
   groupPullRequestsByInvolvement,
@@ -764,6 +770,11 @@ function PullRequestsRouteView() {
     ],
   );
   const baselineQuery = usePullRequestList(baselineTargets);
+  const baselineEmpty =
+    baselineQuery.data?.entries.length === 0 &&
+    baselineQuery.data.errors.length === 0 &&
+    !baselineQuery.isPending &&
+    baselineQuery.error === null;
   const facetTargets = useMemo(() => {
     if (!filtersOpen) return NO_LIST_TARGETS;
     return environmentQueries.map(({ environmentId, projectIds }) => ({
@@ -894,10 +905,58 @@ function PullRequestsRouteView() {
   // new lands at the bottom. Only a different question — other filters, another search — starts
   // the order again. Declared here, ahead of the snapshot write below, so that write can read
   // this round's accumulation rather than only its own slice.
-  const onSpeedAction = ({ entry }: PullRequestSpeedActionResult) => {
+  const [overrides, setOverrides] = useState<ReadonlyMap<string, PullRequestListOverride>>(
+    () => new Map(),
+  );
+  const overrideToken = useRef(0);
+  const noteAction = useCallback(({ entry, action }: PullRequestSpeedActionResult) => {
+    // A merge may only have entered the host's queue. The next read confirms its state.
+    if (action === "merge") return;
+    const override = pullRequestOverrideAfterAction(
+      entry,
+      action,
+      new Date(),
+      ++overrideToken.current,
+    );
+    if (override)
+      setOverrides((current) => new Map(current).set(pullRequestEntryKey(entry), override));
+  }, []);
+  const onSpeedAction = (result: PullRequestSpeedActionResult) => {
+    noteAction(result);
     setDetailRefreshToken((token) => token + 1);
-    refreshListAndStats(undefined, entry.environmentId);
+    refreshListAndStats(undefined, result.entry.environmentId);
   };
+  const onBatchClosed = useCallback(
+    (entry: EnvironmentPullRequestEntry) => noteAction({ entry, action: "close" }),
+    [noteAction],
+  );
+  const { close, closingKeys } = usePullRequestCloseBatch(onBatchClosed);
+  const closeBatch = async (entries: ReadonlyArray<EnvironmentPullRequestEntry>) => {
+    await close(entries);
+    for (const environmentId of new Set(entries.map((entry) => entry.environmentId)))
+      refreshListAndStats(undefined, environmentId);
+    setDetailRefreshToken((token) => token + 1);
+  };
+  const [overrideAnswers, setOverrideAnswers] = useState([
+    baselineQuery.data,
+    authoredQuery.data,
+    reviewingQuery.data,
+  ]);
+  if (
+    overrideAnswers[0] !== baselineQuery.data ||
+    overrideAnswers[1] !== authoredQuery.data ||
+    overrideAnswers[2] !== reviewingQuery.data
+  ) {
+    setOverrideAnswers([baselineQuery.data, authoredQuery.data, reviewingQuery.data]);
+    const answered = [
+      ...(baselineQuery.data?.entries ?? []),
+      ...(authoredQuery.data?.entries ?? []),
+      ...(reviewingQuery.data?.entries ?? []),
+    ];
+    setOverrides((current) =>
+      settlePullRequestOverrides(current, answered, pullRequestEntryKey, Date.now()),
+    );
+  }
   const [ordered, setOrdered] = useState<{
     key: string;
     entries: ReadonlyArray<EnvironmentPullRequestEntry>;
@@ -940,13 +999,15 @@ function PullRequestsRouteView() {
       // stay — hydrated or previously answered — rather than being dropped for a feed that
       // merely settled first.
       const partitions =
-        partitionsWanted && authoredQuery.data !== null && reviewingQuery.data !== null
-          ? { authored: authoredQuery.data.entries, reviewing: reviewingQuery.data.entries }
-          : current !== null &&
-              current.environmentKey === environmentKey &&
-              current.scope === scopeKey
-            ? current.partitions
-            : undefined;
+        partitionsWanted && baselineEmpty
+          ? { authored: [], reviewing: [] }
+          : partitionsWanted && authoredQuery.data !== null && reviewingQuery.data !== null
+            ? { authored: authoredQuery.data.entries, reviewing: reviewingQuery.data.entries }
+            : current !== null &&
+                current.environmentKey === environmentKey &&
+                current.scope === scopeKey
+              ? current.partitions
+              : undefined;
       // A search's answer is the search's, not the workspace's, so only unsearched lists
       // persist. Written here where the held partitions are in reach, so a feed settling
       // ahead of them cannot overwrite a stored snapshot that already had both groups.
@@ -987,6 +1048,7 @@ function PullRequestsRouteView() {
     sentQuery,
     listQuery.data,
     listQuery.isPending,
+    baselineEmpty,
     partitionsWanted,
     authoredQuery.data,
     reviewingQuery.data,
@@ -1292,6 +1354,7 @@ function PullRequestsRouteView() {
    */
   const groups = useMemo(() => {
     if (search.involvement !== "all") return [{ key: "others" as const, label: "", entries }];
+    if (baselineEmpty) return groupPullRequestsByInvolvement(entries, viewers);
     // Until both partitions have answered, the snapshot's stand in — they are yesterday's
     // groups, but whole ones, where grouping the feed's first page locally loses every
     // authored row older than it. Once the live reads land they take over; with neither,
@@ -1323,6 +1386,7 @@ function PullRequestsRouteView() {
     hasLocalFilters,
     localFilters,
     authoredQuery.data?.entries,
+    baselineEmpty,
     entries,
     environmentKey,
     loaded,
@@ -1471,7 +1535,12 @@ function PullRequestsRouteView() {
   const displayGroups = useMemo(() => {
     const enriched = groups.map((group) => ({
       ...group,
-      entries: group.entries.map((entry) => withDiffStat(entry, statsByRow)),
+      entries: applyPullRequestOverrides(
+        group.entries,
+        overrides,
+        pullRequestEntryKey,
+        search.state,
+      ).map((entry) => withDiffStat(entry, statsByRow)),
     }));
     // Searching keeps its relevance order and priority groups unless the reader explicitly asks
     // for another sort. The readiness queue is the default browse order, not a way to bury a
@@ -1483,7 +1552,15 @@ function PullRequestsRouteView() {
       (entry) =>
         entry.additions + entry.deletions > 0 || statsByRow.has(pullRequestDiffStatKey(entry)),
     );
-  }, [groups, sort, statsByRow, typedParsed.text]);
+  }, [groups, overrides, search.state, sort, statsByRow, typedParsed.text]);
+  const shownCount = displayGroups.reduce((count, group) => count + group.entries.length, 0);
+  const { sweepingKeys, startSweep } = usePullRequestCloseSweep({
+    groups: displayGroups,
+    closingKeys,
+    closeBatch,
+    scrollRef,
+    resetKey: `${filterKey}:${search.q ?? ""}:${sort}`,
+  });
 
   const linkedSelection = useMemo(
     () =>
@@ -1662,7 +1739,7 @@ function PullRequestsRouteView() {
         <PullRequestsUnavailableState error={listQuery.error} onRetry={() => listQuery.refresh()} />
       ) : carriedToNothing ? (
         <PullRequestListGhost rows={7} />
-      ) : entries.length === 0 ? (
+      ) : shownCount === 0 ? (
         <PullRequestListEmptyState
           hasProjects={!projectsKnown || projects.length > 0}
           refreshing={refreshing}
@@ -1682,7 +1759,7 @@ function PullRequestsRouteView() {
           onLoadMore={loadMore}
         />
       ) : (
-        <div className="space-y-3">
+        <div className={cn("space-y-3", sweepingKeys.size > 0 && "**:pointer-events-none")}>
           {displayGroups.map((group) => (
             <div key={group.key} className="space-y-0.5">
               {group.label ? (
@@ -1719,6 +1796,9 @@ function PullRequestsRouteView() {
                     onSelect={selectEntry}
                     speedMode={speedMode}
                     onActed={onSpeedAction}
+                    closing={closingKeys.has(entryKey)}
+                    sweeping={sweepingKeys.has(entryKey)}
+                    onCloseSweepStart={startSweep}
                   />
                 );
               })}

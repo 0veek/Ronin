@@ -19,9 +19,11 @@ import {
   type OrchestrationV2Subagent,
 } from "@t3tools/contracts/orchestration-v2";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import type { ProviderInstance } from "../../provider/ProviderDriver.ts";
@@ -43,6 +45,7 @@ import {
 import { legacyProviderCapabilities } from "./LegacyProviderCapabilities.ts";
 import type { PreparedTurnRequests } from "./PreparedTurnRequests.ts";
 import { makeProviderFailure } from "../ProviderFailure.ts";
+import { parseCodexGoalCommand, providerGoalsEqual } from "../../provider/nativeGoals.ts";
 
 const decodeEvent = Schema.decodeUnknownEffect(ProviderAdapterV2Event);
 
@@ -166,6 +169,7 @@ export function makeLegacyProviderAdapterV2(
         lastRunOrdinal: null,
         handoffIds: [],
         forkedFrom: null,
+        goal: session.goal ?? null,
         createdAt: now,
         updatedAt: now,
       };
@@ -180,6 +184,17 @@ export function makeLegacyProviderAdapterV2(
       const turnOwners = new Map<string, ProviderAdapterV2TurnInput>();
       let lastNativeTurn: string | undefined;
       let rootTurnEnded = false;
+      let nextProviderTurnOrdinal = 0;
+      let goalObserved = session.goal !== undefined;
+      let goalActivationPending = false;
+      let goalStopping = false;
+      type CompletedTurn = Extract<ProviderRuntimeEvent, { type: "turn.completed" }>;
+      let goalHold:
+        | { event: CompletedTurn; released: Deferred.Deferred<void>; stopped: boolean }
+        | undefined;
+      const settledGoals = yield* Queue.unbounded<CompletedTurn>();
+      const scope = yield* Effect.scope;
+      yield* Effect.addFinalizer(() => Queue.shutdown(settledGoals));
       let ordinal = 0;
       const snapshot = () => ({
         providerThread,
@@ -193,9 +208,41 @@ export function makeLegacyProviderAdapterV2(
           return status === "pending" || status === "running" || status === "waiting";
         }),
       );
-      const convert = Effect.fn("LegacyProviderAdapter.convert")(function* (
+      const convert: (
         event: ProviderRuntimeEvent,
-      ) {
+        settleGoal?: boolean,
+      ) => Effect.Effect<Array<ProviderAdapterV2Event>, Schema.SchemaError> = Effect.fn(
+        "LegacyProviderAdapter.convert",
+      )(function* (event: ProviderRuntimeEvent, settleGoal = false) {
+        if (event.type === "thread.goal.updated") {
+          goalObserved = true;
+          const changed = !providerGoalsEqual(providerThread.goal ?? null, event.payload.goal);
+          providerThread = {
+            ...providerThread,
+            goal: event.payload.goal,
+            updatedAt: DateTime.makeUnsafe(event.createdAt),
+          };
+          const output: Array<ProviderAdapterV2Event> = changed
+            ? [{ type: "provider_thread.updated", driver, providerThread }]
+            : [];
+          if (
+            goalHold !== undefined &&
+            event.payload.goal?.status !== "active" &&
+            !goalActivationPending
+          ) {
+            output.push(...(yield* convert(goalHold.event, true)));
+          }
+          return output;
+        }
+        if (settleGoal) {
+          if (goalHold?.event !== event) return [];
+          const held = goalHold;
+          goalHold = undefined;
+          yield* Deferred.succeed(held.released, undefined);
+          if ((held.stopped || goalStopping) && event.type === "turn.completed") {
+            event = { ...event, payload: { ...event.payload, state: "interrupted" } };
+          }
+        }
         if (active === undefined && event.type !== "session.exited") return [];
         const stoppedSession: ProviderAdapterV2Event = {
           type: "provider_session.updated",
@@ -214,6 +261,22 @@ export function makeLegacyProviderAdapterV2(
           },
         };
         if (active === undefined) return [stoppedSession];
+        if (
+          rootTurnEnded &&
+          driver === "codex" &&
+          event.type === "turn.started" &&
+          providerThread.goal?.status === "active"
+        ) {
+          // A continuation after the run settled must not work invisibly.
+          yield* providers
+            .interruptTurn({ threadId: input.threadId })
+            .pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("Failed to stop an unowned native goal turn", { cause }),
+              ),
+            );
+          return [];
+        }
         const isTaskEvent =
           event.type === "task.started" ||
           event.type === "task.progress" ||
@@ -241,23 +304,42 @@ export function makeLegacyProviderAdapterV2(
           lastNativeTurn ??
           owner.attemptId;
         const providerTurnId = ProviderTurnId.make(`${instance.instanceId}:${nativeTurn}`);
-        const nativeRef =
-          event.turnId === undefined && lastNativeTurn === undefined
-            ? null
-            : { driver, nativeId: String(nativeTurn), strength: "strong" as const };
         const previousTurn = turns.get(providerTurnId);
+        const nativeRef =
+          previousTurn !== undefined
+            ? previousTurn.nativeTurnRef
+            : (event.type === "turn.started" && event.payload.native === false) ||
+                (event.turnId === undefined && lastNativeTurn === undefined)
+              ? null
+              : { driver, nativeId: String(nativeTurn), strength: "strong" as const };
         const turn: OrchestrationV2ProviderTurn = {
           id: providerTurnId,
           providerThreadId: providerThread.id,
           nodeId: owner.rootNodeId,
           runAttemptId: owner.attemptId,
           nativeTurnRef: nativeRef,
-          ordinal: owner.providerTurnOrdinal,
+          ordinal: previousTurn?.ordinal ?? nextProviderTurnOrdinal++,
           status: "running",
           startedAt: previousTurn?.startedAt ?? occurredAt,
           completedAt: null,
         };
         const output: Array<ProviderAdapterV2Event> = [];
+        if (event.type === "turn.started" && goalHold !== undefined) {
+          const held = goalHold;
+          goalHold = undefined;
+          yield* Deferred.succeed(held.released, undefined);
+          const previousId = ProviderTurnId.make(`${instance.instanceId}:${held.event.turnId}`);
+          const previous = turns.get(previousId);
+          if (previous !== undefined) {
+            const completed = {
+              ...previous,
+              status: "completed" as const,
+              completedAt: DateTime.makeUnsafe(held.event.createdAt),
+            };
+            turns.set(previousId, completed);
+            output.push({ type: "provider_turn.updated", driver, providerTurn: completed });
+          }
+        }
         const cancelBackgroundTasks = (status: "failed" | "cancelled") => {
           for (const taskId of tasks.keys()) {
             const key = `${instance.instanceId}:task:${taskId}`;
@@ -351,15 +433,11 @@ export function makeLegacyProviderAdapterV2(
               ? { turnTokenUsage: event.payload.tokenUsage }
               : {}),
           };
-          turns.set(providerTurnId, updated);
-          output.push({ type: "provider_turn.updated", driver, providerTurn: updated });
-          if (terminal) {
-            rootTurnEnded = true;
-            if (state === "failed" || state === "cancelled" || state === "interrupted")
-              cancelBackgroundTasks(state === "failed" ? "failed" : "cancelled");
+          const finalizeOutput = (currentTurnOnly: boolean) => {
             for (const [key, node] of nodes) {
               if (
                 node.runId !== owner.runId ||
+                (currentTurnOnly && node.providerTurnId !== providerTurnId) ||
                 !node.countsForRun ||
                 (node.status !== "running" &&
                   node.status !== "pending" &&
@@ -398,6 +476,7 @@ export function makeLegacyProviderAdapterV2(
             for (const [key, item] of items) {
               if (
                 item.runId !== owner.runId ||
+                (currentTurnOnly && item.providerTurnId !== providerTurnId) ||
                 (item.type !== "assistant_message" && item.type !== "reasoning")
               )
                 continue;
@@ -419,6 +498,45 @@ export function makeLegacyProviderAdapterV2(
                 }
               }
             }
+          };
+          if (
+            !settleGoal &&
+            driver === "codex" &&
+            event.type === "turn.completed" &&
+            state === "completed" &&
+            nativeRef !== null &&
+            (providerThread.goal?.status === "active" || goalActivationPending)
+          ) {
+            const held = { event, released: yield* Deferred.make<void>(), stopped: goalStopping };
+            goalHold = held;
+            // Keep Stop and steering attached while Codex starts the next turn.
+            const waiting = { ...updated, status: "running" as const, completedAt: null };
+            turns.set(providerTurnId, waiting);
+            output.push({ type: "provider_turn.updated", driver, providerTurn: waiting });
+            finalizeOutput(true);
+            yield* Deferred.await(held.released).pipe(
+              Effect.timeoutOption("5 seconds"),
+              Effect.flatMap((result) =>
+                Option.isNone(result) && goalHold === held
+                  ? Queue.offer(settledGoals, held.event).pipe(Effect.asVoid)
+                  : Effect.void,
+              ),
+              Effect.forkIn(scope),
+            );
+            return output;
+          }
+          turns.set(providerTurnId, updated);
+          output.push({ type: "provider_turn.updated", driver, providerTurn: updated });
+          if (terminal) {
+            if (goalHold !== undefined) {
+              const held = goalHold;
+              goalHold = undefined;
+              yield* Deferred.succeed(held.released, undefined);
+            }
+            rootTurnEnded = true;
+            if (state === "failed" || state === "cancelled" || state === "interrupted")
+              cancelBackgroundTasks(state === "failed" ? "failed" : "cancelled");
+            finalizeOutput(false);
             if (state === "failed")
               output.push({
                 type: "turn.terminal",
@@ -508,7 +626,8 @@ export function makeLegacyProviderAdapterV2(
               updatedAt: occurredAt,
             };
             messages.set(messageId, message);
-            output.push({ type: "message.updated", driver, message });
+            // Ronin renders the retained provider stream and turn items. Persist
+            // the conversation message once finalization has the complete text.
           }
         }
         if (
@@ -915,7 +1034,11 @@ export function makeLegacyProviderAdapterV2(
             (event.providerInstanceId === undefined ||
               event.providerInstanceId === instance.instanceId),
         ),
-        Stream.mapEffect(convert),
+        Stream.map((event) => ({ event, settleGoal: false })),
+        Stream.merge(
+          Stream.fromQueue(settledGoals).pipe(Stream.map((event) => ({ event, settleGoal: true }))),
+        ),
+        Stream.mapEffect(({ event, settleGoal }) => convert(event, settleGoal)),
         Stream.flatMap(Stream.fromIterable),
         Stream.takeUntil(
           (event) =>
@@ -966,6 +1089,7 @@ export function makeLegacyProviderAdapterV2(
           Effect.sync(() => {
             providerThread = {
               ...(ensure.existingProviderThread ?? providerThread),
+              ...(goalObserved ? { goal: providerThread.goal } : {}),
               providerSessionId: input.providerSessionId,
               status: "idle",
             };
@@ -980,6 +1104,7 @@ export function makeLegacyProviderAdapterV2(
           Effect.sync(() => {
             providerThread = {
               ...resume.providerThread,
+              ...(goalObserved ? { goal: providerThread.goal } : {}),
               providerSessionId: input.providerSessionId,
               status: "idle",
             };
@@ -989,6 +1114,7 @@ export function makeLegacyProviderAdapterV2(
           Effect.gen(function* () {
             active = turn;
             rootTurnEnded = false;
+            nextProviderTurnOrdinal = turn.providerTurnOrdinal;
             lastNativeTurn = undefined;
             messages.clear();
             for (const [key, item] of items)
@@ -1013,15 +1139,28 @@ export function makeLegacyProviderAdapterV2(
             const request = yield* (
               prepared?.take(turn.message.messageId) ?? Effect.succeed(undefined)
             );
-            yield* providers.sendTurn(
-              request ?? {
-                threadId: input.threadId,
-                input: turn.message.text,
-                attachments: turn.message.attachments,
-                modelSelection: turn.modelSelection,
-                interactionMode: turn.runtimePolicy.interactionMode,
-              },
-            );
+            const goalCommand =
+              driver === "codex" && turn.message.attachments.length === 0
+                ? parseCodexGoalCommand(turn.message.text)
+                : null;
+            goalActivationPending = goalCommand?.type === "set" || goalCommand?.type === "resume";
+            yield* providers
+              .sendTurn(
+                request ?? {
+                  threadId: input.threadId,
+                  input: turn.message.text,
+                  attachments: turn.message.attachments,
+                  modelSelection: turn.modelSelection,
+                  interactionMode: turn.runtimePolicy.interactionMode,
+                },
+              )
+              .pipe(
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    goalActivationPending = false;
+                  }),
+                ),
+              );
           }).pipe(
             Effect.mapError(
               (cause) =>
@@ -1078,7 +1217,17 @@ export function makeLegacyProviderAdapterV2(
             ),
           ),
         interruptTurn: (interrupt) =>
-          providers.interruptTurn({ threadId: input.threadId }).pipe(
+          Effect.gen(function* () {
+            goalStopping = true;
+            if (goalHold !== undefined) goalHold.stopped = true;
+            yield* providers.interruptTurn({ threadId: input.threadId });
+            if (goalHold !== undefined) yield* Queue.offer(settledGoals, goalHold.event);
+          }).pipe(
+            Effect.ensuring(
+              Effect.sync(() => {
+                goalStopping = false;
+              }),
+            ),
             Effect.mapError(
               (cause) =>
                 new ProviderAdapterInterruptError({
@@ -1117,7 +1266,7 @@ export function makeLegacyProviderAdapterV2(
             const targetOrdinal =
               rollback.target.type === "thread_start" ? -1 : rollback.target.providerTurn.ordinal;
             const count = rollback.providerThreadTurns.filter(
-              (turn) => turn.ordinal > targetOrdinal,
+              (turn) => turn.nativeTurnRef !== null && turn.ordinal > targetOrdinal,
             ).length;
             const native = yield* providers.readThread(input.threadId);
             return Math.max(0, native.turns.length - count);
@@ -1135,7 +1284,7 @@ export function makeLegacyProviderAdapterV2(
           const targetOrdinal =
             rollback.target.type === "thread_start" ? -1 : rollback.target.providerTurn.ordinal;
           const count = rollback.providerThreadTurns.filter(
-            (turn) => turn.ordinal > targetOrdinal,
+            (turn) => turn.nativeTurnRef !== null && turn.ordinal > targetOrdinal,
           ).length;
           return (
             count === 0

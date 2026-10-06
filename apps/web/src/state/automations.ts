@@ -14,7 +14,7 @@ import type {
 } from "@t3tools/contracts";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/unstable/reactivity";
-import { useCallback, useContext } from "react";
+import { useCallback, useContext, useState } from "react";
 
 import { useEnvironmentQuery } from "./query";
 import { serverEnvironment } from "./server";
@@ -53,6 +53,7 @@ export interface AutomationsController {
  * Running or deleting an automation also refreshes its run history.
  */
 export function useAutomations(environmentId: EnvironmentId): AutomationsController {
+  const [saveError, setSaveError] = useState<string | null>(null);
   const automationsQuery = useEnvironmentQuery(
     serverEnvironment.automations({ environmentId, input: {} }),
   );
@@ -63,15 +64,27 @@ export function useAutomations(environmentId: EnvironmentId): AutomationsControl
   const refreshRuns = runsQuery.refresh;
   const { pendingAutomationIds, runMutation } = useAutomationMutationGuard(environmentId);
 
-  const createCommand = useAtomCommand(serverEnvironment.createAutomation, "automation create");
-  const updateCommand = useAtomCommand(serverEnvironment.updateAutomation, "automation update");
+  const createCommand = useAtomCommand(serverEnvironment.createAutomation, {
+    label: "automation create",
+    reportFailure: false,
+    reportDefect: false,
+  });
+  const updateCommand = useAtomCommand(serverEnvironment.updateAutomation, {
+    label: "automation update",
+    reportFailure: false,
+    reportDefect: false,
+  });
   const deleteCommand = useAtomCommand(serverEnvironment.deleteAutomation, "automation delete");
   const runNowCommand = useAtomCommand(serverEnvironment.runAutomationNow, "automation run now");
 
   const create = useCallback(
     async (input: AutomationCreateInput) => {
+      setSaveError(null);
       const result = await createCommand({ environmentId, input });
-      if (result._tag !== "Success") return false;
+      if (result._tag !== "Success") {
+        setSaveError("Could not save the automation. Check the settings and try again.");
+        return false;
+      }
       refreshAutomations();
       return true;
     },
@@ -81,8 +94,12 @@ export function useAutomations(environmentId: EnvironmentId): AutomationsControl
   const update = useCallback(
     async (input: AutomationUpdateInput) => {
       return runMutation(input.id, async () => {
+        setSaveError(null);
         const result = await updateCommand({ environmentId, input });
-        if (result._tag !== "Success") return false;
+        if (result._tag !== "Success") {
+          setSaveError("Could not save the automation. Check the settings and try again.");
+          return false;
+        }
         refreshAutomations();
         return true;
       });
@@ -128,7 +145,7 @@ export function useAutomations(environmentId: EnvironmentId): AutomationsControl
     automations: automationsQuery.data?.automations ?? EMPTY_AUTOMATIONS,
     runs: runsQuery.data?.runs ?? EMPTY_RUNS,
     isLoading: automationsQuery.data === null && automationsQuery.error === null,
-    error: automationsQuery.error ?? runsQuery.error,
+    error: saveError ?? automationsQuery.error ?? runsQuery.error,
     pendingAutomationIds,
     refresh,
     create,

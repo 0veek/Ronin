@@ -14,8 +14,9 @@ import {
   OrchestrationThread,
   OrchestrationThreadDetailSnapshot,
   ProjectScript,
-  ProjectIconOverride,
+  StoredProjectIcon,
   ProviderInstanceId,
+  ProviderGoal,
   TrimmedNonEmptyString,
   TurnId,
   type OrchestrationCheckpointSummary,
@@ -98,7 +99,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
     defaultModelSelection: Schema.NullOr(Schema.fromJsonString(ModelSelection)),
     autoPull: Schema.Number,
-    projectIcon: Schema.NullOr(Schema.fromJsonString(ProjectIconOverride)),
+    projectIcon: Schema.NullOr(Schema.fromJsonString(StoredProjectIcon)),
     scripts: Schema.fromJsonString(Schema.Array(ProjectScript)),
   }),
 );
@@ -138,7 +139,9 @@ const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
 const ProjectionThreadActivityIdRowSchema = Schema.Struct({
   activityId: ProjectionThreadActivity.fields.activityId,
 });
-const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession;
+const ProjectionThreadSessionDbRowSchema = ProjectionThreadSession.mapFields(
+  Struct.assign({ goal: Schema.NullOr(Schema.fromJsonString(ProviderGoal)) }),
+);
 const ProjectionThreadRuntimeContextDbRowSchema = Schema.Struct({
   titleState: Schema.NullOr(Schema.fromJsonString(ThreadTitleState)),
   id: ThreadId,
@@ -389,6 +392,7 @@ function mapSessionRow(
     ...(row.providerInstanceId !== null ? { providerInstanceId: row.providerInstanceId } : {}),
     runtimeMode: row.runtimeMode,
     activeTurnId: row.activeTurnId,
+    goal: row.goal,
     lastError: row.lastError,
     updatedAt: row.updatedAt,
   };
@@ -890,6 +894,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           provider_thread_id AS "providerThreadId",
           runtime_mode AS "runtimeMode",
           active_turn_id AS "activeTurnId",
+          goal_json AS goal,
           last_error AS "lastError",
           updated_at AS "updatedAt"
         FROM projection_thread_sessions
@@ -911,6 +916,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           sessions.provider_thread_id AS "providerThreadId",
           sessions.runtime_mode AS "runtimeMode",
           sessions.active_turn_id AS "activeTurnId",
+          sessions.goal_json AS goal,
           sessions.last_error AS "lastError",
           sessions.updated_at AS "updatedAt"
         FROM projection_thread_sessions sessions
@@ -937,6 +943,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           sessions.provider_thread_id AS "providerThreadId",
           sessions.runtime_mode AS "runtimeMode",
           sessions.active_turn_id AS "activeTurnId",
+          sessions.goal_json AS goal,
           sessions.last_error AS "lastError",
           sessions.updated_at AS "updatedAt"
         FROM projection_thread_sessions sessions
@@ -1303,6 +1310,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           sessions.provider_instance_id AS "providerInstanceId",
           sessions.runtime_mode AS "runtimeMode",
           sessions.active_turn_id AS "activeTurnId",
+          sessions.goal_json AS goal,
           sessions.last_error AS "lastError",
           sessions.updated_at AS "updatedAt"
         FROM projection_threads AS threads
@@ -1624,6 +1632,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           provider_instance_id AS "providerInstanceId",
           runtime_mode AS "runtimeMode",
           active_turn_id AS "activeTurnId",
+          goal_json AS goal,
           last_error AS "lastError",
           updated_at AS "updatedAt"
         FROM projection_thread_sessions
@@ -1887,6 +1896,13 @@ pending_approval_requests AS (
           FROM user_input_lifecycle
           WHERE request_order = 1
             AND kind = 'user-input.requested'
+          UNION ALL
+          SELECT activity_id
+          FROM projection_thread_activities
+          WHERE thread_id = ${threadId}
+            AND kind = 'secret-request.updated'
+            AND json_extract(payload_json, '$.threadId') = ${threadId}
+            AND json_extract(payload_json, '$.secretStatus') = 'pending'
         )
   `;
 
@@ -2303,6 +2319,7 @@ pending_approval_requests AS (
                     : {}),
                   runtimeMode: row.runtimeMode,
                   activeTurnId: row.activeTurnId,
+                  goal: row.goal,
                   lastError: row.lastError,
                   updatedAt: row.updatedAt,
                 });
@@ -2928,50 +2945,48 @@ pending_approval_requests AS (
                       )
                     : Result.failVoid,
                 ),
-                threads: threadRows.map(
-                  (row): OrchestrationThreadShell => ({
-                    id: row.threadId,
-                    projectId: row.projectId,
-                    title: row.title,
-                    modelSelection: row.modelSelection,
-                    runtimeMode: row.runtimeMode,
-                    interactionMode: row.interactionMode,
-                    branch: row.branch,
-                    worktreePath: row.worktreePath,
-                    branchPullRequest: row.branchPullRequest,
-                    ...mapThreadPullRequests(
-                      pullRequestsByThread.get(row.threadId) ?? [],
-                      row.projectId,
-                      repositoryIdentities.get(row.projectId),
-                    ),
-                    latestTurn: latestTurnByThread.get(row.threadId) ?? null,
-                    createdAt: row.createdAt,
-                    updatedAt: row.updatedAt,
-                    archivedAt: row.archivedAt,
-                    settledOverride: row.settledOverride,
-                    settledAt: row.settledAt,
-                    unsettledAt: row.unsettledAt,
-                    snoozedUntil: row.snoozedUntil,
-                    snoozedAt: row.snoozedAt,
-                    pinnedAt: row.pinnedAt,
-                    pinOrderKey: row.pinOrderKey ?? null,
-                    activeOrderKey: row.activeOrderKey ?? null,
-                    autoSettleDisabledAt: row.autoSettleDisabledAt ?? null,
-                    sideChat: mapSideChat(row),
-                    queuedPrompt: row.queuedPrompt ?? null,
-                    comparisonGroupId: row.comparisonGroupId ?? null,
-                    titleRegeneration: mapTitleRegeneration(row),
-                    session: sessionByThread.get(row.threadId) ?? null,
-                    latestUserMessageAt: row.latestUserMessageAt,
-                    hasPendingApprovals: row.pendingApprovalCount > 0,
-                    hasPendingUserInput: row.pendingUserInputCount > 0,
-                    hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
-                    backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
-                      row.threadId,
-                    ),
-                    planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
-                  }),
-                ),
+                threads: threadRows.map((row): OrchestrationThreadShell => ({
+                  id: row.threadId,
+                  projectId: row.projectId,
+                  title: row.title,
+                  modelSelection: row.modelSelection,
+                  runtimeMode: row.runtimeMode,
+                  interactionMode: row.interactionMode,
+                  branch: row.branch,
+                  worktreePath: row.worktreePath,
+                  branchPullRequest: row.branchPullRequest,
+                  ...mapThreadPullRequests(
+                    pullRequestsByThread.get(row.threadId) ?? [],
+                    row.projectId,
+                    repositoryIdentities.get(row.projectId),
+                  ),
+                  latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                  createdAt: row.createdAt,
+                  updatedAt: row.updatedAt,
+                  archivedAt: row.archivedAt,
+                  settledOverride: row.settledOverride,
+                  settledAt: row.settledAt,
+                  unsettledAt: row.unsettledAt,
+                  snoozedUntil: row.snoozedUntil,
+                  snoozedAt: row.snoozedAt,
+                  pinnedAt: row.pinnedAt,
+                  pinOrderKey: row.pinOrderKey ?? null,
+                  activeOrderKey: row.activeOrderKey ?? null,
+                  autoSettleDisabledAt: row.autoSettleDisabledAt ?? null,
+                  sideChat: mapSideChat(row),
+                  queuedPrompt: row.queuedPrompt ?? null,
+                  comparisonGroupId: row.comparisonGroupId ?? null,
+                  titleRegeneration: mapTitleRegeneration(row),
+                  session: sessionByThread.get(row.threadId) ?? null,
+                  latestUserMessageAt: row.latestUserMessageAt,
+                  hasPendingApprovals: row.pendingApprovalCount > 0,
+                  hasPendingUserInput: row.pendingUserInputCount > 0,
+                  hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
+                  backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
+                    row.threadId,
+                  ),
+                  planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
+                })),
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               } satisfies OrchestrationShellSnapshot;
             }),
@@ -3007,12 +3022,10 @@ pending_approval_requests AS (
           "ProjectionSnapshotQuery.getCounts:decodeRow",
         ),
       ),
-      Effect.map(
-        (row): ProjectionSnapshotCounts => ({
-          projectCount: row.projectCount,
-          threadCount: row.threadCount,
-        }),
-      ),
+      Effect.map((row): ProjectionSnapshotCounts => ({
+        projectCount: row.projectCount,
+        threadCount: row.threadCount,
+      })),
     );
 
   const getEventReplayStats: ProjectionSnapshotQueryShape["getEventReplayStats"] = (input) =>
@@ -3023,12 +3036,10 @@ pending_approval_requests AS (
           "ProjectionSnapshotQuery.getEventReplayStats:decodeRow",
         ),
       ),
-      Effect.map(
-        (row): ProjectionEventReplayStats => ({
-          eventCount: row.eventCount,
-          payloadBytes: row.payloadBytes,
-        }),
-      ),
+      Effect.map((row): ProjectionEventReplayStats => ({
+        eventCount: row.eventCount,
+        payloadBytes: row.payloadBytes,
+      })),
     );
 
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
@@ -3174,17 +3185,15 @@ pending_approval_requests AS (
         projectId: threadRow.value.projectId,
         workspaceRoot: threadRow.value.workspaceRoot,
         worktreePath: threadRow.value.worktreePath,
-        checkpoints: checkpointRows.map(
-          (row): OrchestrationCheckpointSummary => ({
-            turnId: row.turnId,
-            checkpointTurnCount: row.checkpointTurnCount,
-            checkpointRef: row.checkpointRef,
-            status: row.status,
-            files: row.files,
-            assistantMessageId: row.assistantMessageId,
-            completedAt: row.completedAt,
-          }),
-        ),
+        checkpoints: checkpointRows.map((row): OrchestrationCheckpointSummary => ({
+          turnId: row.turnId,
+          checkpointTurnCount: row.checkpointTurnCount,
+          checkpointRef: row.checkpointRef,
+          status: row.status,
+          files: row.files,
+          assistantMessageId: row.assistantMessageId,
+          completedAt: row.completedAt,
+        })),
       });
     });
 

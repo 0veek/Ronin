@@ -47,6 +47,24 @@ const stubThread = {
 } as const;
 
 describe("applyShellStreamEvent", () => {
+  it("keeps thread objects and the list stable when only the cursor moves", () => {
+    const snapshot = { ...baseSnapshot, threads: [stubThread] };
+    const next = applyShellStreamEvent(snapshot, {
+      kind: "thread-upserted",
+      sequence: 1,
+      thread: { ...stubThread },
+    });
+    expect(next.snapshotSequence).toBe(1);
+    expect(next.threads).toBe(snapshot.threads);
+    expect(next.threads[0]).toBe(stubThread);
+    const changed = applyShellStreamEvent(next, {
+      kind: "thread-upserted",
+      sequence: 2,
+      thread: { ...stubThread, title: "Changed" },
+    });
+    expect(changed.threads[0]?.title).toBe("Changed");
+    expect(changed.threads).not.toBe(next.threads);
+  });
   it("ignores stale project upserts without mutating the snapshot", () => {
     const snapshotWithProject: OrchestrationShellSnapshot = {
       ...baseSnapshot,

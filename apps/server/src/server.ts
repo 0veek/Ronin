@@ -33,6 +33,7 @@ import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
+import { ProjectionThreadActivityRepositoryLive } from "./persistence/Layers/ProjectionThreadActivities.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory.ts";
 import * as ProviderSessionLedger from "./persistence/ProviderSessionLedger.ts";
@@ -130,6 +131,9 @@ import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import { RoninOrchestrationLayerLive } from "./orchestration-v2/runtimeLayer.ts";
+import * as SecretRequests from "./secrets/SecretRequests.ts";
+import * as AutomationWebhooks from "./automation/AutomationWebhooks.ts";
+import * as WebhookRoute from "./automation/webhookRoute.ts";
 import {
   clearPersistedServerRuntimeState,
   makePersistedServerRuntimeState,
@@ -239,7 +243,9 @@ const ReactorLayerLive = Layer.empty.pipe(
   // Same reasoning as quota resume: firing an automation means dispatching a
   // turn, which only the orchestration engine in this group can do.
   Layer.provideMerge(AutomationScheduler.layer),
+  Layer.provideMerge(AutomationWebhooks.layer),
   Layer.provideMerge(AutomationService.layer),
+  Layer.provideMerge(SecretRequests.layer),
   Layer.provideMerge(AutomationStore.layer),
   Layer.provideMerge(BuildSystemService.layer),
   Layer.provideMerge(BuildSystemStore.layer),
@@ -321,6 +327,7 @@ const RepositoryIdentityResolverLayerLive = Layer.effect(
 ).pipe(Layer.provide(SourceControlProviderRegistryLayerLive), Layer.provide(ProcessRunner.layer));
 
 const PullRequestServiceLive = PullRequestService.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
   Layer.provide(PullRequestProviderRegistry.layer),
   Layer.provide(PullRequestReadCache.layer),
   Layer.provide(SourceControlProviderRegistryLayerLive),
@@ -470,7 +477,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // no longer transitively provides it. Exposing it at the runtime level
   // keeps a single Live for all opencode consumers.
   Layer.provideMerge(OpenCodeRuntime.OpenCodeRuntimeLive),
-  Layer.provideMerge(WorkspaceLayerLive),
+  Layer.provideMerge(Layer.mergeAll(WorkspaceLayerLive, ProjectionThreadActivityRepositoryLive)),
   Layer.provideMerge(ProjectFaviconResolverLayerLive),
   Layer.provideMerge(RepositoryIdentityResolverLayerLive),
   Layer.provideMerge(ServerEnvironmentLayerLive),
@@ -518,6 +525,7 @@ export const makeRoutesLayer = Layer.mergeAll(
     websocketRpcRouteLayer,
   ),
   McpHttpServer.layer.pipe(Layer.provide(McpSessionRegistry.layer)),
+  WebhookRoute.layer,
   untracedRequestsLayer,
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients

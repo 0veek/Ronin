@@ -1,5 +1,9 @@
 import * as Arr from "effect/Array";
 import type { OrchestrationShellSnapshot, OrchestrationShellStreamEvent } from "@t3tools/contracts";
+import { OrchestrationThreadShell } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+
+const sameThreadShell = Schema.toEquivalence(OrchestrationThreadShell);
 
 /**
  * Reduce a single shell stream event into an existing snapshot, returning a new
@@ -29,6 +33,10 @@ export function applyShellStreamEvent(
         snapshotSequence: event.sequence,
       };
     case "thread-upserted": {
+      const existing = snapshot.threads.find((thread) => thread.id === event.thread.id);
+      if (existing !== undefined && sameThreadShell(existing, event.thread)) {
+        return { ...snapshot, snapshotSequence: event.sequence };
+      }
       const threads = snapshot.threads.some((t) => t.id === event.thread.id)
         ? Arr.map(snapshot.threads, (t) => (t.id === event.thread.id ? event.thread : t))
         : Arr.append(snapshot.threads, event.thread);

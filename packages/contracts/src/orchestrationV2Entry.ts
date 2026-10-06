@@ -67,6 +67,8 @@ export {
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderFailure,
   OrchestrationV2ProviderFailureClass,
+  OrchestrationV2ProviderGoal,
+  OrchestrationV2ProviderGoalStatus,
   OrchestrationV2ProviderRef,
   OrchestrationV2ProviderRetry,
   OrchestrationV2ProviderSession,
@@ -137,6 +139,7 @@ export {
   ProviderReplayTranscriptHeader,
   isOrchestrationV2WorkActive,
   isProviderNativeSubagentThread,
+  latestProviderTurnForAttempt,
   orchestrationV2RunWorkStartedAt,
 } from "./orchestrationV2.ts";
 export type {

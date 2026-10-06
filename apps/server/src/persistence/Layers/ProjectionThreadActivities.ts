@@ -1,6 +1,6 @@
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
-import { NonNegativeInt } from "@t3tools/contracts";
+import { EventId, NonNegativeInt } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -54,6 +54,27 @@ const taskTitleWhitespace =
 
 const makeProjectionThreadActivityRepository = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+
+  const getProjectionThreadActivityRow = SqlSchema.findOneOption({
+    Request: EventId,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: (activityId) => sql`
+      SELECT activity_id AS "activityId", thread_id AS "threadId", turn_id AS "turnId",
+        tone, kind, summary, payload_json AS "payload", sequence, created_at AS "createdAt"
+      FROM projection_thread_activities
+      WHERE activity_id = ${activityId}
+    `,
+  });
+  const getById: ProjectionThreadActivityRepositoryShape["getById"] = (activityId) =>
+    getProjectionThreadActivityRow(activityId).pipe(
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionThreadActivityRepository.getById:query",
+          "ProjectionThreadActivityRepository.getById:decodeRow",
+        ),
+      ),
+      Effect.map(Option.map(toProjectionThreadActivity)),
+    );
 
   const upsertProjectionThreadActivityRow = SqlSchema.void({
     Request: ProjectionThreadActivity,
@@ -145,6 +166,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
           AND kind IN (
             'user-input.requested',
             'user-input.resolved',
+            'secret-request.updated',
             'provider.user-input.respond.failed'
           )
         ORDER BY
@@ -252,6 +274,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
     );
 
   return {
+    getById,
     upsert,
     listByThreadId,
     listUserInputLifecycleByThreadId,

@@ -925,7 +925,9 @@ describe("GitHubCli.layer", () => {
 
       assert.strictEqual(error._tag, "GitHubCliRateLimitError");
       assert.include(error.detail, "GitHub API rate limit exceeded");
-      assert.include(error.detail, "gh api rate_limit");
+      assert.include(error.detail, "gh api graphql");
+      assert.include(error.detail, "remaining resetAt");
+      assert.include(error.detail, "gh api rate_limit` reports REST");
       assert.strictEqual(error.cause, cause);
       assert.notInclude(error.message, "user ID");
       const paused = yield* gh

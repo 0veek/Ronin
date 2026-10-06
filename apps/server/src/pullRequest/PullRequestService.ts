@@ -4,6 +4,7 @@ import {
   sourceControlRepositorySelector,
 } from "@t3tools/shared/sourceControl";
 import * as Cache from "effect/Cache";
+import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -55,6 +56,7 @@ import {
   type PullRequestReviewerRequestInput,
   type PullRequestLabelCandidateList,
   type PullRequestLabelChangeInput,
+  type PullRequestState,
   type PullRequestSubmitReviewInput,
   PullRequestStack,
   PullRequestSummary,
@@ -70,6 +72,7 @@ import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/source
 
 import { AllowGitHubReserve } from "../sourceControl/GitHubCli.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import {
@@ -122,7 +125,12 @@ const REPOSITORY_SEARCH_CHUNK = 100;
  * `invalidate` rather than a flag on the read, so an ordinary read can never opt out.
  */
 const LIST_CACHE_TTL = Duration.seconds(30);
-const DETAIL_CACHE_TTL = Duration.seconds(15);
+// Share each displayed PR read across clients for their minute of staleness.
+// Closed PRs can reopen; merged PRs are held for ten minutes.
+const DETAIL_CACHE_TTL = Duration.seconds(60);
+const MERGED_DETAIL_CACHE_TTL = Duration.minutes(10);
+const detailTimeToLive = (state: PullRequestState | undefined) =>
+  state === "merged" ? MERGED_DETAIL_CACHE_TTL : DETAIL_CACHE_TTL;
 const DIFF_CACHE_TTL = Duration.seconds(60);
 /** A commit is content-addressed, so its own diff cannot change under its key. */
 const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
@@ -573,6 +581,7 @@ export const make = Effect.gen(function* () {
   const mergedPullRequests = yield* PubSub.sliding<PullRequestMergeEvent>(64);
   const pullRequestRefreshes = yield* SubscriptionRef.make(0);
   const registry = yield* PullRequestProviderRegistry;
+  const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const rateLimits = yield* SourceControlRateLimit.SourceControlRateLimit;
@@ -1426,7 +1435,7 @@ export const make = Effect.gen(function* () {
               ? operation.pipe(Effect.provideService(routingCredential, identity), Effect.result)
               : Effect.fail(rejected()),
         )
-        .pipe(Effect.catchTag("PullRequestProviderError", () => Effect.fail(rejected())));
+        .pipe(Effect.catchTags({ PullRequestProviderError: () => Effect.fail(rejected()) }));
       return yield* Effect.fromResult(result);
     });
 
@@ -1803,35 +1812,61 @@ export const make = Effect.gen(function* () {
                 }),
               );
             }
-            return project.api
-              .runAction({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
-                number: input.number,
-                action: input.action,
-                ...(input.stackNumber === undefined ? {} : { stackNumber: input.stackNumber }),
-                ...(input.expectedStackHeads === undefined
-                  ? {}
-                  : { expectedStackHeads: input.expectedStackHeads }),
-                ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
-                ...(input.updateMethod === undefined ? {} : { updateMethod: input.updateMethod }),
-              })
-              .pipe(
-                // Once the authorized provider action starts, a failure may leave partial
-                // remote updates. Validation and permission failures above changed nothing.
-                Effect.ensuring(
-                  input.stackNumber === undefined
-                    ? Effect.void
-                    : refreshAfterTurn(project.project.id),
-                ),
-                Effect.mapError(toPullRequestError("runAction")),
-                Effect.as(
-                  project.api.kind === "azure-devops"
-                    ? input.repository.trim()
-                    : project.repository,
-                ),
-              );
+            const mergeSettings =
+              project.api.kind === "github" &&
+              input.stackNumber === undefined &&
+              (input.action === "merge" || input.action === "enable-auto-merge")
+                ? serverSettings.getSettings.pipe(
+                    Effect.map(
+                      (settings) =>
+                        settings.removeAgentCreditsOnMergeOverrides[project.project.id] ??
+                        settings.removeAgentCreditsOnMerge,
+                    ),
+                    Effect.mapError(
+                      () =>
+                        new PullRequestOperationError({
+                          operation: "runAction",
+                          detail: "Could not read merge settings.",
+                        }),
+                    ),
+                  )
+                : Effect.succeed(false);
+            return mergeSettings.pipe(
+              Effect.flatMap((removeAgentCreditsOnMerge) =>
+                project.api
+                  .runAction({
+                    cwd: project.project.workspaceRoot,
+                    repository: project.repository,
+                    host: project.host,
+                    number: input.number,
+                    action: input.action,
+                    ...(removeAgentCreditsOnMerge ? { removeAgentCreditsOnMerge: true } : {}),
+                    ...(input.stackNumber === undefined ? {} : { stackNumber: input.stackNumber }),
+                    ...(input.expectedStackHeads === undefined
+                      ? {}
+                      : { expectedStackHeads: input.expectedStackHeads }),
+                    ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
+                    ...(input.updateMethod === undefined
+                      ? {}
+                      : { updateMethod: input.updateMethod }),
+                  })
+                  .pipe(
+                    // Once the authorized provider action starts, a failure may leave partial
+                    // remote updates. Validation and permission failures above changed nothing.
+                    Effect.ensuring(
+                      input.stackNumber === undefined
+                        ? Effect.void
+                        : refreshAfterTurn(project.project.id),
+                    ),
+                    Effect.mapError(toPullRequestError("runAction")),
+                    Effect.as(
+                      project.api.kind === "azure-devops"
+                        ? input.repository.trim()
+                        : project.repository,
+                    ),
+                  ),
+              ),
+            );
           }),
         );
       }),
@@ -2681,7 +2716,12 @@ export const make = Effect.gen(function* () {
         ? null
         : Object.entries(input.cursors).toSorted(([left], [right]) => left.localeCompare(right)),
     ]);
-    return Cache.get(listCache, key);
+    // A replacement reader can join a lookup still finishing its previous reader's cancellation.
+    return Cache.get(listCache, key).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Cache.get(listCache, key) : Effect.failCause(cause),
+      ),
+    );
   };
 
   const detailCache = yield* Cache.makeWith(
@@ -2707,7 +2747,8 @@ export const make = Effect.gen(function* () {
     },
     {
       capacity: DETAIL_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) ? detailTimeToLive(exit.value.state) : Duration.zero,
     },
   );
   const summaryFromDetail = (
@@ -2768,7 +2809,9 @@ export const make = Effect.gen(function* () {
     },
     {
       capacity: DETAIL_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? DETAIL_CACHE_TTL : Duration.zero),
+      // Activity uses the state observed under the same detail or summary key.
+      timeToLive: (exit, key) =>
+        Exit.isSuccess(exit) ? detailTimeToLive(lastGoodSummary.peek(key)?.state) : Duration.zero,
     },
   );
   const activity: PullRequestService["Service"]["activity"] = (input) => {
@@ -2850,7 +2893,11 @@ export const make = Effect.gen(function* () {
     }
     if (missing.size === 0) return { stats: held };
     const key = statsBatchKey(missing.values());
-    const { result, at } = yield* Cache.get(listStatsCache, key);
+    const { result, at } = yield* Cache.get(listStatsCache, key).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause) ? Cache.get(listStatsCache, key) : Effect.failCause(cause),
+      ),
+    );
     for (const [key, ref] of missing) {
       const stat = result.stats.find(
         (stat) =>

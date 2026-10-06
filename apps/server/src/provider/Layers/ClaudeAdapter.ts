@@ -9,6 +9,7 @@
  */
 
 import * as NodeUtil from "node:util";
+import { nextClaudeGoal, providerGoalsEqual } from "../nativeGoals.ts";
 import {
   type CanUseTool,
   query,
@@ -39,6 +40,7 @@ import {
   type ModelSelection,
   ProviderItemId,
   type ProviderRuntimeEvent,
+  ProviderGoal,
   type ProviderRuntimeTurnStatus,
   type ProviderSendTurnInput,
   type ProviderSession,
@@ -246,6 +248,7 @@ type PromptQueueItem =
     };
 
 interface ClaudeResumeState {
+  readonly goal?: ProviderGoal | null;
   readonly threadId?: ThreadId;
   readonly resume?: string;
   readonly resumeSessionAt?: string;
@@ -273,6 +276,7 @@ interface ClaudeTurnState {
   authenticationFailureMessage: string | undefined;
   rejectedRateLimitTypes: Set<string>;
   latestAssistantRateLimited: boolean;
+  goalChecked?: boolean;
 }
 
 interface AssistantTextBlockState {
@@ -921,6 +925,7 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
     return undefined;
   }
   const cursor = resumeCursor as {
+    goal?: unknown;
     threadId?: unknown;
     resume?: unknown;
     sessionId?: unknown;
@@ -952,6 +957,7 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
 
   return {
     ...(threadId ? { threadId } : {}),
+    ...(cursor.goal === null || Schema.is(ProviderGoal)(cursor.goal) ? { goal: cursor.goal } : {}),
     ...(resume ? { resume } : {}),
     ...(resumeSessionAt ? { resumeSessionAt } : {}),
     ...(turnStartMessageIds ? { turnStartMessageIds } : {}),
@@ -2143,6 +2149,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const resumeCursor = {
       threadId,
+      ...(context.session.goal === undefined ? {} : { goal: context.session.goal }),
       ...(context.resumeSessionId ? { resume: context.resumeSessionId } : {}),
       ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
       turnCount: context.turnStartMessageIds.length,
@@ -2546,6 +2553,24 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     });
   });
 
+  const updateGoal = Effect.fn("ClaudeAdapter.updateGoal")(function* (
+    context: ClaudeSessionContext,
+    goal: ProviderGoal | null,
+  ) {
+    if (providerGoalsEqual(context.session.goal ?? null, goal)) return;
+    const stamp = yield* makeEventStamp();
+    context.session = { ...context.session, goal, updatedAt: stamp.createdAt };
+    yield* updateResumeCursor(context);
+    yield* offerRuntimeEvent({
+      type: "thread.goal.updated",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      payload: { goal },
+    });
+  });
+
   const completeTurn = Effect.fn("completeTurn")(function* (
     context: ClaudeSessionContext,
     status: ProviderRuntimeTurnStatus,
@@ -2698,6 +2723,24 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     context.turns.push({ id: turnState.turnId });
+
+    // The SDK has no explicit successful-goal event. A checked root turn may
+    // finish only after its Stop hook passes, unless a different hook stops it.
+    // Evaluator timeout and impossible verdicts are indistinguishable in SDK mode.
+    const goal = context.session.goal;
+    if (
+      goal?.status === "active" &&
+      turnState.goalChecked &&
+      status === "completed" &&
+      (result?.terminal_reason === undefined || result.terminal_reason === "completed") &&
+      context.liveTaskIds.size === 0
+    ) {
+      yield* updateGoal(context, {
+        objective: goal.objective,
+        status: "complete",
+        ...(goal.checks === undefined ? {} : { checks: goal.checks }),
+      });
+    }
 
     yield* emitThreadTokenUsage(context, usageSnapshot, {
       rawMethod: "claude/result",
@@ -4045,6 +4088,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     context.lastKnownTotalProcessedTokens = undefined;
     context.lastAssistantUuid = undefined;
     context.resumeSessionId = message.new_conversation_id;
+    yield* updateGoal(context, null);
     const updatedAt = yield* nowIso;
     context.session = {
       ...context.session,
@@ -4084,6 +4128,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   ) {
     yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
+
+    const currentGoal = context.session.goal ?? null;
+    if (
+      currentGoal?.status === "active" &&
+      context.turnState !== undefined &&
+      message.type === "assistant" &&
+      message.parent_tool_use_id === null &&
+      message.message.model !== "<synthetic>"
+    ) {
+      context.turnState.goalChecked = true;
+    }
+    const nextGoal = nextClaudeGoal(currentGoal, message);
+    if (nextGoal !== undefined) yield* updateGoal(context, nextGoal);
 
     // Wire-only command bookkeeping has no user-facing T3 lifecycle.
     if (sdkMessageType(message) === "command_lifecycle") {
@@ -4927,6 +4984,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       const session: ProviderSession = {
         threadId,
+        ...(resumeState?.resume !== undefined && resumeState.goal !== undefined
+          ? { goal: resumeState.goal }
+          : {}),
         provider: PROVIDER,
         providerInstanceId: boundInstanceId,
         status: "ready",

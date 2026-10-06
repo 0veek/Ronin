@@ -2,6 +2,9 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as Struct from "effect/Struct";
+import { ProviderGoal } from "@t3tools/contracts";
 
 import { toPersistenceSqlError } from "../Errors.ts";
 
@@ -27,6 +30,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           provider_instance_id,
           runtime_mode,
           active_turn_id,
+          goal_json,
           last_error,
           updated_at
         )
@@ -37,6 +41,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           ${row.providerInstanceId},
           ${row.runtimeMode},
           ${row.activeTurnId},
+          ${row.goal == null ? null : JSON.stringify(row.goal)},
           ${row.lastError},
           ${row.updatedAt}
         )
@@ -47,6 +52,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           provider_instance_id = excluded.provider_instance_id,
           runtime_mode = excluded.runtime_mode,
           active_turn_id = excluded.active_turn_id,
+          goal_json = excluded.goal_json,
           last_error = excluded.last_error,
           updated_at = excluded.updated_at
       `,
@@ -54,7 +60,11 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
 
   const getProjectionThreadSessionRow = SqlSchema.findOneOption({
     Request: GetProjectionThreadSessionInput,
-    Result: ProjectionThreadSession,
+    Result: ProjectionThreadSession.mapFields(
+      Struct.assign({
+        goal: Schema.NullOr(Schema.fromJsonString(ProviderGoal)),
+      }),
+    ),
     execute: ({ threadId }) =>
       sql`
         SELECT
@@ -64,6 +74,7 @@ const makeProjectionThreadSessionRepository = Effect.gen(function* () {
           provider_instance_id AS "providerInstanceId",
           runtime_mode AS "runtimeMode",
           active_turn_id AS "activeTurnId",
+          goal_json AS goal,
           last_error AS "lastError",
           updated_at AS "updatedAt"
         FROM projection_thread_sessions

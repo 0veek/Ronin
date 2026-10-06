@@ -359,7 +359,7 @@ export const make = Effect.gen(function* () {
       ),
     createWorktree: (input, options) =>
       ensureGitCommand("GitWorkflowService.createWorktree", input.cwd).pipe(
-        Effect.andThen(git.createWorktree(input, options)),
+        Effect.andThen(gitManager.createWorktree(input, options)),
       ),
     fetchRemote: (input) =>
       ensureGitCommand("GitWorkflowService.fetchRemote", input.cwd).pipe(

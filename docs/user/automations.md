@@ -47,13 +47,14 @@ keep that provider even if the project default later changes.
 If the project has no default model, choose a model before saving. An unavailable pinned provider
 stays visible as unavailable; choosing another model or **Use project default** changes the selection.
 
-**Repeats** offers three shapes:
+**Repeats** offers four triggers:
 
-| Shape            | Means                                                                  |
-| ---------------- | ---------------------------------------------------------------------- |
-| At a time of day | Runs at a wall-clock time on the days you pick. No day picked = daily. |
-| On an interval   | Runs every N minutes, counted from the last run. Minimum 15 minutes.   |
-| Once             | Runs a single time, then pauses itself.                                |
+| Shape               | Means                                                                  |
+| ------------------- | ---------------------------------------------------------------------- |
+| At a time of day    | Runs at a wall-clock time on the days you pick. No day picked = daily. |
+| On an interval      | Runs every N minutes, counted from the last run. Minimum 15 minutes.   |
+| Once                | Runs a single time, then pauses itself.                                |
+| On webhook delivery | Runs when an external service sends a request.                         |
 
 Times are the machine's local time, so "every weekday at 09:00" stays at nine through a
 daylight-saving change rather than drifting an hour.
@@ -73,6 +74,30 @@ until you do.
   tree you are working in.
 - **The current checkout** runs in the project directory itself. Use it for read-only work —
   summaries, triage, reports.
+
+## Running from a webhook
+
+Choose **On webhook delivery** to run when an external service sends a request. Save the automation,
+then copy its **Webhook URL**. The URL points to the selected environment, which must be reachable
+by the sender. Ronin accepts GET, POST, PUT, and PATCH requests up to 1 MiB. Keep the URL private:
+it authorizes requests that start this automation. **Replace URL** immediately invalidates the old URL.
+
+Use placeholders in the prompt to choose what reaches the agent: `{{body.action}}` reads a JSON or
+form field, `{{headers.name}}` reads a header, and `{{query.name}}` reads a query parameter.
+`{{body}}` includes the body; `{{request}}` includes the request. Missing fields render empty and
+appear in the delivery details. Credential-like headers and query values are redacted from whole
+request summaries; explicitly selecting a credential field includes its value.
+
+For senders that sign deliveries, enable HMAC-SHA256 verification and enter the header, prefix,
+digest encoding, and signing secret. The secret stays on the environment. An agent can configure
+the same verification by asking for the secret through a private card and using its one-use
+reference. Editing the verification without entering a new secret retains the saved one.
+
+**Recent deliveries** shows the last 50 requests, their outcomes, and the rendered prompt. Request
+bodies and prompts are truncated at 64 KiB in the log. Each automation accepts up to 60 requests
+per minute and queues at most 20 deliveries; a full queue returns a retryable rate-limit response.
+Turning the automation off prevents new work from starting. Deleting it removes its URL, signing
+secret, and delivery history. A duplicate needs its own signing secret.
 
 ## Watching them
 

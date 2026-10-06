@@ -192,8 +192,8 @@ function resolveEditorArgs(
  * no PATH walk -- and discovery is memoized for a minute, so probing costs
  * far less than the PATH scan it backs up.
  *
- * Only editors that actually ship this way are listed. JetBrains IDEs are absent
- * on purpose: Toolbox writes its shims to a directory it also puts on PATH.
+ * Only editors that actually ship this way are listed. JetBrains Toolbox also
+ * installs versioned app bundles, which are discovered below when PATH has no shim.
  */
 type InstallPathResolver = (env: NodeJS.ProcessEnv) => ReadonlyArray<string>;
 
@@ -310,14 +310,52 @@ function installPathPlatform(platform: NodeJS.Platform): InstallPathPlatform {
  * Every command worth probing for an editor: its PATH names first, so a shim the
  * user put on PATH still wins, then the well-known install paths.
  */
-function editorCommandCandidates(
+const jetBrainsInstallNames: Partial<Record<EditorId, ReadonlyArray<string>>> = {
+  idea: ["IntelliJ IDEA", "IntelliJ IDEA CE"],
+  clion: ["CLion"],
+  datagrip: ["DataGrip"],
+  goland: ["GoLand"],
+  phpstorm: ["PhpStorm"],
+  pycharm: ["PyCharm", "PyCharm CE"],
+  rider: ["Rider", "JetBrains Rider"],
+  rustrover: ["RustRover"],
+  webstorm: ["WebStorm"],
+};
+
+const editorCommandCandidates = Effect.fn("externalLauncher.editorCommandCandidates")(function* (
   editor: (typeof EDITORS)[number],
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
-): ReadonlyArray<string> {
+) {
   const resolveInstallPaths = EDITOR_INSTALL_PATHS[editor.id]?.[installPathPlatform(platform)];
-  return [...(editor.commands ?? []), ...(resolveInstallPaths?.(env) ?? [])];
-}
+  const candidates = [...(editor.commands ?? []), ...(resolveInstallPaths?.(env) ?? [])];
+  const names = jetBrainsInstallNames[editor.id];
+  if (platform !== "darwin" || names === undefined) return candidates;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const home = homeDirectory(env);
+  for (const root of [...(home ? [path.join(home, "Applications")] : []), "/Applications"]) {
+    const entries = yield* fs.readDirectory(root).pipe(Effect.orElseSucceed(() => []));
+    const bundles = new Set(names.map((name) => `${name}.app`));
+    for (const entry of entries) {
+      if (
+        names.some(
+          (name) =>
+            entry.startsWith(`${name} `) &&
+            entry.endsWith(".app") &&
+            /^\d[\d.]*$/.test(entry.slice(name.length + 1, -4)),
+        )
+      )
+        bundles.add(entry);
+    }
+    for (const bundle of bundles) {
+      candidates.push(
+        path.join(root, bundle, "Contents", "MacOS", editor.commands?.[0] ?? editor.id),
+      );
+    }
+  }
+  return candidates;
+});
 
 const resolveAvailableCommand = Effect.fn("externalLauncher.resolveAvailableCommand")(function* (
   commands: ReadonlyArray<string>,
@@ -593,7 +631,7 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
     }
 
     const command = yield* resolveAvailableCommand(
-      editorCommandCandidates(editor, platform, env),
+      yield* editorCommandCandidates(editor, platform, env),
       env,
     );
     if (Option.isSome(command)) {
@@ -699,7 +737,7 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
 
   if (editorDef.commands) {
     const command = Option.getOrElse(
-      yield* resolveAvailableCommand(editorCommandCandidates(editorDef, platform, env), env),
+      yield* resolveAvailableCommand(yield* editorCommandCandidates(editorDef, platform, env), env),
       () => editorDef.commands[0],
     );
     return {

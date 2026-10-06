@@ -1,6 +1,9 @@
 import type { AssetResource } from "@t3tools/contracts";
 import {
   AssetAttachmentNotFoundError,
+  EventId,
+  NonNegativeInt,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   AssetPreviewTypeValidationError,
   AssetProjectFaviconInspectionError,
   AssetProjectFaviconNotFoundError,
@@ -27,6 +30,7 @@ import {
   type ImageDimensions,
 } from "@t3tools/shared/imageDimensions";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
+import { toolActivityOutput, toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -46,6 +50,7 @@ import {
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import { ProjectionThreadActivityRepository } from "../persistence/Services/ProjectionThreadActivities.ts";
 import { expandHomePath } from "../pathExpansion.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -80,6 +85,13 @@ const PREVIEW_ASSET_EXTENSIONS = new Set([
 ]);
 
 const AssetClaimsSchema = Schema.Union([
+  Schema.Struct({
+    version: Schema.Literal(1),
+    kind: Schema.Literal("tool-output-image"),
+    activityId: EventId,
+    index: NonNegativeInt,
+    expiresAt: Schema.Number,
+  }),
   Schema.Struct({
     version: Schema.Literal(1),
     kind: Schema.Literal("workspace-file"),
@@ -135,14 +147,39 @@ const AssetClaimsJson = Schema.fromJsonString(AssetClaimsSchema);
 const decodeAssetClaims = Schema.decodeUnknownOption(AssetClaimsJson);
 const encodeAssetClaims = Schema.encodeSync(AssetClaimsJson);
 
-export type ResolvedAsset = {
-  readonly kind: "file";
-  readonly path: string;
-  readonly download?: boolean;
-  readonly fileName?: string;
-  readonly mimeType?: string;
-  readonly file?: OpenMediaFile;
-};
+export type ResolvedAsset =
+  | {
+      readonly kind: "file";
+      readonly path: string;
+      readonly download?: boolean;
+      readonly fileName?: string;
+      readonly mimeType?: string;
+      readonly file?: OpenMediaFile;
+    }
+  | {
+      readonly kind: "bytes";
+      readonly bytes: Uint8Array;
+      readonly mimeType: string;
+    };
+
+const MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH = Math.ceil(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / 3) * 4;
+
+/** Reads one completed tool's image without hydrating the rest of its thread. */
+const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(function* (input: {
+  readonly activityId: EventId;
+  readonly index: number;
+}) {
+  const activities = yield* ProjectionThreadActivityRepository;
+  const activity = yield* activities.getById(input.activityId);
+  if (Option.isNone(activity) || activity.value.kind !== "tool.completed") return null;
+  const payload = activity.value.payload;
+  const data =
+    payload !== null && typeof payload === "object" && "data" in payload ? payload.data : undefined;
+  const image = toolOutputImages(toolActivityOutput(data))[input.index];
+  return image?.data === undefined || image.data.length > MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH
+    ? null
+    : { mimeType: image.mimeType, bytes: Buffer.from(image.data, "base64") };
+});
 
 function decodeClaims(encodedPayload: string): AssetClaims | null {
   try {
@@ -408,6 +445,25 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   let imageDimensions: ImageDimensions | null = null;
 
   switch (input.resource._tag) {
+    case "tool-output-image": {
+      const image = yield* readToolOutputImage(input.resource).pipe(
+        Effect.mapError(
+          (cause) => new AssetWorkspaceAssetInspectionError({ resource: input.resource, cause }),
+        ),
+      );
+      if (image === null)
+        return yield* new AssetWorkspaceAssetNotFoundError({ resource: input.resource });
+      claims = {
+        version: 1,
+        kind: "tool-output-image",
+        activityId: input.resource.activityId,
+        index: input.resource.index,
+        expiresAt,
+      };
+      fileName = `image-${input.resource.index + 1}.${image.mimeType.slice("image/".length)}`;
+      imageDimensions = readImageDimensions(image.bytes);
+      break;
+    }
     case "media-file": {
       let requestedPath = expandHomePath(input.resource.path);
       if (!path.isAbsolute(requestedPath)) {
@@ -692,6 +748,19 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
 
   const claims = decodeClaims(encodedPayload);
   if (!claims || claims.expiresAt <= (yield* Clock.currentTimeMillis)) return null;
+
+  if (claims.kind === "tool-output-image") {
+    const image = yield* readToolOutputImage(claims).pipe(
+      Effect.tapError((cause) =>
+        Effect.logError("Failed to read tool output image.", {
+          activityId: claims.activityId,
+          cause,
+        }),
+      ),
+      Effect.orElseSucceed(() => null),
+    );
+    return image ? ({ kind: "bytes", ...image } satisfies ResolvedAsset) : null;
+  }
 
   if (claims.kind === "attachment") {
     const config = yield* ServerConfig.ServerConfig;

@@ -1,5 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
+import { currentDesktopBootstrapToken } from "@t3tools/shared/desktopBootstrapToken";
+import * as Clock from "effect/Clock";
+import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -132,8 +135,37 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.bootstrap.t3Home, environment.baseDir);
         assert.equal(first.bootstrap.tailscaleServeEnabled, true);
         assert.equal(first.bootstrap.tailscaleServePort, 8443);
-        assert.match(first.bootstrap.desktopBootstrapToken, /^[0-9a-f]{48}$/i);
+        assert.match(first.bootstrap.desktopBootstrapSecret ?? "", /^[0-9a-f]{64}$/i);
+        assert.equal(
+          second.bootstrap.desktopBootstrapSecret,
+          first.bootstrap.desktopBootstrapSecret,
+        );
+        assert.equal(
+          first.bootstrap.desktopBootstrapToken,
+          currentDesktopBootstrapToken(
+            first.bootstrap.desktopBootstrapSecret ?? "",
+            yield* Clock.currentTimeMillis,
+          ),
+        );
+        assert.equal(
+          yield* configuration.currentBootstrapToken,
+          first.bootstrap.desktopBootstrapToken,
+        );
         assert.equal(second.bootstrap.desktopBootstrapToken, first.bootstrap.desktopBootstrapToken);
+        yield* TestClock.adjust("12 hours");
+        const rotated = yield* configuration.resolvePrimary;
+        assert.equal(
+          rotated.bootstrap.desktopBootstrapSecret,
+          first.bootstrap.desktopBootstrapSecret,
+        );
+        assert.notEqual(
+          rotated.bootstrap.desktopBootstrapToken,
+          first.bootstrap.desktopBootstrapToken,
+        );
+        assert.equal(
+          yield* configuration.currentBootstrapToken,
+          rotated.bootstrap.desktopBootstrapToken,
+        );
       }),
     ),
   );

@@ -85,7 +85,7 @@ export function downloadContentDisposition(fileName?: string): string {
 // HTML previews are agent output, not the app. The sandbox gives the document an
 // opaque origin: scripts run, but same-origin cookies, storage, and API calls are
 // out of reach. Relative sibling assets still load through their signed URLs.
-const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups allow-modals";
+const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups";
 
 export function assetResponseHeaders(
   filePath: string,
@@ -397,9 +397,9 @@ const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_P
 
 export const untracedRequestsLayer = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
   const queryIndex = request.url.indexOf("?");
-  return UNTRACED_REQUEST_PATHS.has(
-    queryIndex === -1 ? request.url : request.url.slice(0, queryIndex),
-  );
+  const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
+  // Webhook paths contain bearer tokens, including on failed requests.
+  return UNTRACED_REQUEST_PATHS.has(path) || path.startsWith("/api/hooks/");
 });
 
 export const assetRouteLayer = HttpRouter.add(
@@ -424,6 +424,12 @@ export const assetRouteLayer = HttpRouter.add(
     );
     if (!asset) {
       return HttpServerResponse.text("Not Found", { status: 404 });
+    }
+    if (asset.kind === "bytes") {
+      return HttpServerResponse.uint8Array(asset.bytes, {
+        contentType: asset.mimeType,
+        headers: { "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" },
+      });
     }
     return yield* assetFileResponse(
       asset,

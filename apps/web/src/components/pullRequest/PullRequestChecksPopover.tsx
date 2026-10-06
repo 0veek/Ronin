@@ -67,7 +67,7 @@ function ChecksBody({
       {/* Keyed by position as well as by name: the host is the one that decides how many runs
           share a name, and a repeated key is a rendering fault rather than a wrong list. */}
       {checks.map((check, index) => (
-        // oxlint-disable-next-line react/no-array-index-key
+        // oxlint-disable-next-line react/no-array-index-key -- Host check names may repeat, so position distinguishes each run.
         <li key={`${index}:${check.name}`} className="flex items-center gap-2 text-xs">
           <PullRequestCheckStatusIcon status={check.status} />
           <Tooltip>

@@ -15,6 +15,7 @@ vi.mock("electron", () => ({
   BrowserWindow: { fromWebContents: ownerWindow },
 }));
 
+import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
@@ -91,7 +92,46 @@ const secondaryInstance: DesktopBackendManager.DesktopBackendInstance = {
   waitForReady: () => Effect.succeed(true),
 };
 
+const backendConfigurationLayer = Layer.mock(
+  DesktopBackendConfiguration.DesktopBackendConfiguration,
+)({
+  currentBootstrapToken: Effect.succeed("current-window-token"),
+});
+const bootstrapsLayer = (instances: ReadonlyArray<DesktopBackendManager.DesktopBackendInstance>) =>
+  Layer.merge(DesktopBackendPool.layerTest([...instances]), backendConfigurationLayer);
+
 describe("getLocalEnvironmentBootstraps", () => {
+  it.effect("hands the renderer a rotated token without exposing the desktop secret", () =>
+    Effect.gen(function* () {
+      const result = yield* getLocalEnvironmentBootstraps.handler();
+      assert.deepEqual(result, [
+        {
+          id: "primary",
+          label: "Local environment",
+          runningDistro: null,
+          httpBaseUrl: "http://127.0.0.1:3773/",
+          wsBaseUrl: "ws://127.0.0.1:3773/",
+          bootstrapToken: "current-window-token",
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        bootstrapsLayer([
+          {
+            ...primaryInstance,
+            currentConfig: Effect.succeedSome({
+              ...readyPrimaryConfig,
+              bootstrap: {
+                ...readyPrimaryConfig.bootstrap,
+                desktopBootstrapSecret: "desktop-secret",
+              },
+            }),
+          },
+        ]),
+      ),
+    ),
+  );
+
   it.effect("publishes ready backend endpoints with the instance label", () =>
     Effect.gen(function* () {
       const result = yield* getLocalEnvironmentBootstraps.handler();
@@ -114,7 +154,7 @@ describe("getLocalEnvironmentBootstraps", () => {
           bootstrapToken: "bootstrap-token",
         },
       ]);
-    }).pipe(Effect.provide(DesktopBackendPool.layerTest([primaryInstance, secondaryInstance]))),
+    }).pipe(Effect.provide(bootstrapsLayer([primaryInstance, secondaryInstance]))),
   );
 
   it.effect("publishes a pending bootstrap only while a transient retry is scheduled", () => {
@@ -157,7 +197,7 @@ describe("getLocalEnvironmentBootstraps", () => {
           wsBaseUrl: null,
         },
       ]);
-    }).pipe(Effect.provide(DesktopBackendPool.layerTest([primaryInstance, retryingSecondary])));
+    }).pipe(Effect.provide(bootstrapsLayer([primaryInstance, retryingSecondary])));
   });
 
   it.effect("omits a bounded transient bootstrap after retries stop", () => {
@@ -194,7 +234,7 @@ describe("getLocalEnvironmentBootstraps", () => {
           bootstrapToken: "bootstrap-token",
         },
       ]);
-    }).pipe(Effect.provide(DesktopBackendPool.layerTest([primaryInstance, stoppedSecondary])));
+    }).pipe(Effect.provide(bootstrapsLayer([primaryInstance, stoppedSecondary])));
   });
 });
 

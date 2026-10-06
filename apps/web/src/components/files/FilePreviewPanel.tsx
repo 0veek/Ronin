@@ -218,7 +218,7 @@ function WorkspaceBrowserPreview(props: {
   const className = "min-h-0 flex-1 border-0 bg-white";
   // The built-in PDF viewer needs an unsandboxed frame; a PDF runs no scripts.
   return isPdfPreviewFile(props.absolutePath) ? (
-    // oxlint-disable-next-line react/iframe-missing-sandbox
+    // oxlint-disable-next-line react/iframe-missing-sandbox -- The built-in PDF viewer needs an unsandboxed frame.
     <iframe key={src} src={src} title={props.title} className={className} />
   ) : (
     <iframe

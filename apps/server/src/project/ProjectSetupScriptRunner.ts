@@ -1,7 +1,7 @@
 import { ProjectId } from "@t3tools/contracts";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { projectScriptRuntimeEnv, setupProjectScript } from "@t3tools/shared/projectScripts";
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
 
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -123,12 +123,12 @@ function completionSentinelPattern(token: string): RegExp {
 function stripTerminalControl(text: string): string {
   return text
     .replace(
-      // eslint-disable-next-line no-control-regex
+      // eslint-disable-next-line no-control-regex -- Stripping terminal control sequences requires matching control bytes.
       /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[()][A-Za-z0-9]|\x1b[=>]/g,
       "",
     )
     .replace(
-      // eslint-disable-next-line no-control-regex
+      // eslint-disable-next-line no-control-regex -- Stripping terminal control sequences requires matching control bytes.
       /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g,
       "",
     );
@@ -165,6 +165,7 @@ function wrapCommandForCompletion(
 }
 
 export const make = Effect.gen(function* () {
+  const crypto = yield* Crypto.Crypto;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const terminalManager = yield* TerminalManager.TerminalManager;
   const completionShell = resolveCompletionShell(
@@ -301,7 +302,9 @@ export const make = Effect.gen(function* () {
       worktreePath: input.worktreePath,
     });
     const observe = input.observeCompletion;
-    const completionToken = observe ? NodeCrypto.randomUUID().replaceAll("-", "") : null;
+    const completionToken = observe
+      ? (yield* crypto.randomUUIDv4.pipe(Effect.orDie)).replaceAll("-", "")
+      : null;
     const commandLine =
       observe && completionToken
         ? wrapCommandForCompletion(

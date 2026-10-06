@@ -21,6 +21,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   GitCommandError,
+  type GitCommandFailureReason,
   T3_PROJECT_FILE_NAME,
   type ReviewDiffFileContentsInput,
   type ReviewDiffPreviewInput,
@@ -29,12 +30,18 @@ import {
   type VcsApplyPatchInput,
   type VcsRef,
 } from "@t3tools/contracts";
-import { dedupeRemoteBranchesWithLocalMatches, normalizeGitRemoteUrl } from "@t3tools/shared/git";
+import {
+  dedupeRemoteBranchesWithLocalMatches,
+  flattenTemporaryWorktreeBranchName,
+  isTemporaryWorktreeBranch,
+  normalizeGitRemoteUrl,
+} from "@t3tools/shared/git";
 import { compactTraceAttributes } from "@t3tools/shared/observability";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import { parseT3ProjectFile } from "@t3tools/shared/t3ProjectFile";
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
+import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
   parseRemoteNames,
   parseRemoteNamesInGitOrder,
@@ -396,6 +403,65 @@ function gitCommandContext(
     cwd: input.cwd,
     argumentCount: input.args.length,
   } as const;
+}
+
+// Git states the actual cause on stderr, but stderr never leaves this module:
+// it echoes argv and remote URLs, which can carry credentials. Matching it
+// against fixed patterns yields a tag the caller can act on and a message that
+// quotes none of the matched text. Patterns run in order, specific first.
+const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFailureReason]> = [
+  [/would clobber existing tag/i, "tag_would_be_clobbered"],
+  [/is already (?:used by worktree at|checked out at)/i, "branch_checked_out_in_worktree"],
+  [/a branch named .+ already exists/i, "branch_already_exists"],
+  // ssh names the methods it tried, so the parenthesized list varies:
+  // `(publickey)`, `(publickey,password)`, `(keyboard-interactive)`.
+  [
+    /(?:authentication failed|could not read Username|could not read Password|permission denied \([a-z-]+(?:,[a-z-]+)*\)|permission denied, please try again)/i,
+    "authentication_failed",
+  ],
+  // Distinct from a credential failure: the remote answered and the key it
+  // presented is untrusted, so pointing the user at credentials would misdirect.
+  [/host key verification failed/i, "host_key_unverified"],
+  [
+    /(?:could not read from remote repository|does not appear to be a git repository|repository .+ not found)/i,
+    "remote_unreachable",
+  ],
+  // Quoted-path forms only: an unquoted `fatal: <thing> already exists` also
+  // covers tag and ref collisions, which are not path collisions.
+  [/fatal: '[^']+' already exists|destination path .+ already exists/i, "path_already_exists"],
+];
+
+// Hooks write to the same stream git does, and nothing distinguishes their
+// text from git's: a pre-push hook echoing "authentication failed" would
+// otherwise be read as a credential failure. Git prefixes its own diagnostics
+// and states a push rejection on a `! [rejected]` line, so only those are
+// classified. `remote:` is deliberately excluded — git prefixes every byte the
+// server sends that way, remote hook output included, so trusting it would
+// reintroduce the same false positive from the other end of the connection.
+const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
+// ssh reports the refusal itself, unprefixed, and git only adds a generic
+// "Could not read from remote repository" after it. Dropping ssh's line would
+// leave that generic one to be read as an unreachable remote when the real
+// cause is credentials, so these specific refusals are classified too.
+const SSH_TRANSPORT_REFUSAL_PATTERN =
+  /Permission denied \((?:publickey|password|keyboard-interactive)|Permission denied, please try again|Host key verification failed/i;
+
+function classifyGitFailure(stderr: string): GitCommandFailureReason | null {
+  const diagnostics = stderr
+    .split(/\r?\n/)
+    .filter(
+      (line) =>
+        GIT_DIAGNOSTIC_LINE_PATTERN.test(line) ||
+        // A remote hook can echo ssh's wording; only the local ssh's line counts.
+        (!/^remote:/.test(line) && SSH_TRANSPORT_REFUSAL_PATTERN.test(line)),
+    )
+    .join("\n");
+  if (diagnostics.length === 0) return null;
+  if (isNonRepositoryGitStderr(diagnostics)) return "not_a_repository";
+  for (const [pattern, reason] of GIT_FAILURE_REASON_PATTERNS) {
+    if (pattern.test(diagnostics)) return reason;
+  }
+  return null;
 }
 
 function parseDefaultBranchFromRemoteHeadRef(value: string, remoteName: string): string | null {
@@ -795,6 +861,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               cwd: commandInput.cwd,
               env: {
                 ...process.env,
+                // Status polls run beside the user's Git commands without taking index.lock.
+                GIT_OPTIONAL_LOCKS: "0",
                 ...input.env,
                 ...trace2Monitor.env,
               },
@@ -857,8 +925,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         yield* trace2Monitor.flush;
 
         if (!input.allowNonZeroExit && exitCode !== 0) {
+          const reason = classifyGitFailure(stderr.text);
           return yield* new GitCommandError({
             ...gitCommandContext(commandInput),
+            ...(reason === null ? {} : { reason }),
             detail: "Git command exited with a non-zero status.",
             exitCode,
             stdoutLength: stdout.text.length,
@@ -945,9 +1015,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         if (options.allowNonZeroExit || result.exitCode === 0) {
           return Effect.succeed(result);
         }
+        const reason = classifyGitFailure(result.stderr);
         return Effect.fail(
           new GitCommandError({
             ...gitCommandContext({ operation, cwd, args }),
+            ...(reason === null ? {} : { reason }),
             detail: options.fallbackErrorDetail ?? "Git command exited with a non-zero status.",
             ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
             stdoutLength: result.stdout.length,
@@ -1712,7 +1784,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         executeGitWithStableDiagnostics(
           "GitVcsDriver.statusDetails.numstat",
           cwd,
-          ["diff", "HEAD", "--numstat", "-z", "--"],
+          ["diff-index", "-M", "--numstat", "-z", "HEAD", "--"],
           { allowNonZeroExit: true },
         ).pipe(
           Effect.flatMap((result) => {
@@ -1721,7 +1793,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               return Effect.map(
                 Effect.all([
                   runGitStdout("GitVcsDriver.statusDetails.numstat.unborn", cwd, [
-                    "diff",
+                    "diff-files",
                     "--numstat",
                     "-z",
                   ]),
@@ -1756,9 +1828,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                 ...gitCommandContext({
                   operation: "GitVcsDriver.statusDetails.numstat",
                   cwd,
-                  args: ["diff", "HEAD", "--numstat", "-z", "--"],
+                  args: ["diff-index", "-M", "--numstat", "-z", "HEAD", "--"],
                 }),
-                detail: "git diff HEAD --numstat failed.",
+                detail: "git diff-index HEAD --numstat failed.",
                 exitCode: result.exitCode,
                 stdoutLength: result.stdout.length,
                 stderrLength: result.stderr.length,
@@ -3341,12 +3413,37 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const createWorktree: GitVcsDriver.GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "createWorktree",
   )(function* (input, options) {
-    const targetBranch = input.newRefName ?? input.refName;
+    let newRefName = input.newRefName;
+    if (
+      newRefName &&
+      isTemporaryWorktreeBranch(newRefName) &&
+      newRefName.includes("/") &&
+      (yield* branchExists(input.cwd, newRefName.split("/")[0]!))
+    ) {
+      newRefName = flattenTemporaryWorktreeBranchName(newRefName);
+    }
+    const targetBranch = newRefName ?? input.refName;
     const sanitizedBranch = targetBranch.replace(/\//g, "-");
     const repoName = path.basename(input.cwd);
-    const worktreePath = input.path ?? path.join(worktreesDir, repoName, sanitizedBranch);
-    const args = input.newRefName
-      ? ["worktree", "add", "-b", input.newRefName, worktreePath, input.refName]
+    let worktreePath = input.path;
+    if (worktreePath == null) {
+      const parentDir = resolveWorktreesDirectory(
+        options?.worktreesDirectory ?? "",
+        worktreesDir,
+        path,
+      );
+      if (parentDir === null)
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.createWorktree",
+          command: "git worktree add",
+          cwd: input.cwd,
+          detail:
+            "The worktree location must be an absolute folder on this machine, not a drive root. Change it in Settings → Source Control.",
+        });
+      worktreePath = path.join(parentDir, repoName, sanitizedBranch);
+    }
+    const args = newRefName
+      ? ["worktree", "add", "-b", newRefName, worktreePath, input.refName]
       : ["worktree", "add", worktreePath, input.refName];
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
@@ -3385,12 +3482,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // `.git/modules`, but a first-ever clone needs the network, and failing to
     // populate a submodule must not roll back the caller's thread. Repos with
     // hundreds of nested submodules opt out or stop at the top level through
-    // the checkout's t3.json.
+    // the source checkout's t3.json, including uncommitted settings and when
+    // the worktree starts from a ref with a different project configuration.
     const hasSubmodules = yield* fileSystem
       .exists(path.join(worktreePath, ".gitmodules"))
       .pipe(Effect.orElseSucceed(() => false));
     const submoduleMode = hasSubmodules
-      ? yield* fileSystem.readFileString(path.join(worktreePath, T3_PROJECT_FILE_NAME)).pipe(
+      ? yield* fileSystem.readFileString(path.join(input.cwd, T3_PROJECT_FILE_NAME)).pipe(
           Effect.flatMap((contents) => {
             const file = parseT3ProjectFile(contents);
             return file === null
@@ -3443,7 +3541,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
     }
 
-    if (input.newRefName && input.baseRefName) {
+    if (newRefName && input.baseRefName) {
       const remoteNames = yield* listRemoteNames(input.cwd).pipe(Effect.orElseSucceed(() => []));
       const parsedBaseRef = parseRemoteRefWithRemoteNames(
         input.baseRefName,
@@ -3452,7 +3550,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const baseBranch = parsedBaseRef?.branchName ?? input.baseRefName;
       yield* runGit("GitVcsDriver.createWorktree.configureBaseRef", input.cwd, [
         "config",
-        `branch.${input.newRefName}.gh-merge-base`,
+        `branch.${newRefName}.gh-merge-base`,
         baseBranch,
       ]);
     }

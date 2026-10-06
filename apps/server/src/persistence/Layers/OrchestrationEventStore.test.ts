@@ -57,6 +57,7 @@ layer("OrchestrationEventStore", (it) => {
       const sql = yield* SqlClient.SqlClient;
       const now = "2026-01-01T00:00:00.000Z";
 
+      const projectIcon = { kind: "monogram", text: "क्ष्म", color: "violet" } as const;
       const appended = yield* eventStore.append({
         type: "project.created",
         eventId: EventId.make("evt-store-roundtrip"),
@@ -72,6 +73,7 @@ layer("OrchestrationEventStore", (it) => {
         payload: {
           projectId: ProjectId.make("project-roundtrip"),
           title: "Roundtrip Project",
+          projectIcon,
           workspaceRoot: "/tmp/project-roundtrip",
           defaultModelSelection: null,
           scripts: [],
@@ -93,6 +95,10 @@ layer("OrchestrationEventStore", (it) => {
       assert.equal(storedRows.length, 1);
       assert.equal(typeof storedRows[0]?.payloadJson, "string");
       assert.equal(typeof storedRows[0]?.metadataJson, "string");
+      const decodePayload = Schema.decodeUnknownEffect(
+        Schema.fromJsonString(Schema.Struct({ projectIcon: Schema.Unknown })),
+      );
+      assert.deepEqual((yield* decodePayload(storedRows[0]!.payloadJson)).projectIcon, projectIcon);
 
       const replayed = yield* Stream.runCollect(eventStore.readFromSequence(0, 10)).pipe(
         Effect.map((chunk) => Array.from(chunk)),
@@ -100,6 +106,21 @@ layer("OrchestrationEventStore", (it) => {
       assert.equal(replayed.length, 1);
       assert.equal(replayed[0]?.type, "project.created");
       assert.equal(replayed[0]?.metadata.adapterKey, "codex");
+      if (replayed[0]?.type === "project.created") {
+        assert.deepEqual(replayed[0].payload.projectIcon, projectIcon);
+      }
+      // Old event rows remain readable after the wire format stops writing fallback icons.
+      const legacyIcon = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))({
+        kind: "lucide",
+        name: "folder-code",
+        color: "violet",
+        monogramText: projectIcon.text,
+      });
+      yield* sql`UPDATE orchestration_events SET payload_json = json_set(payload_json, '$.projectIcon', json(${legacyIcon})) WHERE event_id = ${appended.eventId}`;
+      const legacy = Array.from(yield* Stream.runCollect(eventStore.readFromSequence(0, 10)))[0];
+      assert.equal(legacy?.type, "project.created");
+      if (legacy?.type === "project.created")
+        assert.deepEqual(legacy.payload.projectIcon, projectIcon);
     }),
   );
 

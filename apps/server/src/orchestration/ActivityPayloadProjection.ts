@@ -6,6 +6,7 @@ import type {
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
+import { toolActivityOutput, toolOutputImages } from "@t3tools/shared/toolOutput";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -436,9 +437,20 @@ export function projectActivityPayload(
     payload.status === "completed" && (itemStatus === "failed" || itemStatus === "declined")
       ? { ...payload, status: itemStatus }
       : payload;
+  const outputImages =
+    activity.kind === "tool.completed" ? toolOutputImages(toolActivityOutput(data)) : [];
   const projectedPayload = {
     ...projectPreviewToolMetadata(data, statusPayload.status),
     ...statusPayload,
+    ...(outputImages.length > 0
+      ? {
+          outputImages: outputImages.map((_, index) => ({
+            _tag: "tool-output-image" as const,
+            activityId: activity.id,
+            index,
+          })),
+        }
+      : {}),
   };
   const questionInput = projectQuestionToolInput(data, payload.title);
 

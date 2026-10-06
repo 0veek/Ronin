@@ -69,6 +69,7 @@ export function AttachmentFilePreview(props: {
   asset?: { environmentId: EnvironmentId; attachmentId: string };
   /** First crumb: where the file comes from. */
   origin?: string;
+  htmlRender?: boolean;
   onRemove?: () => void;
   onClose?: () => void;
 }) {
@@ -247,7 +248,12 @@ export function AttachmentFilePreview(props: {
       <ReadOnlySourcePreview name={props.name} text={content.text} />
     )
   ) : kind === "pdf" || kind === "html" ? (
-    <BrowserDocumentFrame src={url} title={props.name} pdf={kind === "pdf"} />
+    <BrowserDocumentFrame
+      src={url}
+      title={props.name}
+      pdf={kind === "pdf"}
+      htmlRender={props.htmlRender ?? false}
+    />
   ) : kind === "audio" ? (
     <AudioPreview src={url} name={props.name} onError={() => setError("Unable to load audio.")} />
   ) : kind === "video" ? (

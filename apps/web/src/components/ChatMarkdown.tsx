@@ -1419,7 +1419,10 @@ export function ChatMarkdownAssetImage({
   onImageExpand,
 }: {
   readonly environmentId: EnvironmentId;
-  readonly resource: Extract<AssetResource, { readonly _tag: "attachment" | "workspace-file" }>;
+  readonly resource: Extract<
+    AssetResource,
+    { readonly _tag: "attachment" | "workspace-file" | "tool-output-image" }
+  >;
   readonly alt: string | undefined;
   readonly title?: string | undefined;
   readonly source: string;

@@ -1,4 +1,4 @@
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
 
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -139,6 +139,7 @@ export interface CreateWorktreeProgress {
 
 export interface CreateWorktreeOptions {
   readonly progress?: CreateWorktreeProgress;
+  readonly worktreesDirectory?: string;
 }
 
 export interface GitCommitProgress {
@@ -524,6 +525,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const vcsProcess = yield* VcsProcess.VcsProcess;
+  const crypto = yield* Crypto.Crypto;
   const capabilities = {
     kind: "git" as const,
     supportsWorktrees: true,
@@ -783,7 +785,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       const gitCommonDir = yield* resolveGitCommonDir(input.cwd);
       const tempIndexPath = path.join(
         gitCommonDir,
-        `t3-checkpoint-index-${NodeCrypto.randomUUID()}`,
+        `t3-checkpoint-index-${yield* crypto.randomUUIDv4.pipe(Effect.orDie)}`,
       );
       const commitEnv: NodeJS.ProcessEnv = {
         ...process.env,

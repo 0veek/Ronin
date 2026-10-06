@@ -1,4 +1,6 @@
+import { isProviderSendTurnSupportedImageMimeType } from "@t3tools/contracts";
 import * as Predicate from "effect/Predicate";
+import { readHtmlRenderReference, type HtmlRenderReference } from "./htmlRender.ts";
 
 const MAX_PARSED_BYTES = 16_384;
 const MAX_METADATA_BYTES = 8_192;
@@ -21,6 +23,7 @@ interface ResultEnvelope {
 }
 
 interface CompactToolOutput {
+  htmlRender?: HtmlRenderReference;
   isError?: true;
   threadId?: string;
   messageId?: string;
@@ -110,6 +113,8 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
       if (id !== undefined) output[key] = id;
     }
     if (data.status === "rolled_back") output.status = "rolled_back";
+    const htmlRender = readHtmlRenderReference(data.htmlRender);
+    if (htmlRender !== undefined) output.htmlRender = htmlRender;
     const nestedThreadId = Predicate.isObject(data.thread)
       ? boundedId(data.thread.threadId)
       : undefined;
@@ -154,6 +159,21 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
 }
 
 /** Some providers report completion even when command output describes a failure. */
+export function htmlRenderFromToolItem(item: {
+  readonly toolName: string | null | undefined;
+  readonly output?: unknown;
+}): HtmlRenderReference | undefined {
+  const name = item.toolName ?? "";
+  if (
+    name !== "html_render" &&
+    !/^(?:mcp__)?(?:ronin|t3-code)(?:__|[.:]|-[\w-]+_)html_render$/.test(name)
+  )
+    return undefined;
+  const output = compactDynamicToolOutput(item.output);
+  return output?.isError ? undefined : output?.htmlRender;
+}
+
+/** Some providers report completion even when command output describes a failure. */
 export function toolOutputIndicatesFailure(text: string): boolean {
   return (
     /file not found|no files found|enoent|no such file|commandnotfoundexception|command not found|is not recognized as the name of a cmdlet|a parameter cannot be found that matches parameter name/i.test(
@@ -165,4 +185,85 @@ export function toolOutputIndicatesFailure(text: string): boolean {
     /exit(?:ed)? with exit code\s+[1-9]\d*/i.test(text) ||
     /exit code\s*[:\s]\s*[1-9]\d*\b/i.test(text)
   );
+}
+
+/** An image a tool returned inline. `data` is base64; a detail read omits it. */
+export interface ToolOutputImage {
+  readonly mimeType: string;
+  readonly data?: string;
+}
+
+/**
+ * Reads one image block in the MCP `{ data, mimeType }` shape or the Anthropic
+ * `{ source: { type: "base64", media_type, data } }` shape Claude stores.
+ * Only raster types are recognized, so the server never serves an agent's SVG
+ * or HTML inline.
+ */
+export function readToolOutputImage(block: unknown): ToolOutputImage | null {
+  if (!Predicate.isObject(block) || block.type !== "image") return null;
+  const source = Predicate.isObject(block.source) ? block.source : undefined;
+  if (source !== undefined && source.type !== "base64") return null;
+  const mimeType = source === undefined ? block.mimeType : source.media_type;
+  const data = source === undefined ? block.data : source.data;
+  if (typeof mimeType !== "string" || !isProviderSendTurnSupportedImageMimeType(mimeType)) {
+    return null;
+  }
+  const image = { mimeType: mimeType.toLowerCase() };
+  return typeof data === "string" ? { ...image, data } : image;
+}
+
+/** Tools return a block, a list of blocks, or an MCP result with a `content` list. */
+function outputBlocks(value: unknown): ReadonlyArray<unknown> {
+  if (Array.isArray(value)) return value;
+  if (Predicate.isObject(value) && Array.isArray(value.content)) return value.content;
+  return [value];
+}
+
+/** A tool returns one screenshot or a few frames; more would only flood the timeline. */
+export const MAX_TOOL_OUTPUT_IMAGES = 8;
+
+/**
+ * The first images in a tool output, in order. The order is the
+ * `tool-output-image` asset index, so servers and clients agree on it.
+ */
+export function toolOutputImages(value: unknown): ReadonlyArray<ToolOutputImage> {
+  const images: ToolOutputImage[] = [];
+  for (const block of outputBlocks(value)) {
+    const image = readToolOutputImage(block);
+    if (image === null) continue;
+    images.push(image);
+    if (images.length === MAX_TOOL_OUTPUT_IMAGES) break;
+  }
+  return images;
+}
+
+/**
+ * Replaces each image's bytes with `{ type: "image", mimeType }` and keeps its
+ * position, so detail reads stay small and clients load the bytes as assets.
+ */
+export function omitToolOutputImageData(value: unknown): unknown {
+  const omit = (block: unknown) => {
+    const image = readToolOutputImage(block);
+    return image?.data === undefined ? block : { type: "image", mimeType: image.mimeType };
+  };
+  if (Array.isArray(value)) return value.map(omit);
+  if (Predicate.isObject(value) && Array.isArray(value.content)) {
+    return { ...value, content: value.content.map(omit) };
+  }
+  return omit(value);
+}
+
+/** Reads the retained adapters' tool output without inspecting inputs or unrelated metadata. */
+export function toolActivityOutput(data: unknown): unknown {
+  if (!Predicate.isObject(data)) return undefined;
+  const item = Predicate.isObject(data.item) ? data.item : undefined;
+  const state = Predicate.isObject(data.state) ? data.state : undefined;
+  const output = item?.result ?? data.result ?? state?.output ?? data.output ?? data.rawOutput;
+  if (output !== undefined) return output;
+  // ACP wraps its content blocks once more than MCP and Claude do.
+  return Array.isArray(data.content)
+    ? data.content.map((block) =>
+        Predicate.isObject(block) && block.type === "content" ? block.content : block,
+      )
+    : data.content;
 }

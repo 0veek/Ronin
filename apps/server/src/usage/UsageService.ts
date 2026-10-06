@@ -33,6 +33,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import { writeFileStringAtomically } from "../atomicWrite.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -228,7 +229,12 @@ export const make = Effect.gen(function* () {
     ratesStatus = "fresh";
 
     yield* encodeRatesCache({ fetchedAtMs: now, document: fetched }).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(ratesCachePath, serialized)),
+      Effect.flatMap((serialized) =>
+        writeFileStringAtomically({ filePath: ratesCachePath, contents: serialized }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        ),
+      ),
       Effect.catchCause(() => Effect.void),
     );
   });
@@ -339,8 +345,7 @@ export const make = Effect.gen(function* () {
   );
 
   const writeScanCache = makeScanCacheWriter();
-  // Scans with different windows can finish together; two writes interleaved
-  // in one file would corrupt it.
+  // Serializing cache writes keeps an older snapshot from landing after a newer one.
   const persistLock = yield* Semaphore.make(1);
 
   const persistScanCache = Effect.fn("UsageService.persistScanCache")(function* () {
@@ -350,7 +355,12 @@ export const make = Effect.gen(function* () {
     // flag, so the next scan retries instead of leaving disk stale.
     cacheDirty = false;
     yield* Effect.sync(() => writeScanCache(fileCache, {})).pipe(
-      Effect.flatMap((serialized) => fileSystem.writeFileString(scanCachePath, serialized)),
+      Effect.flatMap((serialized) =>
+        writeFileStringAtomically({ filePath: scanCachePath, contents: serialized }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        ),
+      ),
       // A cache we cannot write is a slower next start, not a failed read.
       Effect.catchCause(() =>
         Effect.sync(() => {

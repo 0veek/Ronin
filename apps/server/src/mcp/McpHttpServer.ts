@@ -1,4 +1,4 @@
-import * as NodeCrypto from "node:crypto";
+import * as Crypto from "effect/Crypto";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -18,6 +18,18 @@ import { PreviewAutomationError } from "@t3tools/contracts";
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
+import * as HtmlRender from "../htmlRender/HtmlRender.ts";
+import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
+import {
+  HtmlPreviewTool,
+  HtmlPreviewToolkit,
+  HtmlRenderToolkit,
+  HtmlRenderToolError,
+} from "./toolkits/html/tools.ts";
+import {
+  HtmlPreviewToolkitHandlersLive,
+  HtmlRenderToolkitHandlersLive,
+} from "./toolkits/html/handlers.ts";
 import { toAdvertisedJsonSchema } from "./advertisedToolSchema.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
@@ -33,6 +45,10 @@ import {
 } from "./toolkits/preview/tools.ts";
 import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
+import { SecretsToolkit } from "./toolkits/secrets/tools.ts";
+import { AutomationsToolkit } from "./toolkits/automations/tools.ts";
+import { AutomationsToolkitHandlersLive } from "./toolkits/automations/handlers.ts";
+import { SecretsToolkitHandlersLive } from "./toolkits/secrets/handlers.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
@@ -84,30 +100,29 @@ export const normalizeMcpHttpResponse = (
 };
 
 const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
-  Effect.map(
-    (registry): McpAuthMiddleware =>
-      Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const authorization = request.headers.authorization;
-        const token =
-          authorization?.startsWith("Bearer ") === true
-            ? authorization.slice("Bearer ".length).trim()
-            : "";
-        const invocation = yield* registry.resolve(token);
-        if (!invocation) {
-          // Without this the only symptom of a dead credential is the agent
-          // quietly losing the whole `ronin` toolkit for the rest of its
-          // session, with nothing on the server to explain why.
-          yield* Effect.logWarning("rejected MCP request with an unusable credential", {
-            reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
-          });
-          return unauthorized;
-        }
-        return yield* httpEffect.pipe(
-          Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
-          Effect.map(normalizeMcpHttpResponse),
-        );
-      }),
+  Effect.map((registry): McpAuthMiddleware =>
+    Effect.fn("McpHttpServer.authenticateRequest")(function* (httpEffect) {
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const authorization = request.headers.authorization;
+      const token =
+        authorization?.startsWith("Bearer ") === true
+          ? authorization.slice("Bearer ".length).trim()
+          : "";
+      const invocation = yield* registry.resolve(token);
+      if (!invocation) {
+        // Without this the only symptom of a dead credential is the agent
+        // quietly losing the whole `ronin` toolkit for the rest of its
+        // session, with nothing on the server to explain why.
+        yield* Effect.logWarning("rejected MCP request with an unusable credential", {
+          reason: token.length === 0 ? "missing_bearer_token" : "unknown_or_expired_token",
+        });
+        return unauthorized;
+      }
+      return yield* httpEffect.pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, invocation),
+        Effect.map(normalizeMcpHttpResponse),
+      );
+    }),
   ),
   Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
 );
@@ -306,7 +321,8 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const millis = yield* Clock.currentTimeMillis;
-  const fileName = `browser-screenshot-${screenshotSiteSlug(pageUrl)}-${millis.toString(36)}-${NodeCrypto.randomUUID().slice(0, 8)}.png`;
+  const unique = (yield* (yield* Crypto.Crypto).randomUUIDv4.pipe(Effect.orDie)).slice(0, 8);
+  const fileName = `browser-screenshot-${screenshotSiteSlug(pageUrl)}-${millis.toString(36)}-${unique}.png`;
   const screenshotPath = path.join(config.browserArtifactsDir, fileName);
   yield* fileSystem.makeDirectory(config.browserArtifactsDir, { recursive: true }).pipe(
     Effect.andThen(fileSystem.writeFile(screenshotPath, data)),
@@ -355,7 +371,7 @@ const registerPreviewSnapshot = Effect.fn("McpHttpServer.registerPreviewSnapshot
   const broker = yield* PreviewAutomationBroker.PreviewAutomationBroker;
   // The MCP tool runner only supplies the client, so hand the save path its services here.
   const saveServices = yield* Effect.context<
-    ServerConfig.ServerConfig | FileSystem.FileSystem | Path.Path
+    ServerConfig.ServerConfig | FileSystem.FileSystem | Path.Path | Crypto.Crypto
   >();
   const built = yield* PreviewSnapshotToolkit;
   const tool = PreviewSnapshotTool;
@@ -510,7 +526,7 @@ interface ImageToolResult {
  * device output the agent should not see, and the tag is what it can act on.
  */
 const imageToolFailure =
-  (toolName: string, operation: string, failureText: string) =>
+  (toolName: string, operation: string, failureText: string | ((error: unknown) => string)) =>
   <E>(cause: Cause.Cause<E>) => {
     if (Cause.hasInterrupts(cause) || cause.reasons.some(Cause.isDieReason)) {
       return Effect.failCause(cause).pipe(Effect.orDie);
@@ -533,7 +549,12 @@ const imageToolFailure =
           failureCount: failures.length,
         },
       },
-      content: [{ type: "text", text: failureText }],
+      content: [
+        {
+          type: "text",
+          text: typeof failureText === "string" ? failureText : failureText(firstFailure),
+        },
+      ],
     });
     return Effect.logWarning(`${toolName} failed`, {
       operation,
@@ -559,7 +580,7 @@ const registerImageTool = <T extends Tool.Any, E, R>(
     McpInvocationContext.McpInvocationContext
   >,
   operation: string,
-  failureText: string,
+  failureText: string | ((error: unknown) => string),
 ) =>
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
@@ -658,6 +679,38 @@ export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequest
   Layer.provide(PullRequestsToolkitHandlersLive),
 );
 
+export const SecretsToolkitRegistrationLive = McpServer.toolkit(SecretsToolkit).pipe(
+  Layer.provide(SecretsToolkitHandlersLive),
+);
+
+export const AutomationsToolkitRegistrationLive = McpServer.toolkit(AutomationsToolkit).pipe(
+  Layer.provide(AutomationsToolkitHandlersLive),
+);
+
+const isHtmlRenderToolError = Schema.is(HtmlRenderToolError);
+const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(function* () {
+  const built = yield* HtmlPreviewToolkit;
+  const services = yield* Effect.context<HtmlRender.HtmlRender | ThreadManagementService>();
+  yield* registerImageTool(
+    HtmlPreviewTool,
+    (payload) =>
+      built
+        .handle("html_preview", payload)
+        .pipe(Stream.unwrap, Stream.run(Sink.last()), Effect.flatMap(Effect.fromOption)),
+    (effect) => effect.pipe(Effect.provideContext(services)),
+    "html-preview",
+    (error) =>
+      isHtmlRenderToolError(error)
+        ? error.message
+        : "HTML preview failed. Check the page and connect a Ronin desktop client with browser automation.",
+  );
+});
+
+export const HtmlToolkitRegistrationLive = Layer.mergeAll(
+  McpServer.toolkit(HtmlRenderToolkit).pipe(Layer.provide(HtmlRenderToolkitHandlersLive)),
+  Layer.effectDiscard(registerHtmlPreview()).pipe(Layer.provide(HtmlPreviewToolkitHandlersLive)),
+);
+
 const DeviceStandardToolkitRegistrationLive = McpServer.toolkit(DeviceStandardToolkit).pipe(
   Layer.provide(DeviceStandardToolkitHandlersLive),
 );
@@ -681,5 +734,8 @@ const McpTransportLive = McpServer.layerHttp({
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
+  SecretsToolkitRegistrationLive,
+  AutomationsToolkitRegistrationLive,
+  HtmlToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
-).pipe(Layer.provideMerge(McpTransportLive));
+).pipe(Layer.provide(HtmlRender.layer), Layer.provideMerge(McpTransportLive));

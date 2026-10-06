@@ -56,6 +56,12 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  */
 export const SETTINGS_SEARCH_ITEMS = [
   {
+    id: "source-control-worktrees-location",
+    title: "Worktree location",
+    to: "/settings/source-control",
+    searchTerms: ["worktree location folder directory path drive external disk"],
+  },
+  {
     id: "speech-to-text",
     title: "Dictation",
     to: "/settings/speech-to-text",
@@ -537,6 +543,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Bitbucket credentials",
     to: "/settings/source-control",
     searchTerms: ["bitbucket atlassian access token api token email credentials sign in"],
+  },
+  {
+    id: "remove-agent-credits-on-merge",
+    title: "Remove agent credits when merging",
+    to: "/settings/source-control",
+    searchTerms: ["pull request github squash co-authored-by attribution claude codex generated"],
   },
   {
     id: "environment-icon",

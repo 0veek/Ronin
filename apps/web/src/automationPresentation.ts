@@ -7,7 +7,7 @@
  *
  * @module automationPresentation
  */
-import type { Automation, AutomationSchedule } from "@t3tools/contracts";
+import type { Automation, AutomationScheduleInput } from "@t3tools/contracts";
 
 const WEEKDAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const WEEKDAYS = [1, 2, 3, 4, 5];
@@ -66,8 +66,10 @@ function capitalize(text: string): string {
   return text.length === 0 ? text : `${text[0]?.toUpperCase() ?? ""}${text.slice(1)}`;
 }
 
-export function formatSchedule(schedule: AutomationSchedule): string {
+export function formatSchedule(schedule: AutomationScheduleInput): string {
   switch (schedule._tag) {
+    case "webhook":
+      return "On webhook delivery";
     case "interval":
       return formatEveryMinutes(schedule.everyMinutes);
     case "daily":
@@ -96,6 +98,7 @@ export function formatStoppedReason(automation: Automation): string | null {
 
 export function formatNextRun(automation: Automation, formatter: (iso: string) => string): string {
   if (!automation.enabled) return formatStoppedReason(automation) ?? "Paused";
+  if (automation.schedule._tag === "webhook") return "Waiting for a delivery";
   if (automation.nextRunAt === null) return "Not scheduled";
   return `Next ${formatter(automation.nextRunAt)}`;
 }

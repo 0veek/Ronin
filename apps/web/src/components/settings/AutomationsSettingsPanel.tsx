@@ -78,6 +78,7 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { AutomationModelField } from "./AutomationModelField";
 import { AutomationRecipeGallery } from "./AutomationRecipeGallery";
+import { AutomationWebhookPanel } from "./AutomationWebhookPanel";
 import {
   resolvePrimaryOperateAccess,
   resolveRemoteOperateAccess,
@@ -278,6 +279,8 @@ function EnvironmentAutomationsSettings({
         {automations.map((automation) => (
           <AutomationRow
             key={automation.id}
+            environmentId={environmentId}
+            onWebhookChange={refresh}
             automation={automation}
             disabled={!canEdit || isSaving || pendingAutomationIds.has(automation.id)}
             pending={pendingAutomationIds.has(automation.id)}
@@ -478,6 +481,8 @@ function AutomationEmptyState({
 }
 
 function AutomationRow({
+  environmentId,
+  onWebhookChange,
   automation,
   projectTitle,
   nextRunLabel,
@@ -492,6 +497,8 @@ function AutomationRow({
   beingEdited,
 }: {
   readonly automation: Automation;
+  readonly environmentId: EnvironmentId;
+  readonly onWebhookChange: () => void;
   readonly projectTitle: string;
   readonly nextRunLabel: string;
   readonly onToggle: (enabled: boolean) => void;
@@ -505,66 +512,83 @@ function AutomationRow({
   readonly beingEdited: boolean;
 }) {
   return (
-    <SettingsRow
-      title={automation.title}
-      description={`${projectTitle} · ${formatSchedule(automation.schedule)}${
-        automation.envMode === "worktree" ? " · new worktree" : " · current checkout"
-      }${automation.modelSelection === null ? "" : ` · ${automation.modelSelection.model}`}`}
-      status={
-        <span className="inline-flex items-center gap-1.5 text-2xs text-secondary-label">
-          <ClockIcon aria-hidden className="size-3" />
-          {pending ? "Working…" : nextRunLabel}
-        </span>
-      }
-      control={
-        <div className="flex items-center gap-1.5">
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`Edit ${automation.title}`}
-            disabled={disabled || draftOpen}
-            onClick={onEdit}
-          >
-            <PencilIcon className="size-3.5" />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`Duplicate ${automation.title}`}
-            disabled={disabled || draftOpen}
-            onClick={onDuplicate}
-          >
-            <CopyIcon className="size-3.5" />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`Run ${automation.title} now`}
-            disabled={disabled}
-            onClick={onRunNow}
-          >
-            <PlayIcon className="size-3.5" />
-          </Button>
-          <Button
-            size="icon-xs"
-            variant="ghost"
-            aria-label={`Delete ${automation.title}`}
-            disabled={disabled || beingEdited}
-            onClick={onDelete}
-          >
-            <Trash2Icon className="size-3.5" />
-          </Button>
-          <Switch
-            disabled={disabled}
-            checked={automation.enabled}
-            onCheckedChange={(checked) => onToggle(Boolean(checked))}
-            aria-label={`Enable ${automation.title}`}
-          />
-        </div>
-      }
-    />
+    <>
+      <SettingsRow
+        title={automation.title}
+        description={`${projectTitle} · ${formatSchedule(automation.schedule)}${
+          automation.envMode === "worktree" ? " · new worktree" : " · current checkout"
+        }${automation.modelSelection === null ? "" : ` · ${automation.modelSelection.model}`}`}
+        status={
+          <span className="inline-flex items-center gap-1.5 text-2xs text-secondary-label">
+            <ClockIcon aria-hidden className="size-3" />
+            {pending ? "Working…" : nextRunLabel}
+          </span>
+        }
+        control={
+          <div className="flex items-center gap-1.5">
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label={`Edit ${automation.title}`}
+              disabled={disabled || draftOpen}
+              onClick={onEdit}
+            >
+              <PencilIcon className="size-3.5" />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label={`Duplicate ${automation.title}`}
+              disabled={disabled || draftOpen}
+              onClick={onDuplicate}
+            >
+              <CopyIcon className="size-3.5" />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label={`Run ${automation.title} now`}
+              disabled={disabled || automation.schedule._tag === "webhook"}
+              onClick={onRunNow}
+            >
+              <PlayIcon className="size-3.5" />
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label={`Delete ${automation.title}`}
+              disabled={disabled || beingEdited}
+              onClick={onDelete}
+            >
+              <Trash2Icon className="size-3.5" />
+            </Button>
+            <Switch
+              disabled={disabled}
+              checked={automation.enabled}
+              onCheckedChange={(checked) => onToggle(Boolean(checked))}
+              aria-label={`Enable ${automation.title}`}
+            />
+          </div>
+        }
+      />
+      {automation.webhook ? (
+        <AutomationWebhookPanel
+          automation={automation}
+          environmentId={environmentId}
+          disabled={disabled}
+          onChange={onWebhookChange}
+        />
+      ) : null}
+    </>
   );
 }
+
+const AUTOMATION_TRIGGER_LABELS = {
+  interval: "On an interval",
+  daily: "At a time of day",
+  webhook: "On webhook delivery",
+  once: "Once",
+} satisfies Record<AutomationDraftState["kind"], string>;
 
 function AutomationDraftForm({
   environmentId,
@@ -657,19 +681,18 @@ function AutomationDraftForm({
               value={draft.kind}
               disabled={disabled}
               onValueChange={(value) => {
-                if (value === "interval" || value === "daily" || value === "once") {
+                if (
+                  value === "interval" ||
+                  value === "daily" ||
+                  value === "once" ||
+                  value === "webhook"
+                ) {
                   onChange({ ...draft, kind: value });
                 }
               }}
             >
               <SelectTrigger className="w-full" aria-label="Schedule kind">
-                <SelectValue>
-                  {draft.kind === "interval"
-                    ? "On an interval"
-                    : draft.kind === "daily"
-                      ? "At a time of day"
-                      : "Once"}
-                </SelectValue>
+                <SelectValue>{AUTOMATION_TRIGGER_LABELS[draft.kind]}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem hideIndicator value="daily">
@@ -677,6 +700,9 @@ function AutomationDraftForm({
                 </SelectItem>
                 <SelectItem hideIndicator value="interval">
                   On an interval
+                </SelectItem>
+                <SelectItem hideIndicator value="webhook">
+                  On webhook delivery
                 </SelectItem>
                 <SelectItem hideIndicator value="once">
                   Once
@@ -925,6 +951,111 @@ function AutomationScheduleFields({
 }) {
   return (
     <>
+      {draft.kind === "webhook" ? (
+        <div className="space-y-3 rounded-lg border p-3">
+          <p className="text-xs text-muted-foreground">
+            A URL is created when you save. Select the request data to send to the agent with
+            placeholders such as {"{{body.action}}"}, {"{{body}}"}, or {"{{request}}"} in the
+            prompt.
+          </p>
+          <label className="flex items-center gap-2 text-xs font-medium">
+            <Switch
+              checked={draft.webhookSignature != null}
+              onCheckedChange={(checked) =>
+                onChange({
+                  ...draft,
+                  webhookSignature: checked
+                    ? { header: "x-hub-signature-256", encoding: "hex", prefix: "sha256=" }
+                    : null,
+                })
+              }
+            />
+            Verify an HMAC-SHA256 signature
+          </label>
+          {draft.webhookSignature != null ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-xs">
+                Signature header
+                <Input
+                  value={draft.webhookSignature.header}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      webhookSignature: {
+                        ...draft.webhookSignature!,
+                        header: event.currentTarget.value,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-xs">
+                Prefix
+                <Input
+                  value={draft.webhookSignature.prefix}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      webhookSignature: {
+                        ...draft.webhookSignature!,
+                        prefix: event.currentTarget.value,
+                      },
+                    })
+                  }
+                />
+              </label>
+              <label className="space-y-1 text-xs">
+                Digest encoding
+                <select
+                  className="block h-8 w-full rounded-md border bg-background px-2"
+                  value={draft.webhookSignature.encoding}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      webhookSignature: {
+                        ...draft.webhookSignature!,
+                        encoding: event.currentTarget.value === "base64" ? "base64" : "hex",
+                      },
+                    })
+                  }
+                >
+                  <option value="hex">Hex</option>
+                  <option value="base64">Base64</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-xs">
+                Signing secret
+                <Input
+                  type="password"
+                  autoComplete="off"
+                  value={draft.webhookSignature.secret ?? ""}
+                  placeholder={
+                    draft.webhookHasSecret
+                      ? "Leave blank to keep the saved secret"
+                      : "Paste the signing secret"
+                  }
+                  onChange={(event) => {
+                    const { secret: _previous, ...signature } = draft.webhookSignature!;
+                    onChange({
+                      ...draft,
+                      webhookSignature: {
+                        ...signature,
+                        ...(event.currentTarget.value.trim()
+                          ? { secret: event.currentTarget.value }
+                          : {}),
+                      },
+                    });
+                  }}
+                />
+              </label>
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                The signing secret stays on the connected environment and is never sent to the
+                agent.
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       {draft.kind === "daily" ? (
         <div className="space-y-2">
           <label className="block max-w-40 space-y-1.5">

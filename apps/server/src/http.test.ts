@@ -376,7 +376,7 @@ describe("assetResponseHeaders", () => {
     for (const path of ["/workspace/page.html", "/workspace/PAGE.HTM"]) {
       expect(assetResponseHeaders(path)).toMatchObject({
         "Content-Type": "text/html; charset=utf-8",
-        "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups allow-modals",
+        "Content-Security-Policy": "sandbox allow-scripts allow-forms allow-popups",
       });
     }
   });

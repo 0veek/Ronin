@@ -86,24 +86,22 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
 
   public readonly compactThread = Effect.void;
 
-  public readonly interruptTurnImpl = vi.fn(
-    (_turnId?: TurnId): Promise<void> => Promise.resolve(undefined),
+  public readonly interruptTurnImpl = vi.fn((_turnId?: TurnId): Promise<void> =>
+    Promise.resolve(undefined),
   );
 
-  public readonly readThreadImpl = vi.fn(
-    (): Promise<CodexThreadSnapshot> =>
-      Promise.resolve({
-        threadId: "provider-thread-1",
-        turns: [],
-      }),
+  public readonly readThreadImpl = vi.fn((): Promise<CodexThreadSnapshot> =>
+    Promise.resolve({
+      threadId: "provider-thread-1",
+      turns: [],
+    }),
   );
 
-  public readonly rollbackThreadImpl = vi.fn(
-    (_numTurns: number): Promise<CodexThreadSnapshot> =>
-      Promise.resolve({
-        threadId: "provider-thread-1",
-        turns: [],
-      }),
+  public readonly rollbackThreadImpl = vi.fn((_numTurns: number): Promise<CodexThreadSnapshot> =>
+    Promise.resolve({
+      threadId: "provider-thread-1",
+      turns: [],
+    }),
   );
 
   public readonly respondToRequestImpl = vi.fn(
@@ -372,6 +370,100 @@ sessionErrorLayer("CodexAdapterLive session errors", (it) => {
       const event = Option.getOrThrow(yield* Fiber.join(compactedEventFiber));
       NodeAssert.ok(event.type === "thread.state.changed");
       NodeAssert.equal(event.payload.state, "compacted");
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("normalizes native goal updates and control-only turns", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("thread-native-goal");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "full-access",
+      });
+      const runtime = sessionRuntimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const received = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "thread.goal.updated" ||
+            event.type === "turn.started" ||
+            event.type === "turn.completed",
+        ),
+        Stream.take(4),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const base = {
+        kind: "notification" as const,
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-10-06T00:00:00.000Z",
+        threadId,
+      };
+      yield* runtime.emit({
+        ...base,
+        id: asEventId("goal-progress"),
+        method: "thread/goal/updated",
+        payload: {
+          threadId: "provider-thread-1",
+          goal: {
+            threadId: "provider-thread-1",
+            objective: "Finish the tests",
+            status: "usageLimited",
+            tokensUsed: 250,
+            tokenBudget: null,
+            timeUsedSeconds: 60,
+            createdAt: 0,
+            updatedAt: 0,
+          },
+        },
+      });
+      yield* runtime.emit({
+        ...base,
+        id: asEventId("goal-cleared"),
+        method: "thread/goal/cleared",
+        payload: { threadId: "provider-thread-1" },
+      });
+      yield* runtime.emit({
+        ...base,
+        id: asEventId("goal-local-start"),
+        turnId: TurnId.make("goal-command:local"),
+        method: "ronin/goal/command-started",
+      });
+      yield* runtime.emit({
+        ...base,
+        id: asEventId("goal-local-done"),
+        turnId: TurnId.make("goal-command:local"),
+        method: "ronin/goal/command-completed",
+      });
+      const events = Array.from(yield* Fiber.join(received));
+      NodeAssert.deepEqual(
+        events.map((event) => event.payload),
+        [
+          {
+            goal: {
+              objective: "Finish the tests",
+              status: "usage_limited",
+              tokensUsed: 250,
+              tokenBudget: null,
+              timeUsedSeconds: 60,
+            },
+          },
+          { goal: null },
+          { native: false },
+          {
+            state: "completed",
+            native: false,
+            tokenUsage: {
+              usageStatus: "unavailable",
+              usageScope: "main_agent",
+              hasSubagents: false,
+            },
+          },
+        ],
+      );
       yield* adapter.stopSession(threadId);
     }),
   );

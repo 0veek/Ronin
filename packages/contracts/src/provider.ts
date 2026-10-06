@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { ProviderGoal } from "./providerGoal.ts";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import {
   ApprovalRequestId,
@@ -45,6 +46,7 @@ export const ProviderSession = Schema.Struct({
   model: Schema.optional(TrimmedNonEmptyString),
   threadId: ThreadId,
   resumeCursor: Schema.optional(Schema.Unknown),
+  goal: Schema.optional(Schema.NullOr(ProviderGoal)),
   activeTurnId: Schema.optional(TurnId),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
