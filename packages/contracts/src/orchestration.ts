@@ -427,6 +427,7 @@ export const ProjectScript = Schema.Struct({
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
+  runOnSettle: Schema.optional(Schema.Boolean),
   /**
    * For `runOnWorktreeCreate` scripts: when false, the agent's first turn waits
    * for the script to exit. Absent or true starts the agent right away and
@@ -1494,6 +1495,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
     context: Schema.optional(OrchestrationMessageContext),
   }),
   modelSelection: Schema.optional(ModelSelection),
+  dispatchMode: Schema.optional(Schema.Literal("queue")),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
@@ -1520,6 +1522,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     context: Schema.optional(OrchestrationMessageContext),
   }),
   modelSelection: Schema.optional(ModelSelection),
+  dispatchMode: Schema.optional(Schema.Literal("queue")),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
@@ -2099,6 +2102,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   modelSelection: Schema.optional(ModelSelection),
+  dispatchMode: Schema.optional(Schema.Literal("queue")),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(

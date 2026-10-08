@@ -26,6 +26,7 @@ import { ComposerPrimaryActions, formatPendingPrimaryActionLabel } from "./Compo
 function renderPendingActions(isRunning: boolean) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
+      canOperateThread: true,
       compact: true,
       pendingAction: {
         questionIndex: 0,
@@ -54,6 +55,7 @@ function renderPendingActions(isRunning: boolean) {
 function renderSendRow() {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
+      canOperateThread: true,
       compact: false,
       pendingAction: null,
       isRunning: false,
@@ -79,6 +81,7 @@ function renderSecondOpinionRow(overrides: {
 }) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
+      canOperateThread: true,
       compact: false,
       pendingAction: null,
       isRunning: overrides.isRunning ?? false,
@@ -101,6 +104,7 @@ function renderSecondOpinionRow(overrides: {
 function renderStandaloneStop() {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
+      canOperateThread: true,
       compact: true,
       pendingAction: null,
       isRunning: true,
@@ -122,6 +126,7 @@ function renderStandaloneStop() {
 function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent: boolean) {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
+      canOperateThread: true,
       compact: true,
       pendingAction: null,
       isRunning: true,
@@ -144,6 +149,7 @@ function renderRunningActions(showSendWhileRunning: boolean, hasSendableContent:
 function renderSendButton() {
   return renderToStaticMarkup(
     createElement(ComposerPrimaryActions, {
+      canOperateThread: true,
       compact: true,
       pendingAction: null,
       isRunning: false,

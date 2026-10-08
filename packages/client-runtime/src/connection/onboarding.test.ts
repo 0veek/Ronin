@@ -26,7 +26,6 @@ const CLIENT_PRESENTATION_LAYER = Layer.succeed(
       deviceType: "desktop",
       os: "Test OS",
     },
-    scopes: AuthStandardClientScopes,
   }),
 );
 
@@ -118,7 +117,7 @@ describe("connection onboarding", () => {
           : String(tokenRequest?.init.body);
       const tokenParams = new URLSearchParams(tokenBody);
       expect(tokenParams.get("subject_token")).toBe("pairing-token");
-      expect(tokenParams.get("scope")).toBe(AuthStandardClientScopes.join(" "));
+      expect(tokenParams.has("scope")).toBe(false);
       expect(tokenParams.get("client_label")).toBe("Ronin Test");
     }),
   );

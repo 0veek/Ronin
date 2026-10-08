@@ -136,6 +136,10 @@ function providerEnvironmentSecretName(input: {
   return `provider-env-${Buffer.from(input.instanceId, "utf8").toString("base64url")}-${Buffer.from(input.name, "utf8").toString("base64url")}`;
 }
 
+function gitHubTokenSecretName(host: string): string {
+  return `github-token-${Buffer.from(host.trim().toLowerCase(), "utf8").toString("base64url")}`;
+}
+
 const SECRET_REDACTED = "••••••";
 const BITBUCKET_SECRET_NAMES = {
   accessToken: "bitbucket-access-token",
@@ -185,6 +189,15 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
   return {
     ...settings,
     providerInstances,
+    github: {
+      ...settings.github,
+      tokens: Object.fromEntries(
+        Object.entries(settings.github.tokens).map(([host, token]) => [
+          host,
+          token ? SECRET_REDACTED : "",
+        ]),
+      ),
+    },
     bitbucket: {
       ...settings.bitbucket,
       accessToken: settings.bitbucket.accessToken ? SECRET_REDACTED : "",
@@ -533,8 +546,25 @@ const make = Effect.gen(function* () {
       bitbucket[field] = SECRET_REDACTED;
       moved = true;
     }
+    const tokens = { ...restored.github.tokens };
+    for (const [host, value] of Object.entries(tokens)) {
+      if (!value || value === SECRET_REDACTED) continue;
+      const saved = yield* secretStore
+        .set(gitHubTokenSecretName(host), textEncoder.encode(value))
+        .pipe(
+          Effect.as(true),
+          Effect.catch(() =>
+            Effect.logWarning("failed to move a GitHub token into the secret store", { host }).pipe(
+              Effect.as(false),
+            ),
+          ),
+        );
+      if (!saved) continue;
+      tokens[host] = SECRET_REDACTED;
+      moved = true;
+    }
     if (!moved) return restored;
-    const migrated = { ...restored, bitbucket };
+    const migrated = { ...restored, bitbucket, github: { ...restored.github, tokens } };
     yield* writeSettingsAtomically(migrated);
     return migrated;
   });
@@ -600,10 +630,27 @@ const make = Effect.gen(function* () {
           );
         bitbucket[field] = Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
       }
+      const tokens: Record<string, string> = {};
+      for (const [host, value] of Object.entries(settings.github.tokens)) {
+        const secret =
+          value === SECRET_REDACTED
+            ? yield* secretStore
+                .get(gitHubTokenSecretName(host))
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+                  ),
+                )
+            : null;
+        tokens[host] =
+          secret === null ? value : Option.isSome(secret) ? textDecoder.decode(secret.value) : "";
+      }
       return {
         ...settings,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         bitbucket,
+        github: { ...settings.github, tokens },
       };
     });
 
@@ -729,11 +776,50 @@ const make = Effect.gen(function* () {
       if (value.length > 0) bitbucket[field] = SECRET_REDACTED;
     }
 
+    const tokens: Record<string, string> = {};
+    for (const [rawHost, raw] of Object.entries(next.github.tokens)) {
+      const host = rawHost.trim().toLowerCase();
+      let value = raw;
+      if (value === SECRET_REDACTED) {
+        const inline = current.github.tokens[host];
+        if (!inline || inline === SECRET_REDACTED) {
+          tokens[host] = SECRET_REDACTED;
+          continue;
+        }
+        value = inline;
+      }
+      const secretName = gitHubTokenSecretName(host);
+      mutations.set(secretName, {
+        secretName,
+        instanceId: "github",
+        environmentVariable: host,
+        operation: value.length === 0 ? "remove-secret" : "write-secret",
+        value: value.length === 0 ? null : textEncoder.encode(value),
+      });
+      if (value.length > 0) tokens[host] = SECRET_REDACTED;
+    }
+    const nextHosts = new Set(
+      Object.keys(next.github.tokens).map((host) => host.trim().toLowerCase()),
+    );
+    for (const rawHost of Object.keys(current.github.tokens)) {
+      const host = rawHost.trim().toLowerCase();
+      if (nextHosts.has(host)) continue;
+      const secretName = gitHubTokenSecretName(host);
+      mutations.set(secretName, {
+        secretName,
+        instanceId: "github",
+        environmentVariable: host,
+        operation: "remove-stale-secret",
+        value: null,
+      });
+    }
+
     return {
       settings: {
         ...next,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         bitbucket,
+        github: { ...next.github, tokens },
       },
       mutations: [...mutations.values()],
     };

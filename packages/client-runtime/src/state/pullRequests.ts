@@ -19,7 +19,6 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import {
   createAtomCommandScheduler,
-  createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
@@ -268,7 +267,8 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           ]),
       },
     }),
-    runAction: createEnvironmentCommand(runtime, {
+    runAction: createEnvironmentRpcCommand(runtime, {
+      tag: WS_METHODS.pullRequestsRunAction,
       label: "environment-data:pull-requests:run-action",
       // Preparation belongs to the write's lane. Refreshable queries would restart it after
       // every preceding action, and preparing outside the lane could reorder the clicks.

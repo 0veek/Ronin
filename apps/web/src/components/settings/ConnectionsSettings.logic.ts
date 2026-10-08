@@ -42,3 +42,9 @@ export function selectQrEndpointOption<T extends QrEndpointOption>(
     null
   );
 }
+
+export function canRevokeOtherClients(
+  sessions: ReadonlyArray<{ readonly current: boolean }> | null,
+): boolean {
+  return sessions === null || sessions.some((session) => !session.current);
+}

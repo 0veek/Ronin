@@ -51,8 +51,8 @@ describe("terminal selection actions", () => {
   });
 
   it("handles an exit that lands while the terminal surface is still loading", () => {
-    expect(shouldHandleTerminalExit("exited", "running", false)).toBe(true);
-    expect(shouldHandleTerminalExit("exited", "exited", false)).toBe(false);
-    expect(shouldHandleTerminalExit("closed", "running", true)).toBe(false);
+    expect(shouldHandleTerminalExit("exited", "running", false, 1)).toBe(true);
+    expect(shouldHandleTerminalExit("exited", "exited", false, 1)).toBe(false);
+    expect(shouldHandleTerminalExit("closed", "running", true, 1)).toBe(false);
   });
 });

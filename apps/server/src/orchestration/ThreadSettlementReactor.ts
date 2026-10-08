@@ -1,4 +1,4 @@
-import { CommandId } from "@t3tools/contracts";
+import { CommandId, ThreadId } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -6,12 +6,15 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import * as GitManager from "../git/GitManager.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as TerminalManager from "../terminal/Manager.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -40,6 +43,9 @@ export const make = Effect.gen(function* () {
   const pullRequests = yield* PullRequestService.PullRequestService;
   const crypto = yield* Crypto.Crypto;
   const fileSystem = yield* FileSystem.FileSystem;
+  const terminals = yield* TerminalManager.TerminalManager;
+  const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+  const settleActionRunAt = new Map<ThreadId, string>();
 
   const sweep = Effect.fn("ThreadSettlementReactor.sweep")(function* (
     mergedPullRequest: PullRequestService.PullRequestMergeEvent | null,
@@ -275,9 +281,59 @@ export const make = Effect.gen(function* () {
     );
   const worker = yield* makeDrainableWorker(() => runSweep(null));
 
+  const cleanupWorker = yield* makeDrainableWorker((threadId: ThreadId) =>
+    Effect.gen(function* () {
+      const settledOption = yield* snapshots.getThreadShellById(threadId);
+      if (Option.isNone(settledOption)) return;
+      const settled = settledOption.value;
+      if (settled.settledOverride !== "settled") return;
+      yield* terminals.closeIdle({ threadId });
+      const worktreePath = settled.worktreePath;
+      if (worktreePath === null || !(yield* fileSystem.exists(worktreePath))) return;
+      const threadOption = yield* snapshots.getThreadShellById(threadId);
+      if (Option.isNone(threadOption)) return;
+      const thread = threadOption.value;
+      if (
+        thread.settledOverride !== "settled" ||
+        thread.worktreePath !== worktreePath ||
+        thread.settledAt === null ||
+        settleActionRunAt.get(threadId) === thread.settledAt
+      )
+        return;
+      const run = yield* projectScripts.runForThread({
+        threadId,
+        projectId: thread.projectId,
+        worktreePath,
+        trigger: "settle",
+        observeCompletion: {},
+      });
+      settleActionRunAt.set(threadId, thread.settledAt);
+      if (run.status === "started" && run.completion) yield* Effect.forkDetach(run.completion);
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning("cleaning up a settled thread failed", {
+              threadId,
+              cause: Cause.pretty(cause),
+            }),
+      ),
+    ),
+  );
+
   const start: ThreadSettlementReactor["Service"]["start"] = Effect.fn(
     "ThreadSettlementReactor.start",
   )(function* () {
+    const events = yield* engine.subscribeDomainEvents;
+    yield* forkParked(
+      Stream.runForEach(events, (event) =>
+        event.type === "thread.settled"
+          ? cleanupWorker.enqueue(event.payload.threadId)
+          : event.type === "thread.pull-request-synced"
+            ? worker.enqueue(undefined)
+            : Effect.void,
+      ),
+    );
     const settingsChanges = yield* settingsService.subscribeChanges;
     const mergedPullRequests = yield* pullRequests.subscribeMerges;
     const initialSettings = yield* settingsService.getSettings.pipe(Effect.orDie);
@@ -305,7 +361,10 @@ export const make = Effect.gen(function* () {
     yield* forkParked(Stream.runForEach(mergedPullRequests, runSweep));
   });
 
-  return { start, drain: worker.drain } satisfies ThreadSettlementReactor["Service"];
+  return {
+    start,
+    drain: Effect.all([worker.drain, cleanupWorker.drain], { discard: true }),
+  } satisfies ThreadSettlementReactor["Service"];
 });
 
 export const layer = Layer.effect(ThreadSettlementReactor, make);

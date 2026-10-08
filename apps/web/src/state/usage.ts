@@ -8,6 +8,7 @@
  */
 import { useAtomValue } from "@effect/atom-react";
 import {
+  AuthDiagnosticsReadScope,
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type ServerProvider,
@@ -16,6 +17,7 @@ import {
   type UsageSummaryInput,
 } from "@t3tools/contracts";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useCallback, useMemo } from "react";
@@ -24,11 +26,13 @@ import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/sh
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
+import { environmentSession, readEnvironmentScope } from "./session";
 
 export interface EnvironmentUsageStatus {
   readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly isPending: boolean;
+  readonly canReadDiagnostics: boolean;
   readonly error: string | null;
   readonly summary: UsageSummary | null;
   readonly needsCursorKeychainAccess: boolean;
@@ -74,12 +78,29 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
 
     const statuses: EnvironmentUsageStatus[] = [];
     for (const [environmentId, presentation] of presentations) {
+      const sessionResult = get(environmentSession.sessionStateAtom(environmentId));
+      const access = resolveUsageAccess({
+        connectionPhase: presentation.connection.phase,
+        session: Option.getOrNull(AsyncResult.value(sessionResult)),
+        hasSessionError: sessionResult._tag === "Failure",
+      });
+      if (!access.canReadDiagnostics) {
+        statuses.push({
+          environmentId,
+          label: presentation.entry.target.label,
+          ...access,
+          summary: null,
+          needsCursorKeychainAccess: false,
+        });
+        continue;
+      }
       const result = get(serverEnvironment.usageSummary({ environmentId, input }));
       const summary = Option.getOrNull(AsyncResult.value(result));
       statuses.push({
         environmentId,
         label: presentation.entry.target.label,
         isPending: result.waiting,
+        canReadDiagnostics: true,
         error: result._tag === "Failure" ? "This environment could not report usage." : null,
         summary,
         needsCursorKeychainAccess: needsCursorKeychainAccess(
@@ -140,6 +161,11 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     const input = JSON.parse(windowKey) as UsageSummaryInput;
     for (const environment of environments) {
       const { environmentId } = environment;
+      if (
+        !environment.canReadDiagnostics ||
+        !readEnvironmentScope(environmentId, AuthDiagnosticsReadScope)
+      )
+        continue;
       const query = serverEnvironment.usageSummary({ environmentId, input });
       void runAtomCommand(
         appAtomRegistry,

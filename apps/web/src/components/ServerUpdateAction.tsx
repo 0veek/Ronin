@@ -1,3 +1,10 @@
+import {
+  AuthOrchestrationOperateScope,
+  sessionGrantsScope,
+  type AuthSessionState,
+} from "@t3tools/contracts";
+import type { AsyncResult } from "effect/unstable/reactivity";
+import { environmentSession } from "~/state/session";
 import type {
   EnvironmentId,
   ServerInstallation,
@@ -14,6 +21,7 @@ import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { manualServerUpdateCommand } from "~/versionSkew";
 import { Button } from "./ui/button";
@@ -57,7 +65,11 @@ function useServerUpdate() {
   const updateServer = useAtomCommand(serverEnvironment.updateServer, { reportFailure: false });
   return async (target: ServerUpdateTarget, failureTitle = "Server update failed") => {
     const { environmentId, serverLabel, selfUpdate, targetVersion } = target;
-    if (pendingUpdateEnvironmentIds.has(environmentId)) return;
+    if (
+      !canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))) ||
+      pendingUpdateEnvironmentIds.has(environmentId)
+    )
+      return;
     pendingUpdateEnvironmentIds.add(environmentId);
     try {
       const result = await updateServer({
@@ -142,6 +154,17 @@ export function ServerUpdatesAction({
     >
       {label}
     </Button>
+  );
+}
+
+function canUpdateServer(result: AsyncResult.AsyncResult<AuthSessionState, unknown>): boolean {
+  if (result._tag !== "Success" || !result.value.authenticated) return false;
+  const session = result.value;
+  // Only self-update bridges the old authorization protocol. Upgraded servers
+  // advertise the new scope even when this client's grant predates it.
+  return sessionGrantsScope(
+    session,
+    session.auth.serverUpdateScope ?? AuthOrchestrationOperateScope,
   );
 }
 
@@ -231,6 +254,8 @@ export function ServerUpdateAction({
         )) ?? true;
       if (!confirmed) return;
     }
+    if (!canUpdateServer(appAtomRegistry.get(environmentSession.sessionStateAtom(environmentId))))
+      return;
     await update({
       environmentId,
       serverLabel,

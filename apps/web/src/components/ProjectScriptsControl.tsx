@@ -1,8 +1,12 @@
-import type {
-  ProjectScript,
-  ResolvedKeybindingsConfig,
-  T3ProjectFileScript,
+import { projectScriptMenuLabel } from "@t3tools/shared/projectScripts";
+import {
+  AuthSettingsWriteScope,
+  type EnvironmentId,
+  type ProjectScript,
+  type T3ProjectFileScript,
 } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -12,6 +16,8 @@ import { useCallback, useMemo, useState } from "react";
 
 import { commandForProjectScript, primaryProjectScript } from "~/projectScripts";
 import { shortcutLabelForCommand } from "~/keybindings";
+import { serverEnvironment } from "~/state/server";
+import { readEnvironmentScope } from "~/state/session";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -45,12 +51,12 @@ const NO_FILE_SCRIPTS: ReadonlyArray<T3ProjectFileScript> = [];
 interface ProjectScriptsControlProps {
   presentation?: "toolbar" | "menu";
   onRequestMenuClose?: () => void;
+  environmentId: EnvironmentId;
   scripts: ReadonlyArray<ProjectScript>;
   /** Scripts declared in the project's checked-in t3.json, offered for import. */
   fileScripts?: ReadonlyArray<T3ProjectFileScript>;
-  keybindings: ResolvedKeybindingsConfig;
   preferredScriptId?: string | null;
-  onRunScript: (script: ProjectScript) => void;
+  onRunScript?: ((script: ProjectScript) => void) | undefined;
   onAddScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateScript: (
     scriptId: string,
@@ -62,15 +68,18 @@ interface ProjectScriptsControlProps {
 export default function ProjectScriptsControl({
   presentation = "toolbar",
   onRequestMenuClose,
+  environmentId,
   scripts,
   fileScripts = NO_FILE_SCRIPTS,
-  keybindings,
   preferredScriptId = null,
   onRunScript,
   onAddScript,
   onUpdateScript,
   onDeleteScript,
 }: ProjectScriptsControlProps) {
+  const keybindings =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
+    DEFAULT_RESOLVED_KEYBINDINGS;
   const [actionsMenuOpen, setActionsMenuOpen] = useState({
     presentation,
     scripts: false,
@@ -125,8 +134,9 @@ export default function ProjectScriptsControl({
       command: fileScript.command,
       icon: fileScript.icon ?? "play",
       runOnWorktreeCreate: fileScript.runOnWorktreeCreate ?? false,
+      runOnSettle: fileScript.runOnSettle === true,
       waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
-      keybinding: null,
+      ...(readEnvironmentScope(environmentId, AuthSettingsWriteScope) ? { keybinding: null } : {}),
       previewUrl: fileScript.previewUrl ?? null,
       autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
     };
@@ -176,12 +186,11 @@ export default function ProjectScriptsControl({
           <MenuItem
             key={script.id}
             className={`group ${dropdownItemClassName}`}
-            onClick={() => onRunScript(script)}
+            disabled={!onRunScript}
+            onClick={() => onRunScript?.(script)}
           >
             <ScriptIcon icon={script.icon} className="size-4" />
-            <span className="truncate">
-              {script.runOnWorktreeCreate ? `${script.name} (setup)` : script.name}
-            </span>
+            <span className="truncate">{projectScriptMenuLabel(script)}</span>
             <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
               {shortcutLabel && (
                 <MenuShortcut
@@ -229,7 +238,7 @@ export default function ProjectScriptsControl({
       {presentation === "menu" ? (
         <>
           {primaryScript && (
-            <MenuItem onClick={() => onRunScript(primaryScript)}>
+            <MenuItem disabled={!onRunScript} onClick={() => onRunScript?.(primaryScript)}>
               <ScriptIcon icon={primaryScript.icon} className="size-4" />
               <span className="truncate">Run {primaryScript.name}</span>
               <MenuShortcut>
@@ -272,7 +281,8 @@ export default function ProjectScriptsControl({
                   // The tooltip wrapper replaces data-slot="button", so themed
                   // toolbar styling needs its own hook.
                   data-toolbar-control=""
-                  onClick={() => onRunScript(primaryScript)}
+                  aria-disabled={!onRunScript || undefined}
+                  onClick={() => onRunScript?.(primaryScript)}
                 />
               }
             >
@@ -281,7 +291,11 @@ export default function ProjectScriptsControl({
                 {primaryScript.name}
               </span>
             </TooltipTrigger>
-            <TooltipPopup side="top">Run {primaryScript.name}</TooltipPopup>
+            <TooltipPopup side="top">
+              {onRunScript
+                ? `Run ${primaryScript.name}`
+                : "Pair this client again with permission to run terminal commands."}
+            </TooltipPopup>
           </Tooltip>
           <GroupSeparator className="hidden @3xl/header-actions:block" />
           <Menu
@@ -348,6 +362,7 @@ export default function ProjectScriptsControl({
       )}
 
       <ProjectScriptEditorDialog
+        environmentId={environmentId}
         request={editorRequest}
         scripts={scripts}
         onSubmit={submitScript}

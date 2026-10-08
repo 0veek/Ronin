@@ -2053,6 +2053,8 @@ function PullRequestsRouteView() {
 
         {rightPanelPresent && renderedPullRequestSurface && panelEnvironmentId !== null ? (
           <RightPanelTabs
+            keybindings={keybindings}
+            getShortcutContext={getShortcutContext}
             mode="inline"
             open={rightPanelState.isOpen}
             widthStorageKey="t3code:pull-request-panel-width"

@@ -1,4 +1,10 @@
 import { Spinner } from "~/components/ui/spinner";
+import {
+  AuthSettingsWriteScope,
+  AuthProvidersManageScope,
+  AuthOrchestrationReadScope,
+} from "@t3tools/contracts";
+import { useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { useAtomValue } from "@effect/atom-react";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
@@ -29,8 +35,6 @@ import { ChevronDownIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
-import { isElectron } from "../../env";
-import { usePrimarySessionState } from "../../environments/primary";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
@@ -95,7 +99,6 @@ import {
   classifyProviderEnvironmentAccess,
   type ProviderEnvironmentAccess,
   type ProviderOperateAccess,
-  resolvePrimaryOperateAccess,
   resolveRemoteOperateAccess,
   resolveSelectedProviderEnvironmentId,
 } from "./ProviderSettingsPanel.logic";
@@ -289,48 +292,7 @@ function SelectedEnvironmentProviderSettings({
   readonly environment: EnvironmentPresentation;
   readonly deviceTabs?: ReactNode;
 }) {
-  const isPrimary = environment.entry.target._tag === "PrimaryConnectionTarget";
-  if (isPrimary) {
-    // The desktop app owns its primary server outright; a browser session
-    // checks the scopes its cookie session was granted.
-    if (isElectron) {
-      return (
-        <AccessGatedProviderSettings
-          environment={environment}
-          operateAccess="granted"
-          deviceTabs={deviceTabs}
-        />
-      );
-    }
-    return (
-      <PrimarySessionGatedProviderSettings environment={environment} deviceTabs={deviceTabs} />
-    );
-  }
   return <RemoteSessionGatedProviderSettings environment={environment} deviceTabs={deviceTabs} />;
-}
-
-function PrimarySessionGatedProviderSettings({
-  environment,
-  deviceTabs,
-}: {
-  readonly environment: EnvironmentPresentation;
-  readonly deviceTabs?: ReactNode;
-}) {
-  const primarySessionState = usePrimarySessionState();
-  const operateAccess = resolvePrimaryOperateAccess({
-    isPrimary: true,
-    hasDesktopBridge: false,
-    session: primarySessionState.data,
-    isPending: primarySessionState.isPending,
-    hasError: primarySessionState.error !== null,
-  });
-  return (
-    <AccessGatedProviderSettings
-      environment={environment}
-      operateAccess={operateAccess}
-      deviceTabs={deviceTabs}
-    />
-  );
 }
 
 function RemoteSessionGatedProviderSettings({
@@ -409,6 +371,7 @@ export function EnvironmentProviderSettings({
    */
   readonly readOnly?: boolean;
 }) {
+  const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const serverProviders =
@@ -469,7 +432,8 @@ export function EnvironmentProviderSettings({
       : null;
 
   const refreshProviders = useCallback(() => {
-    if (refreshingRef.current) return;
+    if (refreshingRef.current || !readEnvironmentScope(environmentId, AuthOrchestrationReadScope))
+      return;
     refreshingRef.current = true;
     setIsRefreshingProviders(true);
     void (async () => {
@@ -494,6 +458,7 @@ export function EnvironmentProviderSettings({
       candidate: Pick<ProviderUpdateCandidate, "driver" | "instanceId">,
       targetVersion?: string,
     ) => {
+      if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
       // Ref-based re-entry guard, mirroring refreshProviders: a state updater
       // may run after this function returns, so it cannot gate the dispatch.
       if (updatingDriversRef.current.has(candidate.driver)) {
@@ -759,10 +724,14 @@ export function EnvironmentProviderSettings({
         selected={mode === "list" && selectedRow?.instanceId === row.instanceId}
         onSelect={mode === "list" ? () => setSelectedInstanceId(row.instanceId) : undefined}
         readOnly={readOnly}
+        canWriteSettings={canWriteSettings}
         onUpdate={(next) => {
           const wasEnabled = resolveProviderInstanceEnabled(row.instance);
           const isDisabling = next.enabled === false && wasEnabled;
-          const shouldClearTextGen = isDisabling && textGenInstanceId === row.instanceId;
+          const shouldClearTextGen =
+            isDisabling &&
+            textGenInstanceId === row.instanceId &&
+            readEnvironmentScope(environmentId, AuthSettingsWriteScope);
           updateProviderInstance(
             row,
             next,
@@ -1013,7 +982,7 @@ export function EnvironmentProviderSettings({
         </div>
       </SettingsSection>
 
-      {isAddInstanceDialogOpen ? (
+      {isAddInstanceDialogOpen && !readOnly ? (
         <AddProviderInstanceDialog
           open
           environmentId={environmentId}

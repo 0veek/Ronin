@@ -42,3 +42,11 @@ untracked files, or local commits.
 
 The pull is skipped if the checkout is on another branch, has no upstream, or contains local work.
 Pull failures do not prevent the server from starting.
+
+## Actions when a thread settles
+
+In the action editor, select **Run when thread settles** for the action to run automatically.
+Ronin closes idle terminals first, then runs the selected action in the thread's existing worktree
+in a fresh terminal. It runs once per settlement; reopening and settling the thread again runs it
+again. Missing worktrees are skipped, and a failed action keeps its terminal open for inspection.
+Only one action can be selected for this trigger. Clear the switch to stop automatic runs.

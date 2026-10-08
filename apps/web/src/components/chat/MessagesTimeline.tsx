@@ -369,6 +369,8 @@ interface MessagesTimelineProps {
   onOpenAgents?: () => void;
   isWorking: boolean;
   isCompacting?: boolean;
+  /** Thread state shown after the last message, such as a settled or snoozed line. */
+  footer?: ReactNode;
   workingStepLabel?: string | null;
   activeTurnInProgress: boolean;
   activeTurnStartedAt: string | null;
@@ -437,6 +439,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onCiteAssistantText,
   isWorking,
   worktreeSetup = null,
+  footer = null,
   onCancelWorktreeSetup,
   onWorktreeSetupWorkLocally,
   onOpenWorktreeSetupTerminal,
@@ -951,7 +954,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [],
   );
 
-  if (rows.length === 0 && !isWorking) {
+  const timelineListFooter = useMemo(
+    () => (
+      <>
+        {footer}
+        {TIMELINE_LIST_FOOTER}
+      </>
+    ),
+    [footer],
+  );
+
+  if (rows.length === 0 && !isWorking && footer === null) {
     if (hideEmptyPlaceholder) {
       // Occupy the pane with the theme surface so a thread switch cannot
       // punch a hole through to the window chrome (white in light mode).
@@ -1025,7 +1038,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
                 TIMELINE_LIST_HEADER
               )
             }
-            ListFooterComponent={TIMELINE_LIST_FOOTER}
+            ListFooterComponent={timelineListFooter}
           />
           <TimelineMinimap
             items={minimapItems}

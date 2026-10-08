@@ -117,7 +117,7 @@ const recordMetrics = (
   exit: Exit.Exit<unknown, unknown>,
 ) =>
   Effect.gen(function* () {
-    const duration = Duration.nanos((yield* Clock.currentTimeNanos) - startedAt);
+    const duration = Duration.nanos((yield* Clock.monotonicTimeNanos) - startedAt);
     const baseAttributes =
       typeof options.attributes === "function" ? options.attributes() : (options.attributes ?? {});
 
@@ -150,7 +150,7 @@ const withMetricsImpl = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
   options: WithMetricsOptions,
 ): Effect.Effect<A, E, R> =>
-  Effect.flatMap(Clock.currentTimeNanos, (startedAt) =>
+  Effect.flatMap(Clock.monotonicTimeNanos, (startedAt) =>
     Effect.onExit(effect, (exit) => recordMetrics(options, startedAt, exit)),
   );
 

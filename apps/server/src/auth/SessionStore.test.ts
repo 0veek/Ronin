@@ -1,3 +1,4 @@
+import { AuthStandardClientScopes } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentId } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -8,6 +9,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as TestClock from "effect/testing/TestClock";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -322,13 +324,49 @@ it.layer(NodeServices.layer)("SessionStore.layer", (it) => {
 
       expect(verified.method).toBe("bearer-access-token");
       expect(verified.subject).toBe("test-clock");
-      expect(verified.scopes).toEqual([
-        "orchestration:read",
-        "orchestration:operate",
-        "terminal:operate",
-        "review:write",
-      ]);
+      expect(verified.scopes).toEqual(AuthStandardClientScopes);
     }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), TestClock.layer()))),
+  );
+
+  it.effect.each(["insert", "revoke"] as const)(
+    "keeps existing browser sessions valid when replacement cannot %s",
+    (operation) =>
+      Effect.gen(function* () {
+        const sessions = yield* SessionStore.SessionStore;
+        const sql = yield* SqlClient.SqlClient;
+        const previous = yield* sessions.issue({ subject: "one-time-token" });
+        const unrelated = yield* sessions.issue({ subject: "one-time-token" });
+        if (operation === "insert") {
+          yield* sql`
+            CREATE TRIGGER reject_auth_session_insert BEFORE INSERT ON auth_sessions
+            BEGIN
+              SELECT RAISE(ABORT, 'simulated insert failure');
+            END
+          `;
+        } else {
+          yield* sql`
+            CREATE TRIGGER reject_auth_session_revocation BEFORE UPDATE OF revoked_at ON auth_sessions
+            BEGIN
+              SELECT RAISE(ABORT, 'simulated revocation failure');
+            END
+          `;
+        }
+
+        const error = yield* sessions
+          .issue({
+            subject: "replacement-pairing",
+            scopes: ["orchestration:read"],
+            replaceSessionId: previous.sessionId,
+          })
+          .pipe(Effect.flip);
+
+        expect(error._tag).toBe("SessionCredentialIssueError");
+        expect((yield* sessions.verify(previous.token)).sessionId).toBe(previous.sessionId);
+        expect((yield* sessions.verify(unrelated.token)).sessionId).toBe(unrelated.sessionId);
+        expect((yield* sessions.listActive()).map((session) => session.sessionId).sort()).toEqual(
+          [previous.sessionId, unrelated.sessionId].sort(),
+        );
+      }).pipe(Effect.provide(Layer.merge(makeSessionStoreLayer(), SqlitePersistenceMemory))),
   );
 
   it.effect("rejects websocket tokens once the parent session has expired", () =>

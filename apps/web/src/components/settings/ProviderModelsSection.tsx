@@ -78,6 +78,8 @@ interface ProviderModelsSectionProps {
    * removed) via `onChange`.
    */
   readonly customModels: ReadonlyArray<CustomModelDefinition>;
+  readonly canManageCustomModels: boolean;
+  readonly canWritePreferences?: boolean;
   /** Server-returned model slugs hidden from the model picker. */
   readonly hiddenModels: ReadonlyArray<string>;
   /** Model slugs favorited for this provider instance. */
@@ -111,6 +113,8 @@ export function ProviderModelsSection({
   driverKind,
   models,
   customModels,
+  canManageCustomModels,
+  canWritePreferences = true,
   hiddenModels,
   favoriteModels,
   modelOrder,
@@ -138,6 +142,7 @@ export function ProviderModelsSection({
   }, [favoriteModelSet, modelOrder, models]);
 
   const handleAdd = () => {
+    if (!canManageCustomModels) return;
     const normalized = normalizeCustomModelSlug(input);
     if (!normalized) {
       setError("Enter a model slug.");
@@ -177,19 +182,23 @@ export function ProviderModelsSection({
   };
 
   const handleRemove = (slug: string) => {
+    if (!canManageCustomModels) return;
     if (editingSlug === slug) setEditingSlug(null);
     onChange(customModels.filter((entry) => entry.slug !== slug));
-    onModelOrderChange(modelOrder.filter((model) => model !== slug));
-    onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
+    if (canWritePreferences) onModelOrderChange(modelOrder.filter((model) => model !== slug));
+    if (canWritePreferences)
+      onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
     setError(null);
   };
 
   const handleSaveEdit = (next: CustomModelDefinition) => {
+    if (!canManageCustomModels) return;
     onChange(customModels.map((entry) => (entry.slug === next.slug ? next : entry)));
     setEditingSlug(null);
   };
 
   const handleToggleHidden = (slug: string) => {
+    if (!canWritePreferences) return;
     if (hiddenModelSet.has(slug)) {
       onHiddenModelsChange(hiddenModels.filter((model) => model !== slug));
       return;
@@ -198,14 +207,17 @@ export function ProviderModelsSection({
   };
 
   const handleToggleFavorite = (slug: string) => {
+    if (!canWritePreferences) return;
     if (favoriteModelSet.has(slug)) {
-      onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
+      if (canWritePreferences)
+        onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
       return;
     }
     onFavoriteModelsChange([...favoriteModels, slug]);
   };
 
   const handleMove = (slug: string, direction: -1 | 1) => {
+    if (!canWritePreferences) return;
     const slugs = orderedModels.map((model) => model.slug);
     const index = slugs.indexOf(slug);
     const nextIndex = index + direction;
@@ -276,7 +288,7 @@ export function ProviderModelsSection({
           const hasDetails = capLabels.length > 0 || model.name !== model.slug;
 
           const editingEntry =
-            model.isCustom && editingSlug === model.slug
+            canManageCustomModels && model.isCustom && editingSlug === model.slug
               ? customModels.find((entry) => entry.slug === model.slug)
               : undefined;
 
@@ -491,7 +503,12 @@ export function ProviderModelsSection({
           placeholder={driverKind ? CUSTOM_MODEL_PLACEHOLDER_BY_KIND[driverKind] : "model-slug"}
           spellCheck={false}
         />
-        <Button className="shrink-0" variant="outline" onClick={handleAdd}>
+        <Button
+          disabled={!canManageCustomModels}
+          className="shrink-0"
+          variant="outline"
+          onClick={handleAdd}
+        >
           <PlusIcon className="size-3.5" />
           Add
         </Button>

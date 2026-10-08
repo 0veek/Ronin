@@ -173,6 +173,15 @@ const CodexChildResumeMetadata = Schema.Struct({
   reasoningEffort: Schema.optionalKey(Schema.NullOr(Schema.String)),
 });
 const decodeCodexChildResumeMetadata = Schema.decodeUnknownEffect(CodexChildResumeMetadata);
+const decodeCodexChildReadMetadata = Schema.decodeUnknownEffect(
+  Schema.Struct({
+    thread: Schema.Struct({
+      id: Schema.String,
+      model: Schema.optionalKey(Schema.NullOr(Schema.String)),
+      reasoningEffort: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    }),
+  }),
+);
 
 export type CodexTurnStartParamsWithCollaborationMode =
   typeof CodexTurnStartParamsWithCollaborationMode.Type;
@@ -1526,12 +1535,31 @@ export const makeCodexSessionRuntime = (
         return;
       }
 
-      // The child is already loaded. This rejoins it without starting a turn,
-      // and excludeTurns avoids loading or replaying its history.
+      // Current Codex reports the child model on thread/read. Older versions
+      // return it on resume; neither lookup requests the child's history.
       yield* client.raw
-        .request("thread/resume", { threadId: agentThreadId, excludeTurns: true })
+        .request("thread/read", { threadId: agentThreadId, includeTurns: false })
         .pipe(
-          Effect.flatMap(decodeCodexChildResumeMetadata),
+          Effect.flatMap(decodeCodexChildReadMetadata),
+          Effect.map((response) =>
+            response.thread.id === agentThreadId && response.thread.model?.trim()
+              ? {
+                  thread: response.thread,
+                  model: response.thread.model,
+                  ...(response.thread.reasoningEffort !== undefined
+                    ? { reasoningEffort: response.thread.reasoningEffort }
+                    : {}),
+                }
+              : null,
+          ),
+          Effect.catch(() => Effect.succeed(null)),
+          Effect.flatMap((response) =>
+            response === null
+              ? client.raw
+                  .request("thread/resume", { threadId: agentThreadId, excludeTurns: true })
+                  .pipe(Effect.flatMap(decodeCodexChildResumeMetadata))
+              : Effect.succeed(response),
+          ),
           Effect.timeout("5 seconds"),
           Effect.flatMap((response) =>
             Effect.gen(function* () {

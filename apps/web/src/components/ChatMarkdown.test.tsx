@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { EnvironmentId } from "@t3tools/contracts";
 import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -20,6 +21,7 @@ vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../state/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../state/session")>()),
   usePreparedConnection: () => ({ _tag: "Loading" }),
+  useEnvironmentScope: () => false,
 }));
 vi.mock("../state/entities", () => ({
   readThreadShell: () => null,
@@ -46,6 +48,82 @@ import ChatMarkdown, {
   orderedListGutterStyle,
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
+
+describe("ChatMarkdown bare anchor placeholders", () => {
+  it.each(["<A>", "<a>", "<a >", "<a/>", "<A/>", "<a />"])(
+    "preserves unmatched %s without linking later blocks",
+    (token) => {
+      const text = `- **"From ${token}"** appears in the header.\n\n- **Tests:** cover inheritance.\n\nThe deferred move continues on B.\n\nSee <a href="https://example.com">the link</a>.`;
+      const document = new DOMParser().parseFromString(
+        renderToStaticMarkup(<ChatMarkdown cwd="/tmp/project" text={text} />),
+        "text/html",
+      );
+
+      expect(document.querySelector("strong")?.textContent).toBe(`"From ${token}"`);
+      expect([...document.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
+        "the link",
+      ]);
+      expect(document.querySelectorAll("li")).toHaveLength(2);
+      expect(
+        [...document.querySelectorAll("p")].map((paragraph) => paragraph.textContent),
+      ).toContain("The deferred move continues on B.");
+    },
+  );
+
+  it.each(["</a>  ", "<div>more</div>\n</a>"])(
+    "preserves a paired anchor closing in the raw block %s",
+    (closing) => {
+      const document = new DOMParser().parseFromString(
+        renderToStaticMarkup(
+          <ChatMarkdown cwd="/tmp/project" text={`See <a>label\n\n${closing}\n\nfinish`} />,
+        ),
+        "text/html",
+      );
+      expect(document.querySelector("p")?.textContent).toBe("See label");
+    },
+  );
+
+  it("preserves a paired anchor after comment-looking raw text", () => {
+    const document = new DOMParser().parseFromString(
+      renderToStaticMarkup(
+        <ChatMarkdown cwd="/tmp/project" text="See <a>label<script><!-- </script> --></a>" />,
+      ),
+      "text/html",
+    );
+    expect(document.querySelector("p")?.textContent).toBe("See label -->");
+  });
+
+  it.each(["<!-- </a> -->", '<div title="</a>">more</div>', '<script>"</a>"</script>'])(
+    "ignores apparent closing anchors inside %s",
+    (html) => {
+      const document = new DOMParser().parseFromString(
+        renderToStaticMarkup(
+          <ChatMarkdown cwd="/tmp/project" text={`Before <A>.\n\n${html}\n\nAfter.`} />,
+        ),
+        "text/html",
+      );
+      expect(document.querySelector("p")?.textContent).toBe("Before <A>.");
+      expect(document.querySelectorAll("a")).toHaveLength(0);
+    },
+  );
+
+  it("preserves paired HTML anchors, details, markdown links, and inline code", () => {
+    const text =
+      'Bare <a>label</a>, <a id="section"></a>, `<A>`, and [docs](https://example.com).\n\n<details><summary>More</summary>Details</details>';
+    const document = new DOMParser().parseFromString(
+      renderToStaticMarkup(<ChatMarkdown cwd="/tmp/project" text={text} />),
+      "text/html",
+    );
+
+    expect([...document.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
+      "label",
+      "",
+      "docs",
+    ]);
+    expect(document.querySelector("code")?.textContent).toBe("<A>");
+    expect(document.querySelector("[data-markdown-details]")?.textContent).toContain("More");
+  });
+});
 
 describe("ChatMarkdown context references", () => {
   it("renders text and image references through the chip renderer, with readable fallback", async () => {
@@ -463,38 +541,38 @@ describe("orderedListGutterStyle", () => {
   });
 
   it("widens the gutter for two-digit lists", () => {
-    expect(orderedListGutterStyle(99, undefined)).toEqual({ "--list-gutter": "3ch" });
+    expect(orderedListGutterStyle(99, undefined)).toEqual({ "--list-gutter": "4ch" });
   });
 
   it("widens the gutter for a two-digit list that starts above 1", () => {
     // start=50 + 49 items => last marker is "98", still two digits.
-    expect(orderedListGutterStyle(49, 50)).toEqual({ "--list-gutter": "3ch" });
+    expect(orderedListGutterStyle(49, 50)).toEqual({ "--list-gutter": "4ch" });
   });
 
   it("widens the gutter once the last marker reaches three digits", () => {
     // item 100 is the bug from #6512: a 100-item list starting at 1.
-    expect(orderedListGutterStyle(100, undefined)).toEqual({ "--list-gutter": "4ch" });
+    expect(orderedListGutterStyle(100, undefined)).toEqual({ "--list-gutter": "5ch" });
   });
 
   it("accounts for a non-default start attribute", () => {
     // start=95 + 9 items => last marker is "103", three digits.
-    expect(orderedListGutterStyle(9, 95)).toEqual({ "--list-gutter": "4ch" });
-    expect(orderedListGutterStyle(5, "999995")).toEqual({ "--list-gutter": "7ch" });
+    expect(orderedListGutterStyle(9, 95)).toEqual({ "--list-gutter": "5ch" });
+    expect(orderedListGutterStyle(5, "999995")).toEqual({ "--list-gutter": "8ch" });
   });
 
   it("scales further for four-digit markers", () => {
-    expect(orderedListGutterStyle(1000, undefined)).toEqual({ "--list-gutter": "5ch" });
+    expect(orderedListGutterStyle(1000, undefined)).toEqual({ "--list-gutter": "6ch" });
   });
 
   it("uses the widest marker and includes a negative start's minus sign", () => {
-    expect(orderedListGutterStyle(1001, -1000)).toEqual({ "--list-gutter": "6ch" });
-    expect(orderedListGutterStyle(3, -15)).toEqual({ "--list-gutter": "4ch" });
-    expect(orderedListGutterStyle(3, -5)).toEqual({ "--list-gutter": "3ch" });
+    expect(orderedListGutterStyle(1001, -1000)).toEqual({ "--list-gutter": "7ch" });
+    expect(orderedListGutterStyle(3, -15)).toEqual({ "--list-gutter": "5ch" });
+    expect(orderedListGutterStyle(3, -5)).toEqual({ "--list-gutter": "4ch" });
   });
 
   it("treats a missing/zero item count as a single item", () => {
     expect(orderedListGutterStyle(0, undefined)).toBeUndefined();
-    expect(orderedListGutterStyle(0, 100)).toEqual({ "--list-gutter": "4ch" });
+    expect(orderedListGutterStyle(0, 100)).toEqual({ "--list-gutter": "5ch" });
   });
 });
 
@@ -512,7 +590,7 @@ describe("ChatMarkdown Windows file links", () => {
       />,
     );
 
-    expect(html).toContain('href="C:/Users/shawn/project/src/main.ts"');
+    expect(html).toContain("](C:/Users/shawn/project/src/main.ts)");
     expect(html).toContain("chat-markdown-file-link");
   });
 
@@ -527,7 +605,7 @@ describe("ChatMarkdown Windows file links", () => {
       />,
     );
 
-    expect(html).toContain('href="C:/Users/shawn/project/src/main.ts"');
+    expect(html).toContain(String.raw`](C:\Users\shawn\project\src\main.ts)`);
     expect(html).toContain("chat-markdown-file-link");
   });
 
@@ -579,7 +657,7 @@ describe("ChatMarkdown Windows file links", () => {
       />,
     );
 
-    expect(html).toContain('href="C:/Users/shawn/project/src/main.ts"');
+    expect(html).toContain("](C:/Users/shawn/project/src/main.ts)");
     expect(html).toContain("chat-markdown-file-link");
   });
 

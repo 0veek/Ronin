@@ -1,6 +1,7 @@
 import { memo, type PointerEventHandler } from "react";
 import { ChevronDownIcon, ChevronLeftIcon, SplitIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
+import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn } from "~/lib/utils";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
@@ -19,6 +20,7 @@ interface PendingActionState {
 
 interface ComposerPrimaryActionsProps {
   compact: boolean;
+  canOperateThread: boolean;
   pendingAction: PendingActionState | null;
   isRunning: boolean;
   showPlanFollowUpPrompt: boolean;
@@ -35,6 +37,9 @@ interface ComposerPrimaryActionsProps {
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  /** Tokens a stale session would re-read. When set, Enter compacts first and the button says so. */
+  compactBeforeSendTokens?: number | null;
+  onSendWithFullHistory?: () => void;
   /**
    * Send this prompt to several models instead of one. Absent on surfaces
    * where there is no prompt to race — the pending-answer rows — which is
@@ -67,6 +72,7 @@ const preventPointerFocus: PointerEventHandler<HTMLElement> = (event) => {
 
 export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   compact,
+  canOperateThread,
   pendingAction,
   isRunning,
   showPlanFollowUpPrompt,
@@ -82,13 +88,15 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
+  compactBeforeSendTokens = null,
+  onSendWithFullHistory,
   onSecondOpinion = null,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
     ? { onPointerDown: preventPointerFocus }
     : undefined;
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const isSendDisabled = sendDisabledReason !== null;
+  const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
   const stageBackdropVariant = useSidebarStageBackdropVariant(
     environmentIdentificationMode === "artwork",
   );
@@ -126,7 +134,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               className="rounded-full"
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
-              disabled={pendingAction.isResponding}
+              disabled={!canOperateThread || pendingAction.isResponding}
               aria-label="Previous question"
             >
               <ChevronLeftIcon className="size-3.5" />
@@ -138,7 +146,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
               className="rounded-full"
               {...pointerFocusProps}
               onClick={onPreviousPendingQuestion}
-              disabled={pendingAction.isResponding}
+              disabled={!canOperateThread || pendingAction.isResponding}
             >
               Previous
             </Button>
@@ -153,6 +161,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           )}
           {...pointerFocusProps}
           disabled={
+            !canOperateThread ||
             isEnvironmentUnavailable ||
             pendingAction.isResponding ||
             (pendingAction.isLastQuestion ? !pendingAction.isComplete : !pendingAction.canAdvance)
@@ -216,9 +225,63 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           <MenuPopup align="end" side="top">
             <MenuItem
               disabled={isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable}
-              onClick={() => void onImplementPlanInNewThread()}
+              onClick={() => {
+                if (canOperateThread) onImplementPlanInNewThread();
+              }}
             >
               Implement in a new thread
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      </div>
+    );
+  }
+
+  const sendBlocked = isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable;
+
+  if (compactBeforeSendTokens !== null && !isRunning) {
+    const tokens = formatContextWindowTokens(compactBeforeSendTokens);
+    return (
+      <div data-chat-composer-compact-send="true" className="flex items-center justify-end">
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="submit"
+                className={cn(
+                  "cursor-pointer bg-message-action text-message-action-foreground disabled:opacity-30",
+                  "h-9 rounded-r-none sm:h-8",
+                  compact ? "px-3" : "px-4",
+                )}
+                {...pointerFocusProps}
+                disabled={sendBlocked || !hasSendableContent}
+              />
+            }
+          >
+            {isConnecting || isSendBusy ? "Sending..." : "Compact and send"}
+          </TooltipTrigger>
+          <TooltipPopup>Summarize {tokens} tokens of history, then send</TooltipPopup>
+        </Tooltip>
+        <Menu>
+          <MenuTrigger
+            render={
+              <button
+                type="button"
+                className={cn(
+                  "cursor-pointer bg-message-action text-message-action-foreground disabled:opacity-30",
+                  "h-9 rounded-l-none border-l border-message-action-foreground/20 px-2 sm:h-8",
+                )}
+                aria-label="Send options"
+                {...pointerFocusProps}
+                disabled={sendBlocked || !hasSendableContent}
+              />
+            }
+          >
+            <ChevronDownIcon className="size-3.5" />
+          </MenuTrigger>
+          <MenuPopup align="end" side="top">
+            <MenuItem disabled={sendBlocked} onClick={onSendWithFullHistory}>
+              Send with full history ({tokens} tokens)
             </MenuItem>
           </MenuPopup>
         </Menu>

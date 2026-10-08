@@ -23,6 +23,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
+import * as Stream from "effect/Stream";
 import type * as Scope from "effect/Scope";
 
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
@@ -165,10 +166,9 @@ export const make = Effect.gen(function* () {
   const isDue = (key: string, entries: ReadonlyArray<LinkEntry>, nowMs: number): boolean => {
     if (requested.has(key) || retryStacks.has(key)) return true;
     if (entries.some((entry) => entry.link.snapshot === null)) return true;
-    if (entries.every((entry) => entry.link.snapshot?.state === "merged")) return false;
-    if (entries.some((entry) => entry.link.snapshot?.state === "open" && isUnsettled(entry.thread)))
-      return true;
-    // Closed requests can reopen on the host, including after the thread settles.
+    const active = entries.filter((entry) => isUnsettled(entry.thread));
+    if (active.every((entry) => entry.link.snapshot?.state === "merged")) return false;
+    if (active.some((entry) => entry.link.snapshot?.state === "open")) return true;
     const last = lastSyncedAt.get(key);
     return last === undefined || nowMs - last >= SLOW_SYNC_INTERVAL_MS;
   };
@@ -227,7 +227,7 @@ export const make = Effect.gen(function* () {
           stack: nextStack,
         });
       }
-      if (fetchedStack === null || fetchedStack.stack === null) return;
+      if (fetchedStack === null || fetchedStack.stack === null || !isUnsettled(thread)) return;
       for (const layer of fetchedStack.stack.layers) {
         const layerKey = {
           host: normalizeThreadPullRequestKey(link).host,
@@ -393,6 +393,12 @@ export const make = Effect.gen(function* () {
   const start: PullRequestSyncReactor["Service"]["start"] = Effect.fn(
     "PullRequestSyncReactor.start",
   )(function* () {
+    const stateChanges = yield* pullRequests.subscribeStateChanges;
+    yield* forkParked(
+      Stream.runForEach(stateChanges, requestSync).pipe(
+        Effect.catchCause(logSkipped("pull request state change stream failed", {})),
+      ),
+    );
     yield* forkParked(
       Effect.gen(function* () {
         yield* worker.enqueue("all");

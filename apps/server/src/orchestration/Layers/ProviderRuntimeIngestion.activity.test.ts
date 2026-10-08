@@ -141,4 +141,35 @@ describe("runtimeEventToActivities tool streaming persistence", () => {
     const payload = activities[0]?.payload as Record<string, unknown>;
     expect(payload.data).toEqual(streamingData);
   });
+
+  it.each(["item.started", "item.completed"] as const)(
+    "%s removes unserved image bytes while retaining asset-backed output",
+    (type) => {
+      const pixels = Buffer.alloc(3_000, 7).toString("base64");
+      const servedImage = { type: "image", mimeType: "image/png", data: pixels };
+      const event = {
+        ...base,
+        type,
+        eventId: EventId.make(`evt-image-${type}`),
+        payload: {
+          itemType: "command_execution",
+          status: "completed",
+          title: "Capture",
+          data: {
+            result: { content: [servedImage, { type: "text", text: "Captured" }] },
+            rawOutput: { source: { type: "base64", media_type: "image/png", data: pixels } },
+          },
+        },
+      } satisfies ProviderRuntimeEvent;
+
+      const [activity] = runtimeEventToActivities(event);
+
+      const payload = activity?.payload as Record<string, unknown> | undefined;
+      expect(payload?.data).toEqual({
+        result: { content: [servedImage, { type: "text", text: "Captured" }] },
+        rawOutput: { source: { type: "base64", media_type: "image/png", sizeBytes: 3_000 } },
+      });
+      expect(event.payload.data.rawOutput.source.data).toBe(pixels);
+    },
+  );
 });

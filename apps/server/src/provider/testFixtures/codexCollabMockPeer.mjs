@@ -69,6 +69,21 @@ rl.on("line", (line) => {
     write({ id, result: {} });
     return;
   }
+  if (method === "thread/read") {
+    if (script.recordRequests) {
+      NodeFS.appendFileSync(
+        `${process.env.T3_CODEX_COLLAB_SCRIPT}.requests`,
+        `${JSON.stringify({ method, params: message.params })}\n`,
+      );
+    }
+    const response = script.childReadResponses?.[message.params?.threadId];
+    write(
+      response?.error
+        ? { id, error: { code: -32000, message: response.error } }
+        : { id, result: response ?? {} },
+    );
+    return;
+  }
   if (method === "thread/resume") {
     if (script.recordRequests) {
       NodeFS.appendFileSync(

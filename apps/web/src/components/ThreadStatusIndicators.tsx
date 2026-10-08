@@ -479,7 +479,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
   const pullRequest = useLinkedThreadPullRequest(
     thread.environmentId,
     thread.linkedPullRequest,
-    true,
+    false,
     thread.pullRequests,
     thread.branchPullRequest,
   );

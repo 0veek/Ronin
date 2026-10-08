@@ -1360,6 +1360,29 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect(
+      "bounds untracked review work while preserving tracked changes and the real index",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          yield* writeTextFile(cwd, "README.md", "# tracked change\n");
+          yield* Effect.forEach(
+            Array.from({ length: 5_001 }, (_, index) => index),
+            (index) => writeTextFile(cwd, `untracked/${index}.txt`, "untracked pixels\n"),
+            { concurrency: 32, discard: true },
+          );
+          const indexBefore = yield* git(cwd, ["ls-files", "--stage"]);
+          const preview = yield* driver.getReviewDiffPreview({ cwd, ignoreWhitespace: false });
+          const source = preview.sources.find((entry) => entry.kind === "working-tree");
+          assert.isTrue(source?.truncated);
+          assert.include(source?.diff ?? "", "+# tracked change");
+          assert.notInclude(source?.diff ?? "", "untracked pixels");
+          assert.equal(yield* git(cwd, ["ls-files", "--stage"]), indexBefore);
+        }),
+    );
+
     it.effect("keeps untracked filenames with pathspec magic in the review", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

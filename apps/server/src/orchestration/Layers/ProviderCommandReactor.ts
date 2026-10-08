@@ -1888,6 +1888,7 @@ const make = Effect.gen(function* () {
             threadId: event.payload.threadId,
             messageId: event.payload.messageId,
             request: sendTurnRequest.value,
+            ...(event.payload.dispatchMode ? { dispatchMode: event.payload.dispatchMode } : {}),
           })
         : providerService.sendTurn(sendTurnRequest.value).pipe(Effect.asVoid)
     ).pipe(Effect.catchCause(recoverTurnStartFailure));

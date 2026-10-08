@@ -3,7 +3,6 @@ import {
   AssetAttachmentNotFoundError,
   EventId,
   NonNegativeInt,
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   AssetPreviewTypeValidationError,
   AssetProjectFaviconInspectionError,
   AssetProjectFaviconNotFoundError,
@@ -30,7 +29,11 @@ import {
   type ImageDimensions,
 } from "@t3tools/shared/imageDimensions";
 import { PROJECT_FAVICON_FALLBACK_MARKER } from "@t3tools/shared/projectFavicon";
-import { toolActivityOutput, toolOutputImages } from "@t3tools/shared/toolOutput";
+import {
+  MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH,
+  toolActivityOutput,
+  toolOutputImages,
+} from "@t3tools/shared/toolOutput";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -161,8 +164,6 @@ export type ResolvedAsset =
       readonly bytes: Uint8Array;
       readonly mimeType: string;
     };
-
-const MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH = Math.ceil(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES / 3) * 4;
 
 /** Reads one completed tool's image without hydrating the rest of its thread. */
 const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(function* (input: {

@@ -55,6 +55,7 @@ export class RoninOrchestration extends Context.Service<
       readonly threadId: ThreadId;
       readonly messageId: MessageId;
       readonly request: ProviderSendTurnInput;
+      readonly dispatchMode?: "queue";
     }) => Effect.Effect<void, RoninOrchestrationError>;
     readonly interrupt: (
       threadId: ThreadId,
@@ -648,7 +649,7 @@ export const layer = Layer.effect(
               ...(input.request.modelSelection === undefined
                 ? {}
                 : { modelSelection: input.request.modelSelection }),
-              mode: canSteer ? "auto" : "queue",
+              mode: input.dispatchMode === "queue" ? "queue" : canSteer ? "auto" : "queue",
               createdBy: "user",
               creationSource: "web",
             })

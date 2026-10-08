@@ -2,6 +2,7 @@ import type {
   AuthBrowserSessionResult,
   AuthClientMetadata,
   AuthEnvironmentScope,
+  AuthGrantScope,
   AuthPairingCredentialResult,
   ServerAuthSessionMethod,
   AuthSessionId,
@@ -120,6 +121,7 @@ const isEnvironmentHttpCommonError = Schema.is(EnvironmentHttpCommonError);
 export interface ServerPairingLinkRecord {
   readonly id: string;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  readonly permissions?: ReadonlyArray<AuthEnvironmentScope>;
   readonly subject: string;
   readonly label?: string;
   readonly createdAt: string;
@@ -130,6 +132,7 @@ export interface ServerClientSessionRecord {
   readonly sessionId: AuthSessionId;
   readonly subject: string;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  readonly permissions?: ReadonlyArray<AuthEnvironmentScope>;
   readonly method: ServerAuthSessionMethod;
   readonly client: AuthClientMetadata;
   readonly issuedAt: string;
@@ -149,6 +152,7 @@ type ServerAuthGateState =
 
 let bootstrapPromise: Promise<ServerAuthGateState> | null = null;
 let resolvedAuthenticatedGateState: ServerAuthGateState | null = null;
+let explicitPairingRequested = false;
 const AUTH_SESSION_ESTABLISH_TIMEOUT_MS = 2_000;
 const AUTH_SESSION_ESTABLISH_STEP_MS = 100;
 
@@ -381,12 +385,13 @@ export async function submitServerAuthCredential(credential: string): Promise<vo
   resolvedAuthenticatedGateState = null;
   await exchangeBootstrapCredential(trimmedCredential);
   bootstrapPromise = null;
+  explicitPairingRequested = false;
   stripPairingTokenFromUrl();
 }
 
 export async function createServerPairingCredential(input?: {
   readonly label?: string;
-  readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
+  readonly scopes?: ReadonlyArray<AuthGrantScope>;
 }): Promise<AuthPairingCredentialResult> {
   const trimmedLabel = input?.label?.trim();
   try {
@@ -427,6 +432,9 @@ export async function listServerPairingLinks(): Promise<ReadonlyArray<ServerPair
         return {
           id: pairingLink.id,
           scopes: pairingLink.scopes,
+          ...(pairingLink.permissions === undefined
+            ? {}
+            : { permissions: pairingLink.permissions }),
           subject: pairingLink.subject,
           createdAt: timestamps.createdAt,
           expiresAt: timestamps.expiresAt,
@@ -435,6 +443,7 @@ export async function listServerPairingLinks(): Promise<ReadonlyArray<ServerPair
       return {
         id: pairingLink.id,
         scopes: pairingLink.scopes,
+        ...(pairingLink.permissions === undefined ? {} : { permissions: pairingLink.permissions }),
         subject: pairingLink.subject,
         label: pairingLink.label,
         createdAt: timestamps.createdAt,
@@ -478,6 +487,9 @@ export async function listServerClientSessions(): Promise<
       sessionId: clientSession.sessionId,
       subject: clientSession.subject,
       scopes: clientSession.scopes,
+      ...(clientSession.permissions === undefined
+        ? {}
+        : { permissions: clientSession.permissions }),
       method: clientSession.method,
       client: clientSession.client,
       issuedAt: DateTime.formatIso(clientSession.issuedAt),
@@ -532,6 +544,19 @@ export async function revokeOtherServerClientSessions(): Promise<number> {
 }
 
 export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGateState> {
+  // An explicit pairing link replaces this browser's grant, even when the
+  // current cookie or a cached gate already authenticates it. Keep that intent
+  // after stripping the token, which causes the router to load this gate again.
+  if (window.location.pathname.replace(/\/+$/, "") !== "/pair") {
+    explicitPairingRequested = false;
+  } else if (peekPairingTokenFromUrl()) {
+    explicitPairingRequested = true;
+  }
+  if (explicitPairingRequested) {
+    const currentSession = await fetchSessionState();
+    return { status: "requires-auth", auth: currentSession.auth };
+  }
+
   const urlCredential = takePairingTokenFromUrl();
   const previousPromise = bootstrapPromise;
   if (urlCredential) {
@@ -582,4 +607,5 @@ export async function reauthenticatePrimaryEnvironment(): Promise<ServerAuthGate
 export function __resetServerAuthBootstrapForTests() {
   bootstrapPromise = null;
   resolvedAuthenticatedGateState = null;
+  explicitPairingRequested = false;
 }

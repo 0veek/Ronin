@@ -1,4 +1,5 @@
-"use client";
+import { AuthPreviewOperateScope } from "@t3tools/contracts";
+import { useEnvironmentScope } from "~/state/session";
 
 import type { PreviewAnnotationPayload, ScopedThreadRef } from "@t3tools/contracts";
 
@@ -28,12 +29,15 @@ export function PreviewPanel({
   visible,
   onSendAnnotation,
 }: Props) {
-  if (!isPreviewSupportedInRuntime()) {
+  const canOperatePreview = useEnvironmentScope(threadRef.environmentId, AuthPreviewOperateScope);
+  if (!canOperatePreview || !isPreviewSupportedInRuntime()) {
     return (
       <PreviewPanelShell mode={mode}>
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="max-w-sm text-sm text-muted-foreground">
-            Preview is only available in the Ronin desktop app.
+            {canOperatePreview
+              ? "Preview is only available in the Ronin desktop app."
+              : "Pair this client again with preview access to control browser previews."}
           </p>
         </div>
       </PreviewPanelShell>

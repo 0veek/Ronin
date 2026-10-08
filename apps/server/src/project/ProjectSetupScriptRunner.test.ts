@@ -62,6 +62,7 @@ type TerminalOverrides = Pick<TerminalManager.TerminalManager["Service"], "open"
 const makeTerminalManagerLayer = (overrides: TerminalOverrides) =>
   Layer.succeed(TerminalManager.TerminalManager, {
     attachStream: () => Effect.die(new Error("unused")),
+    observeStream: () => Effect.die(new Error("unused")),
     resize: () => Effect.void,
     clear: () => Effect.void,
     restart: () => Effect.die(new Error("unused")),
@@ -247,7 +248,7 @@ describe("ProjectSetupScriptRunner", () => {
         // A spoofed sentinel from the script itself must not settle completion.
         yield* emit("__T3_SETUP_DONE__:0\r\n");
         yield* emit(`__T3_SETUP_DONE___${"0".repeat(32)}:0\r\n`);
-        yield* emit(`${sentinel}3\r\n`);
+        yield* emit(`${sentinel}3\r\n$ `);
 
         const completion = yield* result.completion!;
         expect(completion.exitCode).toBe(3);

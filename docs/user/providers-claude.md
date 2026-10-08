@@ -267,3 +267,9 @@ Do not put environment variable assignments in `Launch arguments`.
 Claude Code's verbose mode can stay enabled when you use Claude for text generation, including
 thread titles, branch names, commit messages, and pull request descriptions. On a remote connection,
 Ronin uses the Claude configuration on the connected server.
+
+## Resuming an older conversation
+
+For an eligible older conversation with substantial context, the send button offers **Compact and
+send**. Ronin asks Claude to summarize the history, then queues your message until compaction
+finishes. Select **Send with full history** from the send menu to skip compaction for that message.

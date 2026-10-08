@@ -1,3 +1,5 @@
+import { readEnvironmentScope, useEnvironmentScope } from "../state/session";
+import { AuthProvidersManageScope } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { DownloadIcon } from "lucide-react";
@@ -27,7 +29,12 @@ const seenProviderUpdateNotificationKeys = new Set<string>();
 type ProviderUpdateToastId = ReturnType<typeof toastManager.add>;
 
 type ActiveProviderUpdateToast =
-  | { readonly kind: "prompt"; readonly key: string; readonly toastId: ProviderUpdateToastId }
+  | {
+      readonly kind: "prompt";
+      readonly key: string;
+      readonly toastId: ProviderUpdateToastId;
+      readonly canManageProviders: boolean;
+    }
   | {
       readonly kind: "update";
       readonly key: string;
@@ -105,6 +112,10 @@ export function ProviderUpdatePrimaryNotification() {
   const navigate = useNavigate();
   const providers = useAtomValue(primaryServerProvidersAtom);
   const primaryEnvironment = usePrimaryEnvironment();
+  const canManageProviders = useEnvironmentScope(
+    primaryEnvironment?.environmentId ?? null,
+    AuthProvidersManageScope,
+  );
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
@@ -183,11 +194,15 @@ export function ProviderUpdatePrimaryNotification() {
       activeToastRef.current = null;
     }
 
+    const updateExistingPrompt =
+      activeToast?.kind === "prompt" &&
+      activeToast.key === notificationKey &&
+      activeToast.canManageProviders !== canManageProviders;
     if (
       !notificationKey ||
       dismissedNotificationKeys.has(notificationKey) ||
-      seenProviderUpdateNotificationKeys.has(notificationKey) ||
-      activeToastRef.current
+      (seenProviderUpdateNotificationKeys.has(notificationKey) && !updateExistingPrompt) ||
+      (activeToastRef.current && !updateExistingPrompt)
     ) {
       return;
     }
@@ -204,7 +219,12 @@ export function ProviderUpdatePrimaryNotification() {
     };
 
     const runUpdates = () => {
-      if (updateStarted || oneClickProviders.length === 0 || !primaryEnvironment) {
+      if (
+        updateStarted ||
+        oneClickProviders.length === 0 ||
+        !primaryEnvironment ||
+        !readEnvironmentScope(primaryEnvironment.environmentId, AuthProvidersManageScope)
+      ) {
         return;
       }
       updateStarted = true;
@@ -224,6 +244,19 @@ export function ProviderUpdatePrimaryNotification() {
       void (async () => {
         const results = [];
         for (const provider of oneClickProviders) {
+          if (!readEnvironmentScope(primaryEnvironment.environmentId, AuthProvidersManageScope)) {
+            if (activeToastRef.current === activeUpdate) {
+              addProviderUpdateToast({
+                view: getProviderUpdateRejectedToastView(
+                  providerCount,
+                  "This connection cannot manage provider accounts.",
+                ),
+                openSettings: openProviderSettings,
+              });
+              activeToastRef.current = null;
+            }
+            return;
+          }
           results.push(
             await updateProvider({
               environmentId: primaryEnvironment.environmentId,
@@ -301,7 +334,7 @@ export function ProviderUpdatePrimaryNotification() {
         },
       }),
     );
-    activeToastRef.current = { kind: "prompt", key: notificationKey, toastId };
+    activeToastRef.current = { kind: "prompt", key: notificationKey, toastId, canManageProviders };
   }, [
     updateProvider,
     dismissNotificationKey,

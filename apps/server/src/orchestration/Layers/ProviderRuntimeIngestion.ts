@@ -1,3 +1,5 @@
+import { toolActivityOutput } from "@t3tools/shared/toolOutput";
+import { stripUnservedToolOutputImageData } from "../../orchestration-v2/toolOutputImageBytes.ts";
 import {
   ApprovalRequestId,
   CommandId,
@@ -920,7 +922,14 @@ export function runtimeEventToActivities(
             ...(event.itemId !== undefined ? { toolCallId: event.itemId } : {}),
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(event.payload.data !== undefined
+              ? {
+                  data: stripUnservedToolOutputImageData(
+                    event.payload.data,
+                    toolActivityOutput(event.payload.data),
+                  ),
+                }
+              : {}),
             ...(event.payload.agentId ? { agentId: event.payload.agentId } : {}),
             ...(event.payload.parentToolUseId
               ? { parentToolUseId: event.payload.parentToolUseId }
@@ -948,7 +957,14 @@ export function runtimeEventToActivities(
             ...(event.itemId !== undefined ? { toolCallId: event.itemId } : {}),
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(event.payload.data !== undefined
+              ? {
+                  data: stripUnservedToolOutputImageData(
+                    event.payload.data,
+                    toolActivityOutput(event.payload.data),
+                  ),
+                }
+              : {}),
             ...(event.payload.agentId ? { agentId: event.payload.agentId } : {}),
             ...(event.payload.parentToolUseId
               ? { parentToolUseId: event.payload.parentToolUseId }
@@ -976,7 +992,14 @@ export function runtimeEventToActivities(
             ...(event.itemId !== undefined ? { toolCallId: event.itemId } : {}),
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
-            ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(event.payload.data !== undefined
+              ? {
+                  data: stripUnservedToolOutputImageData(
+                    event.payload.data,
+                    toolActivityOutput(event.payload.data),
+                  ),
+                }
+              : {}),
             ...(event.payload.agentId ? { agentId: event.payload.agentId } : {}),
             ...(event.payload.parentToolUseId
               ? { parentToolUseId: event.payload.parentToolUseId }

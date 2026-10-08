@@ -670,6 +670,8 @@ interface StagePackageJson {
   readonly private: true;
   readonly packageManager: string;
   readonly description: string;
+  readonly license: string;
+  readonly homepage: string;
   readonly author: string;
   readonly main: string;
   readonly build: Record<string, unknown>;
@@ -1681,6 +1683,18 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   }
 
   if (platform === "linux") {
+    const path = yield* Path.Path;
+    const repoRoot = yield* RepoRoot;
+    // electron-builder 26 defaults to its legacy AppImage runtime, which
+    // dynamically loads the system libfuse2 library. Pin the static runtime so
+    // the AppImage also launches on distributions that only provide FUSE 3.
+    buildConfig.toolsets = { appimage: "1.0.3" };
+    buildConfig.deb = {
+      fpm: [
+        `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
+        `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
+      ],
+    };
     buildConfig.linux = {
       target: [target],
       executableName: "t3code",
@@ -1958,7 +1972,10 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     t3codeCommitHash: commitHash,
     private: true,
     packageManager: rootPackageJson.packageManager,
-    description: "Ronin desktop build",
+    description:
+      "Ronin is an open-source desktop app for coding agents. Use your agent subscriptions, review code changes, and run commands in your projects.",
+    license: "MIT",
+    homepage: "https://github.com/0veek/Ronin",
     author: "T3 Tools",
     main: "apps/desktop/dist-electron/boot.cjs",
     build: yield* createBuildConfig(

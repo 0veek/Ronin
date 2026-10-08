@@ -1,4 +1,4 @@
-import { AuthStandardClientScopes, EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -60,7 +60,6 @@ const makeHarness = (input: { readonly responses: ReadonlyArray<Response> }) => 
               deviceType: "mobile",
               os: "test",
             },
-            scopes: AuthStandardClientScopes,
           }),
         ),
       ),

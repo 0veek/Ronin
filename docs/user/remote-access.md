@@ -22,6 +22,25 @@ This publishes the server over Tailscale Serve HTTPS (configuring the mapping if
 
 If no server is running, `t3 pair` says so and points you at `npx t3 serve`.
 
+## Connection permissions
+
+Pairing links can grant independent access to thread actions, environment settings, provider
+management, maintenance, Git changes, file reading and editing, previews, diagnostics and usage,
+and terminals. Terminal observation allows viewing an existing terminal and copying its output;
+terminal operation also allows typing, resizing, and starting terminals. Access administration is
+separate from these permissions.
+
+After upgrading to granular permissions, existing pairings stay connected. Actions moved into a
+new permission need a new pairing grant. Ronin shows a notice when this applies. Create a fresh
+link with the needed permissions and pair that client again; its saved environment remains.
+A link cannot delegate permissions that its creator does not have.
+
+The CLI accepts repeated `--scope` flags. Explicit scopes replace the defaults, for example:
+
+```bash
+npx t3 pair --scope orchestration:read --scope terminal:read
+```
+
 ## Recommended Setup
 
 Use a trusted private network that meshes your devices together, such as a tailnet.

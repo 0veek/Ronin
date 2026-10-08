@@ -1,4 +1,5 @@
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
+import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
   CheckIcon,
@@ -25,12 +26,13 @@ import {
   WrapTextIcon,
   type LucideIcon,
 } from "lucide-react";
-import type {
-  AssetResource,
-  EnvironmentId,
-  ScopedThreadRef,
-  ServerProviderSkill,
-  ThreadPullRequestKey,
+import {
+  AuthPreviewOperateScope,
+  type AssetResource,
+  type EnvironmentId,
+  type ScopedThreadRef,
+  type ServerProviderSkill,
+  type ThreadPullRequestKey,
 } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -152,7 +154,7 @@ import { readThreadShell } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { shellEnvironment } from "../state/shell";
 import { assetEnvironment } from "../state/assets";
-import { usePreparedConnection } from "../state/session";
+import { readEnvironmentScope, usePreparedConnection, useEnvironmentScope } from "../state/session";
 import { previewEnvironment } from "../state/preview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
@@ -338,7 +340,7 @@ function findTaskListMarkerOffset(markdown: string, listItemStart: number): numb
  * The default `1.25rem` marker gutter (`.chat-markdown ol`) fits one-character
  * markers. Wider markers can extend past it and get clipped by a collapsed
  * message's overflow. Widen the gutter to fit the widest marker, including a
- * negative marker's minus sign.
+ * negative marker's minus sign, the period, and the trailing space.
  */
 export function orderedListGutterStyle(
   itemCount: number,
@@ -349,7 +351,7 @@ export function orderedListGutterStyle(
   const lastNumber = firstNumber + Math.max(itemCount - 1, 0);
   const markerWidth = Math.max(String(firstNumber).length, String(lastNumber).length);
   if (markerWidth <= 1) return undefined;
-  return { "--list-gutter": `${markerWidth + 1}ch` };
+  return { "--list-gutter": `${markerWidth + 2}ch` };
 }
 
 const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
@@ -393,7 +395,62 @@ const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
   remarkNormalizeLinksAndTagInlineCode,
 ] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 
+interface MarkdownImageHastNode {
+  type: string;
+  value?: string;
+  children?: MarkdownImageHastNode[];
+}
+
+/** Keep unmatched inline `<A>` placeholders from opening an HTML link over later blocks. */
+function rehypePreserveBareAnchorPlaceholders() {
+  return (tree: MarkdownImageHastNode) => {
+    const anchors: Array<MarkdownImageHastNode | null> = [];
+    let rawTextTag: string | undefined;
+    const visit = (node: MarkdownImageHastNode) => {
+      if (node.type === "raw" && typeof node.value === "string") {
+        // Raw blocks can contain several tags. Consume whole tags, quoted attributes,
+        // and comments so text resembling a closing anchor cannot pair a placeholder.
+        const tags = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/g;
+        let offset = 0;
+        while (rawTextTag !== "plaintext") {
+          // Raw text ends at its closing tag even inside comment-looking text.
+          const matcher = rawTextTag ? new RegExp(`</${rawTextTag}\\s*>`, "gi") : tags;
+          matcher.lastIndex = offset;
+          const match = matcher.exec(node.value);
+          if (!match) break;
+          const [tag] = match;
+          offset = matcher.lastIndex;
+          if (rawTextTag) {
+            rawTextTag = undefined;
+            continue;
+          }
+          if (tag.startsWith("<!--")) continue;
+          const closing = /^<\/([a-z]+)\s*>$/i.exec(tag)?.[1]?.toLowerCase();
+          const opening = /^<([a-z]+)(?:\s|\/?>)/i.exec(tag)?.[1]?.toLowerCase();
+          if (
+            opening &&
+            /^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/.test(opening)
+          ) {
+            rawTextTag = opening;
+          } else if (opening === "a") {
+            anchors.push(node.value === tag && /^<a\s*\/?>$/i.test(tag) ? node : null);
+          } else if (closing === "a") {
+            anchors.pop();
+          }
+        }
+      }
+      node.children?.forEach(visit);
+    };
+
+    visit(tree);
+    for (const anchor of anchors) {
+      if (anchor) anchor.type = "text";
+    }
+  };
+}
+
 const CHAT_MARKDOWN_REHYPE_PLUGINS = [
+  rehypePreserveBareAnchorPlaceholders,
   rehypeRaw,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
@@ -492,6 +549,7 @@ function isClosedCodeFence(node: unknown, text: string): boolean {
 
 type MarkdownAstNode = {
   type?: string;
+  value?: string;
   meta?: unknown;
   url?: string;
   data?: {
@@ -2114,12 +2172,12 @@ function ChatMarkdown({
   });
   const pullRequestLinking = usePullRequestLinking(threadRef?.environmentId);
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
+  const canOperateHost = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const canOperatePreview = useEnvironmentScope(environmentId, AuthPreviewOperateScope);
   const remoteOpen = useRemoteOpenResolution(environmentId);
-  const canUseShellActions = canUseMarkdownFileShellActions(
-    environmentId,
-    remoteOpen.state.mode,
-    remoteOpen.isResolved,
-  );
+  const canUseShellActions =
+    canOperateHost &&
+    canUseMarkdownFileShellActions(environmentId, remoteOpen.state.mode, remoteOpen.isResolved);
   const preparedConnection = usePreparedConnection(environmentId);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const availableEditors = serverConfig?.availableEditors ?? [];
@@ -2143,6 +2201,13 @@ function ChatMarkdown({
         return Promise.resolve(
           AsyncResult.failure<void, PreferredEditorEnvironmentRequiredError>(
             Cause.fail(new PreferredEditorEnvironmentRequiredError({ targetPath: filePath })),
+          ),
+        );
+      }
+      if (!readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
+        return Promise.resolve(
+          AsyncResult.failure<void, Error>(
+            Cause.fail(new Error("This connection cannot reveal files on this environment.")),
           ),
         );
       }
@@ -2232,18 +2297,19 @@ function ChatMarkdown({
   const updateThreadPullRequestLink = useCallback(
     async (href: string, linked: boolean) => {
       if (threadRef === undefined || (!linked && linkedThreadPullRequestFor(href) === null)) return;
+      if (!readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)) return;
       await pullRequestLinking.changeLink(threadRef, href, linked);
     },
     [linkedThreadPullRequestFor, pullRequestLinking, threadRef],
   );
   const openExternalLinkInPreview = useCallback(
     (url: string) => {
-      if (!threadRef) {
+      if (!threadRef || !canOperatePreview) {
         return Promise.resolve(
           AsyncResult.failure<void, BrowserPreviewUnavailableError>(
             Cause.fail(
               new BrowserPreviewUnavailableError({
-                message: "Thread context is unavailable.",
+                message: "Preview access is unavailable for this client.",
               }),
             ),
           ),
@@ -2254,11 +2320,11 @@ function ChatMarkdown({
         return result;
       });
     },
-    [openPreview, threadRef],
+    [canOperatePreview, openPreview, threadRef],
   );
   const openMarkdownFileInPreview = useCallback(
     (path: string) => {
-      if (!threadRef || preparedConnection._tag === "None") {
+      if (!threadRef || !canOperatePreview || preparedConnection._tag === "None") {
         return Promise.resolve(
           AsyncResult.failure<void, BrowserPreviewUnavailableError>(
             Cause.fail(
@@ -2281,7 +2347,12 @@ function ChatMarkdown({
   );
   const findWorkspaceBasenameMatch = useCallback(
     async (workspaceRelativePath: string) => {
-      if (!cwd || environmentId === null || !needsWorkspaceBasenameLookup(workspaceRelativePath)) {
+      if (
+        !cwd ||
+        environmentId === null ||
+        !readEnvironmentScope(environmentId, AuthFilesystemReadScope) ||
+        !needsWorkspaceBasenameLookup(workspaceRelativePath)
+      ) {
         return null;
       }
       const result = await searchProjectEntries({
@@ -2393,6 +2464,7 @@ function ChatMarkdown({
           revealLabel={revealInFileManagerLabel}
           onOpenInBrowser={
             threadRef &&
+            canOperatePreview &&
             isPreviewSupportedInRuntime() &&
             isBrowserPreviewFile(fileLinkMeta.filePath)
               ? () => openMarkdownFileInPreview(fileLinkMeta.filePath)
@@ -2541,7 +2613,8 @@ function ChatMarkdown({
           const isPullRequestAutolink = pullRequestCopy !== undefined;
           const isSameDocumentLink = href?.startsWith("#") ?? false;
           const onClick = props.onClick;
-          const canOpenInPreview = Boolean(threadRef) && isPreviewSupportedInRuntime();
+          const canOpenInPreview =
+            canOperatePreview && Boolean(threadRef) && isPreviewSupportedInRuntime();
           const linkChildren = <MarkdownLinkContext value>{children}</MarkdownLinkContext>;
           const link = (
             <a

@@ -57,6 +57,9 @@ export const TerminalAttachInput = Schema.Struct({
 });
 export type TerminalAttachInput = Schema.Codec.Encoded<typeof TerminalAttachInput>;
 
+export const TerminalObserveInput = TerminalSessionInput;
+export type TerminalObserveInput = Schema.Codec.Encoded<typeof TerminalObserveInput>;
+
 export const TerminalWriteInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   data: Schema.String.check(Schema.isNonEmpty()).check(Schema.isMaxLength(65_536)),

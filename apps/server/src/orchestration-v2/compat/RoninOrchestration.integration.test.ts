@@ -93,6 +93,7 @@ const encodeJsonText = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown)
 const testBridge = (
   driverName: (typeof drivers)[number],
   scenario:
+    | "queue-follow-up"
     | "automatic-completion"
     | "goal"
     | "goal-stop"
@@ -403,6 +404,34 @@ const testBridge = (
         turnId,
         createdAt: now,
       };
+      if (scenario === "queue-follow-up") {
+        yield* bridge.startTurn({
+          threadId,
+          commandId: CommandId.make("queued-follow-up"),
+          messageId: MessageId.make("queued-follow-up"),
+          dispatchMode: "queue",
+          request: { threadId, input: "After compaction", attachments: [], modelSelection },
+        });
+        yield* (yield* OrchestrationEffectWorkerV2).drain();
+        assert.equal(sends, 1);
+        assert.equal((yield* v2.getThreadProjection(threadId)).runs.at(-1)?.status, "queued");
+        yield* PubSub.publish(
+          source,
+          decodeEvent({ ...base, eventId: "compact-started", type: "turn.started", payload: {} }),
+        );
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...base,
+            eventId: "compact-done",
+            type: "turn.completed",
+            payload: { state: "completed" },
+          }),
+        );
+        assert.equal((yield* Queue.take(sent)).input, "After compaction");
+        assert.equal(sends, 2);
+        return;
+      }
       yield* PubSub.publish(
         source,
         decodeEvent({
@@ -1785,4 +1814,8 @@ it.effect.each([
   "stalled-starting-background",
 ] as const)("Stop repairs %s through Ronin without changing a newer attempt", (scenario) =>
   testBridge("codex", scenario),
+);
+
+it.effect("queues a follow-up until the current turn ends even on a steering provider", () =>
+  testBridge("codex", "queue-follow-up"),
 );

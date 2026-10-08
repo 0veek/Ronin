@@ -12,6 +12,8 @@ Ronin works with the platforms your team already uses:
 - **Bitbucket** – Pull request workflows (via API token authentication)
 - **Azure DevOps** – Pull request support for Microsoft-hosted repositories
 
+GitHub requests use its API directly. Ronin chooses credentials in this order: a token saved in Settings → Source Control → GitHub, the server's GH_TOKEN (or GH_ENTERPRISE_TOKEN with GH_HOST for Enterprise), then the GitHub CLI login. Saved tokens stay in the environment's secret store. You can choose the CLI account for each host or turn a host off in the same settings panel. A saved token or environment token takes precedence over the account choice.
+
 ## What You Can Do
 
 ### Start Projects from Anywhere

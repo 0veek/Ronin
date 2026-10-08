@@ -1,3 +1,6 @@
+import { AuthSettingsWriteScope } from "@t3tools/contracts";
+import { usePrimaryEnvironmentId } from "../../state/environments";
+import { useEnvironmentScope } from "../../state/session";
 import { InfoIcon, Undo2Icon } from "lucide-react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
@@ -212,7 +215,8 @@ export function SettingsRow({
 }) {
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(rowProps.id);
   const primarySettingsAvailable = usePrimarySettingsAvailable();
-  const unavailable = serverScoped && !primarySettingsAvailable;
+  const canWrite = useEnvironmentScope(usePrimaryEnvironmentId(), AuthSettingsWriteScope);
+  const unavailable = serverScoped && (!primarySettingsAvailable || !canWrite);
   const renderedReset = unavailable ? null : resetAction;
   const renderedControl =
     unavailable && control ? (
@@ -234,7 +238,9 @@ export function SettingsRow({
           </div>
         </TooltipTrigger>
         <TooltipPopup side="top" className="max-w-72">
-          {PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE}
+          {primarySettingsAvailable
+            ? "This connection cannot change environment settings."
+            : PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE}
         </TooltipPopup>
       </Tooltip>
     ) : (

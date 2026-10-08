@@ -58,6 +58,8 @@ import {
   type Icon,
 } from "../Icons";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
+import { GitHubAccountSettings } from "./GitHubAccountSettings";
+import { GitHubTokenSettings } from "./GitHubTokenSettings";
 import { BitbucketCredentialsSettings } from "./BitbucketCredentialsSettings";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
 import {
@@ -299,7 +301,11 @@ function DiscoveryItemRow({
   const hasDetails = children !== undefined;
   const searchTargetId = useSettingsSearchTargetId();
   const bitbucketTargetId =
-    item.kind === "bitbucket" ? searchableSetting("bitbucket-credentials").id : undefined;
+    item.kind === "bitbucket"
+      ? searchableSetting("bitbucket-credentials").id
+      : item.kind === "github"
+        ? searchableSetting("github-accounts").id
+        : undefined;
   const targetRef = useSettingsSearchTarget<HTMLDivElement>(bitbucketTargetId);
   const isExpanded =
     expandedOverride ?? (bitbucketTargetId !== undefined && searchTargetId === bitbucketTargetId);
@@ -653,6 +659,22 @@ export function SourceControlSettingsPanel() {
                       environmentId={environmentId}
                       onSaved={handleScan}
                     />
+                  ) : item.kind === "github" && environmentId !== null ? (
+                    <div className="grid gap-6">
+                      <GitHubTokenSettings
+                        key={`token-${environmentId}`}
+                        environmentId={environmentId}
+                        onSaved={handleScan}
+                      />
+                      {item.status === "available" ? (
+                        <GitHubAccountSettings
+                          key={environmentId}
+                          environmentId={environmentId}
+                          auth={item.auth}
+                          onSaved={handleScan}
+                        />
+                      ) : null}
+                    </div>
                   ) : undefined}
                 </DiscoveryItemRow>
               ))}

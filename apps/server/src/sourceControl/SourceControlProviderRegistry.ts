@@ -304,6 +304,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
 
 export const make = Effect.gen(function* () {
   const github = yield* GitHubSourceControlProvider.make;
+  const githubDiscovery = yield* GitHubSourceControlProvider.makeDiscovery;
   const gitlab = yield* GitLabSourceControlProvider.make;
   const forgejo = yield* ForgejoSourceControlProvider.make;
   const forgejoDiscovery = yield* ForgejoSourceControlProvider.makeDiscovery;
@@ -314,7 +315,7 @@ export const make = Effect.gen(function* () {
     {
       kind: "github",
       provider: github,
-      discovery: GitHubSourceControlProvider.discovery,
+      discovery: githubDiscovery,
     },
     {
       kind: "gitlab",

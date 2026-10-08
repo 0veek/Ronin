@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import * as Rpc from "effect/unstable/rpc/Rpc";
+import * as RpcMiddleware from "effect/unstable/rpc/RpcMiddleware";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import { NonNegativeInt } from "./baseSchemas.ts";
@@ -61,6 +62,7 @@ import {
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
   VcsStatusInput,
+  VcsStatusSubscriptionInput,
   VcsStatusResult,
   VcsStatusStreamEvent,
 } from "./git.ts";
@@ -143,6 +145,7 @@ import {
 } from "./project.ts";
 import {
   TerminalAttachInput,
+  TerminalObserveInput,
   TerminalAttachStreamEvent,
   TerminalClearInput,
   TerminalCloseInput,
@@ -345,6 +348,7 @@ export const WS_METHODS = {
   // Terminal methods
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
+  terminalObserve: "terminal.observe",
   terminalWrite: "terminal.write",
   terminalResize: "terminal.resize",
   terminalClear: "terminal.clear",
@@ -1123,7 +1127,7 @@ export const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
 });
 
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
-  payload: VcsStatusInput,
+  payload: VcsStatusSubscriptionInput,
   success: VcsStatusStreamEvent,
   error: Schema.Union([GitManagerServiceError, EnvironmentAuthorizationError]),
   stream: true,
@@ -1244,6 +1248,13 @@ export const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
 
 export const WsTerminalAttachRpc = Rpc.make(WS_METHODS.terminalAttach, {
   payload: TerminalAttachInput,
+  success: TerminalAttachStreamEvent,
+  error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
+  stream: true,
+});
+
+const WsTerminalObserveRpc = Rpc.make(WS_METHODS.terminalObserve, {
+  payload: TerminalObserveInput,
   success: TerminalAttachStreamEvent,
   error: Schema.Union([TerminalError, EnvironmentAuthorizationError]),
   stream: true,
@@ -1526,6 +1537,11 @@ export const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeReso
   stream: true,
 });
 
+export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
+  "t3/contracts/RpcScopeAuthorization",
+  { error: EnvironmentAuthorizationError },
+) {}
+
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
@@ -1642,6 +1658,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsReviewGetDiffFileContentsRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
+  WsTerminalObserveRpc,
   WsTerminalWriteRpc,
   WsTerminalResizeRpc,
   WsTerminalClearRpc,
@@ -1683,4 +1700,4 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
-);
+).middleware(RpcScopeAuthorization);

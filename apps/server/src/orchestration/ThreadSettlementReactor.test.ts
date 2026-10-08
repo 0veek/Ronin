@@ -1,5 +1,8 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EventId,
+  CommandId,
+  type OrchestrationEvent,
   ProjectId,
   ProviderInstanceId,
   PullRequestOperationError,
@@ -19,6 +22,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
@@ -30,6 +34,8 @@ import {
   PullRequestService,
   type PullRequestMergeEvent,
 } from "../pullRequest/PullRequestService.ts";
+import { ProjectSetupScriptRunner } from "../project/ProjectSetupScriptRunner.ts";
+import { TerminalManager } from "../terminal/Manager.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { OrchestrationCommandInvariantError } from "./Errors.ts";
@@ -157,6 +163,7 @@ interface HarnessOptions {
   readonly branchPullRequest?: GitManager["Service"]["branchPullRequest"];
   readonly pullRequestSummary?: PullRequestService["Service"]["summary"];
   readonly existingWorktreePaths?: ReadonlyArray<string>;
+  readonly onCloseIdle?: Effect.Effect<void>;
   readonly onDispatch?: (
     command: AutoSettleCommand,
   ) => Effect.Effect<void, OrchestrationCommandInvariantError>;
@@ -165,6 +172,11 @@ interface HarnessOptions {
 const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options: HarnessOptions) {
   const activation = yield* Deferred.make<void>();
   const snapshots = yield* Ref.make(options.snapshot);
+  const domainEvents = yield* Queue.unbounded<OrchestrationEvent>();
+  const closedIdle = yield* Queue.unbounded<ThreadId>();
+  const scriptCalls = yield* Ref.make<
+    ReadonlyArray<Parameters<ProjectSetupScriptRunner["Service"]["runForThread"]>[0]>
+  >([]);
   const snapshotReadCount = yield* Ref.make(0);
   const snapshotReads = yield* Queue.unbounded<number>();
   const settings = yield* Ref.make(options.settings ?? DEFAULT_SERVER_SETTINGS);
@@ -237,7 +249,26 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   });
 
   const dependencies = Layer.mergeAll(
+    Layer.mock(ProjectSetupScriptRunner)({
+      runForThread: (input) =>
+        Ref.update(scriptCalls, (calls) => [...calls, input]).pipe(
+          Effect.as({ status: "no-script" as const }),
+        ),
+    }),
+    Layer.mock(TerminalManager)({
+      closeIdle: ({ threadId }) =>
+        (options.onCloseIdle ?? Effect.void).pipe(
+          Effect.andThen(Queue.offer(closedIdle, ThreadId.make(threadId))),
+          Effect.asVoid,
+        ),
+    }),
     Layer.mock(ProjectionSnapshotQuery)({
+      getThreadShellById: (threadId) =>
+        Ref.get(snapshots).pipe(
+          Effect.map((snapshot) =>
+            Option.fromNullishOr(snapshot.threads.find((thread) => thread.id === threadId)),
+          ),
+        ),
       getShellSnapshot: () =>
         Ref.updateAndGet(snapshotReadCount, (count) => count + 1).pipe(
           Effect.tap((count) => Queue.offer(snapshotReads, count)),
@@ -258,6 +289,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       readEvents: () => Stream.empty,
       dispatch,
       streamDomainEvents: Stream.empty,
+      subscribeDomainEvents: Effect.succeed(Stream.fromQueue(domainEvents)),
       latestSequence: Effect.succeed(0),
     }),
     Layer.succeed(ServerSettingsService, serverSettings),
@@ -272,6 +304,9 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     activation,
     snapshots,
     snapshotReadCount,
+    domainEvents,
+    closedIdle,
+    scriptCalls,
     snapshotReads,
     settingsReads,
     commands,
@@ -302,6 +337,71 @@ const startHarness = Effect.fn("startThreadSettlementHarness")(function* (
 });
 
 describe("ThreadSettlementReactor", () => {
+  it.effect(
+    "runs the selected settle action once per settlement, after closing idle terminals",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const threadId = ThreadId.make("cleanup");
+          const fixture = yield* makeHarness({
+            snapshot: makeSnapshot([
+              makeThread(threadId, {
+                worktreePath: "/worktree",
+                settledOverride: "settled",
+                settledAt: NOW,
+              }),
+            ]),
+            existingWorktreePaths: ["/worktree"],
+          });
+          yield* Effect.gen(function* () {
+            const reactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+            yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+            const publish = (sequence: number, settledAt: string) =>
+              Queue.offer(fixture.domainEvents, {
+                sequence,
+                eventId: EventId.make(`settled-${sequence}`),
+                aggregateKind: "thread",
+                aggregateId: threadId,
+                type: "thread.settled",
+                occurredAt: settledAt,
+                commandId: CommandId.make(`settle-${sequence}`),
+                causationEventId: null,
+                correlationId: null,
+                metadata: {},
+                payload: { threadId, settledAt, updatedAt: settledAt },
+              });
+            for (const sequence of [1, 2]) {
+              yield* publish(sequence, NOW);
+              yield* Queue.take(fixture.closedIdle);
+              yield* reactor.drain;
+            }
+            assert.equal((yield* Ref.get(fixture.scriptCalls)).length, 1);
+            const later = "2026-08-29T12:00:00.000Z";
+            yield* Ref.update(fixture.snapshots, (snapshot) => ({
+              ...snapshot,
+              threads: snapshot.threads.map((thread) => ({ ...thread, settledAt: later })),
+            }));
+            yield* publish(3, later);
+            yield* Queue.take(fixture.closedIdle);
+            yield* reactor.drain;
+            const calls = yield* Ref.get(fixture.scriptCalls);
+            assert.equal(calls.length, 2);
+            assert.deepStrictEqual(
+              calls.map(({ threadId, worktreePath, trigger }) => ({
+                threadId,
+                worktreePath,
+                trigger,
+              })),
+              [
+                { threadId, worktreePath: "/worktree", trigger: "settle" },
+                { threadId, worktreePath: "/worktree", trigger: "settle" },
+              ],
+            );
+          }).pipe(Effect.provide(fixture.layer));
+        }),
+      ),
+  );
+
   it.effect(
     "settles all-terminal links from snapshots and keeps open or unsynced links active",
     () =>

@@ -20,7 +20,6 @@ import { useProjects } from "~/state/entities";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
-import { useAtomCommand } from "~/state/use-atom-command";
 
 import { toastManager } from "../ui/toast";
 import { readableFailure } from "./pullRequestDetail.logic";
@@ -114,6 +113,7 @@ async function performWithCleanup(
   }
 }
 
+import { useAtomCommand } from "~/state/use-atom-command";
 /**
  * Runs one host action against a pull request, with the toasts every surface should say the same
  * way. `onSuccess` is where the caller re-reads whatever it is showing.
@@ -130,7 +130,9 @@ export function usePullRequestActionRunner({
   /** Small surfaces resolve repository settings on the click, not for every visible row. */
   resolveMergeMethod?: (detail: PullRequestDetail) => PullRequestMergeMethod;
 }) {
-  const runAction = useAtomCommand(pullRequestEnvironment.runAction, { reportFailure: false });
+  const runAction = useAtomCommand(pullRequestEnvironment.runAction, {
+    reportFailure: false,
+  });
   const [actionPending, setActionPending] = useState(false);
   const pendingRef = useRef(false);
 

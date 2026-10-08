@@ -7,11 +7,16 @@
  * terminal surfaces point at terminal session ids, file surfaces point at
  * workspace paths, and diff/files remain singleton surfaces.
  */
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import {
+  parseScopedThreadKey,
+  scopedThreadKey,
+  scopeThreadRef,
+} from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
+import { useClosedViewStore } from "./closedViewStore";
 import { resolveStorage } from "./lib/storage";
 
 export const RIGHT_PANEL_KINDS = [
@@ -108,6 +113,7 @@ interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
   /** Session-only count of user panel choices per thread. Automatic updates do not advance it. */
   userActionRevisionByThreadKey: Record<string, number>;
+  closeRevisionByThreadKey: Record<string, number>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
   /**
    * Open a surface on behalf of the app, not the user. Refused when the user
@@ -313,6 +319,7 @@ const userAction = (
   state: RightPanelStoreState,
   threadKey: string,
   updater: (current: ThreadRightPanelState) => ThreadRightPanelState,
+  closesView = false,
 ): Partial<RightPanelStoreState> => ({
   byThreadKey: updateThread(state.byThreadKey, threadKey, (current) => {
     const next = updater(current);
@@ -337,7 +344,21 @@ const userAction = (
     ...state.userActionRevisionByThreadKey,
     [threadKey]: (state.userActionRevisionByThreadKey[threadKey] ?? 0) + 1,
   },
+  ...(closesView
+    ? {
+        closeRevisionByThreadKey: {
+          ...state.closeRevisionByThreadKey,
+          [threadKey]: (state.closeRevisionByThreadKey[threadKey] ?? 0) + 1,
+        },
+      }
+    : {}),
 });
+
+const closeAction = (
+  state: RightPanelStoreState,
+  threadKey: string,
+  updater: (current: ThreadRightPanelState) => ThreadRightPanelState,
+): Partial<RightPanelStoreState> => userAction(state, threadKey, updater, true);
 
 function normalizeRevealLine(line: number | undefined): number | null {
   if (line === undefined || !Number.isFinite(line)) return null;
@@ -479,6 +500,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
     (set, get) => ({
       byThreadKey: {},
       userActionRevisionByThreadKey: {},
+      closeRevisionByThreadKey: {},
       getUserActionRevision: (ref) =>
         get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
       openProactive: (ref, surface, expectedUserActionRevision) => {
@@ -644,7 +666,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       closeTerminal: (ref, surfaceId, terminalId) =>
         set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
+          closeAction(state, scopedThreadKey(ref), (current) => {
             const surface = current.surfaces.find(
               (entry) => entry.id === surfaceId && entry.kind === "terminal",
             );
@@ -691,25 +713,28 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       closeSurface: (ref, surfaceId) =>
         set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
+          closeAction(state, scopedThreadKey(ref), (current) => {
             const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
             if (index < 0) return current;
             const surfaces = current.surfaces.filter((surface) => surface.id !== surfaceId);
-            if (current.activeSurfaceId !== surfaceId) {
-              return { ...current, isOpen: surfaces.length > 0 && current.isOpen, surfaces };
-            }
-            const fallback = surfaces[Math.min(index, surfaces.length - 1)] ?? null;
-            return {
+            const next = {
               ...current,
               isOpen: surfaces.length > 0 && current.isOpen,
               surfaces,
+            };
+            if (current.activeSurfaceId !== surfaceId) {
+              return next;
+            }
+            const fallback = surfaces[Math.min(index, surfaces.length - 1)] ?? null;
+            return {
+              ...next,
               activeSurfaceId: fallback?.id ?? null,
             };
           }),
         ),
       closeOtherSurfaces: (ref, surfaceId) =>
         set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
+          closeAction(state, scopedThreadKey(ref), (current) => {
             const surface = current.surfaces.find((entry) => entry.id === surfaceId);
             if (!surface || current.surfaces.length === 1) return current;
             return {
@@ -722,7 +747,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       closeSurfacesToRight: (ref, surfaceId) =>
         set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
+          closeAction(state, scopedThreadKey(ref), (current) => {
             const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
             if (index < 0 || index === current.surfaces.length - 1) return current;
             const surfaces = current.surfaces.slice(0, index + 1);
@@ -738,7 +763,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       closeAllSurfaces: (ref) =>
         set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) =>
+          closeAction(state, scopedThreadKey(ref), (current) =>
             current.surfaces.length === 0
               ? current
               : { ...current, isOpen: false, surfaces: [], activeSurfaceId: null },
@@ -834,14 +859,17 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           const threadKey = scopedThreadKey(ref);
           if (
             !(threadKey in state.byThreadKey) &&
-            !(threadKey in state.userActionRevisionByThreadKey)
+            !(threadKey in state.userActionRevisionByThreadKey) &&
+            !(threadKey in state.closeRevisionByThreadKey)
           ) {
             return state;
           }
           const { [threadKey]: _removed, ...rest } = state.byThreadKey;
           const { [threadKey]: _revision, ...userActionRevisionByThreadKey } =
             state.userActionRevisionByThreadKey;
-          return { byThreadKey: rest, userActionRevisionByThreadKey };
+          const { [threadKey]: _closeRevision, ...closeRevisionByThreadKey } =
+            state.closeRevisionByThreadKey;
+          return { byThreadKey: rest, userActionRevisionByThreadKey, closeRevisionByThreadKey };
         }),
     }),
     {
@@ -861,6 +889,32 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
     },
   ),
 );
+
+useRightPanelStore.subscribe((next, previous) => {
+  if (next.closeRevisionByThreadKey === previous.closeRevisionByThreadKey) return;
+  for (const [threadKey, revision] of Object.entries(next.closeRevisionByThreadKey)) {
+    if (revision === previous.closeRevisionByThreadKey[threadKey]) continue;
+    const threadRef = parseScopedThreadKey(threadKey);
+    if (!threadRef) continue;
+    const before = previous.byThreadKey[threadKey] ?? EMPTY_THREAD_STATE;
+    const after = next.byThreadKey[threadKey] ?? EMPTY_THREAD_STATE;
+    const removed = before.surfaces.filter(
+      (surface) => !after.surfaces.some((entry) => entry.id === surface.id),
+    );
+    const closedInOrder = [
+      ...removed.filter((surface) => surface.id !== before.activeSurfaceId),
+      ...removed.filter((surface) => surface.id === before.activeSurfaceId),
+    ];
+    for (const surface of closedInOrder) {
+      if (
+        surface.kind === "terminal" ||
+        (surface.kind === "preview" && surface.resourceId !== null)
+      )
+        continue;
+      useClosedViewStore.getState().remember({ kind: "panel-tab", threadRef, surface });
+    }
+  }
+});
 
 export function selectThreadRightPanelState(
   byThreadKey: Record<string, ThreadRightPanelState>,

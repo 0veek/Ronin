@@ -1,3 +1,4 @@
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import {
   type EnvironmentId,
   type EditorId,
@@ -44,7 +45,8 @@ import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { readLocalApi } from "~/localApi";
 import { threadEnvironment } from "../../state/threads";
-import { useAtomCommand } from "../../state/use-atom-command";
+import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { useEnvironmentScope } from "../../state/session";
 import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
 import { ProjectFavicon } from "../ProjectFavicon";
 import {
@@ -219,7 +221,11 @@ export const ChatHeader = memo(function ChatHeader({
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
   );
-  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+  const canOperateThread = useEnvironmentScope(
+    activeThreadEnvironmentId,
+    AuthOrchestrationOperateScope,
+  );
+  const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
   // Inline rename, keyed by thread: navigating away drops an in-progress
@@ -456,7 +462,7 @@ export const ChatHeader = memo(function ChatHeader({
                     aria-label={`Thread actions for ${activeThreadTitle}`}
                     aria-haspopup="menu"
                     onClick={openMenuFromTitle}
-                    onDoubleClick={handleTitleDoubleClick}
+                    onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
                     onBlur={cancelPendingTitleMenu}
                     className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-(--control-radius) text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                   />
@@ -591,9 +597,9 @@ export const ChatHeader = memo(function ChatHeader({
         ) : null}
         {activeProjectScripts && (
           <ProjectScriptsControl
+            environmentId={activeThreadEnvironmentId}
             scripts={activeProjectScripts}
             fileScripts={fileScripts}
-            keybindings={keybindings}
             preferredScriptId={preferredScriptId}
             onRunScript={onRunProjectScript}
             onAddScript={onAddProjectScript}
@@ -603,8 +609,8 @@ export const ChatHeader = memo(function ChatHeader({
         )}
         {showOpenInPicker && (
           <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
             keybindings={keybindings}
+            environmentId={activeThreadEnvironmentId}
             availableEditors={availableEditors}
             openInCwd={openInCwd}
           />

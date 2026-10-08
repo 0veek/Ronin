@@ -5,24 +5,39 @@
 Environment authorization is capability-based. A session carries zero or more
 OAuth-style scope strings:
 
-| Scope                   | Permission                                                               |
-| ----------------------- | ------------------------------------------------------------------------ |
-| `orchestration:read`    | Read snapshots, status, events, configuration, and filesystem/VCS state. |
-| `orchestration:operate` | Dispatch user operations and mutate environment-side workspace state.    |
-| `terminal:operate`      | Create, attach, input, resize, clear, restart, and terminate terminals.  |
-| `review:write`          | Read review diff previews used to compose review feedback.               |
-| `access:read`           | Inspect pairing links and client sessions.                               |
-| `access:write`          | Create or revoke pairing links and client sessions.                      |
+| Scope                   | Permission                                                      |
+| ----------------------- | --------------------------------------------------------------- |
+| `orchestration:read`    | Read thread snapshots, events, status, and configuration.       |
+| `orchestration:operate` | Send, stop, and change threads and projects.                    |
+| `settings:write`        | Change environment preferences and integration credentials.     |
+| `providers:manage`      | Configure, install, update, and refresh providers.              |
+| `environment:maintain`  | Restart, update, and maintain the environment.                  |
+| `source-control:write`  | Write Git state and perform pull request mutations.             |
+| `filesystem:read`       | Browse, search, and read workspace files and diffs.             |
+| `filesystem:write`      | Edit workspace files.                                           |
+| `preview:operate`       | Open and control previews.                                      |
+| `diagnostics:read`      | Read diagnostics, resource telemetry, and usage.                |
+| `terminal:read`         | Observe existing terminals without opening, input, or resizing. |
+| `terminal:operate`      | Create, input, resize, clear, restart, and terminate terminals. |
+| `access:read`           | Inspect pairing links and client sessions.                      |
+| `access:write`          | Create or revoke pairing links and client sessions.             |
+
+`review:write` is decode-only legacy vocabulary, never an assignable grant. Session responses keep
+frozen legacy `scopes` for older clients and advertise actual granular `permissions` to new ones.
+Clients prefer `permissions`, including an empty list. Parent-scope fallback is used only with old
+servers that do not advertise granular permissions. The server never expands old grants.
+Existing sessions stay connected but need to pair again for permissions split out of their grants.
 
 Pairing-link lists and access-stream snapshots and updates contain metadata only.
 The raw credential is returned only by the creation request, after the server checks
 `access:write` and the delegated scopes. Web and desktop clients keep that response
 in memory for sharing. They do not recover credentials from access read models.
 
-Ordinary pairing links grant the four client-operation scopes:
-`orchestration:read orchestration:operate terminal:operate review:write`.
-The desktop bootstrap credential and command-line administrative bootstrap
-credentials additionally grant `access:read access:write`.
+Ordinary pairing links grant the standard granular client permissions above, excluding access
+administration. Desktop and administrative bootstrap credentials additionally grant
+`access:read access:write`. Requested pairing scopes are intersected atomically with the link and
+creator grants; a denied or empty exchange does not consume the link. Omitting the scope parameter
+inherits the link's grant. Re-pairing in the same browser replaces its prior session atomically.
 
 The desktop derives its bootstrap token from a process-owned secret every 12 hours.
 Only that token crosses renderer IPC; the secret travels to the bundled backend over
@@ -50,7 +65,7 @@ grant_type=urn:ietf:params:oauth:grant-type:token-exchange
 subject_token=<bootstrap credential>
 subject_token_type=urn:t3:params:oauth:token-type:environment-bootstrap
 requested_token_type=urn:ietf:params:oauth:token-type:access_token
-scope=orchestration:read orchestration:operate terminal:operate review:write
+scope=orchestration:read orchestration:operate filesystem:read terminal:read terminal:operate
 ```
 
 Clients may additionally submit `client_label`, `client_device_type`, and
@@ -67,14 +82,14 @@ The response has the token-exchange shape:
   "issued_token_type": "urn:ietf:params:oauth:token-type:access_token",
   "token_type": "Bearer",
   "expires_in": 2592000,
-  "scope": "orchestration:read orchestration:operate terminal:operate review:write"
+  "scope": "orchestration:read orchestration:operate filesystem:read terminal:read terminal:operate"
 }
 ```
 
 Sessions issued from a plain bearer exchange use the store's
 `DEFAULT_SESSION_TTL` of 30 days.
 
-Requested scopes must be a subset of the one-time bootstrap credential grant.
+Requested scopes are intersected with the one-time bootstrap credential grant. An empty intersection is denied without consuming it.
 An ordinary paired client therefore cannot exchange its grant for
 `access:read` or `access:write`.
 
@@ -104,13 +119,12 @@ appends only that ticket to the socket URL as `wsTicket`. This keeps long-lived
 tokens and browser cookies out of WebSocket URLs while letting the handshake
 authenticate.
 
-The ticket carries its session's scopes; each RPC method then enforces
-`orchestration:read`, `orchestration:operate`, `terminal:operate`,
-`review:write`, or `access:read` as appropriate, through
-`RPC_REQUIRED_SCOPES` in `apps/server/src/auth/RpcAuthorization.ts`. Review feedback submission currently dispatches
-an orchestration operation, so clients performing it also need
-`orchestration:operate`. Creating a ticket is not authorization to call every
-RPC method.
+The ticket carries its session's scopes; each RPC method then enforces its
+granular permissions through `RPC_REQUIRED_SCOPES` in
+`apps/server/src/auth/RpcAuthorization.ts`. Review feedback submission dispatches
+an orchestration operation, so it requires `orchestration:operate`. Reading
+workspace files independently requires `filesystem:read`. Creating a ticket is
+not authorization to call every RPC method.
 
 ## Standards Alignment
 

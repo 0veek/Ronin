@@ -14,6 +14,7 @@ interface ComposerPendingApprovalActionsProps {
    * should read. Absent for the approval kinds whose answers are fixed, which
    * fall back to the four below.
    */
+  disabled?: boolean;
   options?: ReadonlyArray<ProviderApprovalOption> | undefined;
   onRespondToApproval: (
     requestId: ApprovalRequestId,
@@ -43,6 +44,7 @@ const APPROVAL_ACTION_VARIANT: Record<
 export const ComposerPendingApprovalActions = memo(function ComposerPendingApprovalActions({
   requestId,
   isResponding,
+  disabled = false,
   options = DEFAULT_APPROVAL_OPTIONS,
   onRespondToApproval,
 }: ComposerPendingApprovalActionsProps) {
@@ -53,7 +55,7 @@ export const ComposerPendingApprovalActions = memo(function ComposerPendingAppro
           key={option.decision}
           size="sm"
           variant={APPROVAL_ACTION_VARIANT[option.decision]}
-          disabled={isResponding}
+          disabled={disabled || isResponding}
           onClick={() => void onRespondToApproval(requestId, option.decision)}
         >
           <span className="max-w-40 truncate">{option.label}</span>

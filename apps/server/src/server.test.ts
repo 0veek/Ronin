@@ -10,6 +10,7 @@ import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hos
 import {
   type DeviceServiceState,
   AuthAccessTokenType,
+  AuthAdministrativeScopes,
   AuthStandardClientScopes,
   AuthEnvironmentBootstrapTokenType,
   AuthTokenExchangeGrantType,
@@ -1229,9 +1230,7 @@ const exchangeAccessToken = (
         subject_token: credential,
         subject_token_type: AuthEnvironmentBootstrapTokenType,
         requested_token_type: AuthAccessTokenType,
-        scope:
-          options?.scope ??
-          "orchestration:read orchestration:operate terminal:operate review:write access:read access:write",
+        scope: options?.scope ?? AuthAdministrativeScopes.join(" "),
         ...(options?.clientMetadata?.label ? { client_label: options.clientMetadata.label } : {}),
         ...(options?.clientMetadata?.deviceType
           ? { client_device_type: options.clientMetadata.deviceType }
@@ -2117,10 +2116,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       assert.equal(tokenResponse.status, 200);
       assert.equal(tokenBody.issued_token_type, AuthAccessTokenType);
       assert.equal(tokenBody.token_type, "Bearer");
-      assert.equal(
-        tokenBody.scope,
-        "orchestration:read orchestration:operate terminal:operate review:write access:read access:write",
-      );
+      assert.equal(tokenBody.scope, AuthAdministrativeScopes.join(" "));
       assert.equal(typeof tokenBody.access_token, "string");
 
       const sessionUrl = yield* getHttpServerUrl("/api/auth/session");
@@ -2133,6 +2129,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         readonly authenticated: boolean;
         readonly sessionMethod?: string;
         readonly scopes?: ReadonlyArray<string>;
+        readonly permissions?: ReadonlyArray<string>;
       }>(sessionResponse);
 
       assert.equal(sessionResponse.status, 200);
@@ -2142,10 +2139,10 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         "orchestration:read",
         "orchestration:operate",
         "terminal:operate",
-        "review:write",
         "access:read",
         "access:write",
       ]);
+      assert.deepEqual(sessionBody.permissions, [...AuthAdministrativeScopes]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -2654,13 +2651,15 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           readonly id: string;
           readonly label?: string;
           readonly scopes: ReadonlyArray<string>;
+          readonly permissions: ReadonlyArray<string>;
         }>
       >(response);
       const listed = links.find((link) => link.id === created.id);
       assert.isDefined(listed);
       assert.deepInclude(listed, {
         label: "Synthetic phone",
-        scopes: [...AuthStandardClientScopes],
+        scopes: ["orchestration:read", "orchestration:operate", "terminal:operate"],
+        permissions: [...AuthStandardClientScopes],
       });
 
       const unauthorizedCreate = yield* HttpClient.post("/api/auth/pairing-token", {
@@ -3645,6 +3644,56 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       const session = yield* HttpClient.get("/api/auth/session", { headers: { cookie } });
       assert.equal(session.status, 200);
       assert.include(spanNames, "http.server GET");
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("enforces granular Settings permissions over an authenticated WebSocket", () =>
+    Effect.gen(function* () {
+      const writes: KeybindingRule[] = [];
+      yield* buildAppUnderTest({
+        layers: {
+          keybindings: {
+            upsertKeybindingRule: (rule) =>
+              Effect.sync(() => {
+                writes.push(rule);
+                return [];
+              }),
+          },
+        },
+      });
+      for (const scope of [
+        "orchestration:read orchestration:operate",
+        "orchestration:read settings:write",
+      ]) {
+        const { body } = yield* exchangeAccessToken(defaultDesktopBootstrapToken, { scope });
+        const ticketResponse = yield* HttpClient.post("/api/auth/websocket-ticket", {
+          headers: { authorization: `Bearer ${body.access_token ?? ""}` },
+        });
+        const ticket = (yield* ticketResponse.json) as { readonly ticket: string };
+        const url = `${yield* getWsServerUrl("/ws", { authenticated: false })}?wsTicket=${encodeURIComponent(ticket.ticket)}`;
+        yield* Effect.scoped(
+          withWsRpcClient(url, (client) =>
+            Effect.gen(function* () {
+              yield* client[WS_METHODS.serverGetConfig]({});
+              const write = client[WS_METHODS.serverUpsertKeybinding]({
+                command: "terminal.toggle",
+                key: "ctrl+k",
+              });
+              if (scope.includes("settings:write")) {
+                yield* write;
+              } else {
+                const error = yield* Effect.flip(write);
+                assert.equal(error._tag, "EnvironmentAuthorizationError");
+                if (error._tag === "EnvironmentAuthorizationError") {
+                  assert.equal(error.requiredPermission, "settings:write");
+                  assert.equal(error.requiredScope, "orchestration:operate");
+                }
+              }
+            }),
+          ),
+        );
+      }
+      assert.equal(writes.length, 1);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

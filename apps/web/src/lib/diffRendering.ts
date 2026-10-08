@@ -199,12 +199,12 @@ export function getRenderablePatch(
   }
 }
 
+/**
+ * The file's own name. Git quotes and escapes a name holding a tab, a newline, a quote or a
+ * backslash, and the parser decodes it, so this is the name the host knows the file by.
+ */
 export function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
-  const raw = fileDiff.name ?? fileDiff.prevName ?? "";
-  if (raw.startsWith("a/") || raw.startsWith("b/")) {
-    return raw.slice(2);
-  }
-  return raw;
+  return fileDiff.name ?? fileDiff.prevName ?? "";
 }
 
 /**
@@ -212,11 +212,7 @@ export function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
  * path, and the hosts that resolve a diff position against both sides need both names.
  */
 export function resolveFileDiffPreviousPath(fileDiff: FileDiffMetadata): string {
-  const raw = fileDiff.prevName ?? fileDiff.name ?? "";
-  if (raw.startsWith("a/") || raw.startsWith("b/")) {
-    return raw.slice(2);
-  }
-  return raw;
+  return fileDiff.prevName ?? fileDiff.name ?? "";
 }
 
 export function buildFileDiffIdentityKey(fileDiff: FileDiffMetadata): string {

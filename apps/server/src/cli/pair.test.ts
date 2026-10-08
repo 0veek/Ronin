@@ -169,6 +169,34 @@ describe("t3 pair", () => {
         const credentials = JSON.parse(listed) as ReadonlyArray<{ readonly label?: string }>;
         assert.equal(credentials.length, 1);
         assert.equal(credentials[0]?.label, "t3 pair");
+        yield* captureStdout(
+          runCli([
+            "pair",
+            "--base-dir",
+            baseDir,
+            "--scope",
+            "orchestration:read",
+            "--scope",
+            "terminal:read",
+            "--scope",
+            "terminal:read",
+          ]),
+        );
+        const restrictedJson = yield* captureStdout(
+          runCli(["auth", "pairing", "list", "--base-dir", baseDir, "--json"]),
+        );
+        // @effect-diagnostics-next-line preferSchemaOverJson:off - CLI presentation DTO.
+        const restricted = JSON.parse(restrictedJson) as ReadonlyArray<{
+          readonly scopes: ReadonlyArray<string>;
+          readonly permissions?: ReadonlyArray<string>;
+        }>;
+        assert.isTrue(
+          restricted.some(
+            (link) =>
+              JSON.stringify(link.permissions ?? link.scopes) ===
+              JSON.stringify(["orchestration:read", "terminal:read"]),
+          ),
+        );
       }),
     ).pipe(Effect.provide(NodeServices.layer)),
   );

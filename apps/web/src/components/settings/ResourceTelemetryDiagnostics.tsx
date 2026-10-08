@@ -1,3 +1,4 @@
+import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import {
   ActivityIcon,
@@ -40,6 +41,7 @@ import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
 import { usePrimaryEnvironment } from "../../state/environments";
 import { serverEnvironment } from "../../state/server";
+import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatRelativeTime } from "../../timestampFormat";
 import { Button } from "../ui/button";
@@ -521,10 +523,12 @@ function canSignalProcess(process: ResourceTelemetryProcess): boolean {
 
 function ProcessActions({
   process,
+  canMaintainEnvironment,
   signalingKeys,
   onSignal,
 }: {
   process: ResourceTelemetryProcess;
+  canMaintainEnvironment: boolean;
   signalingKeys: ReadonlySet<string>;
   onSignal: (process: ResourceTelemetryProcess, signal: ServerProcessSignal) => void;
 }) {
@@ -536,7 +540,7 @@ function ProcessActions({
     <div className="flex items-center justify-end gap-1.5">
       <button
         type="button"
-        disabled={isSignaling}
+        disabled={!canMaintainEnvironment || isSignaling}
         className="cursor-pointer text-3xs font-semibold text-muted-foreground hover:text-foreground disabled:opacity-50"
         onClick={() => onSignal(process, "SIGINT")}
       >
@@ -544,7 +548,7 @@ function ProcessActions({
       </button>
       <button
         type="button"
-        disabled={isSignaling}
+        disabled={!canMaintainEnvironment || isSignaling}
         className="cursor-pointer text-3xs font-semibold text-destructive hover:underline disabled:opacity-50"
         onClick={() => onSignal(process, "SIGKILL")}
       >
@@ -555,11 +559,13 @@ function ProcessActions({
 }
 
 function ProcessTable({
+  canMaintainEnvironment,
   processes,
   signalingKeys,
   onSignal,
 }: {
   processes: ReadonlyArray<ResourceTelemetryProcess>;
+  canMaintainEnvironment: boolean;
   signalingKeys: ReadonlySet<string>;
   onSignal: (process: ResourceTelemetryProcess, signal: ServerProcessSignal) => void;
 }) {
@@ -666,6 +672,7 @@ function ProcessTable({
               </td>
               <td className="px-2 py-2 text-right sm:pr-4">
                 <ProcessActions
+                  canMaintainEnvironment={canMaintainEnvironment}
                   process={process}
                   signalingKeys={signalingKeys}
                   onSignal={onSignal}
@@ -833,13 +840,15 @@ export function ResourceTelemetryDiagnostics() {
   const [windowMs, setWindowMs] = useState(15 * 60_000);
   const selectedWindow =
     HISTORY_WINDOWS.find((option) => option.windowMs === windowMs) ?? HISTORY_WINDOWS[1];
+  const primaryEnvironment = usePrimaryEnvironment();
+  const environmentId = primaryEnvironment?.environmentId ?? null;
+  const canMaintainEnvironment = useEnvironmentScope(environmentId, AuthEnvironmentMaintainScope);
   const telemetry = useResourceTelemetry();
   const retryTelemetry = telemetry.retry;
   const history = useResourceTelemetryHistory({
     windowMs: selectedWindow.windowMs,
     bucketMs: selectedWindow.bucketMs,
   });
-  const primaryEnvironment = usePrimaryEnvironment();
   const signalServerProcess = useAtomCommand(serverEnvironment.signalProcess, {
     reportFailure: false,
   });
@@ -888,7 +897,10 @@ export function ResourceTelemetryDiagnostics() {
         }
       }
       const environmentId = primaryEnvironmentIdRef.current;
-      if (environmentId === undefined) {
+      if (
+        environmentId === undefined ||
+        !readEnvironmentScope(environmentId, AuthEnvironmentMaintainScope)
+      ) {
         clearSignaling();
         return;
       }
@@ -930,6 +942,9 @@ export function ResourceTelemetryDiagnostics() {
   );
 
   const retryCollector = useCallback(() => {
+    const environmentId = primaryEnvironmentIdRef.current;
+    if (environmentId == null || !readEnvironmentScope(environmentId, AuthEnvironmentMaintainScope))
+      return;
     setIsRetrying(true);
     void retryTelemetry()
       .catch((error: unknown) => {
@@ -1261,6 +1276,7 @@ export function ResourceTelemetryDiagnostics() {
         <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[var(--shadow-raised)]">
           <ProcessTable
             processes={snapshot?.processes ?? []}
+            canMaintainEnvironment={canMaintainEnvironment}
             signalingKeys={signalingKeys}
             onSignal={signalProcess}
           />

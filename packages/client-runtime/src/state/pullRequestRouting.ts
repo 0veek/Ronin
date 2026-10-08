@@ -24,7 +24,7 @@ import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { ConnectionProfileStore } from "../connection/profileStore.ts";
 import {
-  request,
+  requestGuarded as request,
   EnvironmentRpcUnavailableError,
   type EnvironmentRpcInput,
   type EnvironmentUnaryRpcTag,

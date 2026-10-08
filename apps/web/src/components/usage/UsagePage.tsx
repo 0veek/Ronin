@@ -382,6 +382,7 @@ export function UsagePage() {
                 <button
                   type="button"
                   onClick={refreshWindow}
+                  disabled={!environments.some((environment) => environment.canReadDiagnostics)}
                   aria-label="Refresh usage"
                   className="cursor-pointer rounded-md border border-border bg-card p-2 text-muted-foreground transition-colors duration-(--duration-fast) hover:text-foreground"
                 >
@@ -390,7 +391,14 @@ export function UsagePage() {
               </div>
             </div>
 
-            {settling ? (
+            {!isPending &&
+            environments.length > 0 &&
+            environments.every((environment) => !environment.canReadDiagnostics) ? (
+              <p className="py-8 text-sm text-muted-foreground">
+                This connection does not have permission to read usage. Pair again with diagnostics
+                permission to view it.
+              </p>
+            ) : settling ? (
               <>
                 {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
                 <UsageSkeleton resolution={isPast24Hours ? "hour" : "day"} />

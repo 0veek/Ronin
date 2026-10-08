@@ -64,6 +64,8 @@ const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_PATCH_MAX_OUTPUT_BYTES = 59_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+// Keep bulk indexing and per-file fallback bounded during frequent status reads.
+const REVIEW_UNTRACKED_MAX_FILES = 5_000;
 const REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
 // Patches the clients render are parsed against git's default a/ and b/ path
 // prefixes. A repository or global diff.noprefix or diff.mnemonicPrefix would
@@ -2563,6 +2565,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       },
     );
     const untrackedPaths = splitNullSeparatedGitStdoutPaths(untrackedResult);
+    if (untrackedPaths.length > REVIEW_UNTRACKED_MAX_FILES) return { diff: "", truncated: true };
     if (untrackedPaths.length === 0) {
       return { diff: "", truncated: untrackedResult.stdoutTruncated };
     }
@@ -2752,6 +2755,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return yield* readTrackedReviewDiff(cwd, ignoreWhitespace, baseRef);
     }
     const untrackedPaths = splitNullSeparatedGitStdoutPaths(untrackedResult.value);
+    if (
+      untrackedPaths.length > REVIEW_UNTRACKED_MAX_FILES ||
+      untrackedResult.value.stdoutTruncated
+    ) {
+      const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace, baseRef);
+      return { ...tracked, truncated: true };
+    }
     if (untrackedPaths.length === 0) {
       const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace, baseRef);
       return { ...tracked, truncated: untrackedResult.value.stdoutTruncated || tracked.truncated };
