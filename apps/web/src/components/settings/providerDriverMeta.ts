@@ -8,6 +8,7 @@ import {
   KiloSettings,
   OpenCodeSettings,
   PiSettings,
+  MuseSettings,
   ProviderDriverKind,
 } from "@t3tools/contracts";
 import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
@@ -23,6 +24,7 @@ import {
   OpenAI,
   OpenCodeIcon,
   PiAgentIcon,
+  MuseIcon,
 } from "../Icons";
 
 type ProviderSettingsSchema = {
@@ -51,6 +53,12 @@ export interface ProviderClientDefinition {
 }
 
 export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
+  {
+    value: ProviderDriverKind.make("muse"),
+    label: "Muse Code",
+    icon: MuseIcon,
+    settingsSchema: MuseSettings,
+  },
   {
     value: ProviderDriverKind.make("codex"),
     label: DRIVER_LABEL.codex,

@@ -1,3 +1,4 @@
+import type { PullRequestAction } from "@t3tools/contracts";
 import {
   useCallback,
   useEffect,
@@ -18,12 +19,14 @@ export function usePullRequestCloseSweep({
   closeBatch,
   scrollRef,
   resetKey,
+  hostActionsOf,
 }: {
   groups: ReadonlyArray<{ key: string; entries: ReadonlyArray<EnvironmentPullRequestEntry> }>;
   closingKeys: ReadonlySet<string>;
   closeBatch: (entries: ReadonlyArray<EnvironmentPullRequestEntry>) => Promise<void>;
   scrollRef: RefObject<HTMLDivElement | null>;
   resetKey: string;
+  hostActionsOf: (entry: EnvironmentPullRequestEntry) => ReadonlySet<PullRequestAction>;
 }) {
   const [sweepingKeys, setSweepingKeys] = useState<ReadonlySet<string>>(() => new Set());
   const sensorRef = useRef<SidebarPointerSensor | null>(null);
@@ -38,11 +41,11 @@ export function usePullRequestCloseSweep({
       ),
     [groups],
   );
-  const latest = useRef({ groups, rows, closingKeys, closeBatch, resetKey });
+  const latest = useRef({ groups, rows, closingKeys, closeBatch, resetKey, hostActionsOf });
   useLayoutEffect(() => {
     if (latest.current.resetKey !== resetKey) sensorRef.current?.cancel();
-    latest.current = { groups, rows, closingKeys, closeBatch, resetKey };
-  }, [groups, rows, closingKeys, closeBatch, resetKey]);
+    latest.current = { groups, rows, closingKeys, closeBatch, resetKey, hostActionsOf };
+  }, [groups, rows, closingKeys, closeBatch, resetKey, hostActionsOf]);
   useEffect(() => () => sensorRef.current?.cancel(), []);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -68,7 +71,7 @@ export function usePullRequestCloseSweep({
         return (
           row?.groupKey === groupKey &&
           row.entry.state === "open" &&
-          row.entry.provider === "github" &&
+          latest.current.hostActionsOf(row.entry).has("close") &&
           !latest.current.closingKeys.has(key) &&
           !scrollRef.current?.querySelector(
             `[data-pull-request-key="${CSS.escape(key)}"] [data-pull-request-action-pending="true"]`,

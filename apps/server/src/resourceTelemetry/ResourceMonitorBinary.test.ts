@@ -119,6 +119,24 @@ describe("ResourceMonitorBinary", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
+  it.effect.each(["win32", "linux"] as const)("rejects a directory override on %s", (platform) =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "ronin-monitor-directory-",
+      });
+      const service = yield* ResourceMonitorBinary.make().pipe(
+        Effect.provide(ServerConfig.layerTest(baseDir, baseDir)),
+        Effect.provideService(HostProcessPlatform, platform),
+        Effect.provideService(HostProcessArchitecture, "arm64"),
+        Effect.provideService(HostProcessEnvironment, { T3CODE_RESOURCE_MONITOR_PATH: baseDir }),
+      );
+      const error = yield* Effect.flip(service.resolve);
+      assert.instanceOf(error, ResourceMonitorBinary.ResourceMonitorBinaryNotExecutable);
+      assert.equal(error.path, baseDir);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("rejects unsupported platform and architecture pairs", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

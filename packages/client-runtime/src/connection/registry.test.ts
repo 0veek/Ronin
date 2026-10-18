@@ -2,6 +2,7 @@ import {
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
   type OrchestrationShellSnapshot,
+  type ServerConfig,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
@@ -46,6 +47,7 @@ import {
 import * as Persistence from "../platform/persistence.ts";
 import * as ConnectionProfileStore from "./profileStore.ts";
 import * as EnvironmentRegistry from "./registry.ts";
+import { connectionRouteKind } from "./routes.ts";
 import * as RpcSession from "../rpc/session.ts";
 import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
@@ -131,6 +133,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       target: EnvironmentId,
     ) => Effect.Effect<void, Persistence.ConnectionPersistenceError>;
     readonly initialDisabled?: ReadonlyArray<EnvironmentId>;
+    readonly directEndpoints?: ServerConfig["directEndpoints"];
     readonly prepareError?: ConnectionBlockedError;
     readonly beforePrepareRoute?: (
       target: ConnectionTarget,
@@ -328,7 +331,10 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         const session = yield* Effect.acquireRelease(
           Effect.succeed({
             client: {} as RpcSession.RpcSession["client"],
-            initialConfig: Effect.die(new Error("Config is not used by registry tests.")),
+            initialConfig:
+              options?.directEndpoints === undefined
+                ? Effect.die(new Error("Config is not used by registry tests."))
+                : Effect.succeed({ directEndpoints: options.directEndpoints } as ServerConfig),
             subscribeServerConfig: () =>
               Stream.die(new Error("Config is not used by registry tests.")),
             ready: Effect.void,
@@ -1308,6 +1314,48 @@ describe("EnvironmentRegistry", () => {
 });
 
 describe("EnvironmentRegistry routes", () => {
+  it.effect("saves the Tailscale mark when the server reports a learned address as tailnet", () =>
+    Effect.gen(function* () {
+      const httpBaseUrl = "http://100.101.102.103:3773/";
+      const learnedId = `learned:${BEARER_TARGET.environmentId}:http://100.101.102.103:3773@${BEARER_TARGET.connectionId}`;
+      const learned = new BearerConnectionTarget({ ...BEARER_TARGET, connectionId: learnedId });
+      // Learned by an earlier build, which saved no network.
+      const learnedProfile = new BearerConnectionProfile({
+        connectionId: learnedId,
+        environmentId: BEARER_TARGET.environmentId,
+        label: BEARER_TARGET.label,
+        httpBaseUrl,
+        wsBaseUrl: "ws://100.101.102.103:3773/",
+        learned: true,
+      });
+      const harness = yield* makeHarness(
+        [BEARER_TARGET, learned],
+        [BEARER_PROFILE, learnedProfile],
+        [[BEARER_TARGET.connectionId, BEARER_CREDENTIAL]],
+        {
+          directEndpoints: [
+            { kind: "lan", httpBaseUrl: BEARER_PROFILE.httpBaseUrl },
+            { kind: "tailnet", httpBaseUrl },
+          ],
+        },
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+        yield* registry.start;
+        yield* SubscriptionRef.changes(registry.entries).pipe(
+          Stream.map((entries) => entries.get(BEARER_TARGET.environmentId)?.alternateRoutes?.[0]),
+          Stream.filter((route) => route !== undefined && connectionRouteKind(route) === "tailnet"),
+          Stream.runHead,
+        );
+        expect((yield* Ref.get(harness.storedProfiles)).get(learnedId)).toMatchObject({
+          network: "tailscale",
+          learned: true,
+          httpBaseUrl,
+        });
+      }).pipe(Effect.provide(harness.layer), Effect.scoped);
+    }),
+  );
+
   it.effect(
     "re-pairing a legacy address replaces its borrowed routes and keeps saved preference",
     () =>

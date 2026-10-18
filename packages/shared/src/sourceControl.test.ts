@@ -225,3 +225,13 @@ it("keeps a GitLab identity's whole path, because a nested group is part of the 
   });
   expect(selector).toBe("group/subgroup/service");
 });
+
+it("uses generic presentation for an integration unknown to this client", () => {
+  expect(
+    resolveChangeRequestPresentation({
+      kind: "custom-forge",
+      name: "Custom",
+      baseUrl: "https://forge.test",
+    }),
+  ).toEqual(resolveChangeRequestPresentation({ kind: "unknown", name: "Unknown", baseUrl: "" }));
+});

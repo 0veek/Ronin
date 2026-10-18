@@ -85,6 +85,55 @@ const turnStartCommand = {
 };
 
 it.layer(NodeServices.layer)("thread.message.user.append", (it) => {
+  it.effect("automatic branch defaults yield to a bootstrap message or starting session", () =>
+    Effect.gen(function* () {
+      const empty = yield* readModelWithThread;
+      const command = {
+        type: "thread.meta.update" as const,
+        commandId: CommandId.make("default-branch"),
+        threadId,
+        branch: "main",
+        worktreePath: null,
+        expectedEmpty: true,
+      };
+      const defaulted = yield* decideOrchestrationCommand({ command, readModel: empty });
+      expect(defaulted).toMatchObject({ type: "thread.meta-updated" });
+      const appended = yield* decideOrchestrationCommand({
+        command: appendCommand,
+        readModel: empty,
+      });
+      const withMessage = yield* projectEvent(empty, {
+        ...(Array.isArray(appended) ? appended[0]! : appended),
+        sequence: 3,
+      });
+      const withSession = {
+        ...empty,
+        threads: empty.threads.map((thread) => ({
+          ...thread,
+          session: {
+            threadId,
+            status: "starting" as const,
+            providerName: "codex",
+            runtimeMode: "full-access" as const,
+            activeTurnId: null,
+            lastError: null,
+            updatedAt: createdAt,
+          },
+        })),
+      };
+      for (const readModel of [withMessage, withSession]) {
+        const error = yield* decideOrchestrationCommand({ command, readModel }).pipe(Effect.flip);
+        expect(error._tag).toBe("OrchestrationCommandInvariantError");
+        expect(error.message).toContain("no longer empty");
+        const manual = yield* decideOrchestrationCommand({
+          command: { ...command, expectedEmpty: false },
+          readModel,
+        });
+        expect(manual).toMatchObject({ type: "thread.meta-updated" });
+      }
+    }),
+  );
+
   it.effect("persists a user message without a turn, tagged as deferred", () =>
     Effect.gen(function* () {
       const readModel = yield* readModelWithThread;

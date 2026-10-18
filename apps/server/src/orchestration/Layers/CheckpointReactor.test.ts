@@ -119,6 +119,7 @@ function createProviderServiceHarness(
         ] satisfies ReadonlyArray<ProviderSession>)
       : Effect.succeed([] as ReadonlyArray<ProviderSession>);
   const service: ProviderServiceShape = {
+    mcpAppRequest: () => unsupported(),
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
     compactThread: () => unsupported(),

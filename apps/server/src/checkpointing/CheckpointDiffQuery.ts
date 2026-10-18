@@ -1,3 +1,29 @@
+import { isGitImport, parseTurnDiffFilesFromNumstat, type TurnDiffFileSummary } from "./Diffs.ts";
+
+// Windows limits a command line to 32,767 characters. Leave room for the rest of git's arguments.
+const MAX_PATHSPEC_CHARS = 24_000;
+
+/** Splits files into pathspec lists that each fit on one git command line. Renames keep both paths together. */
+function batchFilePaths(files: ReadonlyArray<TurnDiffFileSummary>) {
+  const batches: string[][] = [];
+  let batch: string[] = [];
+  let length = 0;
+  for (const file of files) {
+    const paths = file.previousPath === undefined ? [file.path] : [file.previousPath, file.path];
+    // Each pathspec also carries a `:(top,literal)` prefix and a separator.
+    const size = paths.reduce((total, path) => total + path.length + 16, 0);
+    if (batch.length > 0 && length + size > MAX_PATHSPEC_CHARS) {
+      batches.push(batch);
+      batch = [];
+      length = 0;
+    }
+    batch.push(...paths);
+    length += size;
+  }
+  if (batch.length > 0) batches.push(batch);
+  return batches;
+}
+
 /**
  * CheckpointDiffQuery - Query interface for computed checkpoint diffs.
  *
@@ -78,6 +104,37 @@ function buildTurnDiffResult(
 export const make = Effect.gen(function* () {
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
+
+  const readAuthoredDiff = Effect.fn("CheckpointDiffQuery.readAuthoredDiff")(function* (
+    comparison: CheckpointStore.DiffCheckpointsInput,
+  ) {
+    // Leave out files that a pull, merge, or rebase brought in, matching the turn's file summary.
+    // Filtering is optional: when it cannot run, the complete diff still loads.
+    const authoredPaths = yield* checkpointStore
+      .listAuthoredPaths(comparison)
+      .pipe(Effect.orElseSucceed(() => null));
+    const files =
+      authoredPaths === null
+        ? []
+        : yield* checkpointStore.diffCheckpoints({ ...comparison, format: "numstat" }).pipe(
+            Effect.map(parseTurnDiffFilesFromNumstat),
+            Effect.orElseSucceed(() => []),
+          );
+    const retainedFiles = files.filter((file) => !isGitImport(file, authoredPaths));
+    // Select retained paths before generating a patch, so imported bulk cannot exhaust its output limit.
+    return retainedFiles.length === files.length
+      ? yield* checkpointStore
+          .diffCheckpoints(comparison)
+          .pipe(Effect.withSpan("checkpoint.turnDiff.diffCheckpoints"))
+      : (yield* Effect.forEach(
+          batchFilePaths(retainedFiles),
+          (filePaths) =>
+            checkpointStore
+              .diffCheckpoints({ ...comparison, filePaths })
+              .pipe(Effect.withSpan("checkpoint.turnDiff.diffCheckpoints")),
+          { concurrency: 4 },
+        )).join("");
+  });
 
   const getTurnDiff: CheckpointDiffQuery["Service"]["getTurnDiff"] = Effect.fn("getTurnDiff")(
     function* (input) {
@@ -164,15 +221,13 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      const diff = yield* checkpointStore
-        .diffCheckpoints({
-          cwd: workspaceCwd,
-          fromCheckpointRef,
-          toCheckpointRef,
-          fallbackFromToHead: false,
-          ignoreWhitespace,
-        })
-        .pipe(Effect.withSpan("checkpoint.turnDiff.diffCheckpoints"));
+      const diff = yield* readAuthoredDiff({
+        cwd: workspaceCwd,
+        fromCheckpointRef,
+        toCheckpointRef,
+        fallbackFromToHead: false,
+        ignoreWhitespace,
+      });
 
       const turnDiff = buildTurnDiffResult(input, diff);
       if (!isTurnDiffResult(turnDiff)) {
@@ -254,15 +309,13 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    const diff = yield* checkpointStore
-      .diffCheckpoints({
-        cwd: workspaceCwd,
-        fromCheckpointRef: checkpointRefForThreadTurn(input.threadId, 0),
-        toCheckpointRef: threadContext.value.toCheckpointRef as CheckpointRef,
-        fallbackFromToHead: false,
-        ignoreWhitespace,
-      })
-      .pipe(Effect.withSpan("checkpoint.fullThread.diffCheckpoints"));
+    const diff = yield* readAuthoredDiff({
+      cwd: workspaceCwd,
+      fromCheckpointRef: checkpointRefForThreadTurn(input.threadId, 0),
+      toCheckpointRef: threadContext.value.toCheckpointRef as CheckpointRef,
+      fallbackFromToHead: false,
+      ignoreWhitespace,
+    });
 
     const turnDiff = buildTurnDiffResult(
       {

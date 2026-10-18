@@ -3,6 +3,7 @@ import { PROVIDER_ORDER } from "@t3tools/shared/providerVocabulary";
 
 import {
   AntigravityIcon,
+  PiAgentIcon,
   ClaudeAI,
   CursorIcon,
   GrokIcon,
@@ -38,6 +39,7 @@ export const PROVIDER_COLOR: Record<UsageProviderKind, string> = {
   cursor: "var(--provider-cursor, #8b8b8b)",
   opencode: "var(--provider-opencode, #5b9bbd)",
   antigravity: "var(--provider-antigravity)",
+  pi: "var(--provider-pi, #4d9f8a)",
 };
 
 /**
@@ -55,6 +57,7 @@ export const PROVIDER_MARK: Record<UsageProviderKind, Icon> = {
   cursor: CursorIcon,
   opencode: OpenCodeIcon,
   antigravity: AntigravityIcon,
+  pi: PiAgentIcon,
 };
 
 /**

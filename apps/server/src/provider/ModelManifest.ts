@@ -1,3 +1,5 @@
+import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
+import * as Option from "effect/Option";
 /**
  * ModelManifest — remote provider-model metadata with a bundled offline
  * fallback.
@@ -18,6 +20,7 @@ import {
   TrimmedNonEmptyString,
   type ProviderDriverKind,
   type ServerProviderModel,
+  type ServerProviderUpdateRequiredModel,
 } from "@t3tools/contracts";
 import { codexModelFamily } from "@t3tools/shared/model";
 import * as Clock from "effect/Clock";
@@ -207,10 +210,7 @@ export function isLegacyModel(
   const catalogModel =
     catalog?.find((model) => model.slug === slug) ??
     catalog?.find((model) => model.slug === family);
-  if (catalogModel) return catalogModel.status === "legacy";
-  const currentModels = manifest.currentModels[driverKind];
-  if (!currentModels) return false;
-  return !currentModels.includes(slug) && !currentModels.includes(family);
+  return catalogModel?.status === "legacy";
 }
 
 /**
@@ -222,14 +222,53 @@ export function applyModelManifest(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
 ): ServerProviderDraft {
+  const { updateRequiredModels: _previous, ...rest } = draft;
+  const updateRequiredModels =
+    driverKind === "codex" ? codexUpdateRequiredModels(manifest, draft) : [];
   return {
-    ...draft,
+    ...rest,
     models: applyManifestDefault(
       classifyModels(draft.models, manifest, driverKind),
       manifest,
       driverKind,
     ),
+    ...(updateRequiredModels.length > 0 ? { updateRequiredModels } : {}),
   };
+}
+
+const CodexModelAdapter = Schema.Struct({
+  codex: Schema.optional(Schema.Struct({ minVersion: Schema.optional(TrimmedNonEmptyString) })),
+});
+const decodeCodexModelAdapter = Schema.decodeUnknownOption(CodexModelAdapter);
+
+/**
+ * Codex lists only the models its own build knows, so a model released after
+ * the installed CLI never shows up. A current manifest entry with
+ * `adapter.codex.minVersion` names that model, letting the picker say an update
+ * unlocks it instead of leaving users to wonder where it is.
+ */
+function codexUpdateRequiredModels(
+  manifest: ModelManifestData,
+  draft: ServerProviderDraft,
+): ReadonlyArray<ServerProviderUpdateRequiredModel> {
+  const version = draft.version?.replace(/^v/, "");
+  if (!version || parseSemver(version) === null) return [];
+  const discovered = new Set(draft.models.map((model) => codexModelFamily(model.slug)));
+  return (manifest.providers?.codex?.models ?? []).flatMap((entry) => {
+    if (entry.status !== "current" || discovered.has(codexModelFamily(entry.slug))) return [];
+    const minVersion = Option.getOrUndefined(decodeCodexModelAdapter(entry.adapter ?? {}))?.codex
+      ?.minVersion;
+    if (!minVersion || parseSemver(minVersion) === null) return [];
+    if (compareSemverVersions(version, minVersion) >= 0) return [];
+    return [
+      {
+        slug: entry.slug,
+        name: entry.name,
+        ...(entry.badge ? { badge: entry.badge } : {}),
+        minVersion,
+      },
+    ];
+  });
 }
 
 /** The manifest's chat default for `driverKind`, when it names one. */

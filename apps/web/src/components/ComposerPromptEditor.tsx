@@ -89,6 +89,7 @@ import {
   COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME,
   SKILL_CHIP_ICON_SVG,
 } from "./composerInlineChip";
+import { WorkspaceEntryTooltip } from "./chat/WorkspaceEntryIcon";
 import { FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { getTimelinePageScrollKey } from "./chat/pageScrollController";
 import {
@@ -164,7 +165,13 @@ function ComposerMentionDecorator(props: { path: string }) {
       spellCheck={false}
       data-composer-mention-chip="true"
     >
-      <FileTagChipContent path={props.path} label={basenameOfPath(props.path)} theme={theme} />
+      <FileTagChipContent
+        path={props.path}
+        environmentId={actions.environmentId}
+        cwd={actions.cwd}
+        label={basenameOfPath(props.path)}
+        theme={theme}
+      />
     </button>
   );
 
@@ -172,7 +179,11 @@ function ComposerMentionDecorator(props: { path: string }) {
     <Tooltip>
       <TooltipTrigger render={chip} />
       <TooltipPopup side="top" className="max-w-120 whitespace-normal leading-tight wrap-anywhere">
-        {props.path}
+        <WorkspaceEntryTooltip
+          path={props.path}
+          environmentId={actions.environmentId}
+          cwd={actions.cwd}
+        />
       </TooltipPopup>
     </Tooltip>
   );

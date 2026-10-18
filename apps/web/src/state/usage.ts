@@ -15,6 +15,7 @@ import {
   type UsageBucket,
   type UsageSummary,
   type UsageSummaryInput,
+  type UsageProviderKind,
 } from "@t3tools/contracts";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
@@ -27,6 +28,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
 import { environmentSession, readEnvironmentScope } from "./session";
+import { withoutProviders } from "./usageProviderFilter";
 
 export interface EnvironmentUsageStatus {
   readonly environmentId: EnvironmentId;
@@ -127,7 +129,12 @@ export interface UsageView {
   readonly refresh: () => void;
 }
 
-export function useUsage(input: UsageSummaryInput): UsageView {
+const NO_HIDDEN_PROVIDERS: ReadonlySet<UsageProviderKind> = new Set();
+
+export function useUsage(
+  input: UsageSummaryInput,
+  hiddenProviders: ReadonlySet<UsageProviderKind> = NO_HIDDEN_PROVIDERS,
+): UsageView {
   const windowKey = useMemo(
     () =>
       JSON.stringify({
@@ -176,20 +183,10 @@ export function useUsage(input: UsageSummaryInput): UsageView {
     }
   }, [environments, windowKey]);
 
-  const merged = useMemo(() => {
-    const answered: EnvironmentUsage[] = environments.flatMap((environment) =>
-      environment.summary === null
-        ? []
-        : [
-            {
-              environmentId: environment.environmentId,
-              label: environment.label,
-              summary: environment.summary,
-            },
-          ],
-    );
-    return mergeUsage(answered, USAGE_CONTRACT_VERSION);
-  }, [environments]);
+  const merged = useMemo(
+    () => mergeAnsweredUsage(withoutProviders(environments, hiddenProviders)),
+    [environments, hiddenProviders],
+  );
 
   const answeredCount = environments.filter((environment) => environment.summary !== null).length;
   const stillReporting = environments.filter(

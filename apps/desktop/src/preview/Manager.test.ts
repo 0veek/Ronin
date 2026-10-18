@@ -156,13 +156,24 @@ describe("previewWindowOpenAction", () => {
     ).toBe("popup");
   });
 
-  it("keeps target=_blank links in the preview tab", () => {
+  it("opens target=_blank links as a new tab", () => {
     expect(PreviewManager.previewWindowOpenAction(details({ disposition: "foreground-tab" }))).toBe(
-      "navigate",
+      "new-tab",
     );
     expect(PreviewManager.previewWindowOpenAction(details({ disposition: "background-tab" }))).toBe(
-      "navigate",
+      "new-tab",
     );
+  });
+
+  it("keeps a form POST with a body on the in-place path", () => {
+    // A new tab can only reopen the URL as a GET, which would drop the body.
+    const postBody = { data: [], contentType: "application/x-www-form-urlencoded" };
+    expect(
+      PreviewManager.previewWindowOpenAction({
+        ...details({ disposition: "foreground-tab" }),
+        postBody,
+      }),
+    ).toBe("navigate");
   });
 
   it("does not hand a window to schemes that cannot be hardened", () => {
@@ -170,13 +181,22 @@ describe("previewWindowOpenAction", () => {
     // when its preferences can be overridden. Chromium copies the guest's
     // preferences for `about:blank` and forbids overriding them.
     for (const url of [
-      "about:blank",
       "javascript:alert(1)",
       "file:///etc/passwd",
       "vscode://vscode-remote/ssh-remote+box/tmp",
       "not a url",
     ]) {
       expect(PreviewManager.previewWindowOpenAction(details({ url }))).toBe("navigate");
+    }
+  });
+
+  it("denies a blank window instead of blanking the opener", () => {
+    // MSAL opens `about:blank` first and falls back to a redirect on `null`;
+    // loading the blank page into the tab would destroy that fallback.
+    for (const url of ["about:blank", ""]) {
+      for (const disposition of ["new-window", "foreground-tab"] as const) {
+        expect(PreviewManager.previewWindowOpenAction(details({ url, disposition }))).toBe("deny");
+      }
     }
   });
 });
@@ -351,6 +371,7 @@ const makeTestPreviewWebContents = (
     getURL: () => "https://example.com",
     getTitle: () => "Example",
     isLoading: () => false,
+    isLoadingMainFrame: () => false,
     getZoomFactor: () => 1,
     setZoomFactor: vi.fn(),
     setAudioMuted: vi.fn(),
@@ -456,6 +477,7 @@ const makeFaviconWebContents = (options?: {
     getURL: () => currentUrl,
     getTitle: () => "Preview",
     isLoading: () => loading,
+    isLoadingMainFrame: () => loading,
     isDevToolsOpened: () => false,
     getZoomFactor: () => 1,
     setZoomFactor: vi.fn(),
@@ -525,6 +547,7 @@ const makeAutomationWebContents = (
     getURL: () => "https://example.com",
     getTitle: () => "Example",
     isLoading: () => false,
+    isLoadingMainFrame: () => false,
     isDevToolsOpened: () => false,
     getZoomFactor: () => 1,
     setZoomFactor: vi.fn(),
@@ -698,6 +721,7 @@ describe("PreviewManager", () => {
           getURL: () => "about:blank",
           getTitle: () => "",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           setAudioMuted: vi.fn(),
@@ -740,6 +764,46 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("opens a target=_blank link as a new tab without navigating the opener", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        fromId.mockReturnValue(preview.webContents);
+        const opened: Array<{ tabId: string; url: string; background: boolean }> = [];
+        const linksDelivered = yield* Deferred.make<void>();
+        yield* manager.subscribeOpenLinks((event) =>
+          Effect.gen(function* () {
+            opened.push(event);
+            if (opened.length === 2) yield* Deferred.succeed(linksDelivered, undefined);
+          }),
+        );
+        yield* manager.createTab("tab_links");
+        yield* manager.registerWebview("tab_links", 42);
+        const openHandler = (preview.webContents as Electron.WebContents).setWindowOpenHandler as
+          | ReturnType<typeof vi.fn>
+          | undefined;
+        const handler = openHandler?.mock.lastCall?.[0] as (
+          details: Partial<Electron.HandlerDetails>,
+        ) => { action: string };
+
+        expect(
+          handler({ url: "https://github.com/issues/1", disposition: "foreground-tab" }),
+        ).toEqual({ action: "deny" });
+        expect(handler({ url: "about:blank", disposition: "new-window" })).toEqual({
+          action: "deny",
+        });
+        handler({ url: "https://github.com/issues/2", disposition: "background-tab" });
+        yield* Deferred.await(linksDelivered);
+
+        expect(preview.loadURL).not.toHaveBeenCalled();
+        expect(opened).toEqual([
+          { tabId: "tab_links", url: "https://github.com/issues/1", background: false },
+          { tabId: "tab_links", url: "https://github.com/issues/2", background: true },
+        ]);
+      }),
+    ),
+  );
+
   effectIt.effect("allows popup navigation only for normalized HTTP URLs", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -759,6 +823,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           setAudioMuted: vi.fn(),
@@ -899,6 +964,7 @@ describe("PreviewManager", () => {
           getURL: () => "http://localhost:3200/",
           getTitle: () => "Preview",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           isDevToolsOpened: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
@@ -1401,6 +1467,7 @@ describe("PreviewManager", () => {
           getURL: () => url,
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => {
             if (!zoomReadable) throw new Error("zoom unavailable");
             return effectiveZoom;
@@ -1470,6 +1537,7 @@ describe("PreviewManager", () => {
           getURL: () => url,
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: replacementSetZoomFactor,
           setAudioMuted: vi.fn(),
@@ -1510,6 +1578,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => 1,
           setZoomFactor,
           setAudioMuted: vi.fn(),
@@ -1556,6 +1625,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => 1,
           setZoomFactor,
           setAudioMuted: vi.fn(),
@@ -1610,6 +1680,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           setAudioMuted: vi.fn(),
@@ -1677,6 +1748,7 @@ describe("PreviewManager", () => {
               getURL: () => "https://example.com",
               getTitle: () => "Example",
               isLoading: () => false,
+              isLoadingMainFrame: () => false,
               getZoomFactor: () => 1,
               setZoomFactor: vi.fn(),
               setAudioMuted: vi.fn(),
@@ -1771,6 +1843,7 @@ describe("PreviewManager", () => {
       getURL: () => "http://localhost:5173/README.md",
       getTitle: () => "README.md",
       isLoading: () => true,
+      isLoadingMainFrame: () => true,
       getZoomFactor: () => 1,
       setZoomFactor: vi.fn(),
       setAudioMuted: vi.fn(),
@@ -1896,6 +1969,7 @@ describe("PreviewManager", () => {
         getURL: () => "https://example.com",
         getTitle: () => "Example",
         isLoading: () => false,
+        isLoadingMainFrame: () => false,
         getZoomFactor: () => 1,
         setZoomFactor: vi.fn(),
         setAudioMuted,
@@ -2232,6 +2306,7 @@ describe("PreviewManager", () => {
           getURL: () => url,
           getTitle: () => "localhost:5733",
           isLoading: () => loading,
+          isLoadingMainFrame: () => loading,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           setAudioMuted: vi.fn(),
@@ -2311,6 +2386,32 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("ignores a late cross-origin iframe load once the page has loaded", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const preview = makeFaviconWebContents();
+        // The frame tree is still loading the iframe; the main frame is done.
+        Object.assign(preview.webContents, { isLoading: () => true });
+        fromId.mockReturnValue(preview.webContents);
+        const states: PreviewManager.PreviewTabState[] = [];
+        const loaded = yield* Deferred.make<void>();
+        yield* manager.subscribeStateChanges((_tabId, state) =>
+          Effect.gen(function* () {
+            states.push(state);
+            if (states.length > 2) yield* Deferred.succeed(loaded, undefined);
+          }),
+        );
+        yield* manager.createTab("tab_iframe");
+        yield* manager.registerWebview("tab_iframe", 42);
+
+        preview.listeners.get("did-start-loading")?.();
+        preview.listeners.get("did-stop-loading")?.();
+        yield* Deferred.await(loaded);
+        expect(states.at(-1)?.navStatus.kind).toBe("Success");
+      }),
+    ),
+  );
+
   effectIt.effect("captures a PNG screenshot into browser artifacts", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -2324,6 +2425,7 @@ describe("PreviewManager", () => {
           getURL: () => "https://example.com:8443/path?query=value",
           getTitle: () => "Example",
           isLoading: () => false,
+          isLoadingMainFrame: () => false,
           getZoomFactor: () => 1,
           setZoomFactor: vi.fn(),
           setAudioMuted: vi.fn(),
@@ -2890,6 +2992,7 @@ describe("PreviewManager", () => {
             getURL: () => `https://example.com/${id}`,
             getTitle: () => `Example ${id}`,
             isLoading: () => false,
+            isLoadingMainFrame: () => false,
             getZoomFactor: () => 1,
             setZoomFactor: vi.fn(),
             setAudioMuted: vi.fn(),

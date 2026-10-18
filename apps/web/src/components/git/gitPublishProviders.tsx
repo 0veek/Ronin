@@ -16,10 +16,7 @@ import { AzureDevOpsIcon, BitbucketIcon, ForgejoIcon, GitHubIcon, GitLabIcon } f
  * why a choice is unavailable. One definition so the two cannot disagree.
  */
 
-export type PublishProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
->;
+export type PublishProviderKind = "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops";
 
 export const PUBLISH_PROVIDER_OPTIONS = [
   {

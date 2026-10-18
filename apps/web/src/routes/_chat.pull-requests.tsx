@@ -1,3 +1,4 @@
+import { pullRequestHostActions } from "../components/pullRequest/pullRequestList.logic";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import { useShortcutModifierState } from "~/shortcutModifierState";
@@ -119,7 +120,10 @@ import {
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { isTerminalFocused } from "../lib/terminalFocus";
-import { PanelLayoutControls } from "../components/chat/PanelLayoutControls";
+import {
+  PanelLayoutControls,
+  RightPanelMaximizeControl,
+} from "../components/chat/PanelLayoutControls";
 import { Button } from "../components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../components/ui/menu";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -454,6 +458,13 @@ function PullRequestsRouteView() {
   const selectedPullRequestSurface =
     selectedRightPanelSurface?.kind === "pull-request" ? selectedRightPanelSurface : null;
   const activePullRequestSurface = rightPanelState.isOpen ? selectedPullRequestSurface : null;
+  const [maximized, setMaximized] = useState(false);
+  const rightPanelMaximized = rightPanelState.isOpen && maximized;
+  if (!rightPanelState.isOpen && maximized) setMaximized(false);
+  const toggleRightPanelMaximized = () => {
+    if (rightPanelState.isOpen) setMaximized((value) => !value);
+  };
+  const onGuideShown = useCallback(() => setMaximized(true), []);
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const rightPanelPresenceValue = useMemo(
@@ -1553,9 +1564,26 @@ function PullRequestsRouteView() {
         entry.additions + entry.deletions > 0 || statsByRow.has(pullRequestDiffStatKey(entry)),
     );
   }, [groups, overrides, search.state, sort, statsByRow, typedParsed.text]);
+  // The provider list is the workspace's hosts, not the filtered ones, so switching to a host
+  // cannot make the switcher that got you there disappear.
+  const [hosts, setHosts] = useState<PullRequestListResult["providers"]>([]);
+  useEffect(() => {
+    // Only from an answer to these filters. Rows carried over from the previous ones bring the
+    // host summaries of the question they answered, and coming back from one host to all of them
+    // would take the switcher's other hosts out of it on the strength of the narrowed answer.
+    if (answered === null) return;
+    // An unfiltered response is the full set of hosts. A filtered one only seeds the switcher
+    // when there is nothing to seed it with, which is a link that arrived already scoped.
+    setHosts((previous) =>
+      search.host === undefined || previous.length === 0 ? answered.providers : previous,
+    );
+  }, [answered, search.host]);
+  const showProvider = hosts.length > 1;
+  const hostActionsOf = useMemo(() => pullRequestHostActions(hosts), [hosts]);
   const shownCount = displayGroups.reduce((count, group) => count + group.entries.length, 0);
   const { sweepingKeys, startSweep } = usePullRequestCloseSweep({
     groups: displayGroups,
+    hostActionsOf,
     closingKeys,
     closeBatch,
     scrollRef,
@@ -1625,21 +1653,6 @@ function PullRequestsRouteView() {
     selectSurfaceInUrl(selectedPullRequestSurface);
   };
 
-  // The provider list is the workspace's hosts, not the filtered ones, so switching to a host
-  // cannot make the switcher that got you there disappear.
-  const [hosts, setHosts] = useState<PullRequestListResult["providers"]>([]);
-  useEffect(() => {
-    // Only from an answer to these filters. Rows carried over from the previous ones bring the
-    // host summaries of the question they answered, and coming back from one host to all of them
-    // would take the switcher's other hosts out of it on the strength of the narrowed answer.
-    if (answered === null) return;
-    // An unfiltered response is the full set of hosts. A filtered one only seeds the switcher
-    // when there is nothing to seed it with, which is a link that arrived already scoped.
-    setHosts((previous) =>
-      search.host === undefined || previous.length === 0 ? answered.providers : previous,
-    );
-  }, [answered, search.host]);
-  const showProvider = hosts.length > 1;
   // The workspace's own projects already name their hosts, so the row's shape is known before
   // the list is. Only its shape: which hosts can actually be read still comes from the server.
   const expectedHosts = useMemo(() => {
@@ -1714,6 +1727,12 @@ function PullRequestsRouteView() {
       // edge.
       className="workspace-titlebar-controls z-50 mr-px gap-1 [-webkit-app-region:no-drag]"
     >
+      {rightPanelState.isOpen ? (
+        <RightPanelMaximizeControl
+          maximized={rightPanelMaximized}
+          onToggle={toggleRightPanelMaximized}
+        />
+      ) : null}
       {panelToggleControls}
     </div>
   );
@@ -1795,6 +1814,7 @@ function PullRequestsRouteView() {
                     }
                     onSelect={selectEntry}
                     speedMode={speedMode}
+                    hostActions={hostActionsOf(entry)}
                     onActed={onSpeedAction}
                     closing={closingKeys.has(entryKey)}
                     sweeping={sweepingKeys.has(entryKey)}
@@ -1960,6 +1980,7 @@ function PullRequestsRouteView() {
         )
       ) : null,
     rightPanelOpen: rightPanelState.isOpen,
+    maximizedAway: rightPanelMaximized,
     listBody,
     scrollRef,
   };
@@ -2031,6 +2052,12 @@ function PullRequestsRouteView() {
     event.stopPropagation();
     if (!event.repeat) toggleRightPanel();
   });
+  const toggleRightPanelMaximizedFromShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (!rightPanelState.isOpen) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) toggleRightPanelMaximized();
+  });
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
@@ -2039,6 +2066,7 @@ function PullRequestsRouteView() {
       });
       if (command === "rightPanel.close") closeActiveSurfaceFromShortcut(event);
       if (command === "rightPanel.toggle") toggleRightPanelFromShortcut(event);
+      if (command === "rightPanel.toggleMaximized") toggleRightPanelMaximizedFromShortcut(event);
       if (command === "thread.copyReference") copyPullRequestFromShortcut(event);
     };
     window.addEventListener("keydown", onKeyDown);
@@ -2057,6 +2085,7 @@ function PullRequestsRouteView() {
             getShortcutContext={getShortcutContext}
             mode="inline"
             open={rightPanelState.isOpen}
+            maximized={rightPanelMaximized}
             widthStorageKey="t3code:pull-request-panel-width"
             // Default to roughly half the viewport: the PR list needs more
             // room than a chat, so the 540px chat-preview default squashes
@@ -2081,6 +2110,10 @@ function PullRequestsRouteView() {
               if (surface.kind === "pull-request") closeSurfacesToRight(surface);
             }}
             onCloseAllSurfaces={closeAllSurfaces}
+            onMoveSurface={(surfaceId, toIndex) => {
+              if (rightPanelRef !== null)
+                useRightPanelStore.getState().moveSurface(rightPanelRef, surfaceId, toIndex);
+            }}
             onCopyFilePath={() => undefined}
             onAddBrowser={() => undefined}
             onAddBrowserInProfile={() => undefined}
@@ -2107,6 +2140,7 @@ function PullRequestsRouteView() {
               shortcutsEnabled={activePullRequestSurface?.id === renderedPullRequestSurface.id}
               key={renderedPullRequestSurface.id}
               environmentId={panelEnvironmentId}
+              onGuideShown={onGuideShown}
               onSelectPullRequest={(reference) => {
                 if (rightPanelRef === null) return;
                 useRightPanelStore.getState().openPullRequest(rightPanelRef, {
@@ -2332,6 +2366,7 @@ function PullRequestsColumn({
   rightPanelControl,
   titlebarControls,
   rightPanelOpen,
+  maximizedAway,
   listBody,
   scrollRef,
 }: {
@@ -2351,6 +2386,8 @@ function PullRequestsColumn({
   rightPanelControl: ReactNode;
   titlebarControls: ReactNode;
   rightPanelOpen: boolean;
+  /** The panel beside the list is maximized, so the list gives up its width. */
+  maximizedAway: boolean;
   listBody: ReactNode;
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
@@ -2412,7 +2449,12 @@ function PullRequestsColumn({
   return (
     // Painted flat like the chat column: the inset underneath carries the chrome grain, and a
     // content surface that lets it show reads as a different background than every thread.
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+    <div
+      className={cn(
+        "flex min-h-0 min-w-0 flex-col overflow-x-hidden bg-background",
+        maximizedAway ? "w-0 flex-none" : "flex-1",
+      )}
+    >
       <header
         className={cn(
           "workspace-topbar drag-region gap-1.5 px-3 sm:px-5",

@@ -362,6 +362,7 @@ function AboutVersionSection() {
 
   return (
     <SettingsRow
+      id={searchableSetting("app-version").id}
       title={<AboutVersionTitle updateAvailable={latestRelease !== null} />}
       description={description}
       status={status}
@@ -2023,6 +2024,7 @@ function AgentSoundsRow({
 }
 
 export function GeneralSettingsPanel() {
+  const environmentId = usePrimaryEnvironmentId();
   const modifierLabel = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const sendShortcutOptions = [
     { value: "enter", label: "Enter" },
@@ -3010,6 +3012,7 @@ export function GeneralSettingsPanel() {
           control={
             <div className="flex flex-wrap items-center justify-end gap-1.5">
               <ProviderModelPicker
+                environmentId={environmentId}
                 activeInstanceId={textGenInstanceId}
                 model={textGenModel}
                 lockedProvider={null}
@@ -3072,11 +3075,13 @@ export function GeneralSettingsPanel() {
           <AboutVersionSection />
         ) : (
           <SettingsRow
+            id={searchableSetting("app-version").id}
             title={<AboutVersionTitle />}
             description="Current version of the application."
           />
         )}
         <AboutRepositorySection />
+        {isElectron ? <CliCommandSettingsRow /> : null}
         <SettingsRow
           {...searchableSetting("diagnostics")}
           description={diagnosticsDescription}
@@ -3407,3 +3412,4 @@ export function ArchivedThreadsPanel() {
     </SettingsPageContainer>
   );
 }
+import { CliCommandSettingsRow } from "./CliCommandSettingsRow";

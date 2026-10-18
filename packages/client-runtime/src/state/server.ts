@@ -739,6 +739,26 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetUsageSummary,
       staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => usageScanSettingsAtom(environmentId),
+      execute: (input, emit) =>
+        request(WS_METHODS.serverGetUsageSummary, input).pipe(
+          Effect.flatMap((summary) =>
+            summary.sources.some((source) => source.refreshing === true)
+              ? emit(summary).pipe(
+                  Effect.andThen(
+                    request(WS_METHODS.serverGetUsageSummary, { ...input, awaitRefresh: true }),
+                  ),
+                  // The cached summary is still the best data, and a failure
+                  // would read as the environment not reporting usage at all.
+                  Effect.catch((error) =>
+                    Effect.logWarning("Could not refresh slow usage sources.").pipe(
+                      Effect.annotateLogs({ ...safeErrorLogAttributes(error) }),
+                      Effect.as(summary),
+                    ),
+                  ),
+                )
+              : Effect.succeed(summary),
+          ),
+        ),
     }),
     // A meter nobody refreshes is a meter that lies, so this one polls rather
     // than only fetching on mount. Thirty seconds is the floor: each refresh is
@@ -934,6 +954,10 @@ export function createServerEnvironmentAtoms<R, E>(
         mode: "singleFlight",
         key: ({ environmentId }) => environmentId,
       },
+    }),
+    checkOtlpEndpoint: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:check-otlp-endpoint",
+      tag: WS_METHODS.serverCheckOtlpEndpoint,
     }),
     retryResourceTelemetry: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:retry-resource-telemetry",

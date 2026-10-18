@@ -56,10 +56,11 @@ overrides:
 packageExtensionsChecksum: sha256-FV3+2NW/9MFbunJaPsMxvO0LAzyfccoPtPiKoIXAwUU=
 
 patchedDependencies:
+  '@effect/platform-node-shared@4.0.0-beta.103': ff683167afe10dd2ae5ae9cfc8f958d13c3d412e58862eafca559a1efe3b78fc
   '@effect/vitest@4.0.0-beta.103': a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b
-  '@ff-labs/fff-node@0.9.4': 77191463e5547e159dbe4430f4716f7ee4214b5d5c6f4b0d046cff56bcd76bd8
+  '@ff-labs/fff-node@0.11.0': 8956d6ed6938a1bce69b2d0b067ff258dd9ca753c5bbe7006f7b68f760ea3ad2
   '@legendapp/list@3.3.5': dacfa16a447bc388a79b644527c962fe8a0328ada9caafe3822e94e6afafe4ad
-  '@pierre/diffs@1.5.2': ba1766e9669d5699e31f0dde5a52f5d47f389f49a286de54489a409ba2527289
+  '@pierre/diffs@1.5.2': 298e94372dbd51846a4e26ece2ecc3e22eb1f94b0450b1f1a9c6fec127809be7
   dbus-next@0.10.2: 73c38379b09c6e5821fb20818ce99376473a7ea1a8a0a570f5f464cd5b0e9d98
   effect@4.0.0-beta.103: 0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4
   node-pty@1.2.0-beta.15: f2fe901c61cde17986240002d05c172d5d0272d83ffaab8d0ebeb922763be414
@@ -117,8 +118,8 @@ importers:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4)
       electron:
-        specifier: 44.1.0
-        version: 44.1.0
+        specifier: 44.4.5
+        version: 44.4.5
       electron-store:
         specifier: ^8.2.0
         version: 8.2.0
@@ -161,10 +162,13 @@ importers:
         version: 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(ioredis@5.11.0)(utf-8-validate@6.0.6)
       '@effect/platform-node-shared':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(utf-8-validate@6.0.6)
+        version: 4.0.0-beta.103(patch_hash=ff683167afe10dd2ae5ae9cfc8f958d13c3d412e58862eafca559a1efe3b78fc)(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(utf-8-validate@6.0.6)
       '@ff-labs/fff-node':
-        specifier: 0.9.4
-        version: 0.9.4(patch_hash=77191463e5547e159dbe4430f4716f7ee4214b5d5c6f4b0d046cff56bcd76bd8)
+        specifier: 0.11.0
+        version: 0.11.0(patch_hash=8956d6ed6938a1bce69b2d0b067ff258dd9ca753c5bbe7006f7b68f760ea3ad2)
+      '@muse-code/sdk':
+        specifier: 1.4.6
+        version: 1.4.6(@types/node@24.12.4)
       '@napi-rs/keyring':
         specifier: ^1.3.0
         version: 1.3.0
@@ -173,7 +177,7 @@ importers:
         version: 1.18.16
       '@pierre/diffs':
         specifier: 'catalog:'
-        version: 1.5.2(patch_hash=ba1766e9669d5699e31f0dde5a52f5d47f389f49a286de54489a409ba2527289)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 1.5.2(patch_hash=298e94372dbd51846a4e26ece2ecc3e22eb1f94b0450b1f1a9c6fec127809be7)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       effect:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4)
@@ -261,7 +265,7 @@ importers:
         version: 1.8.0
       '@pierre/diffs':
         specifier: 'catalog:'
-        version: 1.5.2(patch_hash=ba1766e9669d5699e31f0dde5a52f5d47f389f49a286de54489a409ba2527289)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 1.5.2(patch_hash=298e94372dbd51846a4e26ece2ecc3e22eb1f94b0450b1f1a9c6fec127809be7)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@pierre/trees':
         specifier: 1.0.0-beta.6
         version: 1.0.0-beta.6(@pierre/theme@1.1.0)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(shiki@4.2.0)
@@ -393,8 +397,8 @@ importers:
         specifier: 1.0.0
         version: 1.0.0
       compression:
-        specifier: ^1.8.1
-        version: 1.8.1
+        specifier: ^1.8.2
+        version: 1.8.2
       jsdom:
         specifier: ^30.1.1
         version: 30.1.1(@noble/hashes@1.8.0)
@@ -544,6 +548,39 @@ importers:
       effect:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4)
+      mdast-util-directive:
+        specifier: ^3.1.0
+        version: 3.1.0
+      micromark-extension-directive:
+        specifier: ^4.0.0
+        version: 4.0.0
+      micromark-util-character:
+        specifier: ^2.1.1
+        version: 2.1.1
+      micromark-util-types:
+        specifier: ^2.0.2
+        version: 2.0.2
+      rehype-raw:
+        specifier: ^7.0.0
+        version: 7.0.0
+      rehype-sanitize:
+        specifier: ^6.0.0
+        version: 6.0.0
+      remark-breaks:
+        specifier: ^4.0.0
+        version: 4.0.0
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      remark-rehype:
+        specifier: ^11.1.2
+        version: 11.1.2
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -1381,55 +1418,60 @@ packages:
   '@exodus/schemasafe@1.3.0':
     resolution: {integrity: sha512-5Aap/GaRupgNx/feGBwLLTVv8OQFfv3pq2lPRzPg9R+IOBnDgghTGW7l7EuVXOvg5cc/xSAlRW8rBrjIC3Nvqw==}
 
-  '@ff-labs/fff-bin-darwin-arm64@0.9.4':
-    resolution: {integrity: sha512-xyivu2xB++O5xXDx5Qm50JsU2aXt8YgXlGVhH/HE7UMYDrE6L6f1RYdYs8Y0bn0D3D0+bFBrN5ELPszK9E4Wbw==}
+  '@ff-labs/fff-bin-android-arm64@0.11.0':
+    resolution: {integrity: sha512-7CmURAtJg1xCETKE8d46CUpeql9tpdsdbyoNCrNRkH+t608jMy+mLQxmyw7cBDOI0ljg5BaffxGZfOS2E6kasA==}
+    cpu: [arm64]
+    os: [android]
+
+  '@ff-labs/fff-bin-darwin-arm64@0.11.0':
+    resolution: {integrity: sha512-C2VLBldxqNhTMtp1/NXULdEWpqfUKugP9E8BOMUDPw5qZH/YGC0tZQmeOlQUYOSScFQOiXZLJGXJMp3Uk+FGxg==}
     cpu: [arm64]
     os: [darwin]
 
-  '@ff-labs/fff-bin-darwin-x64@0.9.4':
-    resolution: {integrity: sha512-xLooAhCnTDCipPSMMZz7kGF3lhRHx6aP5fb6DJ0Ipyw/w/UWJb+xITJFszUl/QnIBoJ/qjDc93/FZMo1dk6gVA==}
+  '@ff-labs/fff-bin-darwin-x64@0.11.0':
+    resolution: {integrity: sha512-DOnG46YoSOR8SxNVMMe+xhPS2JjFUigMS2r0M4oCGfHDaWVY2mnYK/g1YxrAeJS3cRGO5N8Aj4RP1zq5Z2f6jQ==}
     cpu: [x64]
     os: [darwin]
 
-  '@ff-labs/fff-bin-linux-arm64-gnu@0.9.4':
-    resolution: {integrity: sha512-m5+8vA+1veaUUWonwva1WsU6m1HRm8CpYUzr06KDB65mewlmPbqz7+Fh7hjEfiD8C4mHVHe6RysULvAH1yhsdw==}
+  '@ff-labs/fff-bin-linux-arm64-gnu@0.11.0':
+    resolution: {integrity: sha512-wOTyNzovqN1+Kg3kPqfKqZ2+A262Um4bHrEIeAwKU9R7YoyMXI9oo6DTbEl2ullF3G01FaBt/PPHOZYi1q8ubw==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@ff-labs/fff-bin-linux-arm64-musl@0.9.4':
-    resolution: {integrity: sha512-EMeWm7CSTVkizy4ZEzUkLDP024tVcbCUthduuIhekFQRDsiaAze0YboIylWb9HBHJCZlCCoZrWAl4nnJbsX7AA==}
+  '@ff-labs/fff-bin-linux-arm64-musl@0.11.0':
+    resolution: {integrity: sha512-dtVOgT/mKN4VTqOh4i3AWjc3Kd9uDX9xz9YsiPs33lNXpEi/x68qynuaqb7JM7x/eD/nYrsJRsb5ivtH1D6nrQ==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@ff-labs/fff-bin-linux-x64-gnu@0.9.4':
-    resolution: {integrity: sha512-pglE0uLkhnlE6bStXqfgUjYTSj+2sVwXaPfoA0QksidAsQor6NRt8004mygzC9DPubgHq5B9QezPfEwigKaP9Q==}
+  '@ff-labs/fff-bin-linux-x64-gnu@0.11.0':
+    resolution: {integrity: sha512-MJ1AJz9c5kxdTiIhmlEwA+hw57vBDoa+VQSr4F+1inaEiFDtem7EnXE1P8Bdhf4okGM557mCXgRrvCt4kM5pSg==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@ff-labs/fff-bin-linux-x64-musl@0.9.4':
-    resolution: {integrity: sha512-VNKxgl8qs3aTfXViX7lqRK1aLu311h8dtBFqG4Scv+9Oi7WprybUp5L7IZ8sxKERaDAaiJMXHodXa1c90QdK8w==}
+  '@ff-labs/fff-bin-linux-x64-musl@0.11.0':
+    resolution: {integrity: sha512-UjqEBtZphjH6MTK18kTlA+5ccUAu3PBATerAKh9otEWbLCwqpFV0ke8LON2+UavaO5+VhBUCk7Zi97AOQhn/9Q==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@ff-labs/fff-bin-win32-arm64@0.9.4':
-    resolution: {integrity: sha512-uFEt0aNL54vQxq1ivjxRuo+thnhS4wLqa4INl4VXnXJUmwB42XXxD+gsj7vzhBLLx4cFf0aWgy/+TVDR8yjZtQ==}
+  '@ff-labs/fff-bin-win32-arm64@0.11.0':
+    resolution: {integrity: sha512-IF54PgYYi+AsCGseNG5kYpMqkwTmp/9bB8zvndp6tXZp4xLQ4G6x/NgHgM4vyK85Sv3FWr6Sf4OZQhP4mSSipA==}
     cpu: [arm64]
     os: [win32]
 
-  '@ff-labs/fff-bin-win32-x64@0.9.4':
-    resolution: {integrity: sha512-Yd2Eyxj+slWv+0QDW9/xBpu9FXq+hwD0rXQD5184/88d+xwWCLKhEP2w8I6OO9XCg+kLT79UJb+k0WwXUtBtMw==}
+  '@ff-labs/fff-bin-win32-x64@0.11.0':
+    resolution: {integrity: sha512-NFnFcueeRZ+QHvBg/k3KhduH20zFRCGqPHqjslk/3H0CHOMyP5AMTbscNwn5TZUhMutIRCfFzVI7mm+oU8jvCQ==}
     cpu: [x64]
     os: [win32]
 
-  '@ff-labs/fff-node@0.9.4':
-    resolution: {integrity: sha512-yUphwzcVBuNrg1iEAE5XVPOWfCLuq/BE1scUxtHMmLo+e1KuKWBRgSKFXGjNBfL8lV3c5VGwIgK66aBqmhqVBQ==}
+  '@ff-labs/fff-node@0.11.0':
+    resolution: {integrity: sha512-/7fX4kgy28pFZghxuXCAcIPQKb2+VqVirpFcDqMKgrFLTz56tVzHjOkFSdKGq7fa6wRb6eS5Dg9SaX1qyCcKxQ==}
     engines: {node: '>=18.0.0'}
     cpu: [x64, arm64]
-    os: [darwin, linux, win32]
+    os: [darwin, linux, win32, android]
 
   '@floating-ui/core@1.7.5':
     resolution: {integrity: sha512-1Ih4WTWyw0+lKyFMcBHGbb5U5FtuHJuujoyyr5zTaWS5EYMeT6Jb2AuDeftsCsEuchO+mM2ij5+q9crhydzLhQ==}
@@ -1777,6 +1819,15 @@ packages:
   '@mswjs/interceptors@0.41.9':
     resolution: {integrity: sha512-VVPPgHyQ6ShqnrmDWuxjmUIsO9gWyOZFmuOfLd9LfBGQJwZfy0gvv9pbHSJuoFNIYC7ZDX9aoFwowjcdSC4E8w==}
     engines: {node: '>=18'}
+
+  '@muse-code/sdk@1.4.6':
+    resolution: {integrity: sha512-pUENCnmn9q4e2xMXicdRbzbSMdH1fiyTIh5fVBXuxNdNP2ZKA0kwQz5fWMxIB8wzxS2ZyH0v27dvfbZuGuoUjg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@types/node': 24.12.4
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   '@napi-rs/keyring-darwin-arm64@1.3.0':
     resolution: {integrity: sha512-pl76hJvdYUBn6I24bXiOBMA9nbDapo3I5B+f3OorjDU4dUMSypXeKbOVehJe8fhgTiH24flMyTS3aAIy43xegQ==}
@@ -3815,8 +3866,8 @@ packages:
     resolution: {integrity: sha512-AF3r7P5dWxL8MxyITRMlORQNaOA2IkAFaTr4k7BUumjPtRpGDTZpl0Pb1XCO6JeDCBdp126Cgs9sMxqSjgYyRg==}
     engines: {node: '>= 0.6'}
 
-  compression@1.8.1:
-    resolution: {integrity: sha512-9mAqGPHLakhCLeNyxPkK4xVo746zQ/czLH1Ky+vkitMnWfWZps8r0qXuwhwizagCRttsL4lfG4pIOvaWLpAP0w==}
+  compression@1.8.2:
+    resolution: {integrity: sha512-o8vI5RE5A6EVVOd9o41jKp41aJom+QTEO/Bx8MYNjexMo/Bv2WOjUfZr+aL0WnYSgymUy6zeguqLTsIhV0gMvQ==}
     engines: {node: '>= 0.8.0'}
 
   concat-map@0.0.1:
@@ -4130,6 +4181,10 @@ packages:
     resolution: {integrity: sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA==}
     engines: {node: '>=6'}
 
+  destroy@1.2.0:
+    resolution: {integrity: sha512-2sJGJTaXIIaR1w4iJSNoN0hnMY7Gpc/n8D4qSCJw8QqFWXf7cuAgnEHxBpweaVcPevC2l3KpjYCx3NypQQgaJg==}
+    engines: {node: '>= 0.8', npm: 1.2.8000 || >= 1.4.16}
+
   detect-libc@2.1.2:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
@@ -4220,8 +4275,8 @@ packages:
     resolution: {integrity: sha512-bO3y10YikuUwUuDUQRM4KfwNkKhnpVO7IPdbsrejwN9/AABJzzTQ4GeHwyzNSrVO+tEH3/Np255a3sVZpZDjvg==}
     engines: {node: '>=8.0.0'}
 
-  electron@44.1.0:
-    resolution: {integrity: sha512-kmLg8axOg22DC3fXx5NCwBYW8fx0rK2zzJ3Tf67GjNCkxfoxEcd+yo0QfDjlBtHJs3xeA8fTg64b6iVzFTVErg==}
+  electron@44.4.5:
+    resolution: {integrity: sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==}
     engines: {node: '>= 22.12.0'}
     hasBin: true
 
@@ -7321,7 +7376,7 @@ snapshots:
     transitivePeerDependencies:
       - encoding
 
-  '@effect/platform-node-shared@4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(utf-8-validate@6.0.6)':
+  '@effect/platform-node-shared@4.0.0-beta.103(patch_hash=ff683167afe10dd2ae5ae9cfc8f958d13c3d412e58862eafca559a1efe3b78fc)(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(utf-8-validate@6.0.6)':
     dependencies:
       '@types/ws': 8.18.1
       effect: 4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4)
@@ -7332,7 +7387,7 @@ snapshots:
 
   '@effect/platform-node@4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(ioredis@5.11.0)(utf-8-validate@6.0.6)':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.103(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(utf-8-validate@6.0.6)
+      '@effect/platform-node-shared': 4.0.0-beta.103(patch_hash=ff683167afe10dd2ae5ae9cfc8f958d13c3d412e58862eafca559a1efe3b78fc)(bufferutil@4.1.0)(effect@4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4))(utf-8-validate@6.0.6)
       effect: 4.0.0-beta.103(patch_hash=0106af9806eedb163105cad8b20df7c085b89b464d94b9a508c3a181d8d98cf4)
       ioredis: 5.11.0
       mime: 4.1.0
@@ -7602,42 +7657,46 @@ snapshots:
 
   '@exodus/schemasafe@1.3.0': {}
 
-  '@ff-labs/fff-bin-darwin-arm64@0.9.4':
+  '@ff-labs/fff-bin-android-arm64@0.11.0':
     optional: true
 
-  '@ff-labs/fff-bin-darwin-x64@0.9.4':
+  '@ff-labs/fff-bin-darwin-arm64@0.11.0':
     optional: true
 
-  '@ff-labs/fff-bin-linux-arm64-gnu@0.9.4':
+  '@ff-labs/fff-bin-darwin-x64@0.11.0':
     optional: true
 
-  '@ff-labs/fff-bin-linux-arm64-musl@0.9.4':
+  '@ff-labs/fff-bin-linux-arm64-gnu@0.11.0':
     optional: true
 
-  '@ff-labs/fff-bin-linux-x64-gnu@0.9.4':
+  '@ff-labs/fff-bin-linux-arm64-musl@0.11.0':
     optional: true
 
-  '@ff-labs/fff-bin-linux-x64-musl@0.9.4':
+  '@ff-labs/fff-bin-linux-x64-gnu@0.11.0':
     optional: true
 
-  '@ff-labs/fff-bin-win32-arm64@0.9.4':
+  '@ff-labs/fff-bin-linux-x64-musl@0.11.0':
     optional: true
 
-  '@ff-labs/fff-bin-win32-x64@0.9.4':
+  '@ff-labs/fff-bin-win32-arm64@0.11.0':
     optional: true
 
-  '@ff-labs/fff-node@0.9.4(patch_hash=77191463e5547e159dbe4430f4716f7ee4214b5d5c6f4b0d046cff56bcd76bd8)':
+  '@ff-labs/fff-bin-win32-x64@0.11.0':
+    optional: true
+
+  '@ff-labs/fff-node@0.11.0(patch_hash=8956d6ed6938a1bce69b2d0b067ff258dd9ca753c5bbe7006f7b68f760ea3ad2)':
     dependencies:
       ffi-rs: 1.3.2
     optionalDependencies:
-      '@ff-labs/fff-bin-darwin-arm64': 0.9.4
-      '@ff-labs/fff-bin-darwin-x64': 0.9.4
-      '@ff-labs/fff-bin-linux-arm64-gnu': 0.9.4
-      '@ff-labs/fff-bin-linux-arm64-musl': 0.9.4
-      '@ff-labs/fff-bin-linux-x64-gnu': 0.9.4
-      '@ff-labs/fff-bin-linux-x64-musl': 0.9.4
-      '@ff-labs/fff-bin-win32-arm64': 0.9.4
-      '@ff-labs/fff-bin-win32-x64': 0.9.4
+      '@ff-labs/fff-bin-android-arm64': 0.11.0
+      '@ff-labs/fff-bin-darwin-arm64': 0.11.0
+      '@ff-labs/fff-bin-darwin-x64': 0.11.0
+      '@ff-labs/fff-bin-linux-arm64-gnu': 0.11.0
+      '@ff-labs/fff-bin-linux-arm64-musl': 0.11.0
+      '@ff-labs/fff-bin-linux-x64-gnu': 0.11.0
+      '@ff-labs/fff-bin-linux-x64-musl': 0.11.0
+      '@ff-labs/fff-bin-win32-arm64': 0.11.0
+      '@ff-labs/fff-bin-win32-x64': 0.11.0
 
   '@floating-ui/core@1.7.5':
     dependencies:
@@ -8066,6 +8125,10 @@ snapshots:
       strict-event-emitter: 0.5.1
     optional: true
 
+  '@muse-code/sdk@1.4.6(@types/node@24.12.4)':
+    optionalDependencies:
+      '@types/node': 24.12.4
+
   '@napi-rs/keyring-darwin-arm64@1.3.0':
     optional: true
 
@@ -8329,7 +8392,7 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
-  '@pierre/diffs@1.5.2(patch_hash=ba1766e9669d5699e31f0dde5a52f5d47f389f49a286de54489a409ba2527289)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
+  '@pierre/diffs@1.5.2(patch_hash=298e94372dbd51846a4e26ece2ecc3e22eb1f94b0450b1f1a9c6fec127809be7)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)':
     dependencies:
       '@pierre/theme': 2.0.0
       '@pierre/theming': 1.0.1(@pierre/theme@2.0.0)(@shikijs/themes@4.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(shiki@4.2.0)
@@ -9777,11 +9840,12 @@ snapshots:
     dependencies:
       mime-db: 1.54.0
 
-  compression@1.8.1:
+  compression@1.8.2:
     dependencies:
       bytes: 3.1.2
       compressible: 2.0.18
       debug: 2.6.9
+      destroy: 1.2.0
       negotiator: 0.6.4
       on-headers: 1.1.0
       safe-buffer: 5.2.1
@@ -10129,6 +10193,8 @@ snapshots:
 
   dequal@2.0.3: {}
 
+  destroy@1.2.0: {}
+
   detect-libc@2.1.2: {}
 
   detect-node@2.1.0:
@@ -10279,7 +10345,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  electron@44.1.0:
+  electron@44.4.5:
     dependencies:
       '@electron-internal/extract-zip': 1.0.5
       '@electron/get': 5.1.0

@@ -375,3 +375,16 @@ describe("repository permission decoding", () => {
     expect(expectSuccess(decodeRepositoryPermissionJson(page([])))).toBe(true);
   });
 });
+
+it("preserves the host-reported head for a pinned review guide", () => {
+  const result = expectSuccess(
+    decodePullRequestJson(
+      JSON.stringify(
+        pullRequest({
+          source: { branch: { name: "feat/page" }, commit: { hash: "a".repeat(40) } },
+        }),
+      ),
+    ),
+  );
+  expect(result.headSha).toBe("a".repeat(40));
+});

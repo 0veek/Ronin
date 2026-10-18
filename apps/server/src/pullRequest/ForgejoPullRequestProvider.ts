@@ -249,6 +249,7 @@ export const make = Effect.gen(function* () {
       );
       return {
         ...forgejoChangeRequest(pr),
+        headSha: pr.head.sha,
         body: pr.body ?? "",
         changedFiles: pr.changed_files ?? 0,
         reviewers: (pr.requested_reviewers ?? []).flatMap((user) => {

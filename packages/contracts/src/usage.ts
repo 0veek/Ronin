@@ -45,6 +45,7 @@ export const UsageProviderKind = Schema.Literals([
   "cursor",
   "opencode",
   "antigravity",
+  "pi",
 ]);
 export type UsageProviderKind = typeof UsageProviderKind.Type;
 
@@ -190,6 +191,12 @@ export const UsageSource = Schema.Struct({
   message: Schema.NullOr(TrimmedNonEmptyString),
   /** An action the client can offer to make this source available. */
   action: Schema.optionalKey(Schema.Literal("enableCursorKeychain")),
+  /**
+   * Present when this source answered from its cache while a slow refresh (an
+   * account API, for example) runs. Repeat the request with `awaitRefresh` to
+   * get the refreshed source.
+   */
+  refreshing: Schema.optionalKey(Schema.Literal(true)),
 });
 export type UsageSource = typeof UsageSource.Type;
 
@@ -224,6 +231,12 @@ export const UsageSummaryInput = Schema.Struct({
   sinceTime: Schema.optional(TrimmedNonEmptyString),
   /** Exclusive UTC instant for an hourly rolling window. */
   untilTime: Schema.optional(TrimmedNonEmptyString),
+  /**
+   * Wait for slow sources to finish refreshing instead of answering from their
+   * cache. Clients send it as the follow-up to a summary with a `refreshing`
+   * source. Older servers ignore it and always wait.
+   */
+  awaitRefresh: Schema.optional(Schema.Boolean),
 });
 export type UsageSummaryInput = typeof UsageSummaryInput.Type;
 

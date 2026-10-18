@@ -1,3 +1,4 @@
+import { AgentScope, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -430,9 +431,16 @@ export const make = (
         ),
       );
 
+    const launch = yield* (yield* AgentScope).wrap({
+      command: options.spawn.command,
+      args: options.spawn.args,
+      name: "acp",
+      threadId: yield* AgentScopeThreadId,
+      env: options.spawn.env,
+    });
     const spawnCommand = yield* resolveSpawnCommand(
-      options.spawn.command,
-      options.spawn.args,
+      launch.command,
+      launch.args,
       options.spawn.env ? { env: options.spawn.env, extendEnv: true } : {},
     );
     const child = yield* spawner

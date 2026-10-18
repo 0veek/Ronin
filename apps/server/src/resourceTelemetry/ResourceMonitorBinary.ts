@@ -200,9 +200,12 @@ export const make = Effect.fn("resourceTelemetry.resourceMonitorBinary.make")(fu
       const exists = yield* fileSystem.exists(candidate).pipe(Effect.orElseSucceed(() => false));
       if (!exists) continue;
 
-      if (platform !== "win32") {
-        const stat = yield* fileSystem.stat(candidate).pipe(Effect.option);
-        if (Option.isSome(stat) && (stat.value.mode & 0o111) === 0) {
+      const stat = yield* fileSystem.stat(candidate).pipe(Effect.option);
+      if (Option.isSome(stat)) {
+        const unusable =
+          stat.value.type === "Directory" ||
+          (platform !== "win32" && (stat.value.mode & 0o111) === 0);
+        if (unusable) {
           return yield* new ResourceMonitorBinaryNotExecutable({
             path: candidate,
             mode: stat.value.mode,

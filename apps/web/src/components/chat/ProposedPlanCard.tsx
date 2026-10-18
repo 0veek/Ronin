@@ -1,3 +1,5 @@
+import { use } from "react";
+import { ThreadFindTimelineContext } from "./threadFindContext";
 import { memo, useState, useId } from "react";
 import {
   isAtomCommandInterrupted,
@@ -51,7 +53,9 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   cwd: string | undefined;
   workspaceRoot: string | undefined;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const find = use(ThreadFindTimelineContext);
+  const [locallyExpanded, setExpanded] = useState(false);
+  const expanded = locallyExpanded || Boolean(find?.findExpanded);
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [savePath, setSavePath] = useState("");
@@ -159,7 +163,9 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           <Badge variant="secondary">Plan</Badge>
           {/* Same heading level as the message author headings in the timeline,
               so a plan's own headings nest beneath it in the outline. */}
-          <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
+          <h3 data-thread-find-text className="truncate text-sm font-medium text-foreground">
+            {title}
+          </h3>
         </div>
         <Menu>
           <MenuTrigger
@@ -182,7 +188,10 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         </Menu>
       </div>
       <div className="mt-4">
-        <div className={cn("relative", canCollapse && !expanded && "max-h-104 overflow-hidden")}>
+        <div
+          data-thread-find-text
+          className={cn("relative", canCollapse && !expanded && "max-h-104 overflow-hidden")}
+        >
           {canCollapse && !expanded ? (
             <ChatMarkdown
               text={collapsedPreview ?? ""}

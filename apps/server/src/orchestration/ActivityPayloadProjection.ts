@@ -6,7 +6,12 @@ import type {
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import { extractJsonObject } from "@t3tools/shared/schemaJson";
-import { toolActivityOutput, toolOutputImages } from "@t3tools/shared/toolOutput";
+import {
+  toolActivityOutput,
+  toolOutputImages,
+  compactDynamicToolOutput,
+} from "@t3tools/shared/toolOutput";
+import { readMcpAppReference } from "@t3tools/shared/mcpApp";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -315,6 +320,8 @@ function projectPreviewToolMetadata(data: Record<string, unknown>, status: unkno
  */
 function projectMcpToolCallData(data: Record<string, unknown>): Record<string, unknown> {
   const projectedData: Record<string, unknown> = {};
+  const app = readMcpAppReference(data.mcpApp);
+  if (app) projectedData.mcpApp = compactDynamicToolOutput({ t3McpApp: app })?.t3McpApp;
 
   const item = asRecord(data.item);
   if (item) {

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 
 export type SettingsPath =
+  | "/settings/diagnostics"
   | "/settings/general"
   | "/settings/appearance"
   | "/settings/keybindings"

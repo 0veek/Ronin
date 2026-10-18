@@ -90,6 +90,14 @@ function compile(bindings: TestBinding[]): ResolvedKeybindingsConfig {
 }
 
 const DEFAULT_BINDINGS = compile([
+  {
+    shortcut: modShortcut("f"),
+    command: "chat.find",
+    whenAst: whenAnd(
+      whenNot(whenIdentifier("terminalFocus")),
+      whenAnd(whenNot(whenIdentifier("previewFocus")), whenNot(whenIdentifier("modelPickerOpen"))),
+    ),
+  },
   { shortcut: modShortcut("b"), command: "sidebar.toggle" },
   { shortcut: modShortcut("j"), command: "terminal.toggle" },
   { shortcut: modShortcut("b", { altKey: true }), command: "rightPanel.toggle" },
@@ -498,6 +506,32 @@ describe("composer and pull request shortcuts", () => {
 });
 
 describe("copy thread reference shortcut", () => {
+  it("finds the thread while leaving terminal and preview shortcuts to their owner", () => {
+    assert.equal(
+      resolveShortcutCommand(event({ key: "f", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+      }),
+      "chat.find",
+    );
+    assert.equal(
+      resolveShortcutCommand(event({ key: "f", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Linux",
+      }),
+      "chat.find",
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "f", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "f", ctrlKey: true }), DEFAULT_BINDINGS, {
+        platform: "Linux",
+        context: { previewFocus: true },
+      }),
+    );
+  });
   it("resolves Cmd+Shift+C on macOS and Ctrl+Shift+C elsewhere", () => {
     assert.equal(
       resolveShortcutCommand(event({ key: "c", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
@@ -1463,4 +1497,31 @@ describe("plus key parsing", () => {
       }),
     );
   });
+});
+
+describe("default numeric jumps", () => {
+  it.each(["MacIntel", "Win32", "Linux"])(
+    "keeps model and thread jumps exclusive on %s",
+    (platform) => {
+      const input = event({
+        key: "1",
+        metaKey: platform === "MacIntel",
+        ctrlKey: platform !== "MacIntel",
+      });
+      assert.equal(
+        resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { modelPickerOpen: true },
+        }),
+        "modelPicker.jump.1",
+      );
+      assert.equal(
+        resolveShortcutCommand(input, DEFAULT_RESOLVED_KEYBINDINGS, {
+          platform,
+          context: { modelPickerOpen: false },
+        }),
+        "thread.jump.1",
+      );
+    },
+  );
 });

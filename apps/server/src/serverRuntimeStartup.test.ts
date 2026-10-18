@@ -136,6 +136,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+        getTaskActivity: () => Effect.die("unused task activity query"),
         getUserInputActivity: () => Effect.die("unused"),
         listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
@@ -169,6 +170,14 @@ it.effect("resolveAutoBootstrapWelcomeTargets returns existing project and threa
         getTurnStartMessage: () => Effect.die("unused"),
         getThreadDetailById: () => Effect.die("unused"),
         getThreadDetailSnapshot: () => Effect.die("unused"),
+        searchThread: () =>
+          Effect.succeed({
+            snapshotSequence: 0,
+            totalMatches: 0,
+            activeIndex: 0,
+            navigation: [],
+            match: null,
+          }),
         searchThreads: () => Effect.succeed({ matches: [] }),
       }),
       Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
@@ -207,6 +216,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets creates a project and thread when 
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+        getTaskActivity: () => Effect.die("unused task activity query"),
         getUserInputActivity: () => Effect.die("unused"),
         listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
@@ -228,6 +238,14 @@ it.effect("resolveAutoBootstrapWelcomeTargets creates a project and thread when 
         getTurnStartMessage: () => Effect.die("unused"),
         getThreadDetailById: () => Effect.die("unused"),
         getThreadDetailSnapshot: () => Effect.die("unused"),
+        searchThread: () =>
+          Effect.succeed({
+            snapshotSequence: 0,
+            totalMatches: 0,
+            activeIndex: 0,
+            navigation: [],
+            match: null,
+          }),
         searchThreads: () => Effect.succeed({ matches: [] }),
       }),
       Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {
@@ -275,6 +293,7 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         autoBootstrapProjectFromCwd: true,
       } as never),
       Effect.provideService(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+        getTaskActivity: () => Effect.die("unused task activity query"),
         getUserInputActivity: () => Effect.die("unused"),
         listActivitiesByKind: () => Effect.succeed([]),
         getCommandReadModel: () => Effect.die("unused"),
@@ -296,6 +315,14 @@ it.effect("resolveAutoBootstrapWelcomeTargets preserves typed UUID generation fa
         getTurnStartMessage: () => Effect.die("unused"),
         getThreadDetailById: () => Effect.die("unused"),
         getThreadDetailSnapshot: () => Effect.die("unused"),
+        searchThread: () =>
+          Effect.succeed({
+            snapshotSequence: 0,
+            totalMatches: 0,
+            activeIndex: 0,
+            navigation: [],
+            match: null,
+          }),
         searchThreads: () => Effect.succeed({ matches: [] }),
       }),
       Effect.provideService(OrchestrationEngine.OrchestrationEngineService, {

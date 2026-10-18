@@ -1,3 +1,8 @@
+import {
+  getNewProjectPublishTargets,
+  getNewProjectPublishTarget,
+  getNewProjectRepository,
+} from "./projects.ts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   EnvironmentId,
@@ -275,4 +280,61 @@ describe("add project shared logic", () => {
       defaultModelSelection: null,
     });
   });
+});
+
+describe("new project publish targets", () => {
+  const readyHost = (kind: string, account: string | null) => ({
+    kind: kind,
+    label: kind,
+    status: "available" as const,
+    installHint: "",
+    version: Option.none(),
+    detail: Option.none(),
+    auth: {
+      status: "authenticated" as const,
+      account: Option.fromNullOr(account),
+      host: Option.none(),
+      detail: Option.none(),
+    },
+  });
+
+  it("offers ready hosts that can place the repository, GitHub first, and keeps the pick", () => {
+    const targets = getNewProjectPublishTargets({
+      versionControlSystems: [],
+      sourceControlProviders: [
+        readyHost("gitlab", "group"),
+        readyHost("github", null),
+        readyHost("azure-devops", "me"),
+      ],
+    });
+    expect(targets.map((target) => target.definition.kind)).toEqual(["github", "gitlab"]);
+    expect(getNewProjectPublishTarget(targets, null)?.definition.kind).toBe("github");
+    expect(getNewProjectPublishTarget(targets, "gitlab")?.owner).toBe("group");
+  });
+});
+
+it("offers Forgejo only when its signed-in account names the owner", () => {
+  const host = (account: string | null) => ({
+    kind: "forgejo",
+    label: "Forgejo",
+    status: "available" as const,
+    installHint: "",
+    version: Option.none(),
+    detail: Option.none(),
+    auth: {
+      status: "authenticated" as const,
+      account: Option.fromNullOr(account),
+      host: Option.none(),
+      detail: Option.none(),
+    },
+  });
+  const discovery = { versionControlSystems: [], sourceControlProviders: [host(null)] };
+  expect(getNewProjectPublishTargets(discovery)).toEqual([]);
+  const target = getNewProjectPublishTargets({
+    ...discovery,
+    sourceControlProviders: [host("aveek")],
+  })[0]!;
+  expect(target.owner).toBe("aveek");
+  expect(getNewProjectRepository(target, "C:\\work\\new-project")).toBe("aveek/new-project");
+  expect(getNewProjectPublishTarget([target], "github")).toBe(target);
 });

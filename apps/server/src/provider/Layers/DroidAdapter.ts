@@ -1003,6 +1003,9 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
                   mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
               });
 
+              // The native model has changed even if a later mode or attachment step fails.
+              ctx.currentModelId = currentModelId;
+
               // Interaction mode is chosen per turn, so a thread that switches
               // into plan mode has to carry that to Droid before it prompts.
               // Skipped when nothing changed — this is a round trip per turn.
@@ -1080,7 +1083,6 @@ export function makeDroidAdapter(droidSettings: DroidSettings, options?: DroidAd
                 });
               }
 
-              ctx.currentModelId = currentModelId;
               const displayModel = currentModelId
                 ? resolveDroidAcpBaseModelId(currentModelId)
                 : undefined;

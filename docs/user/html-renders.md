@@ -9,3 +9,11 @@ Pages normally grow to fit their content as the thread width changes, up to 2,00
 Agents can place local images in a page by absolute file path. Ronin embeds them when the page is published, so it keeps working after the original files move or disappear. Deleting the thread deletes its own pages; deleting a fork preserves the source thread's pages.
 
 Before publishing, agents can use **html_preview** to check a screenshot, content height, and console output. Preview uses a temporary background tab in a connected Ronin desktop client and closes it afterward. It preserves the agent's current browser tab. Publishing works without a preview host. Pages and their images also work when the environment is remote.
+
+## MCP apps
+
+Some MCP servers return interactive apps with their tool results. Codex can show these apps directly in the thread using the MCP servers configured on the environment. Other providers show ordinary tool results.
+
+An app follows your theme and can read resources or call tools on its own server. Ronin asks before tool calls that the server does not mark read-only, before sending a chat message, and before saving a download. App messages leave your composer draft intact. Apps can request full screen; Escape outside the app or a new approval or question returns the app to the thread.
+
+Saved apps remain viewable after their agent stops. Interactions need the app's original Codex session running; opening the app never starts an agent. An app can keep a note about its current state, such as a selected filter, for your next message. Each update replaces its previous note. Removing the app's history removes that note. Deleting the thread removes its own app documents.

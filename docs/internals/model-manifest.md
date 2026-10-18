@@ -38,3 +38,8 @@ Add tests only when implementation behavior changes:
 
 Resolver tests must use synthetic providers and model names so normal JSON edits never create test
 churn.
+
+Current models that need a newer CLI remain visible as update notices, separately from
+selectable models. Set `adapter.claudeCode.minVersion` or `adapter.codex.minVersion` in the
+manifest. The server reports them as `updateRequiredModels`, and the picker names the CLI
+version that unlocks them. Unknown installed versions do not produce an update claim.

@@ -1,5 +1,10 @@
+import { useEnvironmentScope } from "~/state/session";
+import { formatProviderUpdateRequiredNotice } from "@t3tools/client-runtime/providerUpdateRequiredModels";
+import { useNavigate } from "@tanstack/react-router";
 import {
+  AuthSettingsWriteScope,
   type ProviderInstanceId,
+  type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
@@ -33,7 +38,10 @@ import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../../keybindings";
-import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
+import {
+  useEnvironmentModelPreferences,
+  useToggleEnvironmentModelFavorite,
+} from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { TooltipProvider } from "../ui/tooltip";
 import {
@@ -110,6 +118,7 @@ function ModelListSeparator() {
 }
 
 export const ModelPickerContent = memo(function ModelPickerContent(props: {
+  environmentId: EnvironmentId | null;
   /** The instance currently selected in the composer (combobox "value"). */
   activeInstanceId: ProviderInstanceId;
   model: string;
@@ -155,7 +164,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const modelListRef = useRef<LegendListRef | null>(null);
   const pickerContentRef = useRef<HTMLDivElement>(null);
   const highlightedModelKeyRef = useRef<string | null>(null);
-  const favorites = useClientSettings((s) => s.favorites ?? []);
+  const { favorites } = useEnvironmentModelPreferences(props.environmentId);
+  const canEditFavorites = useEnvironmentScope(props.environmentId, AuthSettingsWriteScope);
   const activeEntry = props.instanceEntries.find(
     (entry) => entry.instanceId === props.activeInstanceId,
   );
@@ -192,7 +202,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const keybindings = providedKeybindings ?? serverKeybindings;
-  const updateSettings = useUpdateClientSettings();
+  const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
 
   const focusSearchInput = useCallback(() => {
     searchInputRef.current?.focus({ preventScroll: true });
@@ -302,6 +312,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return out;
   }, [modelOptionsByInstance, entryByInstanceId, props.activeInstanceId, props.model]);
 
+  const navigate = useNavigate();
   const isLocked = props.lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
   const lockedDisabledInstanceIds = useMemo(() => {
@@ -332,6 +343,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     return [...available, ...disabled];
   }, [instanceEntries, isLocked, matchesLockedProvider]);
+  const selectedEntry =
+    selectedInstanceId === "favorites" ? undefined : entryByInstanceId.get(selectedInstanceId);
+  const noticeEntries = isSearching
+    ? instanceEntries.filter(matchesLockedProvider)
+    : selectedEntry
+      ? [selectedEntry]
+      : [];
+  const updateRequiredNotices = noticeEntries.flatMap((entry) => {
+    const notice = formatProviderUpdateRequiredNotice(entry.snapshot, searchQuery);
+    return notice ? [{ instanceId: entry.instanceId, notice }] : [];
+  });
   const showSidebar = !isSearching && sidebarInstanceEntries.length > 0;
   const instanceOrder = useMemo(
     () => instanceEntries.map((entry) => entry.instanceId),
@@ -505,20 +527,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       }
     },
     [entryByInstanceId, getModelDisabledReason, modelOptionsByInstance, onInstanceModelChange],
-  );
-
-  const toggleFavorite = useCallback(
-    (instanceId: ProviderInstanceId, model: string) => {
-      const newFavorites = [...favorites];
-      const index = newFavorites.findIndex((f) => f.provider === instanceId && f.model === model);
-      if (index >= 0) {
-        newFavorites.splice(index, 1);
-      } else {
-        newFavorites.push({ provider: instanceId, model });
-      }
-      updateSettings({ favorites: newFavorites });
-    },
-    [favorites, updateSettings],
   );
 
   const modelJumpCommandByKey = useMemo(() => {
@@ -907,6 +915,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         unavailable={model.isUnavailable === true}
                         jumpLabel={modelJumpLabelByKey.get(modelKey) ?? null}
                         disabledReason={disabledReason}
+                        canEditFavorite={canEditFavorites}
                         onToggleFavorite={() => toggleFavorite(model.instanceId, model.slug)}
                       />
                     );
@@ -929,6 +938,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             <ComboboxEmpty className="not-empty:py-6 empty:h-0 text-xs font-normal leading-snug">
               No models found
             </ComboboxEmpty>
+            {updateRequiredNotices.map(({ instanceId, notice }) => (
+              <p
+                key={instanceId}
+                className="shrink-0 border-t border-border/70 px-3 py-2 text-xs leading-snug text-muted-foreground"
+              >
+                {notice}{" "}
+                <button
+                  type="button"
+                  className="cursor-pointer text-foreground underline underline-offset-2"
+                  onClick={() => {
+                    props.onRequestClose?.();
+                    void navigate({ to: "/settings/providers" });
+                  }}
+                >
+                  Provider settings
+                </button>
+              </p>
+            ))}
           </div>
         </Combobox>
       </div>

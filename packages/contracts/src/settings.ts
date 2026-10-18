@@ -310,6 +310,25 @@ export const LoadBalancingWeights = Schema.Record(
 
 export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 
+/** Preferences shared by clients connected to the same environment. */
+export const ModelFavorite = Schema.Struct({
+  // The historical field name is retained; default instance ids also decode old provider-kind favorites.
+  provider: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+});
+export const ModelFavorites = Schema.Array(ModelFavorite);
+export const ProviderModelPreferences = Schema.Record(
+  ProviderInstanceId,
+  Schema.Struct({
+    hiddenModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+    modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  }),
+);
+export type ModelPreferences = {
+  readonly favorites: typeof ModelFavorites.Type;
+  readonly providerModelPreferences: typeof ProviderModelPreferences.Type;
+};
+
 export const ClientSettingsSchema = Schema.Struct({
   diffColorScheme: DiffColorScheme.pipe(
     Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
@@ -413,31 +432,11 @@ export const ClientSettingsSchema = Schema.Struct({
   // Grayscale `-webkit-font-smoothing: antialiased` (thinner strokes);
   // disabling restores the platform's heavier default. No effect off macOS.
   fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // Model favorites. Historically keyed by provider kind, now
-  // widened to `ProviderInstanceId` so users can favorite a specific model
-  // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
-  // the UI collapsing it into the same bucket as the default Codex. The
-  // widening is backward-compatible by construction: prior provider-kind
-  // strings satisfy the `ProviderInstanceId` slug schema, so previously
-  // persisted favorites decode unchanged and continue to point at the
-  // default instance for their kind (because `defaultInstanceIdForDriver(kind)`
-  // uses the same slug). The field name is kept as `provider` for storage
-  // stability; new call sites should treat the value as an instance id.
-  favorites: Schema.Array(
-    Schema.Struct({
-      provider: ProviderInstanceId,
-      model: TrimmedNonEmptyString,
-    }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-  providerModelPreferences: Schema.Record(
-    ProviderInstanceId,
-    Schema.Struct({
-      hiddenModels: Schema.Array(Schema.String).pipe(
-        Schema.withDecodingDefault(Effect.succeed([])),
-      ),
-      modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
-    }),
-  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Legacy client values retained for migration to the connected environment.
+  favorites: ModelFavorites.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  providerModelPreferences: ProviderModelPreferences.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   pullRequestMergeMethodOverrides: Schema.Record(
     TrimmedNonEmptyString,
     PullRequestMergeMethod,
@@ -888,6 +887,29 @@ export const KiloSettings = makeProviderSettingsSchema(
 );
 export type KiloSettings = typeof KiloSettings.Type;
 
+export const MuseSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(false)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("muse").pipe(
+      Schema.annotateKey({
+        title: "Binary path",
+        description:
+          "Path to the Muse Code binary on this environment. Sign in with muse login on that host.",
+        providerSettingsForm: { placeholder: "muse", clearWhenEmpty: "omit" },
+      }),
+    ),
+    customModels: Schema.Array(CustomModelSetting).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  { order: ["binaryPath"] },
+);
+export type MuseSettings = typeof MuseSettings.Type;
+
 export const PiSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -1054,6 +1076,13 @@ export const QuotaResumeServerSettings = Schema.Struct({
 export type QuotaResumeServerSettings = typeof QuotaResumeServerSettings.Type;
 
 export const ServerSettings = Schema.Struct({
+  // Null means no client has migrated this preference yet; an empty value is
+  // authoritative so another device cannot resurrect cleared preferences.
+  favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  providerModelPreferences: Schema.NullOr(ProviderModelPreferences).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+
   responseStreamingMode: ResponseStreamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
@@ -1170,6 +1199,24 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
 
+  /**
+   * Beta: review guides on this server. Off hides the Guide tab in every client and refuses to
+   * write guides, for people and agents alike.
+   */
+  reviewGuidesEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /**
+   * The model that reads a pull request to write its review guide. It investigates a checkout
+   * over many turns, so it can want a stronger model than one-shot writing. `null` uses the
+   * source control writer model.
+   */
+  reviewGuideModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  /**
+   * The maintainer's taste for review guides: what to dwell on, skip, or order first. Shapes the
+   * guide's emphasis only; the output format and coverage rules stay fixed.
+   */
+  reviewGuideInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   // Legacy single-instance-per-driver settings. Continues to be the source
   // of truth until `providerInstances` (below) lands per-driver migration
   // shims and the server starts hydrating instances from it. Driver-specific
@@ -1185,6 +1232,7 @@ export const ServerSettings = Schema.Struct({
     antigravity: AntigravitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     droid: DroidSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     kilo: KiloSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+    muse: MuseSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     pi: PiSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   // New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
@@ -1292,7 +1340,7 @@ export class ServerSettingsError extends Schema.TaggedErrorClass<ServerSettingsE
 
 // ── Unified type ─────────────────────────────────────────────────────
 
-export type UnifiedSettings = ServerSettings & ClientSettings;
+export type UnifiedSettings = Omit<ServerSettings, keyof ModelPreferences> & ClientSettings;
 export const DEFAULT_UNIFIED_SETTINGS: UnifiedSettings = {
   ...DEFAULT_SERVER_SETTINGS,
   ...DEFAULT_CLIENT_SETTINGS,
@@ -1349,6 +1397,12 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
 });
 
+const MuseSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  binaryPath: Schema.optionalKey(TrimmedString),
+  customModels: Schema.optionalKey(Schema.Array(CustomModelSetting)),
+});
+
 const AntigravitySettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(TrimmedString),
@@ -1377,6 +1431,25 @@ const PiSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  setModelFavorites: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
+  ),
+  setModelsHidden: Schema.optionalKey(
+    Schema.Array(Schema.Struct({ ...ModelFavorite.fields, hidden: Schema.Boolean })),
+  ),
+  setProviderModelOrder: Schema.optionalKey(
+    Schema.Struct({ provider: ProviderInstanceId, modelOrder: Schema.Array(TrimmedString) }),
+  ),
+  favorites: Schema.optionalKey(ModelFavorites),
+  providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
+  // Applied under the settings service's write lock, only while still unset.
+  migrateModelPreferences: Schema.optionalKey(
+    Schema.Struct({
+      favorites: Schema.optionalKey(ModelFavorites),
+      providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
+    }),
+  ),
+
   // Server settings
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),
@@ -1417,6 +1490,9 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  reviewGuidesEnabled: Schema.optionalKey(Schema.Boolean),
+  reviewGuideModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  reviewGuideInstructions: Schema.optionalKey(TrimmedString),
   // No apiKey member: keys go to the secret store through their own RPC, so a
   // settings patch can never carry one into settings.json.
   speechToText: Schema.optionalKey(
@@ -1467,6 +1543,7 @@ export const ServerSettingsPatch = Schema.Struct({
       antigravity: Schema.optionalKey(AntigravitySettingsPatch),
       droid: Schema.optionalKey(DroidSettingsPatch),
       kilo: Schema.optionalKey(KiloSettingsPatch),
+      muse: Schema.optionalKey(MuseSettingsPatch),
       pi: Schema.optionalKey(PiSettingsPatch),
     }),
   ),
@@ -1545,27 +1622,8 @@ export const ClientSettingsPatch = Schema.Struct({
   fontFamilySans: Schema.optionalKey(FontFamilyPreference),
   fontFamilyTerminal: Schema.optionalKey(FontFamilyPreference),
   fontSmoothing: Schema.optionalKey(Schema.Boolean),
-  favorites: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        provider: ProviderInstanceId,
-        model: TrimmedNonEmptyString,
-      }),
-    ),
-  ),
-  providerModelPreferences: Schema.optionalKey(
-    Schema.Record(
-      ProviderInstanceId,
-      Schema.Struct({
-        hiddenModels: Schema.Array(Schema.String).pipe(
-          Schema.withDecodingDefault(Effect.succeed([])),
-        ),
-        modelOrder: Schema.Array(Schema.String).pipe(
-          Schema.withDecodingDefault(Effect.succeed([])),
-        ),
-      }),
-    ),
-  ),
+  favorites: Schema.optionalKey(ModelFavorites),
+  providerModelPreferences: Schema.optionalKey(ProviderModelPreferences),
   pullRequestMergeMethodOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, PullRequestMergeMethod),
   ),

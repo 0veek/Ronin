@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { converter } from "culori/fn";
 
 import {
   applyThemeColorPreview,
@@ -96,6 +97,45 @@ function contrastRatio(first: string, second: string): number {
   const darker = Math.min(luminance(first), luminance(second));
   return (lighter + 0.05) / (darker + 0.05);
 }
+
+it("keeps search matches readable and distinct from code and message surfaces", () => {
+  const toOklab = converter("oklab");
+  const distance = (first: string, second: string) => {
+    const a = toOklab(first)!;
+    const b = toOklab(second)!;
+    return Math.hypot(a.l - b.l, a.a - b.a, a.b - b.b);
+  };
+  const themes = [
+    PAPER_THEME,
+    TSUKIMI_THEME,
+    GRAPHITE_THEME,
+    AIZOME_THEME,
+    URUSHI_THEME,
+    OBSIDIAN_THEME,
+    CARBON_THEME,
+    OLED_VOID_THEME,
+  ];
+  const palettes = [
+    getStandardThemeColors("light"),
+    getStandardThemeColors("dark"),
+    ...themes.flatMap((theme) => [theme.colors, ...Object.values(theme.variants ?? {})]),
+  ];
+  for (const colors of palettes) {
+    expect(
+      contrastRatio(colors.searchMatchForeground, colors.searchMatchBackground),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      contrastRatio(colors.searchMatchActiveForeground, colors.searchMatchActiveBackground),
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      distance(colors.searchMatchBackground, colors.searchMatchActiveBackground),
+    ).toBeGreaterThan(0.14);
+    for (const background of [colors.muted, colors.messageSurface, colors.codeBackground]) {
+      expect(distance(colors.searchMatchBackground, background)).toBeGreaterThan(0.08);
+      expect(distance(colors.searchMatchActiveBackground, background)).toBeGreaterThan(0.08);
+    }
+  }
+});
 
 describe("theme files", () => {
   it("derives a readable palette from extreme simple-editor colors", () => {

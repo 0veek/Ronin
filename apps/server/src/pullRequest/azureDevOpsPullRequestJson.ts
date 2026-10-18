@@ -57,6 +57,9 @@ const RawPullRequestSchema = Schema.Struct({
   // without a branch or a created time, so a row missing one is skipped rather than breaking the
   // response it travels in.
   sourceRefName: TrimmedNonEmptyString,
+  lastMergeSourceCommit: Schema.optional(
+    Schema.NullOr(Schema.Struct({ commitId: TrimmedNonEmptyString })),
+  ),
   targetRefName: TrimmedNonEmptyString,
   creationDate: TrimmedNonEmptyString,
   closedDate: Schema.optional(Schema.NullOr(Schema.String)),
@@ -118,6 +121,7 @@ const RawViewerSchema = Schema.Struct({
 });
 
 export interface AzureDevOpsPullRequest {
+  readonly headSha?: string;
   readonly number: number;
   readonly title: string;
   readonly url: string;
@@ -249,6 +253,7 @@ function toPullRequest(
     url,
     author: toActor(raw.createdBy),
     headBranch,
+    ...(raw.lastMergeSourceCommit == null ? {} : { headSha: raw.lastMergeSourceCommit.commitId }),
     baseBranch,
     state: toState(raw),
     isDraft: raw.isDraft ?? false,

@@ -24,6 +24,7 @@ import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
+  buildReviewGuidePrompt,
   buildThreadTitlePrompt,
 } from "./TextGenerationPrompts.ts";
 import {
@@ -115,7 +116,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle",
+      | "generateThreadTitle"
+      | "generateReviewGuide",
     value: unknown,
     detail: string,
   ): Effect.Effect<string, TextGenerationError> =>
@@ -140,16 +142,19 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     prompt,
     outputSchemaJson,
     modelSelection,
+    investigationTimeoutMs,
   }: {
     operation:
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
-      | "generateThreadTitle";
+      | "generateThreadTitle"
+      | "generateReviewGuide";
     cwd: string;
     prompt: string;
     outputSchemaJson: S;
     modelSelection: ModelSelection;
+    investigationTimeoutMs?: number;
   }): Effect.fn.Return<S["Type"], TextGenerationError, S["DecodingServices"]> {
     const catalog = yield* scopedModelCatalog;
     const resolvedModelSelection = {
@@ -230,8 +235,16 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "--setting-sources=",
           "--strict-mcp-config",
           "--no-session-persistence",
-          "--tools",
-          "",
+          ...(investigationTimeoutMs === undefined
+            ? ["--tools", ""]
+            : [
+                "--tools",
+                "Read,Grep,Glob,Bash",
+                "--allowedTools",
+                "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*)",
+                "--disallowedTools",
+                "Bash(git * --output*),Bash(git * -o *)",
+              ]),
           "--disable-slash-commands",
           "--permission-mode",
           "dontAsk",
@@ -286,7 +299,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
     const rawStdout = yield* runClaudeCommand().pipe(
       Effect.scoped,
-      Effect.timeoutOption(CLAUDE_TIMEOUT_MS),
+      Effect.timeoutOption(investigationTimeoutMs ?? CLAUDE_TIMEOUT_MS),
       Effect.flatMap(
         Option.match({
           onNone: () =>
@@ -429,10 +442,24 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  const generateReviewGuide: TextGeneration.TextGeneration["Service"]["generateReviewGuide"] =
+    Effect.fn("ClaudeTextGeneration.generateReviewGuide")(function* (input) {
+      const { prompt, outputSchema } = buildReviewGuidePrompt(input);
+      return yield* runClaudeJson({
+        operation: "generateReviewGuide",
+        cwd: input.cwd,
+        modelSelection: input.modelSelection,
+        prompt,
+        outputSchemaJson: outputSchema,
+        investigationTimeoutMs: 15 * 60_000,
+      });
+    });
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReviewGuide,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

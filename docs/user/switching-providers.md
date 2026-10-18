@@ -51,3 +51,13 @@ same home directory, for example.
 - The brief is built from the thread's own record, so it costs no extra model call.
 - Interrupting a turn does not confuse the handover. Ronin remembers that the provider had already
   read that message, so coming back to it later does not hand it the same request twice.
+
+## Favorites and visible models
+
+Star a model in the picker to add it to Favorites. In **Settings → Providers**, open a provider’s
+**Models** tab to show or hide built-in models and change their order. Custom models stay visible.
+
+These choices are saved on the selected environment and shared with other clients connected to it.
+Each environment and provider account keeps its own choices. Existing device preferences are
+imported when the environment has no saved list; a list you deliberately clear stays empty.
+Changing shared model preferences requires permission to change that environment’s settings.

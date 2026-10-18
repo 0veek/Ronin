@@ -4,7 +4,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import type { ChatAttachment } from "@t3tools/contracts";
-import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
+import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
 
 import {
   normalizeAttachmentRelativePath,
@@ -109,7 +109,8 @@ export function threadHtmlRenderAttachmentIds(
   const segment = toSafeThreadAttachmentSegment(threadId);
   if (segment === null) return [];
   return Array.from(items).flatMap((item) => {
-    const attachmentId = htmlRenderFromToolItem(item)?.attachmentId;
+    const attachmentId =
+      htmlRenderFromToolItem(item)?.attachmentId ?? mcpAppFromToolItem(item)?.attachmentId;
     return attachmentId !== undefined &&
       parseThreadSegmentFromAttachmentId(attachmentId) === segment
       ? [attachmentId]

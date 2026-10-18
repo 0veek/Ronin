@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 /**
  * TerminalManager - Terminal session orchestration service interface.
@@ -80,7 +81,7 @@ export {
 const DEFAULT_HISTORY_LINE_LIMIT = 5_000;
 const DEFAULT_HISTORY_BYTE_LIMIT = 8 * 1024 * 1024;
 const MAX_HISTORY_CHUNK_LENGTH = 16 * 1024;
-const DEFAULT_PERSIST_DEBOUNCE_MS = 40;
+const DEFAULT_PERSIST_DEBOUNCE_MS = 250;
 const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
 const MAX_SUBPROCESS_POLL_INTERVAL_MS = 60_000;
 const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
@@ -1088,10 +1089,19 @@ function findEscapeSequenceEndIndex(input: string, start: number): number | null
   return isEscapeFinalByte(input.charCodeAt(cursor)) ? cursor + 1 : start + 1;
 }
 
+// eslint-disable-next-line no-control-regex -- Terminal sequence introducers must reach the parser.
+const HISTORY_SEQUENCE_START = /[\u001b\u0090\u009b\u009d\u009e\u009f]/;
+
 function sanitizeTerminalHistoryChunk(
   pendingControlSequence: string,
   data: string,
 ): { visibleText: string; pendingControlSequence: string } {
+  // Plain output has nothing to filter. A pending sequence still needs the parser
+  // even when this chunk only contains its final bytes.
+  if (pendingControlSequence.length === 0 && !HISTORY_SEQUENCE_START.test(data)) {
+    return { visibleText: data, pendingControlSequence: "" };
+  }
+
   const input = `${pendingControlSequence}${data}`;
   let visibleText = "";
   let index = 0;
@@ -1373,6 +1383,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   const logsDir = options.logsDir;
   const historyLineLimit = options.historyLineLimit ?? DEFAULT_HISTORY_LINE_LIMIT;
   const historyByteLimit = options.historyByteLimit ?? DEFAULT_HISTORY_BYTE_LIMIT;
+  const agentScope = yield* AgentScope;
   const platform = yield* HostProcessPlatform;
   // Terminals must inherit the user's full environment (minus the blocklist
   // applied in createTerminalSpawnEnv) — an allowlist here silently strips
@@ -2065,10 +2076,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       );
     }
 
+    const launch = yield* agentScope.wrap({
+      command: candidate.shell,
+      args: candidate.args ?? [],
+      name: "terminal",
+      env: spawnEnv,
+    });
     const attempt = yield* Effect.result(
       options.ptyAdapter.spawn({
-        shell: candidate.shell,
-        ...(candidate.args ? { args: candidate.args } : {}),
+        shell: launch.command,
+        ...(launch.args.length ? { args: [...launch.args] } : {}),
         cwd: session.cwd,
         cols: session.cols,
         rows: session.rows,

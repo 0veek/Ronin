@@ -106,6 +106,7 @@ function createProviderServiceHarness() {
 
   const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
   const service: ProviderServiceShape = {
+    mcpAppRequest: () => unsupported(),
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
     compactThread: () => unsupported(),
@@ -3739,6 +3740,13 @@ describe("ProviderRuntimeIngestion", () => {
         taskId: "named-task-1",
         description: "Typecheck mobile app",
         summary: "Running tsc across the mobile workspace.",
+        workflowAgentId: "member-attempt-2",
+        attempt: 2,
+        parentAgentId: "workflow",
+        promptPreview: "  Review checkout\n",
+        resultPreview: "Answer excerpt",
+        workflowConfigDir: "/profiles/claude",
+        runHandles: { transcriptDir: "/profiles/claude/projects/workflow" },
       },
     });
 
@@ -3779,6 +3787,15 @@ describe("ProviderRuntimeIngestion", () => {
         ? (completed.payload as Record<string, unknown>)
         : undefined;
 
+    expect(progressPayload).toMatchObject({
+      workflowAgentId: "member-attempt-2",
+      attempt: 2,
+      parentAgentId: "workflow",
+      promptPreview: "  Review checkout\n",
+      resultPreview: "Answer excerpt",
+      workflowConfigDir: "/profiles/claude",
+      runHandles: { transcriptDir: "/profiles/claude/projects/workflow" },
+    });
     expect(progress?.summary).toBe("Typecheck mobile app");
     expect(progressPayload?.title).toBe("Typecheck mobile app");
     expect(completed?.summary).toBe("Task completed");

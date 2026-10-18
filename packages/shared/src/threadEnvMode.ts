@@ -1,4 +1,5 @@
 import type { ThreadEnvMode } from "@t3tools/contracts";
+import { normalizeProjectPathForComparison } from "./path.ts";
 
 /**
  * Canonical priority order for a project's default thread env mode:
@@ -33,4 +34,34 @@ export function isDefaultThreadEnvModeSettled(sources: {
     sources.projectSetting != null ||
     !sources.projectFilePending
   );
+}
+
+/** Newly scaffolded projects use their own folder for the first thread, unless
+ * the project or its t3.json explicitly chooses another mode. */
+export function resolveNewThreadEnvMode(
+  input: Parameters<typeof resolveDefaultThreadEnvMode>[0] & {
+    readonly workspaceRoot: string | null;
+    readonly newProjectsRoot: string | null | undefined;
+    readonly projectHasThreads: boolean;
+  },
+): ThreadEnvMode {
+  const configured = resolveDefaultThreadEnvMode(input);
+  if (
+    configured === "local" ||
+    input.projectHasThreads ||
+    input.projectSetting != null ||
+    input.projectFile != null ||
+    input.workspaceRoot === null ||
+    input.newProjectsRoot == null
+  )
+    return configured;
+  const root = normalizeProjectPathForComparison(input.newProjectsRoot);
+  const folder = normalizeProjectPathForComparison(input.workspaceRoot);
+  const separator = root.includes("\\") ? "\\" : "/";
+  const prefix = root.endsWith(separator) ? root : `${root}${separator}`;
+  return folder.startsWith(prefix) &&
+    folder.length > prefix.length &&
+    !folder.slice(prefix.length).includes(separator)
+    ? "local"
+    : configured;
 }

@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 /**
  * AntigravityAdapter — Google Antigravity CLI (`agy -p`) print/stdio runtime.
  *
@@ -157,6 +158,7 @@ export function makeAntigravityAdapter(
   options?: AntigravityAdapterLiveOptions,
 ) {
   return Effect.gen(function* () {
+    const agentScope = yield* AgentScope;
     const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("antigravity");
     const serverConfig = yield* Effect.service(ServerConfig);
     const crypto = yield* Crypto.Crypto;
@@ -333,7 +335,14 @@ export function makeAntigravityAdapter(
           options?.environment ?? process.env,
           McpProviderSession.readMcpProviderSession(input.threadId),
         );
-        const spawnCommand = yield* resolveSpawnCommand(command, args, {
+        const launch = yield* agentScope.wrap({
+          command,
+          args,
+          name: "antigravity",
+          threadId: input.threadId,
+          env: providerEnvironment,
+        });
+        const spawnCommand = yield* resolveSpawnCommand(launch.command, launch.args, {
           env: providerEnvironment,
         });
         const child = yield* Effect.try({

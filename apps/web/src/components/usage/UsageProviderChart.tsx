@@ -17,10 +17,13 @@ const VIEW_WIDTH = 1000;
 const VIEW_HEIGHT = 280;
 const TICK_COUNT = 4;
 const PLOT_TOP = 10;
+const NONE_LOADING: ReadonlySet<UsageProviderKind> = new Set();
 
 export type UsageChartMetric = "tokens" | "cost";
 
 interface UsageProviderChartProps {
+  readonly providers?: readonly UsageProviderKind[];
+  readonly loadingProviders?: ReadonlySet<UsageProviderKind>;
   readonly days: readonly string[];
   readonly daily: readonly DailyTotals[];
   readonly hours: readonly string[];
@@ -59,10 +62,11 @@ function buildPeriodColumns(
   periods: readonly string[],
   byPeriod: ReadonlyMap<string, DailyTotals | HourlyTotals>,
   metric: UsageChartMetric,
+  providers: readonly UsageProviderKind[] = PROVIDER_ORDER,
 ): readonly DayColumn[] {
   return periods.map((period) => {
     const entry = byPeriod.get(period);
-    const bands = PROVIDER_ORDER.map((provider) => ({
+    const bands = providers.map((provider) => ({
       provider,
       value: valueFor(entry, provider, metric),
     }));
@@ -194,11 +198,14 @@ export function buildDayColumns(
   days: readonly string[],
   byDay: ReadonlyMap<string, DailyTotals>,
   metric: UsageChartMetric,
+  providers: readonly UsageProviderKind[] = PROVIDER_ORDER,
 ): readonly DayColumn[] {
-  return buildPeriodColumns(days, byDay, metric);
+  return buildPeriodColumns(days, byDay, metric, providers);
 }
 
 export function UsageProviderChart({
+  providers = PROVIDER_ORDER,
+  loadingProviders = NONE_LOADING,
   days,
   daily,
   hours,
@@ -231,7 +238,7 @@ export function UsageProviderChart({
       };
     }
 
-    const columns = buildPeriodColumns(periods, byPeriod, metric);
+    const columns = buildPeriodColumns(periods, byPeriod, metric, providers);
 
     // The scale tops out at the largest single provider-period, not the largest
     // sum: layered series each measure from zero, so a combined peak would
@@ -247,7 +254,7 @@ export function UsageProviderChart({
     const toY = (value: number) =>
       max === 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (value / max) * (VIEW_HEIGHT - PLOT_TOP);
 
-    const built = PROVIDER_ORDER.map((provider, providerIndex) => {
+    const built = providers.map((provider, providerIndex) => {
       const curve = smoothCurve(
         columns.map((column, periodIndex) => ({
           x: periodIndex * step,
@@ -275,7 +282,7 @@ export function UsageProviderChart({
       series: columns,
       hasData: max > 0,
     };
-  }, [byPeriod, metric, periods]);
+  }, [byPeriod, metric, periods, providers]);
 
   const format = metric === "tokens" ? formatTokens : formatUsd;
 
@@ -332,7 +339,7 @@ export function UsageProviderChart({
             <defs>
               {/* The wash is a ramp off each series' own colour token, so it
                   follows the theme without a second set of literals. */}
-              {PROVIDER_ORDER.map((provider) => (
+              {providers.map((provider) => (
                 <linearGradient
                   key={provider}
                   id={`${gradientPrefix}-${provider}`}
@@ -374,12 +381,26 @@ export function UsageProviderChart({
 
             {/* Washes first, then every stroke, so no series covers another's line. */}
             {paths.map(({ provider, area }) => (
-              <path key={provider} d={area} fill={`url(#${gradientPrefix}-${provider})`} />
+              <path
+                key={provider}
+                d={area}
+                className={
+                  loadingProviders.has(provider)
+                    ? "opacity-40 transition-opacity delay-150"
+                    : "transition-opacity"
+                }
+                fill={`url(#${gradientPrefix}-${provider})`}
+              />
             ))}
             {paths.map(({ provider, line }) => (
               <path
                 key={provider}
                 d={line}
+                className={
+                  loadingProviders.has(provider)
+                    ? "opacity-40 transition-opacity delay-150"
+                    : "transition-opacity"
+                }
                 fill="none"
                 style={{ stroke: PROVIDER_COLOR[provider] }}
                 strokeWidth={2}
@@ -406,7 +427,7 @@ export function UsageProviderChart({
                 className="pointer-events-none absolute inset-y-0 w-px bg-foreground/15"
                 style={{ left: `${hoverLeft}%` }}
               />
-              {PROVIDER_ORDER.map((provider) => {
+              {providers.map((provider) => {
                 const value =
                   hoveredColumn?.bands.find((band) => band.provider === provider)?.value ?? 0;
                 if (value <= 0) return null;
@@ -434,7 +455,7 @@ export function UsageProviderChart({
                 <div className="label-meta mb-1.5 text-muted-foreground">
                   {formatTooltipPeriod(hoveredPeriod)}
                 </div>
-                {PROVIDER_ORDER.map((provider) => {
+                {providers.map((provider) => {
                   const value =
                     hoveredColumn?.bands.find((band) => band.provider === provider)?.value ?? 0;
                   return (
@@ -489,10 +510,12 @@ export function UsageProviderChart({
  * by colour in the plot itself, so the mapping has to be stated somewhere that
  * does not require hovering.
  */
-export function UsageChartLegend() {
+export function UsageChartLegend({
+  providers = PROVIDER_ORDER,
+}: { readonly providers?: readonly UsageProviderKind[] } = {}) {
   return (
     <div className="flex items-center gap-3.5">
-      {PROVIDER_ORDER.map((provider) => (
+      {providers.map((provider) => (
         <span key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <ProviderMark provider={provider} className="size-3.5" tinted />
           {PROVIDER_LABEL[provider]}

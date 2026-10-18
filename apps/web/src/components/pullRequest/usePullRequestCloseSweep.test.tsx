@@ -18,7 +18,12 @@ const entry = (number: number, state = "open") =>
     number,
     state,
   }) as EnvironmentPullRequestEntry;
-const rows = [entry(1), entry(2, "closed"), entry(3), entry(4)];
+const rows = [
+  { ...entry(1), provider: "forgejo", host: "forge.test" },
+  entry(2, "closed"),
+  entry(3),
+  entry(4),
+];
 const groups = [
   { key: "authored", entries: rows.slice(0, 3) },
   { key: "others", entries: rows.slice(3) },
@@ -36,12 +41,21 @@ const viewport = {
 } as unknown as HTMLDivElement;
 const scrollRef = { current: viewport };
 const closingKeys = new Set<string>();
+const unsupportedKeys = new Set<string>();
 const closeBatch = vi.fn<(entries: ReadonlyArray<EnvironmentPullRequestEntry>) => Promise<void>>();
 let renderer: ReactTestRenderer | undefined;
 let document: TestDocument;
 
 function Harness({ resetKey = "open" }: { resetKey?: string }) {
-  const sweep = usePullRequestCloseSweep({ groups, closingKeys, closeBatch, scrollRef, resetKey });
+  const sweep = usePullRequestCloseSweep({
+    groups,
+    closingKeys,
+    closeBatch,
+    scrollRef,
+    resetKey,
+    hostActionsOf: (entry) =>
+      new Set(unsupportedKeys.has(pullRequestEntryKey(entry)) ? [] : ["close"]),
+  });
   return (
     <button
       type="button"
@@ -68,6 +82,7 @@ beforeEach(async () => {
   vi.stubGlobal("CSS", { escape: (value: string) => value });
   pending.clear();
   closingKeys.clear();
+  unsupportedKeys.clear();
   closeBatch.mockReset().mockResolvedValue(undefined);
   await act(() => {
     renderer = create(<Harness />);
@@ -129,5 +144,13 @@ it("leaves a click below the drag threshold to the existing single-row action", 
   await act(() => {
     document.dispatchEvent(pointer("pointerup", 15));
   });
+  expect(closeBatch).not.toHaveBeenCalled();
+});
+
+it("rechecks the host's close capability before committing a sweep", async () => {
+  await start();
+  await act(() => document.dispatchEvent(pointer("pointermove", 95)));
+  for (const row of rows) unsupportedKeys.add(pullRequestEntryKey(row));
+  await act(() => document.dispatchEvent(pointer("pointerup", 95)));
   expect(closeBatch).not.toHaveBeenCalled();
 });

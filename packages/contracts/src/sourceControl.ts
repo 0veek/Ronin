@@ -2,14 +2,11 @@ import * as Schema from "effect/Schema";
 import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
-export const SourceControlProviderKind = Schema.Literals([
-  "github",
-  "gitlab",
-  "forgejo",
-  "azure-devops",
-  "bitbucket",
-  "unknown",
-]);
+/** Host slugs stay open so clients can read environments with additional integrations. */
+export const SourceControlProviderKind = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(64),
+  Schema.isPattern(/^[a-z][a-z0-9-]*$/),
+);
 export type SourceControlProviderKind = typeof SourceControlProviderKind.Type;
 
 export const SourceControlProviderInfo = Schema.Struct({

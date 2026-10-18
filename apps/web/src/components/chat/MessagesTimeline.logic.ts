@@ -1,3 +1,7 @@
+import {
+  assistantCitationLabel,
+  collectAssistantCitations,
+} from "@t3tools/shared/assistantCitations";
 import * as Equal from "effect/Equal";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
 import { shallow } from "zustand/vanilla/shallow";
@@ -502,7 +506,8 @@ function deriveTurnFolds(input: {
         (entry.entry.questionAnswer !== undefined ||
           entry.entry.agentSpawn !== undefined ||
           entry.entry.secretRequest !== undefined ||
-          entry.entry.htmlRender !== undefined)
+          entry.entry.htmlRender !== undefined ||
+          entry.entry.mcpApp !== undefined)
       ) {
         continue;
       }
@@ -704,7 +709,8 @@ export function deriveMessagesTimelineRows(input: {
       if (
         timelineEntry.entry.questionAnswer !== undefined ||
         timelineEntry.entry.secretRequest !== undefined ||
-        timelineEntry.entry.htmlRender !== undefined
+        timelineEntry.entry.htmlRender !== undefined ||
+        timelineEntry.entry.mcpApp !== undefined
       ) {
         nextRows.push({
           kind: "work",
@@ -724,6 +730,7 @@ export function deriveMessagesTimelineRows(input: {
           nextEntry.entry.questionAnswer !== undefined ||
           nextEntry.entry.secretRequest !== undefined ||
           nextEntry.entry.htmlRender !== undefined ||
+          nextEntry.entry.mcpApp !== undefined ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)
         ) {
@@ -732,8 +739,17 @@ export function deriveMessagesTimelineRows(input: {
         groupedEntries.push(nextEntry.entry);
         cursor += 1;
       }
+      const latestThought = input.isWorking
+        ? groupedEntries.findLast(
+            (entry) =>
+              entry.tone === "thinking" &&
+              (entry.detail?.trim() ?? "") !== "" &&
+              input.activeTurnStartedAt !== null &&
+              entry.createdAt >= input.activeTurnStartedAt,
+          )
+        : undefined;
       const visibleGroupedEntries = groupedEntries.filter(
-        (entry) => !workEntryIndicatesToolNeutralStatus(entry),
+        (entry) => entry === latestThought || !workEntryIndicatesToolNeutralStatus(entry),
       );
       if (visibleGroupedEntries.length > 0) {
         if (visibleGroupedEntries.length <= MAX_VISIBLE_WORK_LOG_ENTRIES) {
@@ -755,7 +771,9 @@ export function deriveMessagesTimelineRows(input: {
           // (review finding: concatenating two filtered lists moved a
           // mid-group spawn row above earlier tool rows).
           const isPinnedWorkEntry = (entry: (typeof visibleGroupedEntries)[number]) =>
-            entry.agentSpawn !== undefined || entry.providerBoundary !== undefined;
+            entry.agentSpawn !== undefined ||
+            entry.providerBoundary !== undefined ||
+            entry === latestThought;
           const overflowCandidates = visibleGroupedEntries.filter(
             (entry) => !isPinnedWorkEntry(entry),
           );
@@ -1070,4 +1088,31 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       );
     }
   }
+}
+
+const MAX_COLLAPSED_USER_MESSAGE_LINES = 8;
+const MAX_COLLAPSED_USER_MESSAGE_LENGTH = 600;
+const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:<[^>\n]*>|[^\s)]*)\)/g;
+
+function visibleUserMessageText(text: string): string {
+  const linkLabels = (segment: string) => segment.replace(MARKDOWN_LINK, "$1");
+  let visible = "";
+  let cursor = 0;
+  for (const match of collectAssistantCitations(text)) {
+    visible += linkLabels(text.slice(cursor, match.start)) + assistantCitationLabel(match.citation);
+    cursor = match.end;
+  }
+  return visible + linkLabels(text.slice(cursor));
+}
+
+export function shouldCollapseUserMessage(text: string): boolean {
+  const visible = visibleUserMessageText(text);
+  if (visible.trim().length === 0) {
+    return false;
+  }
+
+  return (
+    visible.length > MAX_COLLAPSED_USER_MESSAGE_LENGTH ||
+    visible.split("\n").length > MAX_COLLAPSED_USER_MESSAGE_LINES
+  );
 }

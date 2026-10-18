@@ -219,6 +219,9 @@ export const make = Effect.gen(function* () {
 
     getDiff: (input) => cli.getMergeRequestDiff(input).pipe(Effect.mapError(fail("getDiff"))),
 
+    getDiffFileContents: (input) =>
+      cli.getMergeRequestDiffFileContents(input).pipe(Effect.mapError(fail("getDiffFileContents"))),
+
     // Users only: GitLab requests a review of a person, and the groups that can stand in for one
     // appear in approval rules rather than in a merge request's reviewers.
     listReviewerCandidates: (input) =>

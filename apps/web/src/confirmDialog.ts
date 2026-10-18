@@ -46,6 +46,11 @@ export function readConfirmDialogState(): ConfirmDialogState {
   return state;
 }
 
+/** Whether a confirmation already needs the page's attention. */
+export function isConfirmDialogActive(): boolean {
+  return state.status !== "idle";
+}
+
 export function subscribeConfirmDialog(listener: () => void): () => void {
   listeners.add(listener);
   return () => {

@@ -37,6 +37,19 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
+    "finds telemetry export for %s",
+    (query) => {
+      expect(searchSettings(query)).toContainEqual(
+        expect.objectContaining({
+          id: "telemetry-export",
+          to: "/settings/diagnostics",
+          targetId: "telemetry-export",
+        }),
+      );
+    },
+  );
+
   it.each(["send shortcut", "multiline", "new line"])("finds Send shortcut for %s", (query) => {
     expect(searchSettings(query).map((item) => item.id)).toContain("send-shortcut");
   });
@@ -172,4 +185,11 @@ describe("searchSettings", () => {
     });
     expect(searchSettings("external links")[0]).toMatchObject({ id: "browser-link-target" });
   });
+});
+
+it("finds version and release downloads from the command palette", () => {
+  expect(searchSettings("check for updates").map((item) => item.id)).toContain("app-version");
+  expect(SETTINGS_SEARCH_ITEMS.find((item) => item.id === "app-version")?.to).toBe(
+    "/settings/general",
+  );
 });

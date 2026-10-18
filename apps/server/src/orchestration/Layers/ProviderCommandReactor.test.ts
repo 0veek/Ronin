@@ -273,11 +273,12 @@ describe("ProviderCommandReactor", () => {
         ),
       );
     });
+    const turnSent = Effect.runSync(Deferred.make<void>());
     const sendTurn = vi.fn((_: unknown) =>
       Effect.succeed({
         threadId: ThreadId.make("thread-1"),
         turnId: asTurnId("turn-1"),
-      }),
+      }).pipe(Effect.tap(() => Deferred.succeed(turnSent, undefined))),
     );
     const compactThread = vi.fn((_: ThreadId) => input?.compactThreadEffect?.() ?? Effect.void);
     const interruptTurn = vi.fn((_: unknown) => input?.interruptTurnEffect?.() ?? Effect.void);
@@ -402,6 +403,7 @@ describe("ProviderCommandReactor", () => {
     );
 
     const service: ProviderServiceShape = {
+      mcpAppRequest: () => Effect.die("unused MCP app request"),
       startSession: startSession as ProviderServiceShape["startSession"],
       sendTurn: sendTurn as ProviderServiceShape["sendTurn"],
       compactThread,
@@ -642,6 +644,7 @@ describe("ProviderCommandReactor", () => {
         ),
       startSession,
       sendTurn,
+      waitForTurnSent: () => Effect.runPromise(Deferred.await(turnSent)),
       compactThread,
       interruptTurn,
       stopAgent,
@@ -751,6 +754,66 @@ describe("ProviderCommandReactor", () => {
     expect(request?.input).toContain("# Portable instructions");
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({ cwd: workspaceRoot });
   });
+
+  it.each([
+    { provider: "pi", leading: false },
+    { provider: "pi", leading: true },
+    { provider: "codex", leading: false },
+  ])(
+    "loads selected native skills for $provider with leading command $leading",
+    async ({ provider, leading }) => {
+      const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "ronin-selected-skills-"));
+      const workspaceRoot = NodePath.join(baseDir, "workspace");
+      const providerSkills = ["first", "second"].map((name) => {
+        const skillDir = NodePath.join(workspaceRoot, ".pi", "skills", name);
+        NodeFS.mkdirSync(skillDir, { recursive: true });
+        const path = NodePath.join(skillDir, "SKILL.md");
+        NodeFS.writeFileSync(path, `# Instructions for ${name}`);
+        return { name, path, enabled: true };
+      });
+      const harness = await createHarness({
+        baseDir,
+        workspaceRoot,
+        providerSkills,
+        threadModelSelection: {
+          instanceId: ProviderInstanceId.make(provider),
+          model: "test-model",
+        },
+      });
+      const prompt = `${leading ? "/skill:first " : ""}Use $first and $second together, then $first again. Leave $unknown alone.`;
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.turn.start",
+          commandId: CommandId.make("cmd-selected-native-skills"),
+          threadId: ThreadId.make("thread-1"),
+          message: {
+            messageId: asMessageId("selected-native-skills"),
+            role: "user",
+            text: prompt,
+            attachments: [],
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }),
+      );
+      await harness.waitForTurnSent();
+      await harness.drain();
+      expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+      const request = harness.sendTurn.mock.calls[0]?.[0] as
+        | { readonly input?: string }
+        | undefined;
+      expect(request?.input).toContain(prompt);
+      for (const name of ["first", "second"]) {
+        expect(request?.input?.split(`<skill name="${name}"`).length).toBe(
+          provider === "pi" && !(leading && name === "first") ? 2 : 1,
+        );
+        if (provider === "pi" && !(leading && name === "first"))
+          expect(request?.input).toContain(`# Instructions for ${name}`);
+      }
+      expect(request?.input).not.toContain('<skill name="unknown"');
+    },
+  );
 
   it("prefixes the turn with debug instructions in debug mode", async () => {
     const harness = await createHarness();

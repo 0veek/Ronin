@@ -74,7 +74,9 @@ export function resolveProviderCompatibility(
       ? unprefixed?.replace(/^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/, "$1")
       : driver === "antigravity"
         ? unprefixed?.replace(/^agy_acp_server_(\d+\.\d+\.\d+)$/, "$1")
-        : unprefixed;
+        : driver === "muse"
+          ? unprefixed?.replace(/^(\d+\.\d+\.\d+)-R\d+(?:\.\d+)?$/, "$1")
+          : unprefixed;
   const status =
     stable && /^\d+\.\d+\.\d+$/.test(stable)
       ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??

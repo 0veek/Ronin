@@ -16,6 +16,8 @@ import type {
   OrchestrationProjectShell,
   OrchestrationReadModel,
   OrchestrationSearchThreadsInput,
+  OrchestrationSearchThreadInput,
+  OrchestrationSearchThreadResult,
   OrchestrationSearchThreadsResult,
   OrchestrationShellSnapshot,
   OrchestrationThread,
@@ -81,6 +83,11 @@ export interface ProjectionThreadDetailQuery {
  * ProjectionSnapshotQueryShape - Service API for read-model snapshots.
  */
 export interface ProjectionSnapshotQueryShape {
+  readonly getTaskActivity: (input: {
+    readonly threadId: ThreadId;
+    readonly taskId: string;
+  }) => Effect.Effect<Option.Option<OrchestrationThreadActivity>, ProjectionRepositoryError>;
+
   /** Read the latest request or resolution without loading the thread history. */
   readonly getUserInputActivity: (input: {
     readonly threadId: ThreadId;
@@ -144,6 +151,10 @@ export interface ProjectionSnapshotQueryShape {
    * Search active thread navigation metadata, user messages, and canonical
    * assistant outputs without hydrating thread detail snapshots.
    */
+  readonly searchThread: (
+    input: OrchestrationSearchThreadInput,
+  ) => Effect.Effect<OrchestrationSearchThreadResult, ProjectionRepositoryError>;
+
   readonly searchThreads: (
     input: OrchestrationSearchThreadsInput,
   ) => Effect.Effect<OrchestrationSearchThreadsResult, ProjectionRepositoryError>;

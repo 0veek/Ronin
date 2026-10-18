@@ -35,6 +35,7 @@ import * as ElectronWindow from "./electron/ElectronWindow.ts";
 import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppActivation from "./app/DesktopAppActivation.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
+import * as DesktopCliCommand from "./app/DesktopCliCommand.ts";
 import * as DesktopAutoUpdate from "./app/DesktopAutoUpdate.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
@@ -229,6 +230,7 @@ const desktopApplicationLayer = Layer.mergeAll(
   DesktopApplicationMenu.layer,
   DesktopLinuxUrlHandler.layer,
   DesktopShellEnvironment.layer,
+  DesktopCliCommand.layer,
   desktopAutoUpdateLayer,
   desktopSshLayer,
 ).pipe(

@@ -1,4 +1,17 @@
+import { PullRequestReviewGuideResult } from "./pullRequestReviewGuide.ts";
 import * as Schema from "effect/Schema";
+import {
+  McpAppCallToolInput,
+  McpAppCallToolResult,
+  McpAppReadResourceInput,
+  McpAppReadResourceResult,
+  McpAppRequestError,
+  McpAppToolInfo,
+  McpAppToolInfoInput,
+  McpAppUpdateModelContextInput,
+  McpAppGetCallInput,
+  McpAppGetCallResult,
+} from "./mcpApps.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcMiddleware from "effect/unstable/rpc/RpcMiddleware";
@@ -17,6 +30,8 @@ import {
   HostPowerSnapshot,
 } from "./background.ts";
 import {
+  FilesystemGetMetadataInput,
+  FilesystemGetMetadataResult,
   FilesystemBrowseInput,
   FilesystemBrowseResult,
   FilesystemBrowseError,
@@ -87,6 +102,9 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationRpcSchemas,
   OrchestrationGetWorkflowScriptError,
+  OrchestrationGetWorkflowConversationInput,
+  OrchestrationGetWorkflowConversationResult,
+  OrchestrationGetWorkflowConversationError,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
@@ -98,6 +116,7 @@ import {
   PullRequestDiffFileContentsInput,
   PullRequestDiffFileContentsResult,
   PullRequestInvalidateInput,
+  PullRequestReportStateInput,
   PullRequestListInput,
   PullRequestListResult,
   PullRequestListStatsInput,
@@ -196,6 +215,8 @@ import {
   PreviewAutomationStreamEvent,
 } from "./previewAutomation.ts";
 import {
+  OtlpEndpointCheckInput,
+  OtlpEndpointCheckResult,
   ServerConfigStreamEvent,
   ServerConfig,
   ServerProviderUpdateError,
@@ -320,9 +341,15 @@ export const WS_METHODS = {
 
   // Filesystem methods
   filesystemBrowse: "filesystem.browse",
+  filesystemGetMetadata: "filesystem.getMetadata",
   assetsCreateUrl: "assets.createUrl",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
+  mcpAppsCallTool: "mcpApps.callTool",
+  mcpAppsToolInfo: "mcpApps.toolInfo",
+  mcpAppsReadResource: "mcpApps.readResource",
+  mcpAppsUpdateModelContext: "mcpApps.updateModelContext",
+  mcpAppsGetCall: "mcpApps.getCall",
 
   // VCS methods
   vcsPull: "vcs.pull",
@@ -394,6 +421,7 @@ export const WS_METHODS = {
   serverGetHostResources: "server.getHostResources",
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
+  serverCheckOtlpEndpoint: "server.checkOtlpEndpoint",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
   serverSignalProcess: "server.signalProcess",
   serverReportClientActivity: "server.reportClientActivity",
@@ -442,6 +470,8 @@ export const WS_METHODS = {
   pullRequestsLinkedThreads: "pullRequests.linkedThreads",
   pullRequestsDetail: "pullRequests.detail",
   pullRequestsActivity: "pullRequests.activity",
+  pullRequestsReviewGuide: "pullRequests.reviewGuide",
+  pullRequestsGenerateReviewGuide: "pullRequests.generateReviewGuide",
   pullRequestsThreadComments: "pullRequests.threadComments",
   pullRequestsDiffFileContents: "pullRequests.diffFileContents",
   pullRequestsRunAction: "pullRequests.runAction",
@@ -453,6 +483,7 @@ export const WS_METHODS = {
   pullRequestsSetThreadResolution: "pullRequests.setThreadResolution",
   pullRequestsSetReaction: "pullRequests.setReaction",
   pullRequestsInvalidate: "pullRequests.invalidate",
+  pullRequestsReportState: "pullRequests.reportState",
   pullRequestsSubscribeRefreshes: "pullRequests.subscribeRefreshes",
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
@@ -601,6 +632,12 @@ export const WsServerGetResourceTelemetryHistoryRpc = Rpc.make(
     error: EnvironmentAuthorizationError,
   },
 );
+
+export const WsServerCheckOtlpEndpointRpc = Rpc.make(WS_METHODS.serverCheckOtlpEndpoint, {
+  payload: OtlpEndpointCheckInput,
+  success: OtlpEndpointCheckResult,
+  error: EnvironmentAuthorizationError,
+});
 
 export const WsServerRetryResourceTelemetryRpc = Rpc.make(WS_METHODS.serverRetryResourceTelemetry, {
   payload: Schema.Struct({}),
@@ -889,6 +926,21 @@ export const WsPullRequestsActivityRpc = Rpc.make(WS_METHODS.pullRequestsActivit
   error: PullRequestRpcError,
 });
 
+export const WsPullRequestsReviewGuideRpc = Rpc.make(WS_METHODS.pullRequestsReviewGuide, {
+  payload: PullRequestRef,
+  success: PullRequestReviewGuideResult,
+  error: PullRequestRpcError,
+});
+
+export const WsPullRequestsGenerateReviewGuideRpc = Rpc.make(
+  WS_METHODS.pullRequestsGenerateReviewGuide,
+  {
+    payload: PullRequestRef,
+    success: PullRequestReviewGuideResult,
+    error: PullRequestRpcError,
+  },
+);
+
 export const WsPullRequestsThreadCommentsRpc = Rpc.make(WS_METHODS.pullRequestsThreadComments, {
   payload: PullRequestThreadCommentsInput,
   success: PullRequestThreadCommentsResult,
@@ -954,6 +1006,12 @@ export const WsPullRequestsSetReactionRpc = Rpc.make(WS_METHODS.pullRequestsSetR
 
 export const WsPullRequestsInvalidateRpc = Rpc.make(WS_METHODS.pullRequestsInvalidate, {
   payload: PullRequestInvalidateInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+
+const WsPullRequestsReportStateRpc = Rpc.make(WS_METHODS.pullRequestsReportState, {
+  payload: PullRequestReportStateInput,
   success: Schema.Void,
   error: PullRequestRpcError,
 });
@@ -1103,6 +1161,12 @@ export const WsShellOpenInEditorRpc = Rpc.make(WS_METHODS.shellOpenInEditor, {
   error: Schema.Union([ExternalLauncherError, EnvironmentAuthorizationError]),
 });
 
+export const WsFilesystemGetMetadataRpc = Rpc.make(WS_METHODS.filesystemGetMetadata, {
+  payload: FilesystemGetMetadataInput,
+  success: FilesystemGetMetadataResult,
+  error: EnvironmentAuthorizationError,
+});
+
 export const WsFilesystemBrowseRpc = Rpc.make(WS_METHODS.filesystemBrowse, {
   payload: FilesystemBrowseInput,
   success: FilesystemBrowseResult,
@@ -1124,6 +1188,31 @@ export const WsAttachmentsCreateUploadUrlRpc = Rpc.make(WS_METHODS.attachmentsCr
 export const WsAttachmentsDeleteRpc = Rpc.make(WS_METHODS.attachmentsDelete, {
   payload: AttachmentDeleteInput,
   error: EnvironmentAuthorizationError,
+});
+
+export const WsMcpAppsCallToolRpc = Rpc.make(WS_METHODS.mcpAppsCallTool, {
+  payload: McpAppCallToolInput,
+  success: McpAppCallToolResult,
+  error: Schema.Union([McpAppRequestError, EnvironmentAuthorizationError]),
+});
+export const WsMcpAppsToolInfoRpc = Rpc.make(WS_METHODS.mcpAppsToolInfo, {
+  payload: McpAppToolInfoInput,
+  success: McpAppToolInfo,
+  error: Schema.Union([McpAppRequestError, EnvironmentAuthorizationError]),
+});
+export const WsMcpAppsReadResourceRpc = Rpc.make(WS_METHODS.mcpAppsReadResource, {
+  payload: McpAppReadResourceInput,
+  success: McpAppReadResourceResult,
+  error: Schema.Union([McpAppRequestError, EnvironmentAuthorizationError]),
+});
+export const WsMcpAppsUpdateModelContextRpc = Rpc.make(WS_METHODS.mcpAppsUpdateModelContext, {
+  payload: McpAppUpdateModelContextInput,
+  error: Schema.Union([McpAppRequestError, EnvironmentAuthorizationError]),
+});
+export const WsMcpAppsGetCallRpc = Rpc.make(WS_METHODS.mcpAppsGetCall, {
+  payload: McpAppGetCallInput,
+  success: McpAppGetCallResult,
+  error: Schema.Union([McpAppRequestError, EnvironmentAuthorizationError]),
 });
 
 export const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -1423,6 +1512,15 @@ export const WsOrchestrationDispatchCommandRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetWorkflowConversationRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getWorkflowConversation,
+  {
+    payload: OrchestrationGetWorkflowConversationInput,
+    success: OrchestrationGetWorkflowConversationResult,
+    error: Schema.Union([OrchestrationGetWorkflowConversationError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationGetWorkflowScriptRpc = Rpc.make(
   ORCHESTRATION_WS_METHODS.getWorkflowScript,
   {
@@ -1446,6 +1544,12 @@ export const WsOrchestrationGetFullThreadDiffRpc = Rpc.make(
     error: Schema.Union([OrchestrationGetFullThreadDiffError, EnvironmentAuthorizationError]),
   },
 );
+
+export const WsOrchestrationSearchThreadRpc = Rpc.make(ORCHESTRATION_WS_METHODS.searchThread, {
+  payload: OrchestrationRpcSchemas.searchThread.input,
+  success: OrchestrationRpcSchemas.searchThread.output,
+  error: Schema.Union([OrchestrationSearchThreadsError, EnvironmentAuthorizationError]),
+});
 
 export const WsOrchestrationSearchThreadsRpc = Rpc.make(ORCHESTRATION_WS_METHODS.searchThreads, {
   payload: OrchestrationSearchThreadsInput,
@@ -1559,6 +1663,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerGetHostResourcesRpc,
   WsServerGetProcessResourceHistoryRpc,
   WsServerGetResourceTelemetryHistoryRpc,
+  WsServerCheckOtlpEndpointRpc,
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,
@@ -1603,6 +1708,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsLinkedThreadsRpc,
   WsPullRequestsDetailRpc,
   WsPullRequestsActivityRpc,
+  WsPullRequestsReviewGuideRpc,
+  WsPullRequestsGenerateReviewGuideRpc,
   WsPullRequestsThreadCommentsRpc,
   WsPullRequestsDiffFileContentsRpc,
   WsPullRequestsRunActionRpc,
@@ -1614,6 +1721,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPullRequestsSetThreadResolutionRpc,
   WsPullRequestsSetReactionRpc,
   WsPullRequestsInvalidateRpc,
+  WsPullRequestsReportStateRpc,
   WsPullRequestsSubscribeRefreshesRpc,
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
@@ -1635,9 +1743,15 @@ export const WsRpcGroup = RpcGroup.make(
   WsProjectsCreateNewRpc,
   WsShellOpenInEditorRpc,
   WsFilesystemBrowseRpc,
+  WsFilesystemGetMetadataRpc,
   WsAssetsCreateUrlRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,
+  WsMcpAppsCallToolRpc,
+  WsMcpAppsToolInfoRpc,
+  WsMcpAppsReadResourceRpc,
+  WsMcpAppsUpdateModelContextRpc,
+  WsMcpAppsGetCallRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,
@@ -1694,9 +1808,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeResourceTelemetryRpc,
   WsOrchestrationDispatchCommandRpc,
   WsOrchestrationGetWorkflowScriptRpc,
+  WsOrchestrationGetWorkflowConversationRpc,
   WsOrchestrationGetTurnDiffRpc,
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationSearchThreadsRpc,
+  WsOrchestrationSearchThreadRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,

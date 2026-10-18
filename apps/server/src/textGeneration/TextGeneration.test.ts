@@ -19,6 +19,7 @@ const makeStubTextGeneration = (
   overrides: Partial<TextGeneration.TextGeneration["Service"]>,
 ): TextGeneration.TextGeneration["Service"] =>
   TextGeneration.TextGeneration.of({
+    generateReviewGuide: () => Effect.die("generateReviewGuide stub not configured for this test"),
     generateCommitMessage: () =>
       Effect.die("generateCommitMessage stub not configured for this test"),
     generatePrContent: () => Effect.die("generatePrContent stub not configured for this test"),

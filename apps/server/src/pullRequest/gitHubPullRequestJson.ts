@@ -1538,6 +1538,9 @@ function toCheckStatus(raw: Schema.Schema.Type<typeof RawCheckSchema>): PullRequ
 /** What GitHub writes where a run has not reached that moment yet, which is not a time. */
 const UNSET_TIMESTAMP = "0001-01-01T00:00:00Z";
 
+/** Sorts after every real timestamp, so the deduper keeps a run that has not finished. */
+const STILL_RUNNING = "9999-12-31T23:59:59Z";
+
 function realTimestamp(value: string | null | undefined): string | null {
   const at = trimmed(value);
   return at === null || at === UNSET_TIMESTAMP ? null : at;
@@ -1550,8 +1553,8 @@ function isNamelessCheck(raw: Schema.Schema.Type<typeof RawCheckSchema>): boolea
 
 /**
  * The rollup as the deduper reads it: a check, the workflow that owns it, and when the run last
- * had something to say. A queued run reports a completion time it has not reached, so the start
- * stands in for it rather than sorting the newest run to the bottom.
+ * had something to say. An unfinished run outranks a finished run of the same check,
+ * including parallel push and pull_request workflows on the same commit.
  */
 function toCheckEntries(
   raw: ReadonlyArray<Schema.Schema.Type<typeof RawCheckSchema>> | null | undefined,
@@ -1563,16 +1566,20 @@ function toCheckEntries(
   return (raw ?? []).flatMap((check) => {
     const name = trimmed(check.name) ?? trimmed(check.context);
     if (name === null) return [];
+    const status = toCheckStatus(check);
     return [
       {
         check: {
           name,
-          status: toCheckStatus(check),
+          status,
           description: trimmed(check.description),
           url: trimmed(check.detailsUrl) ?? trimmed(check.targetUrl),
         },
         workflowName: trimmed(check.workflowName),
-        at: realTimestamp(check.completedAt) ?? realTimestamp(check.startedAt),
+        at:
+          status === "pending"
+            ? STILL_RUNNING
+            : (realTimestamp(check.completedAt) ?? realTimestamp(check.startedAt)),
       },
     ];
   });

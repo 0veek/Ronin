@@ -242,7 +242,7 @@ function applyScriptPlaceholders(
 ): string {
   let result = template;
   for (const [token, value] of Object.entries(replacements)) {
-    result = result.replaceAll(`@@${token}@@`, value);
+    result = result.replaceAll(`@@${token}@@`, () => value);
   }
   return result;
 }

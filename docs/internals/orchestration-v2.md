@@ -58,6 +58,16 @@ node, provider ownership, archive status, and Stop marker; failed recording remo
 No HTML bytes enter the transcript or shell stream. Attachment cleanup includes published pages
 and preserves inherited pages when deleting a fork.
 
+MCP Apps use the retained Codex runtime's MCP connection. Completed MCP tool activities carry
+a bounded app reference; the HTML is an immutable attachment, and original call details are
+read by activity ID only when a frame opens. Resource capture runs outside notification ingestion
+and can finish after the parent turn. App requests verify the recorded instance and native
+thread without resuming or starting a session. Other adapters omit this capability.
+Migration 065 stores each app's latest model-context note, keyed by its owning activity. The
+provider service loads these notes for the next Codex turn as untrusted additional context;
+rollback and activity deletion remove the associated notes. Retained forks do not inherit work-log
+activities, so an app cannot update another conversation's context.
+
 The renderer gives pages an opaque sandbox, supplies the active theme and fonts, and sizes the
 frame from live content-height messages. Publishing without `height` records `fitContent: true`,
 so pages grow without server measurements; an explicit height keeps an intentional scroll cap.

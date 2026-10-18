@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./authScopeOptions": {
+      "types": "./src/authScopeOptions.ts",
+      "import": "./src/authScopeOptions.ts"
+    },
     "./desktopBootstrapToken": {
       "types": "./src/desktopBootstrapToken.ts",
       "import": "./src/desktopBootstrapToken.ts"
@@ -334,6 +338,70 @@
     "./toolOutput": {
       "types": "./src/toolOutput.ts",
       "import": "./src/toolOutput.ts"
+    },
+    "./mcpApp": {
+      "types": "./src/mcpApp.ts",
+      "default": "./src/mcpApp.ts"
+    },
+    "./codexArtifactTemplates": {
+      "types": "./src/codexArtifactTemplates.ts",
+      "import": "./src/codexArtifactTemplates.ts"
+    },
+    "./codexFileCitations": {
+      "types": "./src/codexFileCitations.ts",
+      "import": "./src/codexFileCitations.ts"
+    },
+    "./codexMarkdownDirectives": {
+      "types": "./src/codexMarkdownDirectives.ts",
+      "import": "./src/codexMarkdownDirectives.ts"
+    },
+    "./markdownGithubAlerts": {
+      "types": "./src/markdownGithubAlerts.ts",
+      "import": "./src/markdownGithubAlerts.ts"
+    },
+    "./markdownListIndentation": {
+      "types": "./src/markdownListIndentation.ts",
+      "import": "./src/markdownListIndentation.ts"
+    },
+    "./markdownWindowsPaths": {
+      "types": "./src/markdownWindowsPaths.ts",
+      "import": "./src/markdownWindowsPaths.ts"
+    },
+    "./markdownHtmlPreview": {
+      "types": "./src/markdownHtmlPreview.ts",
+      "import": "./src/markdownHtmlPreview.ts"
+    },
+    "./inlineSkills": {
+      "types": "./src/inlineSkills.ts",
+      "import": "./src/inlineSkills.ts"
+    },
+    "./fileLinks": {
+      "types": "./src/fileLinks.ts",
+      "import": "./src/fileLinks.ts"
+    },
+    "./markdownLinks": {
+      "types": "./src/markdownLinks.ts",
+      "import": "./src/markdownLinks.ts"
+    },
+    "./proposedPlanText": {
+      "types": "./src/proposedPlanText.ts",
+      "import": "./src/proposedPlanText.ts"
+    },
+    "./threadSearch": {
+      "types": "./src/threadSearch.ts",
+      "import": "./src/threadSearch.ts"
+    },
+    "./threadFindText": {
+      "types": "./src/threadFindText.ts",
+      "import": "./src/threadFindText.ts"
+    },
+    "./markdownPipeline": {
+      "types": "./src/markdownPipeline.ts",
+      "import": "./src/markdownPipeline.ts"
+    },
+    "./AgentScope": {
+      "types": "./src/AgentScope.ts",
+      "import": "./src/AgentScope.ts"
     }
   },
   "scripts": {
@@ -343,6 +411,17 @@
   "dependencies": {
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
+    "mdast-util-directive": "^3.1.0",
+    "micromark-extension-directive": "^4.0.0",
+    "micromark-util-character": "^2.1.1",
+    "micromark-util-types": "^2.0.2",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-breaks": "^4.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
+    "unified": "^11.0.5",
     "yaml": "catalog:"
   },
   "devDependencies": {

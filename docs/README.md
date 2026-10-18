@@ -10,6 +10,7 @@
 - [Keyboard focus](./user/keyboard-focus.md)
 - [Slash commands](./user/slash-commands.md)
 - [Debug mode](./user/debug-mode.md)
+- [Export diagnostics](./user/telemetry.md)
 - [Agent skills](./user/agent-skills.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Since you last looked](./user/digest.md)
@@ -36,6 +37,7 @@
 - [Terminal history](./user/terminal.md)
 - [Background service (Linux)](./user/background-service.md)
 - Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Cursor](./user/providers-cursor.md) · [Grok](./user/providers-grok.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Droid](./user/providers-droid.md) · [Kilo](./user/providers-kilo.md) · [Pi](./user/providers-pi.md)
+- [Muse Code](./user/providers-muse.md)
 
 ---
 
@@ -53,6 +55,7 @@ policy in [CONTRIBUTING.md](../CONTRIBUTING.md); agent rules in [AGENTS.md](../A
 - [Connection runtime](./internals/connection-runtime.md)
 - [Terminal runtime](./internals/terminal-runtime.md)
 - [Providers](./internals/providers.md)
+- [Adding a provider](./internals/adding-a-provider.md)
 - [Assistant citations](./internals/assistant-citations.md)
 - [Remote environments](./internals/remote.md)
 - [Server updates](./internals/server-updates.md)

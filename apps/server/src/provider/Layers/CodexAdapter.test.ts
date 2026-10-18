@@ -12,6 +12,7 @@ import {
   ProviderItemId,
   type ProviderApprovalDecision,
   type ProviderEvent,
+  type ProviderRuntimeEvent,
   type ProviderSession,
   type ProviderTurnStartResult,
   type ProviderUserInputAnswers,
@@ -24,6 +25,8 @@ import { it, vi } from "@effect/vitest";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as FileSystem from "effect/FileSystem";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -47,6 +50,10 @@ import {
   type CodexThreadSnapshot,
 } from "./CodexSessionRuntime.ts";
 import { makeCodexAdapter } from "./CodexAdapter.ts";
+import type { McpAppProviderRequest } from "../../mcpApps/McpAppProvider.ts";
+import { readMcpAppReference } from "@t3tools/shared/mcpApp";
+import type { CodexSessionRuntimeError } from "./CodexSessionRuntime.ts";
+import { projectActivityPayload } from "../../orchestration/ActivityPayloadProjection.ts";
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* CodexAdapter`.
@@ -60,6 +67,13 @@ const asEventId = (value: string): EventId => EventId.make(value);
 const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
 
 class FakeCodexRuntime implements CodexSessionRuntimeShape {
+  readonly mcpAppRequestImpl = vi.fn(
+    (_input: McpAppProviderRequest): Effect.Effect<unknown, CodexSessionRuntimeError> =>
+      Effect.succeed({ contents: [] }),
+  );
+  mcpAppRequest(input: McpAppProviderRequest) {
+    return this.mcpAppRequestImpl(input);
+  }
   private readonly eventQueue = Effect.runSync(Queue.unbounded<ProviderEvent>());
   private readonly now = "2026-01-01T00:00:00.000Z";
 
@@ -721,6 +735,122 @@ function codexTurnEvent(method: "turn/started" | "turn/completed", turnId: strin
           },
   };
 }
+
+it.effect(
+  "captures an MCP app after its parent settles without blocking notification ingestion",
+  () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const factory = makeRuntimeFactory();
+      const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: factory.factory,
+      });
+      yield* adapter.startSession({
+        threadId: asThreadId("app-thread"),
+        provider: ProviderDriverKind.make("codex"),
+        runtimeMode: "full-access",
+      });
+      const runtime = factory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const readStarted = yield* Deferred.make<void>();
+      const releaseRead = yield* Deferred.make<void>();
+      runtime.mcpAppRequestImpl.mockImplementation(() =>
+        Deferred.succeed(readStarted, undefined).pipe(
+          Effect.andThen(Deferred.await(releaseRead)),
+          Effect.as({
+            contents: [
+              {
+                uri: "ui://weather/app",
+                mimeType: "text/html;profile=mcp-app",
+                text: "<p>Weather</p>",
+              },
+            ],
+          }),
+        ),
+      );
+      const parentSettled = yield* Deferred.make<void>();
+      const appCompleted = yield* Deferred.make<ProviderRuntimeEvent>();
+      yield* adapter.streamEvents.pipe(
+        Stream.runForEach((event) => {
+          if (event.type === "turn.completed") return Deferred.succeed(parentSettled, undefined);
+          if (event.type === "item.completed") return Deferred.succeed(appCompleted, event);
+          return Effect.void;
+        }),
+        Effect.forkChild,
+      );
+      yield* runtime.emit({
+        id: asEventId("app-result"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId: asThreadId("app-thread"),
+        turnId: asTurnId("app-turn"),
+        itemId: asItemId("app-item"),
+        createdAt: "2026-10-07T00:00:00Z",
+        method: "item/completed",
+        payload: {
+          completedAtMs: 1791331200000,
+          threadId: "native-app",
+          turnId: "app-turn",
+          item: {
+            id: "app-item",
+            type: "mcpToolCall",
+            server: "weather",
+            tool: "show",
+            arguments: { city: "Pune" },
+            status: "completed",
+            mcpAppResourceUri: "ui://weather/app",
+            result: { content: [{ type: "text", text: "Complete tool result".repeat(5000) }] },
+          },
+        },
+      });
+      yield* Deferred.await(readStarted);
+      yield* runtime.emit({
+        ...codexTurnEvent("turn/completed", "app-turn"),
+        threadId: asThreadId("app-thread"),
+      });
+      yield* Deferred.await(parentSettled);
+      NodeAssert.equal(yield* Deferred.isDone(appCompleted), false);
+      yield* Deferred.succeed(releaseRead, undefined);
+      const completed = yield* Deferred.await(appCompleted);
+      NodeAssert.equal(completed.type, "item.completed");
+      if (completed.type !== "item.completed") return;
+      const data = completed.payload.data as { readonly mcpApp?: unknown };
+      const app = readMcpAppReference(data.mcpApp);
+      NodeAssert.ok(app);
+      NodeAssert.equal(app.nativeThreadId, "native-app");
+      NodeAssert.equal(app.providerInstanceId, "codex");
+      const html = yield* fs.readFileString(
+        NodePath.join(config.attachmentsDir, `${app.attachmentId}.html`),
+      );
+      NodeAssert.ok(html.includes("<p>Weather</p>"));
+      NodeAssert.ok(html.includes("Content-Security-Policy"));
+      const projected = projectActivityPayload({
+        id: completed.eventId,
+        tone: "tool",
+        kind: "tool.completed",
+        summary: "Weather",
+        turnId: null,
+        createdAt: completed.createdAt,
+        payload: completed.payload,
+      });
+      const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown))(
+        projected.payload,
+      );
+      NodeAssert.ok(encoded.includes(app.attachmentId));
+      NodeAssert.ok(!encoded.includes("<p>Weather</p>"));
+      NodeAssert.ok(!encoded.includes("Complete tool result".repeat(5000)));
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          ServerConfig.layerTest(process.cwd(), { prefix: "ronin-mcp-capture-" }),
+          ServerSettingsService.layerTest(),
+          providerSessionDirectoryTestLayer,
+        ).pipe(Layer.provideMerge(NodeServices.layer)),
+      ),
+    ),
+);
 
 lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
   it.effect("calculates one Codex turn total from cumulative counters", () =>

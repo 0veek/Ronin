@@ -4,6 +4,7 @@ import {
 } from "@t3tools/contracts";
 import * as Predicate from "effect/Predicate";
 import { readHtmlRenderReference, type HtmlRenderReference } from "./htmlRender.ts";
+import { readMcpAppReference, type McpAppReference } from "./mcpApp.ts";
 
 const MAX_PARSED_BYTES = 16_384;
 const MAX_METADATA_BYTES = 8_192;
@@ -26,6 +27,7 @@ interface ResultEnvelope {
 }
 
 interface CompactToolOutput {
+  t3McpApp?: McpAppReference;
   htmlRender?: HtmlRenderReference;
   isError?: true;
   threadId?: string;
@@ -118,6 +120,8 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     if (data.status === "rolled_back") output.status = "rolled_back";
     const htmlRender = readHtmlRenderReference(data.htmlRender);
     if (htmlRender !== undefined) output.htmlRender = htmlRender;
+    const mcpApp = readMcpAppReference(data.t3McpApp);
+    if (mcpApp !== undefined) output.t3McpApp = mcpApp;
     const nestedThreadId = Predicate.isObject(data.thread)
       ? boundedId(data.thread.threadId)
       : undefined;
@@ -158,7 +162,25 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     delete output.threadId;
     delete output.status;
   }
+  if (
+    output.t3McpApp?.csp !== undefined &&
+    encoder.encode(JSON.stringify(output)).byteLength > MAX_METADATA_BYTES
+  ) {
+    const { csp: _csp, ...reference } = output.t3McpApp;
+    output.t3McpApp = reference;
+  }
+  if (encoder.encode(JSON.stringify(output)).byteLength > MAX_METADATA_BYTES)
+    delete output.t3McpApp;
   return Object.keys(output).length === 0 ? undefined : output;
+}
+
+/** Only an app belonging to the recorded MCP server and tool is interactive. */
+export function mcpAppFromToolItem(item: {
+  readonly toolName: string | null | undefined;
+  readonly output?: unknown;
+}): McpAppReference | undefined {
+  const app = compactDynamicToolOutput(item.output)?.t3McpApp;
+  return app !== undefined && item.toolName === `${app.server}.${app.tool}` ? app : undefined;
 }
 
 /** Some providers report completion even when command output describes a failure. */

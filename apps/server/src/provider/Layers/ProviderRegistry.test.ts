@@ -179,6 +179,7 @@ type TestClaudeCapabilities = {
   readonly email: string | undefined;
   readonly subscriptionType: string | undefined;
   readonly tokenSource: string | undefined;
+  readonly apiKeySource: string | undefined;
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
 };
@@ -189,6 +190,7 @@ function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
       email: undefined,
       subscriptionType: undefined,
       tokenSource: undefined,
+      apiKeySource: undefined,
       apiProvider: undefined,
       slashCommands: [],
       ...overrides,
@@ -802,6 +804,39 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
         ]);
       });
 
+      it("does not bring back models the installed CLI is too old to run", () => {
+        // The pending snapshot lists the whole catalog before the version is known.
+        const pendingProvider = {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          driver: ProviderDriverKind.make("claudeAgent"),
+          status: "warning",
+          enabled: true,
+          installed: false,
+          auth: { status: "unknown" },
+          checkedAt: "2026-04-14T00:00:00.000Z",
+          version: null,
+          models: [
+            { slug: "claude-old", name: "Old", isCustom: false, capabilities: null },
+            { slug: "claude-next", name: "Next", isCustom: false, capabilities: null },
+          ],
+          slashCommands: [],
+          skills: [],
+        } as const satisfies ServerProvider;
+        const probedProvider = {
+          ...pendingProvider,
+          status: "ready",
+          installed: true,
+          auth: { status: "authenticated" },
+          version: "1.0.0",
+          models: [pendingProvider.models[0]],
+          updateRequiredModels: [{ slug: "claude-next", name: "Next", minVersion: "1.1.0" }],
+        } satisfies ServerProvider;
+
+        assert.deepStrictEqual(mergeProviderSnapshot(pendingProvider, probedProvider).models, [
+          ...probedProvider.models,
+        ]);
+      });
+
       it("drops stale OpenCode models missing from a successful refresh", () => {
         const previousProvider = {
           instanceId: ProviderInstanceId.make("opencode"),
@@ -1072,6 +1107,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             skills: [],
           } as const satisfies ServerProvider;
           const refreshCalls = yield* Ref.make(0);
+          const maintenanceResolutions = yield* Ref.make(0);
           const instance = {
             instanceId: codexInstanceId,
             driverKind: codexDriver,
@@ -1086,6 +1122,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
                 provider: codexDriver,
                 packageName: null,
               }),
+              resolveMaintenance: () =>
+                Ref.updateAndGet(maintenanceResolutions, (count) => count + 1).pipe(
+                  Effect.map((count) => ({
+                    ...makeManualOnlyProviderMaintenanceCapabilities({
+                      provider: codexDriver,
+                      packageName: null,
+                    }),
+                    latestVersion: `1.4.${count}`,
+                  })),
+                ),
               getSnapshot: Effect.succeed(initialProvider),
               refresh: Ref.update(refreshCalls, (count) => count + 1).pipe(
                 Effect.andThen(Effect.never),
@@ -1123,6 +1169,21 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
             const registry = yield* ProviderRegistry.ProviderRegistry;
             assert.deepStrictEqual(yield* registry.getProviders, [initialProvider]);
             assert.strictEqual(yield* Ref.get(refreshCalls), 0);
+            assert.strictEqual(yield* Ref.get(maintenanceResolutions), 0);
+            assert.strictEqual(
+              (yield* registry.getProviderMaintenanceCapabilitiesForInstance(
+                codexInstanceId,
+                codexDriver,
+              )).latestVersion,
+              "1.4.1",
+            );
+            assert.strictEqual(
+              (yield* registry.getProviderMaintenanceCapabilitiesForInstance(
+                codexInstanceId,
+                codexDriver,
+              )).latestVersion,
+              "1.4.2",
+            );
           }).pipe(Effect.provide(runtimeServices));
         }),
       );
@@ -2310,6 +2371,77 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsModule.layerTest(), Te
           assert.strictEqual(status.auth.status, "authenticated");
           assert.strictEqual(status.auth.type, "bedrock");
           assert.strictEqual(status.auth.label, "Amazon Bedrock");
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("reports a logged-out CLI as unauthenticated", () =>
+        Effect.gen(function* () {
+          // The capability probe resolves for a logged-out CLI, so `tokenSource:
+          // "none"` is the only thing separating it from an authenticated one.
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities({
+              tokenSource: "none",
+              apiKeySource: "none",
+              apiProvider: "firstParty",
+            }),
+          );
+          assert.strictEqual(status.status, "error");
+          assert.strictEqual(status.auth.status, "unauthenticated");
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("keeps an API key install authenticated when it reports no token source", () =>
+        Effect.gen(function* () {
+          // `ANTHROPIC_API_KEY` never populates `tokenSource`, so reading that
+          // field alone would log the install out.
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities({
+              tokenSource: "none",
+              apiKeySource: "ANTHROPIC_API_KEY",
+              apiProvider: "firstParty",
+            }),
+          );
+          assert.strictEqual(status.status, "ready");
+          assert.strictEqual(status.auth.status, "authenticated");
+        }).pipe(
+          Effect.provide(
+            mockSpawnerLayer((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
+      );
+
+      it.effect("keeps a third-party backend authenticated without any token source", () =>
+        Effect.gen(function* () {
+          // Bedrock and Vertex authenticate outside the CLI, so the account
+          // payload is empty by design rather than because nobody logged in.
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities({ tokenSource: "none", apiProvider: "bedrock" }),
+          );
+          assert.strictEqual(status.status, "ready");
+          assert.strictEqual(status.auth.status, "authenticated");
         }).pipe(
           Effect.provide(
             mockSpawnerLayer((args) => {

@@ -1,4 +1,5 @@
-"use client";
+import { observeResize } from "~/lib/observeResize";
+("use client");
 
 import { useLayoutEffect, useRef } from "react";
 
@@ -62,12 +63,15 @@ export function BrowserSurfaceSlot(props: {
     };
     updateRef.current = update;
     update();
-    const observer = new ResizeObserver(update);
-    observer.observe(element);
+    const observed: Element[] = [element];
+    const panel = element.closest('[data-preview-panel-mode="inline"]');
+    if (panel) observed.push(panel);
+    observed.push(...document.querySelectorAll('[data-slot="sidebar-gap"]'));
+    const stopObserving = observeResize(observed, update);
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
-      observer.disconnect();
+      stopObserving();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
       if (updateRef.current === update) updateRef.current = null;

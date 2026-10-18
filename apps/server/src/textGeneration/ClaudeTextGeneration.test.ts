@@ -499,4 +499,31 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
         }),
     ),
   );
+  it.effect("investigates a review guide using read-only CLI tools", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { stops: [] } }),
+        argsMustContain:
+          "--tools Read,Grep,Glob,Bash --allowedTools Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(git show:*) --disallowedTools Bash(git * --output*),Bash(git * -o *)",
+        stdinMustContain: "Investigate before you answer, read-only",
+      },
+      (generation) =>
+        Effect.gen(function* () {
+          const result = yield* generation.generateReviewGuide({
+            cwd: process.cwd(),
+            number: 7,
+            title: "The change",
+            description: "",
+            baseBranch: "main",
+            baseCommit: "abc123",
+            settledReview: "",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+            },
+          });
+          expect(result).toEqual({ stops: [] });
+        }),
+    ),
+  );
 });

@@ -112,6 +112,29 @@ describe("resolveAutoSettlementAt", () => {
     expect(decide(makeThread(), null, { days: null })).toBe(false);
   });
 
+  it.each(["manual", "timer"])(
+    "restarts inactivity after a %s snooze wake without changing sort time",
+    (wake) => {
+      const wakeAt = "2026-08-28T11:59:59.000Z";
+      const thread = makeThread(
+        wake === "manual"
+          ? { lastSnoozeWakeAt: wakeAt }
+          : { snoozedUntil: wakeAt, snoozedAt: "2026-08-22T00:00:00.000Z" },
+      );
+      expect(decide(thread, null, { days: 1 })).toBe(false);
+      expect(
+        resolveAutoSettlementAt({
+          thread,
+          pullRequest: null,
+          now: "2026-08-29T12:00:00.000Z",
+          autoSettleAfterDays: 1,
+          autoSettleOnMerge: false,
+        }),
+      ).toBe(wakeAt);
+      expect(thread.updatedAt).toBe("2026-08-20T00:00:00.000Z");
+    },
+  );
+
   it("keeps a thread active at the exact inactivity boundary", () => {
     expect(decide(makeThread({ latestUserMessageAt: "2026-08-25T12:00:00.000Z" }))).toBe(false);
   });

@@ -12,7 +12,13 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon, ClockIcon, MessagesSquareIcon, UsersIcon } from "lucide-react";
+import {
+  SearchIcon,
+  ChevronDownIcon,
+  ClockIcon,
+  MessagesSquareIcon,
+  UsersIcon,
+} from "lucide-react";
 import {
   memo,
   useCallback,
@@ -57,6 +63,7 @@ import {
 import { cn } from "~/lib/utils";
 
 interface ChatHeaderProps {
+  onFind?: (() => void) | undefined;
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
   draftId?: DraftId;
@@ -155,6 +162,7 @@ export function shouldShowCreateAutomation(input: {
 }
 
 export const ChatHeader = memo(function ChatHeader({
+  onFind,
   activeThreadEnvironmentId,
   activeThreadId,
   draftId,
@@ -541,6 +549,23 @@ export const ChatHeader = memo(function ChatHeader({
           "[[data-panel-animations=true]_&]:motion-safe:transition-[padding-right] [[data-panel-animations=true]_&]:motion-safe:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:motion-safe:ease-out",
         )}
       >
+        {onFind ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  aria-label="Find in thread"
+                  size="icon-sm"
+                  variant="ghost"
+                  onClick={onFind}
+                />
+              }
+            >
+              <SearchIcon className="size-4" />
+            </TooltipTrigger>
+            <TooltipPopup>Find in thread</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {showCreateAutomation && activeProjectId !== undefined ? (
           <Tooltip>
             <TooltipTrigger

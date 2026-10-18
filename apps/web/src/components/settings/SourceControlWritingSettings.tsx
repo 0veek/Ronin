@@ -1,3 +1,5 @@
+import { usePrimaryEnvironmentId } from "../../state/environments";
+import { ReviewGuideSettings } from "./ReviewGuideSettings";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef } from "react";
 import type { SourceControlWritingStyleMode } from "@t3tools/contracts";
@@ -41,6 +43,7 @@ const MODE_OPTIONS: Record<SourceControlWritingStyleMode, { label: string; descr
   };
 
 export function SourceControlWritingSettingsSection() {
+  const environmentId = usePrimaryEnvironmentId();
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
@@ -178,6 +181,7 @@ export function SourceControlWritingSettingsSection() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             {usesDedicatedModel ? (
               <ProviderModelPicker
+                environmentId={environmentId}
                 activeInstanceId={activeSelection.instanceId}
                 model={activeSelection.model}
                 lockedProvider={null}
@@ -211,6 +215,7 @@ export function SourceControlWritingSettingsSection() {
           </div>
         }
       />
+      <ReviewGuideSettings />
     </SettingsSection>
   );
 }

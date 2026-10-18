@@ -564,6 +564,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
+          lastSnoozeWakeAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
           activeOrderKey: "hq",
@@ -695,6 +696,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
+          lastSnoozeWakeAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
           activeOrderKey: "hq",
@@ -3231,5 +3233,68 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         assert.equal(snapshot.value.page?.beforeCursor, null);
       }
     }),
+  );
+});
+
+const encodeWorkflowIdentity = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+
+projectionSnapshotLayer("workflow member identities", (it) => {
+  it.effect(
+    "reads the newest persisted member in its own thread and excludes deleted threads",
+    () =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const query = yield* ProjectionSnapshotQuery;
+        yield* sql`INSERT INTO projection_projects
+      (project_id, title, workspace_root, scripts_json, created_at, updated_at)
+      VALUES ('wf-project', 'Workflow', '/workflow', '[]', '2026-10-18T00:00:00Z', '2026-10-18T00:00:00Z')`;
+        for (const threadId of ["wf-parent", "wf-other"]) {
+          yield* sql`INSERT INTO projection_threads
+        (thread_id, project_id, title, model_selection_json, runtime_mode, interaction_mode, created_at, updated_at)
+        VALUES (${threadId}, 'wf-project', 'Workflow', 'invalid-json', 'full-access', 'default', '2026-10-18T00:00:00Z', '2026-10-18T00:00:00Z')`;
+        }
+        for (const [id, threadId, sequence, attempt] of [
+          ["old", "wf-parent", 1, 1],
+          ["new", "wf-parent", 3, 2],
+          ["other", "wf-other", 4, 9],
+        ] as const) {
+          const payload = yield* encodeWorkflowIdentity({
+            taskId: "workflow:wf:0",
+            workflowAgentId: `member-${attempt}`,
+            attempt,
+          });
+          yield* sql`INSERT INTO projection_thread_activities
+        (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at)
+        VALUES (${id}, ${threadId}, NULL, 'info', 'task.progress', 'Member', ${payload}, ${sequence}, '2026-10-18T00:00:00Z')`;
+        }
+        const selected = yield* query.getTaskActivity({
+          threadId: ThreadId.make("wf-parent"),
+          taskId: "workflow:wf:0",
+        });
+        assert.isTrue(Option.isSome(selected));
+        if (Option.isSome(selected))
+          assert.deepEqual(selected.value.payload, {
+            taskId: "workflow:wf:0",
+            workflowAgentId: "member-2",
+            attempt: 2,
+          });
+        assert.isTrue(
+          Option.isNone(
+            yield* query.getTaskActivity({
+              threadId: ThreadId.make("wf-parent"),
+              taskId: "missing",
+            }),
+          ),
+        );
+        yield* sql`UPDATE projection_threads SET deleted_at = '2026-10-18T01:00:00Z' WHERE thread_id = 'wf-parent'`;
+        assert.isTrue(
+          Option.isNone(
+            yield* query.getTaskActivity({
+              threadId: ThreadId.make("wf-parent"),
+              taskId: "workflow:wf:0",
+            }),
+          ),
+        );
+      }),
   );
 });

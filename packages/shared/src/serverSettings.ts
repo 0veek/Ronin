@@ -1,3 +1,4 @@
+import type { ModelPreferences } from "@t3tools/contracts/settings";
 import {
   isProviderDriverKind,
   isProviderAvailable,
@@ -64,6 +65,24 @@ export function resolveSourceControlWriterModelSelection(
     : settings.textGenerationModelSelection;
 }
 
+/**
+ * The model that writes review guides: its own setting when that provider can still run it,
+ * otherwise whatever writes source control text.
+ */
+export function resolveReviewGuideModelSelection(
+  settings: ServerSettings,
+  providers?: ReadonlyArray<ServerProvider>,
+): ModelSelection {
+  const selection = settings.reviewGuideModelSelection;
+  if (selection && isModelSelectionProviderEnabled(settings, selection)) {
+    const provider = providers?.find((candidate) => candidate.instanceId === selection.instanceId);
+    if (providers === undefined || (provider?.enabled === true && isProviderAvailable(provider))) {
+      return selection;
+    }
+  }
+  return resolveSourceControlWriterModelSelection(settings, providers);
+}
+
 export interface PersistedServerObservabilitySettings {
   readonly otlpTracesUrl: string | undefined;
   readonly otlpMetricsUrl: string | undefined;
@@ -128,6 +147,11 @@ export function applyServerSettingsPatch(
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
   const {
+    migrateModelPreferences,
+    setModelFavorites,
+    setModelsHidden,
+    setProviderModelOrder,
+    providerModelPreferences,
     automaticGitFetchInterval,
     providerHealthRefreshInterval,
     backgroundActivityProfile,
@@ -169,9 +193,61 @@ export function applyServerSettingsPatch(
             },
           }
         : undefined;
+  const initialFavorites =
+    patch.favorites ?? current.favorites ?? migrateModelPreferences?.favorites ?? null;
+  let favorites = initialFavorites;
+  if (setModelFavorites) {
+    const favoriteKey = (favorite: { readonly provider: string; readonly model: string }) =>
+      `${favorite.provider.length}:${favorite.provider}:${favorite.model}`;
+    const byModel = new Map(
+      (initialFavorites ?? []).map((favorite) => [favoriteKey(favorite), favorite]),
+    );
+    for (const change of setModelFavorites) {
+      const key = favoriteKey(change);
+      if (change.favorite) byModel.set(key, { provider: change.provider, model: change.model });
+      else byModel.delete(key);
+    }
+    favorites = [...byModel.values()];
+  }
+  const initialModelPreferences =
+    providerModelPreferences ??
+    current.providerModelPreferences ??
+    migrateModelPreferences?.providerModelPreferences ??
+    null;
+  let nextModelPreferences = initialModelPreferences;
+  if (setModelsHidden?.length) {
+    const edited = { ...initialModelPreferences };
+    for (const change of setModelsHidden) {
+      const preferences = (Object.hasOwn(edited, change.provider)
+        ? edited[change.provider]
+        : undefined) ?? { hiddenModels: [], modelOrder: [] };
+      const hiddenModels = preferences.hiddenModels.filter((model) => model !== change.model);
+      if (change.hidden) hiddenModels.push(change.model);
+      edited[change.provider] = { ...preferences, hiddenModels };
+    }
+    nextModelPreferences = edited;
+  }
+  if (setProviderModelOrder) {
+    const preferences = (nextModelPreferences &&
+    Object.hasOwn(nextModelPreferences, setProviderModelOrder.provider)
+      ? nextModelPreferences[setProviderModelOrder.provider]
+      : undefined) ?? {
+      hiddenModels: [],
+      modelOrder: [],
+    };
+    nextModelPreferences = {
+      ...nextModelPreferences,
+      [setProviderModelOrder.provider]: {
+        ...preferences,
+        modelOrder: [...setProviderModelOrder.modelOrder],
+      },
+    };
+  }
   const next = deepMerge(current, patchForMerge);
   const nextWithReplacementsBase = {
     ...next,
+    favorites,
+    providerModelPreferences: nextModelPreferences,
     ...(backgroundActivity !== undefined
       ? {
           backgroundActivity: {
@@ -212,6 +288,9 @@ export function applyServerSettingsPatch(
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),
+    ...(patch.reviewGuideModelSelection !== undefined
+      ? { reviewGuideModelSelection: patch.reviewGuideModelSelection }
+      : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),
   };
@@ -245,4 +324,40 @@ export function applyServerSettingsPatch(
     ...nextWithReplacements,
     textGenerationModelSelection: createModelSelection(instanceId, model, options),
   };
+}
+
+/** Resolve legacy local preferences only until the environment has a saved value. */
+export function resolveModelPreferences(
+  settings: Pick<ServerSettings, "favorites" | "providerModelPreferences">,
+  legacy: Partial<ModelPreferences> = {},
+): ModelPreferences {
+  return {
+    favorites: settings.favorites ?? legacy.favorites ?? [],
+    providerModelPreferences:
+      settings.providerModelPreferences ?? legacy.providerModelPreferences ?? {},
+  };
+}
+
+/** Empty legacy values do not claim ownership before another client can migrate its saved list. */
+export function modelPreferencesMigrationPatch(
+  settings: Pick<ServerSettings, "favorites" | "providerModelPreferences">,
+  legacy: Partial<ModelPreferences>,
+): ServerSettingsPatch | null {
+  const favorites =
+    settings.favorites === null && (legacy.favorites?.length ?? 0) > 0
+      ? legacy.favorites
+      : undefined;
+  const providerModelPreferences =
+    settings.providerModelPreferences === null &&
+    Object.keys(legacy.providerModelPreferences ?? {}).length > 0
+      ? legacy.providerModelPreferences
+      : undefined;
+  return favorites === undefined && providerModelPreferences === undefined
+    ? null
+    : {
+        migrateModelPreferences: {
+          ...(favorites === undefined ? {} : { favorites }),
+          ...(providerModelPreferences === undefined ? {} : { providerModelPreferences }),
+        },
+      };
 }

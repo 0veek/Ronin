@@ -14,6 +14,10 @@ Ronin works with the platforms your team already uses:
 
 GitHub requests use its API directly. Ronin chooses credentials in this order: a token saved in Settings → Source Control → GitHub, the server's GH_TOKEN (or GH_ENTERPRISE_TOKEN with GH_HOST for Enterprise), then the GitHub CLI login. Saved tokens stay in the environment's secret store. You can choose the CLI account for each host or turn a host off in the same settings panel. A saved token or environment token takes precedence over the account choice.
 
+For GitHub Enterprise, sign in on the environment with `gh auth login --hostname YOUR_HOST`.
+Ronin recognizes a custom host as GitHub once it has a credential for that host. A host
+turned off in Settings remains disabled.
+
 ## What You Can Do
 
 ### Start Projects from Anywhere
@@ -21,8 +25,8 @@ GitHub requests use its API directly. Ronin chooses credentials in this order: a
 **Start from a name**
 
 - Choose **New project** in the command palette (`Cmd/Ctrl + K`), or choose **Add Project → New project**
-- Type a name. Ronin creates a Git repository in the `projects` folder of that environment's Ronin data directory, with a README, an icon, and an initial commit, then opens a new thread
-- Choose **Create private repository on GitHub** to publish it there too. If Git has no name or email configured, the project still opens without the initial commit
+- Type a name. Ronin creates a Git repository in the `projects` folder of that environment's Ronin data directory, with a README, an icon, and an initial commit, then opens a new thread. Its first thread works in the project folder, even when your default is a new worktree. Explicit project settings and `t3.json` choices still apply
+- Choose **Create private repository** to publish it to a ready GitHub, GitLab, or Forgejo account. Select the host beside the toggle when more than one is available. Forgejo needs a known account; Azure DevOps and Bitbucket use **Publish Repository** so you can choose a project or workspace. If Git has no name or email configured, the project still opens without the initial commit
 
 **Clone repositories directly**
 
@@ -73,6 +77,8 @@ merge queues and native stack merges. Original commits retain their messages.
 - In the GitHub list, drag from **Close** across rows in the same group and release to close
   several reviews. Press **Escape** before releasing to cancel. Failed closes remain available
   to retry, and queued actions continue after a failure.
+- In a review’s **Comments** section, use **Filter comments** to show bot comments or resolved and
+  dismissed discussions. Both start hidden; Ronin remembers your choices across reviews.
 - Open several reviews from the **Pull requests** page as tabs in the right panel
 - Your authored reviews stay at the top and use the selected sort within their group. By default,
   see passing and approved reviews first, passing reviews awaiting approval next, and conflicting
@@ -254,3 +260,45 @@ the scope and merge strategy. GitHub rebases the remaining stack after merging.
 It can rewrite history and restart checks. If a layer fails, earlier updates remain; resolve that
 layer before retrying. GitHub may require manual conflict resolution after a lower layer is amended,
 even when its changes look independent. Stack actions require an environment that supports them.
+
+In pull request speed mode, quick actions follow the host's supported actions and the review's
+current state. Bitbucket offers merge and close; Forgejo also offers reopen. Draft readiness is
+offered where the host supports it. Drag-to-close skips rows whose host cannot close them.
+
+An existing fork PR can appear beside a branch pushed without an upstream.
+If several remotes hold the same branch, Ronin avoids guessing. Set its upstream
+with `git branch --set-upstream-to=<remote>/<branch>` to select the intended fork.
+
+### Review guides
+
+Review guides are in beta. Turn on **Review guides** in Settings → Source Control to add the
+**Guide** tab to pull requests on that server.
+
+The **Guide** tab gives you a tour of a pull request without reading it line by line: stops
+through the change in reading order. Each stop points at the lines worth reading, and a stop marked
+**Look closely** has a call only a maintainer can make. Mechanical changes such as renames and
+snapshots are grouped at the end, and every changed file appears somewhere on the tour.
+Conversations already resolved in review are left out. For a pull request in a stack, the guide
+covers that layer only, and may point out what a lower layer introduced or what a higher one uses.
+
+Choose **Write guide** to have the review guide model from Settings → Source Control read the
+change in a temporary checkout; without one set, the source control writer model is used. Nothing
+in the checkout is changed, and a large pull request takes a few minutes; you can go elsewhere in
+the app and you are told when the guide is ready. Claude and Codex can write guides. The guide is
+kept for everyone using this environment. To write it again, for example after a push or after changing
+the model or instructions, choose **Rewrite guide** from the pull request's **⋯** menu.
+
+While reading a stop, select lines in an excerpt to add a comment to your review or ask an agent
+about them; comments wait with the ones from the **Code** tab until you send the review. Choose a
+suggested question, or **Ask about this stop**, to open a thread that already knows which stop you
+are on. **Finish review** on the last stop opens the review with everything you collected.
+
+Agents can also read and write guides for pull requests whose repository has a project checkout
+in the environment. Writing requires an active agent turn and obeys the environment’s Review guides switch.
+
+To shape guides to your taste, write **Review guide instructions** in Settings → Source Control,
+such as what to show first or what to skip. They change emphasis and
+ordering, not the guide's layout or which files it covers.
+
+A guide written before the latest push remains readable, but its excerpts and line comments stay
+hidden until you rewrite it. Guides and their model settings belong to each environment.

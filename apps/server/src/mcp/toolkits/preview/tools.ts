@@ -113,22 +113,23 @@ export const PreviewSetAppearanceTool = safeBrowserTool(
     .annotate(Tool.Idempotent, true),
 );
 
-export const PreviewSnapshotTool = readonlyBrowserTool(
+// Saving a screenshot writes a file, so snapshot is not read-only.
+export const PreviewSnapshotTool = safeBrowserTool(
   Tool.make("preview_snapshot", {
     description:
-      "Inspect a page before interacting. Pass tabId to inspect a specific tab; omit it to use this agent session's current tab. Returns bounded page state, semantic elements, diagnostics, action history, and a PNG screenshot. The text is capped near 20 KB and lists what it omitted; use preview_evaluate to read more. Set includeImage=false for text-only output. Set save=true to write the PNG into this agent's environment and return screenshotPath; with includeImage=false, save=true returns only the url and screenshotPath.",
+      "Inspect a page before interacting. Pass tabId to inspect a specific tab; omit it to use this agent session's current tab. Returns bounded page state, semantic elements, diagnostics, action history, and a PNG screenshot. The text is capped near 20 KB and lists what it omitted; use preview_evaluate to read more. Set includeImage=true only when you need to see the page; images stay in tool history. Set save=true to write the PNG into this agent's environment and return screenshotPath; unless includeImage=true, save=true returns only the url and screenshotPath.",
     parameters: Schema.Struct({
       ...PreviewAutomationTabTargetInput.fields,
       includeImage: Schema.optional(
         Schema.Boolean.annotate({
           description:
-            "Include the PNG image in the tool response. Defaults to true. Set false for text-only output.",
+            "Include the PNG image in the tool response. Defaults to false. Set true only when you need to see the page.",
         }),
       ),
       save: Schema.optional(
         Schema.Boolean.annotate({
           description:
-            "Save the full-resolution PNG into this agent's environment and return its absolute screenshotPath. With includeImage=false, return only the url and screenshotPath. Defaults to false.",
+            "Save the full-resolution PNG into this agent's environment and return its absolute screenshotPath. Unless includeImage=true, return only the url and screenshotPath. Defaults to false.",
         }),
       ),
     }),

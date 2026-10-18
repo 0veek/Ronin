@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -102,6 +103,9 @@ const testBridge = (
     | "secret"
     | "secret-stop"
     | "secret-timeout"
+    | "settle-denied"
+    | "oom"
+    | "system-notice"
     | "html"
     | "basic"
     | "steer"
@@ -444,6 +448,84 @@ const testBridge = (
       yield* awaitEvent(
         (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
       );
+      if (scenario === "settle-denied") {
+        const error = yield* v2
+          .dispatch({
+            type: "thread.settle",
+            threadId,
+            commandId: CommandId.make("settle-running"),
+          })
+          .pipe(Effect.flip);
+        assert.deepInclude(error, {
+          cause: `Thread ${threadId} is still running. Stop it before settling.`,
+        });
+        assert.isNull((yield* v2.getThreadProjection(threadId)).thread.settledOverride);
+        return;
+      }
+      if (scenario === "oom") {
+        yield* PubSub.publish(
+          source,
+          decodeEvent({
+            ...base,
+            eventId: "agent-crashed",
+            type: "runtime.error",
+            payload: { message: "Provider closed unexpectedly" },
+          }),
+        );
+        yield* domainEvents.pipe(
+          Stream.filter(
+            (event) =>
+              event.type === "thread.activity-appended" &&
+              event.payload.activity.summary === "Killed: out of memory.",
+          ),
+          Stream.runHead,
+        );
+        const snapshot = Option.getOrThrow(yield* shells.getThreadDetailById(threadId));
+        assert.isTrue(
+          snapshot.activities.some((activity) => activity.summary === "Killed: out of memory."),
+        );
+        return;
+      }
+      if (scenario === "system-notice") {
+        const projection = yield* v2.getThreadProjection(threadId);
+        const original = projection.turnItems.find((item) => item.type === "user_message")!;
+        const id = TurnItemId.make("restart-notice");
+        yield* sink.write({
+          events: [
+            {
+              id: EventId.make("restart-notice-event"),
+              type: "turn-item.updated",
+              threadId,
+              occurredAt: DateTime.makeUnsafe(now),
+              payload: {
+                ...original,
+                id,
+                type: "notification",
+                source: { kind: "system" },
+                outcome: "updated",
+                summary: "Ronin restarted and resumed this turn",
+                detail: "Continue where you left off.",
+              },
+            },
+          ],
+        });
+        yield* domainEvents.pipe(
+          Stream.filter(
+            (event) =>
+              event.type === "thread.activity-appended" &&
+              event.payload.activity.kind === "system.notification",
+          ),
+          Stream.runHead,
+        );
+        const snapshot = Option.getOrThrow(yield* shells.getThreadDetailById(threadId));
+        const notice = snapshot.activities.find(
+          (activity) => activity.kind === "system.notification",
+        );
+        assert.equal(notice?.summary, "Ronin restarted and resumed this turn");
+        assert.deepEqual(notice?.payload, { detail: "Continue where you left off." });
+        assert.equal(snapshot.messages.filter((message) => message.role === "user").length, 1);
+        return;
+      }
       if (scenario === "html") {
         const reference = {
           attachmentId: createAttachmentId(threadId, "html")!,
@@ -1731,7 +1813,18 @@ const testBridge = (
       );
       yield* bridge.detach(threadId);
       assert.strictEqual(yield* Queue.take(stopped), threadId);
-    }).pipe(Effect.provide(runtime));
+    }).pipe(
+      Effect.provide(
+        runtime.pipe(
+          Layer.provide(
+            Layer.succeed(AgentScope, {
+              ...AgentScope.defaultValue(),
+              oomKilled: () => Effect.succeed(scenario === "oom"),
+            }),
+          ),
+        ),
+      ),
+    );
   }).pipe(Effect.scoped);
 
 for (const driver of drivers)
@@ -1818,4 +1911,16 @@ it.effect.each([
 
 it.effect("queues a follow-up until the current turn ends even on a steering provider", () =>
   testBridge("codex", "queue-follow-up"),
+);
+
+it.effect("shows a restart as a Ronin notice in the retained timeline", () =>
+  testBridge("codex", "system-notice"),
+);
+
+it.effect("shows an agent OOM diagnosis in Ronin's retained timeline", () =>
+  testBridge("codex", "oom"),
+);
+
+it.effect("explains why a running thread cannot settle", () =>
+  testBridge("codex", "settle-denied"),
 );

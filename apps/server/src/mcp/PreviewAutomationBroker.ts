@@ -1,3 +1,4 @@
+const HOST_RESPONSE_GRACE_MS = 1_000;
 import {
   PREVIEW_AUTOMATION_V1_OPERATIONS,
   PreviewAutomationClientDisconnectedError,
@@ -584,7 +585,11 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         }
         return yield* new PreviewAutomationRequestQueueClosedError(requestContext);
       }
-      const result = yield* Deferred.await(deferred).pipe(Effect.timeoutOption(timeoutMs));
+      // The browser starts its operation timer after delivery. Allow its timeout
+      // response to arrive before treating the entire host as unresponsive.
+      const responseTimeoutMs =
+        input.updateCurrentTab === false ? timeoutMs : timeoutMs + HOST_RESPONSE_GRACE_MS;
+      const result = yield* Deferred.await(deferred).pipe(Effect.timeoutOption(responseTimeoutMs));
       return yield* Option.match(result, {
         onNone: () =>
           Effect.gen(function* () {

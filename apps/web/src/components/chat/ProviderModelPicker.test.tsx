@@ -34,6 +34,7 @@ function renderPicker(input: {
   const entry = providerEntry(input.instanceId, input.driver);
   return renderToStaticMarkup(
     <ProviderModelPicker
+      environmentId={null}
       activeInstanceId={instanceId}
       model={input.model}
       lockedProvider={null}

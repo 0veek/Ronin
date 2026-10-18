@@ -3,6 +3,7 @@ import { memo } from "react";
 import { StarIcon } from "lucide-react";
 import {
   getDisplayModelName,
+  getProviderRowLabel,
   getTriggerDisplayModelLabel,
   type ModelEsque,
   PROVIDER_ICON_BY_PROVIDER,
@@ -39,11 +40,10 @@ export const ModelListRow = memo(function ModelListRow(props: {
   jumpLabel?: string | null;
   disabledReason?: string | null;
   onToggleFavorite: () => void;
+  canEditFavorite?: boolean;
 }) {
   const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;
-  const providerLabel = props.model.subProvider
-    ? `${props.providerDisplayName} · ${props.model.subProvider}`
-    : props.providerDisplayName;
+  const providerLabel = getProviderRowLabel(props.providerDisplayName, props.model.subProvider);
 
   const row = (
     <ComboboxItem
@@ -114,7 +114,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
                 onKeyDown={(event) => {
                   event.stopPropagation();
                 }}
-                disabled={Boolean(props.disabledReason)}
+                disabled={Boolean(props.disabledReason) || props.canEditFavorite === false}
                 aria-label={props.isFavorite ? "Remove from favorites" : "Add to favorites"}
               >
                 <StarIcon

@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./diff-count": {
+      "types": "./src/diffCount.ts",
+      "default": "./src/diffCount.ts"
+    },
     "./provider-goals": {
       "types": "./src/providerGoals.ts",
       "default": "./src/providerGoals.ts"
@@ -255,7 +259,20 @@
       "types": "./src/device/duoControl.ts",
       "default": "./src/device/duoControl.ts"
     },
-    "./secret-request": "./src/secretRequest.ts"
+    "./secret-request": "./src/secretRequest.ts",
+    "./mcp-apps": {
+      "types": "./src/mcpApps/host.ts",
+      "default": "./src/mcpApps/host.ts"
+    },
+    "./state/usageProgress": "./src/state/usageProgress.ts",
+    "./state/mcpApps": {
+      "types": "./src/state/mcpApps.ts",
+      "default": "./src/state/mcpApps.ts"
+    },
+    "./providerUpdateRequiredModels": {
+      "types": "./src/providerUpdateRequiredModels.ts",
+      "default": "./src/providerUpdateRequiredModels.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

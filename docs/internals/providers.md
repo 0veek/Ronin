@@ -5,21 +5,24 @@
 A provider is the agent runtime that does the actual work. Ronin supports several, and the
 orchestration layer does not know which one is behind a thread.
 
+For a new integration, follow [Adding a provider](./adding-a-provider.md).
+
 ## Built-in drivers
 
-[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with nine entries:
+[`builtInDrivers.ts`][drivers] exports `BUILT_IN_DRIVERS` with ten entries:
 
-| Driver kind   | Driver source                                 |
-| ------------- | --------------------------------------------- |
-| `codex`       | [`Drivers/CodexDriver.ts`][codex]             |
-| `claudeAgent` | [`Drivers/ClaudeDriver.ts`][claude]           |
-| `cursor`      | [`Drivers/CursorDriver.ts`][cursor]           |
-| `grok`        | [`Drivers/GrokDriver.ts`][grok]               |
-| `opencode`    | [`Drivers/OpenCodeDriver.ts`][opencode]       |
-| `antigravity` | [`Drivers/AntigravityDriver.ts`][antigravity] |
-| `droid`       | [`Drivers/DroidDriver.ts`][droid]             |
-| `kilo`        | [`Drivers/KiloDriver.ts`][kilo]               |
-| `pi`          | [`Drivers/PiDriver.ts`][pi]                   |
+| Driver kind   | Driver source                                                                   |
+| ------------- | ------------------------------------------------------------------------------- |
+| `codex`       | [`Drivers/CodexDriver.ts`][codex]                                               |
+| `claudeAgent` | [`Drivers/ClaudeDriver.ts`][claude]                                             |
+| `cursor`      | [`Drivers/CursorDriver.ts`][cursor]                                             |
+| `grok`        | [`Drivers/GrokDriver.ts`][grok]                                                 |
+| `opencode`    | [`Drivers/OpenCodeDriver.ts`][opencode]                                         |
+| `antigravity` | [`Drivers/AntigravityDriver.ts`][antigravity]                                   |
+| `droid`       | [`Drivers/DroidDriver.ts`][droid]                                               |
+| `kilo`        | [`Drivers/KiloDriver.ts`][kilo]                                                 |
+| `pi`          | [`Drivers/PiDriver.ts`][pi]                                                     |
+| `muse`        | [`Drivers/MuseDriver.ts`](../../apps/server/src/provider/Drivers/MuseDriver.ts) |
 
 Each driver declares its `driverKind`, a `configSchema`, and a `create` function that builds an
 adapter in a child scope. Adapter implementations live beside them in
@@ -363,3 +366,16 @@ when a request opens (approval) or user input is requested, via
 [ingest]: ../../apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts
 [cmd]: ../../apps/server/src/orchestration/Layers/ProviderCommandReactor.ts
 [checkpoint]: ../../apps/server/src/orchestration/Layers/CheckpointReactor.ts
+
+## Model catalog preferences
+
+Favorites, hidden built-in models, and per-provider model ordering are environment-owned server
+settings, keyed by provider instance ID. They are distinct from provider configuration and from the
+small set of settings that Ronin copies between connected environments. Each environment broadcasts
+its saved model preferences through the existing configuration stream.
+
+A null preference list means it has not been migrated. Clients may seed nonempty legacy device
+preferences after local persistence hydrates. Migration runs under the settings write lock and only
+fills null fields; explicit empty lists and records remain authoritative. Normal edits send desired
+per-model favorite or visibility states so concurrent clients do not overwrite unrelated models.
+Model pickers carry their environment explicitly, including automation and project settings.

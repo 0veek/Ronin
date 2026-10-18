@@ -174,3 +174,27 @@ describe("merge and filter", () => {
     ).toEqual(["/portable/review/SKILL.md", "/custom/review/SKILL.md"]);
   });
 });
+
+it("keeps shallow skills visible when another Cursor skill tree exceeds the retained depth limit", async () => {
+  const temporary = await NodeFSP.mkdtemp(
+    NodePath.join(NodeOS.tmpdir(), "ronin-deep-cursor-skills-"),
+  );
+  try {
+    const homeDir = NodePath.join(temporary, "home");
+    const cwd = NodePath.join(temporary, "workspace");
+    const root = NodePath.join(homeDir, ".cursor", "skills");
+    await writeSkill(NodePath.join(root, "namespace"), "at-limit", "At the retained depth limit.");
+    await writeSkill(NodePath.join(root, "deep", "deeper"), "beyond-limit", "Skip this tree.");
+    await writeSkill(root, "later", "Still discoverable.");
+    await writeSkill(NodePath.join(cwd, ".agents", "skills"), "review", "Project review.");
+    const skills = await discoverSkillsCatalog({
+      homeDir,
+      cwd,
+      roninBaseDir: NodePath.join(temporary, "ronin"),
+      bundledSkillsDirs: [],
+    });
+    expect(skills.map((skill) => skill.name).sort()).toEqual(["at-limit", "later", "review"]);
+  } finally {
+    await NodeFSP.rm(temporary, { recursive: true, force: true });
+  }
+});

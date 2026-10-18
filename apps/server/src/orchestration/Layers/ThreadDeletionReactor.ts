@@ -1,3 +1,4 @@
+import { PreviewManager } from "../../preview/Manager.ts";
 import type { OrchestrationEvent } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
@@ -41,6 +42,7 @@ export const logCleanupCauseUnlessInterrupted = <R, E>({
 const make = Effect.gen(function* () {
   const orchestrationEngine = yield* OrchestrationEngineService;
   const providerService = yield* ProviderService;
+  const previewManager = yield* PreviewManager;
   const terminalManager = yield* TerminalManager.TerminalManager;
 
   const stopProviderSession = (threadId: ThreadDeletedEvent["payload"]["threadId"]) =>
@@ -73,6 +75,11 @@ const make = Effect.gen(function* () {
     // not resurrect the rows we just dropped.
     yield* clearProviderContinuationLedger(threadId);
     yield* closeThreadTerminals(threadId);
+    yield* logCleanupCauseUnlessInterrupted({
+      effect: previewManager.close({ threadId }),
+      message: "thread deletion cleanup skipped preview close",
+      threadId,
+    });
   });
 
   const processThreadDeletedSafely = (event: ThreadDeletedEvent) =>

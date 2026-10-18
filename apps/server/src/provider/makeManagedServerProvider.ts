@@ -96,7 +96,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       yield* Fiber.interrupt(previousFiber).pipe(Effect.ignore);
     }
 
-    if (!input.enrichSnapshot) {
+    if (!input.enrichSnapshot || !snapshot.enabled) {
       return;
     }
 

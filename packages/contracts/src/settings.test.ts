@@ -800,3 +800,34 @@ it("validates remote device hosts and rejects ambiguous host ids", () => {
   ).toThrow();
   expect(() => decodeDeviceHostSettings({ deviceHosts: [{ ...host, port: 0 }] })).toThrow();
 });
+
+describe("server model preferences", () => {
+  it("decodes a visibility update scoped to a provider instance and model", () => {
+    const patch = { setModelsHidden: [{ provider: "codex_work", model: "sol", hidden: false }] };
+    expect(decodeServerSettingsPatch(patch)).toEqual(patch);
+    expect(() =>
+      decodeServerSettingsPatch({ setModelsHidden: [{ provider: "codex_work", model: "sol" }] }),
+    ).toThrow();
+  });
+  it("distinguishes unmigrated lists from deliberately cleared lists", () => {
+    expect(decodeServerSettings({})).toMatchObject({
+      favorites: null,
+      providerModelPreferences: null,
+    });
+    const input = { favorites: [], providerModelPreferences: {} };
+    expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
+    expect(decodeServerSettingsPatch(input)).toEqual(input);
+  });
+
+  it("round trips favorites and hidden models keyed by provider instance", () => {
+    const input = {
+      favorites: [{ provider: "codex_work", model: "sol" }],
+      providerModelPreferences: { codex_work: { hiddenModels: ["astra"], modelOrder: ["sol"] } },
+    };
+    expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
+    expect(decodeServerSettingsPatch(input)).toEqual(input);
+    expect(decodeServerSettingsPatch({ migrateModelPreferences: input })).toEqual({
+      migrateModelPreferences: input,
+    });
+  });
+});

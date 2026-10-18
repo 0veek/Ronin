@@ -953,3 +953,64 @@ describe("nested agents vs subagent shells", () => {
     expect(agents.map((agent) => agent.id)).toEqual(["nested-1"]);
   });
 });
+
+it("keeps workflow identity and answers scoped to the newest attempt", () => {
+  const slot = { taskId: "wf:wf:0", parentAgentId: "wf", agentIndex: 0 };
+  const rows = [
+    activity("task.progress", {
+      ...slot,
+      attempt: 1,
+      status: "completed",
+      workflowAgentId: "old",
+      promptPreview: "Old question",
+      resultPreview: "Old answer",
+      typedUsage: { totalTokens: 1000 },
+    }),
+    activity("task.progress", {
+      ...slot,
+      attempt: 2,
+      status: "running",
+      workflowAgentId: "new",
+      promptPreview: "New question",
+    }),
+    activity("task.progress", {
+      ...slot,
+      attempt: 1,
+      status: "completed",
+      workflowAgentId: "old",
+      resultPreview: "Stale answer",
+    }),
+    activity("task.progress", {
+      ...slot,
+      attempt: 2,
+      status: "pending",
+      resultPreview: "Regressive answer",
+    }),
+  ];
+  const member = fold(rows)[0]!;
+  expect(member.workflowAgentId).toBe("new");
+  expect(member.promptPreview).toBe("New question");
+  expect(member.resultPreview).toBeNull();
+  expect(member.result).toBeNull();
+  expect(member.usage).toBeNull();
+  expect(member.status).toBe("running");
+});
+
+it("retains workflow phases after sparse progress snapshots", () => {
+  const [workflow] = fold([
+    activity("task.progress", {
+      taskId: "wf",
+      taskType: "local_workflow",
+      phases: [
+        { index: 0, title: "Inspect" },
+        { index: 2, title: "Verify" },
+      ],
+    }),
+    activity("task.progress", {
+      taskId: "wf",
+      taskType: "local_workflow",
+      phases: [{ index: 0, title: "Inspect" }],
+    }),
+  ]);
+  expect(workflow?.phases.map((phase) => phase.title)).toEqual(["Inspect", "Verify"]);
+});

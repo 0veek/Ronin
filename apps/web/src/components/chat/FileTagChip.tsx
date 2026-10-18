@@ -1,4 +1,4 @@
-import { inferEntryKindFromPath } from "../../pierre-icons";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   CHAT_INLINE_CHIP_CLASS_NAME,
   CHAT_INLINE_CHIP_LABEL_CLASS_NAME,
@@ -7,7 +7,7 @@ import {
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
   CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES,
 } from "../composerInlineChip";
-import { PierreEntryIcon } from "./PierreEntryIcon";
+import { WorkspaceEntryIcon } from "./WorkspaceEntryIcon";
 
 export const FILE_TAG_CHIP_CLASS_NAME = `${COMPOSER_INLINE_CHIP_CLASS_NAME} ${CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.mention}`;
 export const CHAT_FILE_TAG_CHIP_CLASS_NAME = `${CHAT_INLINE_CHIP_CLASS_NAME} ${CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.mention}`;
@@ -17,12 +17,15 @@ export function FileTagChipContent(props: {
   label: string;
   theme: "light" | "dark";
   selectable?: boolean;
+  environmentId?: EnvironmentId | null | undefined;
+  cwd?: string | undefined;
 }) {
   return (
     <>
-      <PierreEntryIcon
-        pathValue={props.path}
-        kind={inferEntryKindFromPath(props.path)}
+      <WorkspaceEntryIcon
+        path={props.path}
+        environmentId={props.environmentId}
+        cwd={props.cwd}
         theme={props.theme}
         className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME}
       />

@@ -12,6 +12,7 @@ import {
   getThemeDefinition,
   resolveThemeHalf,
   subscribeToCustomThemes,
+  themeColorToHex,
   type ThemeAppearance,
   type ThemeHalves,
   type ThemePreference,
@@ -44,10 +45,16 @@ export function useHtmlRenderTheme() {
   const mono = useClientSettings((settings) => settings.fontFamilyCode);
   return useMemo(
     () =>
-      htmlRenderTheme(colors, resolvedTheme, {
-        sans: [cssFontFamilies(sans), DEFAULT_SANS_FONT_STACK].filter(Boolean).join(", "),
-        mono: [cssFontFamilies(mono), DEFAULT_CODE_FONT_STACK].filter(Boolean).join(", "),
-      }),
+      htmlRenderTheme(
+        Object.fromEntries(
+          Object.entries(colors).map(([role, color]) => [role, themeColorToHex(color) ?? color]),
+        ) as typeof colors,
+        resolvedTheme,
+        {
+          sans: [cssFontFamilies(sans), DEFAULT_SANS_FONT_STACK].filter(Boolean).join(", "),
+          mono: [cssFontFamilies(mono), DEFAULT_CODE_FONT_STACK].filter(Boolean).join(", "),
+        },
+      ),
     [colors, resolvedTheme, sans, mono],
   );
 }

@@ -42,6 +42,8 @@ export interface ProviderMaintenanceCapabilities {
   readonly provider: ProviderDriverKind;
   readonly packageName: string | null;
   readonly update: ProviderMaintenanceCommandAction | null;
+  readonly latestVersion?: string | null;
+  readonly compareVersions?: (current: string, latest: string) => number;
 }
 
 export interface ProviderMaintenanceCommandAction {
@@ -72,6 +74,12 @@ export interface ProviderMaintenanceCapabilitiesResolver {
   readonly resolve: (
     options?: ProviderMaintenanceCapabilityResolutionOptions,
   ) => ProviderMaintenanceCapabilities;
+}
+
+export interface EffectfulProviderMaintenanceCapabilitiesResolver {
+  readonly resolve: (
+    options?: ProviderMaintenanceCapabilityResolutionOptions | null,
+  ) => Effect.Effect<ProviderMaintenanceCapabilities, never, FileSystem.FileSystem>;
 }
 
 export interface PackageManagedProviderMaintenanceDefinition {
@@ -120,6 +128,7 @@ export function makeProviderMaintenanceCapabilities(input: {
   readonly updateExecutable: string | null;
   readonly updateArgs: ReadonlyArray<string>;
   readonly updateLockKey: string | null;
+  readonly updateCommand?: string;
   readonly platform?: NodeJS.Platform;
   readonly env?: NodeJS.ProcessEnv;
 }): ProviderMaintenanceCapabilities {
@@ -127,13 +136,15 @@ export function makeProviderMaintenanceCapabilities(input: {
     input.updateExecutable === null || input.updateLockKey === null
       ? null
       : {
-          command: [
-            quoteUpdateExecutable(
-              input.updateExecutable,
-              input.platform ?? HostProcessPlatform.defaultValue(),
-            ),
-            ...input.updateArgs,
-          ].join(" "),
+          command:
+            input.updateCommand ??
+            [
+              quoteUpdateExecutable(
+                input.updateExecutable,
+                input.platform ?? HostProcessPlatform.defaultValue(),
+              ),
+              ...input.updateArgs,
+            ].join(" "),
           executable: input.updateExecutable,
           args: input.updateArgs,
           lockKey: input.updateLockKey,
@@ -471,13 +482,16 @@ function makeManualProviderMaintenanceCapabilities(
 export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
   "resolveProviderMaintenanceCapabilitiesEffect",
 )(function* (
-  resolver: ProviderMaintenanceCapabilitiesResolver,
+  resolver:
+    | ProviderMaintenanceCapabilitiesResolver
+    | EffectfulProviderMaintenanceCapabilitiesResolver,
   options?: Omit<ProviderMaintenanceCapabilityResolutionOptions, "realCommandPath">,
 ) {
   const binaryPath = nonEmptyString(options?.binaryPath);
   const platform = options?.platform ?? (yield* HostProcessPlatform);
   if (!binaryPath) {
-    return resolver.resolve({ ...options, platform });
+    const resolved = resolver.resolve({ ...options, platform });
+    return Effect.isEffect(resolved) ? yield* resolved : resolved;
   }
 
   const env = options?.env ?? (yield* readCommandLookupEnv);
@@ -486,7 +500,8 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
       Effect.catchTags({ CommandResolutionError: () => Effect.succeed(null) }),
     )) ?? (hasPathSeparator(binaryPath) ? binaryPath : null);
   if (!resolvedCommandPath) {
-    return resolver.resolve({ ...options, platform });
+    const resolved = resolver.resolve({ ...options, platform });
+    return Effect.isEffect(resolved) ? yield* resolved : resolved;
   }
 
   const fileSystem = yield* FileSystem.FileSystem;
@@ -516,7 +531,7 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
     (yield* fileSystem.exists(`${brewPrefix}/bin/brew`).pipe(Effect.orElseSucceed(() => false)))
       ? `${brewPrefix}/bin/brew`
       : undefined;
-  return resolver.resolve({
+  const resolved = resolver.resolve({
     ...options,
     platform,
     env,
@@ -525,11 +540,13 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
     miseWrapper,
     ...(brewExecutable ? { brewExecutable } : {}),
   });
+  return Effect.isEffect(resolved) ? yield* resolved : resolved;
 });
 
 function deriveVersionAdvisory(input: {
   readonly currentVersion: string | null;
   readonly latestVersion: string | null;
+  readonly compareVersions?: (current: string, latest: string) => number;
 }): Pick<ServerProviderVersionAdvisory, "status" | "message"> {
   if (!input.currentVersion) {
     return { status: "unknown", message: null };
@@ -537,7 +554,9 @@ function deriveVersionAdvisory(input: {
   if (!input.latestVersion) {
     return { status: "unknown", message: null };
   }
-  if (compareSemverVersions(input.currentVersion, input.latestVersion) < 0) {
+  if (
+    (input.compareVersions ?? compareSemverVersions)(input.currentVersion, input.latestVersion) < 0
+  ) {
     return {
       status: "behind_latest",
       message: PROVIDER_UPDATE_ACTION_TOAST_MESSAGE,
@@ -559,6 +578,7 @@ export function createProviderVersionAdvisory(input: {
   const advisory = deriveVersionAdvisory({
     currentVersion: input.currentVersion,
     latestVersion,
+    ...(capabilities.compareVersions ? { compareVersions: capabilities.compareVersions } : {}),
   });
 
   return {
@@ -599,6 +619,8 @@ const fetchNpmLatestVersion = Effect.fn("fetchNpmLatestVersion")(function* (pack
 export const resolveLatestProviderVersion = Effect.fn("resolveLatestProviderVersion")(function* (
   maintenanceCapabilities: ProviderMaintenanceCapabilities,
 ) {
+  if (maintenanceCapabilities.latestVersion !== undefined)
+    return maintenanceCapabilities.latestVersion;
   const packageName = maintenanceCapabilities.packageName;
   if (!packageName) {
     return null;

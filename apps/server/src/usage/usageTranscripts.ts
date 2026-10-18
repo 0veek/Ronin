@@ -33,6 +33,8 @@ export interface UsageRecord {
   readonly dedupeKey: string | null;
 }
 
+export { int as tokenCount, parseTimestampMs };
+
 const EMPTY_TOTALS: UsageTokenTotals = {
   uncachedInputTokens: 0,
   cachedInputTokens: 0,
@@ -69,6 +71,7 @@ export function totalTokens(totals: UsageTokenTotals): number {
  * an order of magnitude.
  */
 export function mightCarryUsage(line: string, provider: UsageProviderKind): boolean {
+  if (provider === "pi") return line.includes('"usage"') || line.includes('"session"');
   if (provider === "claude") return line.includes('"usage"');
   if (provider === "grok") return line.includes('"turn_completed"');
   return line.includes('"token_count"');

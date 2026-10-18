@@ -165,6 +165,7 @@ export const layer = Layer.effect(
               settledAt: utc(source.settledAt),
               unsettledAt: utc(source.unsettledAt),
               snoozedAt: utc(source.snoozedAt),
+              lastSnoozeWakeAt: utc(source.lastSnoozeWakeAt),
               snoozedUntil: utc(source.snoozedUntil),
               pinnedAt: utc(source.pinnedAt),
               pinOrderKey: source.pinOrderKey ?? null,
@@ -418,6 +419,54 @@ export const layer = Layer.effect(
       event: OrchestrationV2DomainEvent,
     ) {
       yield* reflectCheckpoint(event);
+      if (
+        event.type === "turn-item.updated" &&
+        event.payload.type === "error" &&
+        event.payload.failure.code === "oom_kill"
+      ) {
+        const item = event.payload;
+        const shell = yield* shells.getThreadShellById(event.threadId);
+        const createdAt = DateTime.formatIso(event.occurredAt);
+        yield* legacy.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`v2:ronin:oom:${item.id}`),
+          threadId: event.threadId,
+          createdAt,
+          activity: {
+            id: EventId.make(`v2:ronin:oom:${item.id}`),
+            tone: "error",
+            kind: "runtime.error",
+            summary: item.failure.message,
+            payload: { message: item.failure.message, code: "oom_kill" },
+            turnId: Option.isSome(shell) ? (shell.value.latestTurn?.turnId ?? null) : null,
+            createdAt,
+          },
+        });
+      }
+      if (
+        event.type === "turn-item.updated" &&
+        event.payload.type === "notification" &&
+        event.payload.source.kind === "system"
+      ) {
+        const item = event.payload;
+        const shell = yield* shells.getThreadShellById(event.threadId);
+        const createdAt = DateTime.formatIso(event.occurredAt);
+        yield* legacy.dispatch({
+          type: "thread.activity.append",
+          commandId: CommandId.make(`v2:ronin:notice:${item.id}`),
+          threadId: event.threadId,
+          createdAt,
+          activity: {
+            id: EventId.make(`v2:ronin:notice:${item.id}`),
+            tone: "info",
+            kind: "system.notification",
+            summary: item.summary,
+            payload: { detail: item.detail ?? null },
+            turnId: Option.isSome(shell) ? (shell.value.latestTurn?.turnId ?? null) : null,
+            createdAt,
+          },
+        });
+      }
       if (
         event.type === "turn-item.updated" &&
         event.payload.type === "dynamic_tool" &&

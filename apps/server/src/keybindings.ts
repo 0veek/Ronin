@@ -527,8 +527,8 @@ const make = Effect.gen(function* () {
         });
       }
 
-      // Startup backfill must never evict persisted user rules: append only
-      // the defaults that fit and skip the rest.
+      // Keep defaults before persisted rules so custom shortcuts retain
+      // priority when their conditions overlap. Preserve the entry limit.
       const availableSlots = Math.max(0, MAX_KEYBINDINGS_COUNT - customConfig.length);
       const defaultsToAppend = missingDefaults.slice(0, availableSlots);
       const skippedDefaults = missingDefaults.slice(availableSlots);
@@ -544,7 +544,7 @@ const make = Effect.gen(function* () {
         return;
       }
 
-      yield* writeConfigAtomically([...customConfig, ...defaultsToAppend]);
+      yield* writeConfigAtomically([...defaultsToAppend, ...customConfig]);
       yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
     }),
   );

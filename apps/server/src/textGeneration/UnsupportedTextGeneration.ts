@@ -20,5 +20,6 @@ export function makeUnsupportedTextGeneration(
     generatePrContent: () => fail("generatePrContent"),
     generateBranchName: () => fail("generateBranchName"),
     generateThreadTitle: () => fail("generateThreadTitle"),
+    generateReviewGuide: () => fail("generateReviewGuide"),
   };
 }

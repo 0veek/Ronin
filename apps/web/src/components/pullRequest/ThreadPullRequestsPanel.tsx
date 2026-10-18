@@ -1,7 +1,8 @@
+import { pullRequestQuickActions, snapshotPullRequestHostActions } from "./pullRequestList.logic";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useEnvironmentScope, readEnvironmentScope } from "~/state/session";
 import type { ProjectId, ScopedThreadRef, ThreadPullRequestLink } from "@t3tools/contracts";
-import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
+import { changeRequestProviderKindFromUrl } from "@t3tools/shared/sourceControl";
 import {
   resolveThreadPullRequestChains,
   visibleThreadPullRequests,
@@ -95,11 +96,11 @@ function LinkRow({
   );
   const { link, depth, stack } = line;
   const snapshot = link.snapshot;
+  const linkHostActions = snapshotPullRequestHostActions(
+    changeRequestProviderKindFromUrl(link.url),
+  );
   const actionEntry =
-    projectId !== null &&
-    snapshot !== null &&
-    snapshot.state !== "merged" &&
-    detectSourceControlProviderFromRemoteUrl(link.url)?.kind === "github"
+    projectId !== null && snapshot !== null && snapshot.state !== "merged"
       ? {
           environmentId: threadRef.environmentId,
           projectId,
@@ -111,6 +112,8 @@ function LinkRow({
           ...(link.stack === null ? {} : { stack: link.stack }),
         }
       : null;
+  const hasQuickActions =
+    actionEntry !== null && pullRequestQuickActions(actionEntry, linkHostActions).length > 0;
   return (
     <div
       className={cn(PULL_REQUEST_ROW_CLASS, "relative hover:bg-accent/60")}
@@ -225,7 +228,11 @@ function LinkRow({
         />
       </a>
       {actionEntry !== null ? (
-        <PullRequestSpeedActions entry={actionEntry} visible={speedMode} />
+        <PullRequestSpeedActions
+          entry={actionEntry}
+          hostActions={linkHostActions}
+          visible={speedMode}
+        />
       ) : null}
       {/* Out of the row's flow, so no row reserves a column for a button only the hovered one
           shows. It sits over the right end of the second line on the row's own hover color,
@@ -240,7 +247,7 @@ function LinkRow({
           "has-[[data-popup-open]]:pointer-events-auto has-[[data-popup-open]]:opacity-100",
           "has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100",
           "group-has-[[data-pull-request-action-pending=true]]/pr-row:hidden",
-          speedMode && actionEntry !== null && "hidden",
+          speedMode && hasQuickActions && "hidden",
         )}
       >
         <span aria-hidden className="absolute inset-0 bg-accent/60" />

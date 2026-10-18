@@ -153,6 +153,18 @@ const THEME_EDITOR_ROLE_GROUPS: ReadonlyArray<{
         roles: ["messageSurface", "messageForeground"],
       },
       {
+        id: "search-match",
+        label: "Search match",
+        role: "searchMatchBackground",
+        roles: ["searchMatchBackground", "searchMatchForeground"],
+      },
+      {
+        id: "search-active",
+        label: "Current search match",
+        role: "searchMatchActiveBackground",
+        roles: ["searchMatchActiveBackground", "searchMatchActiveForeground"],
+      },
+      {
         id: "code-surface",
         label: "Code surface",
         role: "codeBackground",

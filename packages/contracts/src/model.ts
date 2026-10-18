@@ -163,6 +163,9 @@ const ANTIGRAVITY_CURRENT_MODEL = "gemini-3.5-flash-medium";
 const DROID_DRIVER_KIND = ProviderDriverKind.make("droid");
 const KILO_DRIVER_KIND = ProviderDriverKind.make("kilo");
 const PI_DRIVER_KIND = ProviderDriverKind.make("pi");
+const MUSE_DRIVER_KIND = ProviderDriverKind.make("muse");
+
+export const MUSE_DEFAULT_MODEL = "default";
 
 export const DEFAULT_MODEL = "gpt-6-astra";
 
@@ -188,6 +191,7 @@ export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, strin
   [ANTIGRAVITY_DRIVER_KIND]: ANTIGRAVITY_CURRENT_MODEL,
   [DROID_DRIVER_KIND]: "claude-opus-4-8",
   [KILO_DRIVER_KIND]: "kilo/kilo-auto/free",
+  [MUSE_DRIVER_KIND]: MUSE_DEFAULT_MODEL,
 };
 
 /** Per-provider text generation model defaults. */
@@ -275,6 +279,7 @@ export const BUILT_IN_PROVIDER_DRIVER_KINDS = [
   DROID_DRIVER_KIND,
   KILO_DRIVER_KIND,
   PI_DRIVER_KIND,
+  MUSE_DRIVER_KIND,
 ] as const satisfies ReadonlyArray<ProviderDriverKind>;
 
 export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>> = {
@@ -286,5 +291,6 @@ export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>>
   [ANTIGRAVITY_DRIVER_KIND]: "Antigravity",
   [DROID_DRIVER_KIND]: "Droid",
   [KILO_DRIVER_KIND]: "Kilo",
+  [MUSE_DRIVER_KIND]: "Muse Code",
   [PI_DRIVER_KIND]: "Pi",
 };

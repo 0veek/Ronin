@@ -1,3 +1,4 @@
+import { makeThreadFind } from "../ThreadFind.ts";
 import {
   ApprovalRequestId,
   ChatAttachment,
@@ -591,6 +592,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
+          last_snooze_wake_at AS "lastSnoozeWakeAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
           active_order_key AS "activeOrderKey",
@@ -642,6 +644,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
+          last_snooze_wake_at AS "lastSnoozeWakeAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
           active_order_key AS "activeOrderKey",
@@ -691,6 +694,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
+          last_snooze_wake_at AS "lastSnoozeWakeAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
           active_order_key AS "activeOrderKey",
@@ -1272,6 +1276,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           unsettled_at AS "unsettledAt",
           snoozed_until AS "snoozedUntil",
           snoozed_at AS "snoozedAt",
+          last_snooze_wake_at AS "lastSnoozeWakeAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
           active_order_key AS "activeOrderKey",
@@ -1471,6 +1476,31 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           activity_id ASC
       `,
   });
+
+  const getTaskActivityRow = SqlSchema.findOneOption({
+    Request: Schema.Struct({ threadId: ThreadId, taskId: Schema.String }),
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ threadId, taskId }) => sql`
+      SELECT a.activity_id AS "activityId", a.thread_id AS "threadId", a.turn_id AS "turnId",
+        a.tone, a.kind, a.summary, a.payload_json AS "payload", a.sequence, a.created_at AS "createdAt"
+      FROM projection_thread_activities a
+      JOIN projection_threads t ON t.thread_id = a.thread_id
+      WHERE a.thread_id = ${threadId} AND t.deleted_at IS NULL
+        AND a.kind IN ('task.started', 'task.progress', 'task.updated', 'task.completed')
+        AND json_extract(a.payload_json, '$.taskId') = ${taskId}
+      ORDER BY a.sequence DESC, a.created_at DESC, a.activity_id DESC LIMIT 1
+    `,
+  });
+  const getTaskActivity: ProjectionSnapshotQueryShape["getTaskActivity"] = (input) =>
+    getTaskActivityRow(input).pipe(
+      Effect.map(Option.map(mapThreadActivityRow)),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getTaskActivity:query",
+          "ProjectionSnapshotQuery.getTaskActivity:decodeRow",
+        ),
+      ),
+    );
 
   const getUserInputActivityRow = SqlSchema.findOneOption({
     Request: Schema.Struct({ threadId: ThreadId, requestId: ApprovalRequestId }),
@@ -2370,6 +2400,7 @@ pending_approval_requests AS (
                 unsettledAt: row.unsettledAt,
                 snoozedUntil: row.snoozedUntil,
                 snoozedAt: row.snoozedAt,
+                lastSnoozeWakeAt: row.lastSnoozeWakeAt,
                 pinnedAt: row.pinnedAt,
                 pinOrderKey: row.pinOrderKey ?? null,
                 activeOrderKey: row.activeOrderKey ?? null,
@@ -2619,6 +2650,7 @@ pending_approval_requests AS (
                   unsettledAt: row.unsettledAt,
                   snoozedUntil: row.snoozedUntil,
                   snoozedAt: row.snoozedAt,
+                  lastSnoozeWakeAt: row.lastSnoozeWakeAt,
                   pinnedAt: row.pinnedAt,
                   pinOrderKey: row.pinOrderKey ?? null,
                   activeOrderKey: row.activeOrderKey ?? null,
@@ -2780,6 +2812,7 @@ pending_approval_requests AS (
                         unsettledAt: row.unsettledAt,
                         snoozedUntil: row.snoozedUntil,
                         snoozedAt: row.snoozedAt,
+                        lastSnoozeWakeAt: row.lastSnoozeWakeAt,
                         pinnedAt: row.pinnedAt,
                         pinOrderKey: row.pinOrderKey ?? null,
                         activeOrderKey: row.activeOrderKey ?? null,
@@ -2969,6 +3002,7 @@ pending_approval_requests AS (
                   unsettledAt: row.unsettledAt,
                   snoozedUntil: row.snoozedUntil,
                   snoozedAt: row.snoozedAt,
+                  lastSnoozeWakeAt: row.lastSnoozeWakeAt,
                   pinnedAt: row.pinnedAt,
                   pinOrderKey: row.pinOrderKey ?? null,
                   activeOrderKey: row.activeOrderKey ?? null,
@@ -3041,6 +3075,8 @@ pending_approval_requests AS (
         payloadBytes: row.payloadBytes,
       })),
     );
+
+  const searchThread = yield* makeThreadFind;
 
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
     "ProjectionSnapshotQuery.searchThreads",
@@ -3294,6 +3330,7 @@ pending_approval_requests AS (
         unsettledAt: threadRow.value.unsettledAt,
         snoozedUntil: threadRow.value.snoozedUntil,
         snoozedAt: threadRow.value.snoozedAt,
+        lastSnoozeWakeAt: threadRow.value.lastSnoozeWakeAt,
         pinnedAt: threadRow.value.pinnedAt,
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
         activeOrderKey: threadRow.value.activeOrderKey ?? null,
@@ -3600,6 +3637,7 @@ pending_approval_requests AS (
         unsettledAt: threadRow.value.unsettledAt,
         snoozedUntil: threadRow.value.snoozedUntil,
         snoozedAt: threadRow.value.snoozedAt,
+        lastSnoozeWakeAt: threadRow.value.lastSnoozeWakeAt,
         pinnedAt: threadRow.value.pinnedAt,
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
         activeOrderKey: threadRow.value.activeOrderKey ?? null,
@@ -3813,12 +3851,14 @@ pending_approval_requests AS (
   return {
     getCommandReadModel,
     getUserInputActivity,
+    getTaskActivity,
     listActivitiesByKind,
     getSnapshot,
     getShellSnapshot,
     listThreadsWithPullRequests,
     getArchivedShellSnapshot,
     searchThreads,
+    searchThread,
     getSnapshotSequence,
     getCounts,
     getEventReplayStats,

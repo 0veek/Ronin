@@ -1,5 +1,5 @@
 import { memo, type PointerEventHandler } from "react";
-import { ChevronDownIcon, ChevronLeftIcon, SplitIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, Minimize2Icon, SplitIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn } from "~/lib/utils";
@@ -39,7 +39,8 @@ interface ComposerPrimaryActionsProps {
   onImplementPlanInNewThread: () => void;
   /** Tokens a stale session would re-read. When set, Enter compacts first and the button says so. */
   compactBeforeSendTokens?: number | null;
-  onSendWithFullHistory?: () => void;
+  keepFullHistory?: boolean;
+  onToggleKeepFullHistory?: () => void;
   /**
    * Send this prompt to several models instead of one. Absent on surfaces
    * where there is no prompt to race — the pending-answer rows — which is
@@ -89,7 +90,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   onInterrupt,
   onImplementPlanInNewThread,
   compactBeforeSendTokens = null,
-  onSendWithFullHistory,
+  keepFullHistory = false,
+  onToggleKeepFullHistory,
   onSecondOpinion = null,
 }: ComposerPrimaryActionsProps) {
   const pointerFocusProps = preserveComposerFocusOnPointerDown
@@ -105,7 +107,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     <button
       type="button"
       className={cn(
-        "flex cursor-pointer items-center justify-center rounded-[10px] bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-[transform,background-color] duration-(--duration-fast) hover:bg-destructive hover:scale-[1.04] active:scale-[0.96] active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none",
+        "flex shrink-0 cursor-pointer items-center justify-center rounded-[10px] bg-destructive/90 text-white shadow-xs shadow-destructive/24 inset-shadow-[0_1px_--theme(--color-white/16%)] transition-colors duration-(--duration-fast) hover:bg-destructive active:scale-[0.96] active:inset-shadow-[0_1px_--theme(--color-black/8%)] active:shadow-none",
         insidePendingAction
           ? "size-8 sm:size-7"
           : showSendWhileRunning && hasSendableContent
@@ -237,57 +239,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     );
   }
 
-  const sendBlocked = isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable;
-
-  if (compactBeforeSendTokens !== null && !isRunning) {
-    const tokens = formatContextWindowTokens(compactBeforeSendTokens);
-    return (
-      <div data-chat-composer-compact-send="true" className="flex items-center justify-end">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="submit"
-                className={cn(
-                  "cursor-pointer bg-message-action text-message-action-foreground disabled:opacity-30",
-                  "h-9 rounded-r-none sm:h-8",
-                  compact ? "px-3" : "px-4",
-                )}
-                {...pointerFocusProps}
-                disabled={sendBlocked || !hasSendableContent}
-              />
-            }
-          >
-            {isConnecting || isSendBusy ? "Sending..." : "Compact and send"}
-          </TooltipTrigger>
-          <TooltipPopup>Summarize {tokens} tokens of history, then send</TooltipPopup>
-        </Tooltip>
-        <Menu>
-          <MenuTrigger
-            render={
-              <button
-                type="button"
-                className={cn(
-                  "cursor-pointer bg-message-action text-message-action-foreground disabled:opacity-30",
-                  "h-9 rounded-l-none border-l border-message-action-foreground/20 px-2 sm:h-8",
-                )}
-                aria-label="Send options"
-                {...pointerFocusProps}
-                disabled={sendBlocked || !hasSendableContent}
-              />
-            }
-          >
-            <ChevronDownIcon className="size-3.5" />
-          </MenuTrigger>
-          <MenuPopup align="end" side="top">
-            <MenuItem disabled={sendBlocked} onClick={onSendWithFullHistory}>
-              Send with full history ({tokens} tokens)
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
-      </div>
-    );
-  }
+  const compactTokens =
+    compactBeforeSendTokens !== null && !isRunning
+      ? formatContextWindowTokens(compactBeforeSendTokens)
+      : null;
+  const compactsBeforeSend = compactTokens !== null && !keepFullHistory;
 
   const sendButton = (
     <button
@@ -319,7 +275,9 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
                   ? "Sending"
                   : isRunning
                     ? "Queue message"
-                    : "Send message"
+                    : compactsBeforeSend
+                      ? "Compact and send"
+                      : "Send message"
       }
     >
       {stageBackdropVariant ? (
@@ -377,6 +335,37 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       // hold-to-speak control belongs under the thumb that is about to send.
       <div className="flex items-center gap-1">
         {secondOpinionButton}
+        {compactTokens !== null ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs tabular-nums sm:h-8 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64",
+                    keepFullHistory
+                      ? "border-border text-muted-foreground hover:text-foreground"
+                      : "border-warning/40 text-warning hover:bg-warning/8",
+                  )}
+                  {...pointerFocusProps}
+                  aria-pressed={!keepFullHistory}
+                  aria-label={`Compact ${compactTokens} tokens of history before sending`}
+                  disabled={!canOperateThread}
+                  onClick={onToggleKeepFullHistory}
+                />
+              }
+            >
+              <Minimize2Icon aria-hidden="true" className="size-3.5" />
+              {keepFullHistory ? "Full" : "Compact"}
+              <span>{compactTokens}</span>
+            </TooltipTrigger>
+            <TooltipPopup>
+              {keepFullHistory
+                ? `Next send keeps all ${compactTokens} tokens. Click to compact first`
+                : `Next send compacts ${compactTokens} tokens first. Click to keep full history`}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
         <ComposerDictationControl />
         {sendButton}
       </div>

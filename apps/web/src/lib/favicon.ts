@@ -13,10 +13,10 @@ export function faviconUrlForOrigin(rawUrl: string | null | undefined, size = 32
   if (!rawUrl) return null;
   try {
     const url = new URL(rawUrl);
-    if (!url.host) return null;
+    if (!url.hostname) return null;
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     if (!isPublicFaviconHost(url.hostname)) return null;
-    return `${FAVICON_PROVIDER}?domain=${encodeURIComponent(url.host)}&sz=${size}`;
+    return `${FAVICON_PROVIDER}?domain=${encodeURIComponent(url.hostname)}&sz=${size}`;
   } catch {
     return null;
   }

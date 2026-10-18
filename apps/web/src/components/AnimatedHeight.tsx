@@ -1,4 +1,5 @@
-"use client";
+import { observeResize } from "~/lib/observeResize";
+("use client");
 
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -61,10 +62,9 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
     };
 
     updateHeightAfterPaint();
-    const resizeObserver = new ResizeObserver(updateHeightAfterPaint);
-    resizeObserver.observe(element);
+    const stopObserving = observeResize(element, updateHeightAfterPaint);
     return () => {
-      resizeObserver.disconnect();
+      stopObserving();
       cancelPendingFrames();
     };
   }, []);
@@ -72,11 +72,11 @@ export function AnimatedHeight({ children }: { readonly children: ReactNode }) {
   return (
     <div
       data-slot="animated-height"
-      className="transition-[height] duration-(--duration-base) ease-out motion-reduce:transition-none"
+      className="transition-[height] duration-(--duration-base) ease-out motion-reduce:transition-none [overflow-clip-margin:2px]"
       style={
         heightState.height === null
           ? undefined
-          : { height: heightState.height, overflow: heightState.isClipping ? "hidden" : "visible" }
+          : { height: heightState.height, overflow: heightState.isClipping ? "clip" : "visible" }
       }
       onTransitionEnd={(event) => {
         if (event.target !== event.currentTarget || event.propertyName !== "height") return;

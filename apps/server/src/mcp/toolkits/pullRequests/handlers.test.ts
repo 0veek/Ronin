@@ -1,3 +1,9 @@
+import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
+import {
+  PullRequestOperationError,
+  type PullRequestRef,
+  type PullRequestReviewGuideResult,
+} from "@t3tools/contracts";
 import {
   EnvironmentId,
   ProjectId,
@@ -132,7 +138,16 @@ function makeLink(
   };
 }
 
+const NO_GUIDE: PullRequestReviewGuideResult = { guide: null, run: null, currentHeadSha: "head-1" };
 interface HarnessOptions {
+  readonly projects?: ReadonlyArray<OrchestrationProjectShell>;
+  readonly generate?: (
+    input: PullRequestRef,
+  ) => Effect.Effect<
+    PullRequestReviewGuideResult & { started: boolean },
+    PullRequestOperationError
+  >;
+
   readonly thread?: OrchestrationThreadShell | null;
   readonly project?: OrchestrationProjectShell | null;
   readonly otherThread?: OrchestrationThreadShell;
@@ -144,6 +159,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
   options: HarnessOptions = {},
 ) {
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const guideRequests = yield* Ref.make<ReadonlyArray<PullRequestRef>>([]);
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
   const dispatch: OrchestrationEngineShape["dispatch"] = (command) =>
@@ -154,7 +170,26 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       return { sequence: 1 };
     });
   const dependencies = Layer.mergeAll(
+    Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({
+      get: () => Effect.succeed(NO_GUIDE),
+      generate: (input) =>
+        Ref.update(guideRequests, (recorded) => [...recorded, input]).pipe(
+          Effect.andThen(
+            options.generate?.(input) ??
+              Effect.succeed({
+                ...NO_GUIDE,
+                run: {
+                  _tag: "Running" as const,
+                  headSha: "head-1",
+                  startedAt: "2026-10-18T00:00:00.000Z",
+                },
+                started: true,
+              }),
+          ),
+        ),
+    }),
     Layer.mock(ProjectionSnapshotQuery)({
+      getProjectShells: () => Effect.succeed(options.projects ?? (project ? [project] : [])),
       getThreadShellById: (threadId) =>
         Effect.succeed(
           Option.fromNullishOr(
@@ -196,7 +231,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       Effect.provideService(McpInvocationContext.McpInvocationContext, invocation(capabilities)),
       Effect.provide(dependencies),
     );
-  return { commands, call };
+  return { commands, guideRequests, call };
 });
 
 describe("pull request toolkit handlers", () => {
@@ -599,3 +634,200 @@ it("keeps failure diagnostics as the cause rather than exposing them in the tool
   expect(failure.message).toBe("Could not link the pull request.");
   expect(failure.cause).toBe(cause);
 });
+
+function activeGuideCaller(): OrchestrationThreadShell {
+  return {
+    ...makeThread([]),
+    latestTurn: {
+      turnId: TurnId.make("guide-caller-turn"),
+      state: "running",
+      requestedAt: "2026-10-18T00:00:00.000Z",
+      startedAt: "2026-10-18T00:00:00.000Z",
+      completedAt: null,
+      assistantMessageId: null,
+    },
+  };
+}
+describe("pull request guide tools", () => {
+  it.effect(
+    "writes guides through the project whose checkout is each pull request's repository",
+    () =>
+      Effect.gen(function* () {
+        const other = {
+          ...makeProject({
+            canonicalKey: "github.com/acme/web",
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "git@github.com:acme/web.git",
+            },
+            provider: "github",
+            displayName: "acme/web",
+            owner: "acme",
+            name: "web",
+          }),
+          id: ProjectId.make("project-web"),
+        };
+        const harness = yield* makeHarness({
+          thread: activeGuideCaller(),
+          projects: [makeProject(), other],
+        });
+        const result = yield* harness.call("write_pull_request_guides", {
+          pullRequests: [
+            { url: "https://github.com/acme/web/pull/7" },
+            { repository: "t3tools/t3code", number: 12 },
+            { url: "https://github.com/someone/else/pull/1" },
+          ],
+        });
+        expect(
+          result.guides.map((guide) => [guide.repository, guide.number, guide.outcome]),
+        ).toEqual([
+          ["acme/web", 7, "started"],
+          ["t3tools/t3code", 12, "started"],
+          ["someone/else", 1, "failed"],
+        ]);
+        expect(result.guides[2]?.detail).toContain("No project in this environment");
+        expect(
+          (yield* Ref.get(harness.guideRequests)).map((ref) => [ref.projectId, ref.number]),
+        ).toEqual([
+          ["project-web", 7],
+          [PROJECT_ID, 12],
+        ]);
+      }),
+  );
+
+  it.effect("reports a refused run on its own pull request without failing the rest", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        thread: activeGuideCaller(),
+        generate: (input) =>
+          input.number === 1
+            ? Effect.fail(
+                new PullRequestOperationError({
+                  operation: "generateReviewGuide",
+                  detail: "Review guides are off. Turn them on in Settings → Source Control.",
+                }),
+              )
+            : Effect.succeed({
+                ...NO_GUIDE,
+                run: {
+                  _tag: "Running" as const,
+                  headSha: "head-1",
+                  startedAt: "2026-10-11T00:00:00.000Z",
+                },
+                started: true,
+              }),
+      });
+      const result = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [
+          { repository: "t3tools/t3code", number: 1 },
+          { repository: "t3tools/t3code", number: 2 },
+        ],
+      });
+      expect(result.guides.map((guide) => [guide.number, guide.outcome, guide.detail])).toEqual([
+        [1, "failed", "Review guides are off. Turn them on in Settings → Source Control."],
+        [2, "started", null],
+      ]);
+    }),
+  );
+
+  it.effect("reports an unreadable entry on its own and still writes the rest of the batch", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ thread: activeGuideCaller() });
+      const result = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [
+          { url: "https://example.com/not-a-pull-request" },
+          { repository: "t3tools/t3code" },
+          { repository: "t3tools/t3code", number: 5 },
+        ],
+      });
+      expect(result.guides.map((guide) => guide.outcome)).toEqual(["failed", "failed", "started"]);
+      expect(result.guides[0]?.detail).toContain("not a recognised pull request URL");
+      expect(result.guides[1]?.detail).toContain("Pass either url");
+      expect((yield* Ref.get(harness.guideRequests)).map((ref) => ref.number)).toEqual([5]);
+    }),
+  );
+
+  it.effect("reports a run the service joined as running, not as a new one", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        thread: activeGuideCaller(),
+        generate: () =>
+          Effect.succeed({
+            ...NO_GUIDE,
+            run: { _tag: "Running", headSha: "head-1", startedAt: "2026-10-11T00:00:00.000Z" },
+            started: false,
+          }),
+      });
+      const result = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [{ repository: "t3tools/t3code", number: 4 }],
+      });
+      expect(result.guides.map((guide) => guide.outcome)).toEqual(["running"]);
+    }),
+  );
+
+  it.effect("finds an Azure DevOps checkout for a pull request named by its full path", () =>
+    Effect.gen(function* () {
+      const azure = {
+        ...makeProject({
+          canonicalKey: "dev.azure.com/org/project/_git/web",
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: "https://dev.azure.com/org/project/_git/web",
+          },
+          provider: "azure-devops",
+          displayName: "org/project/_git/web",
+          owner: "org",
+          name: "web",
+        }),
+        id: ProjectId.make("project-azure"),
+      };
+      const harness = yield* makeHarness({
+        thread: activeGuideCaller(),
+        projects: [makeProject(), azure],
+      });
+      const result = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [{ host: "dev.azure.com", repository: "org/project/_git/web", number: 9 }],
+      });
+      expect(result.guides.map((guide) => guide.outcome)).toEqual(["started"]);
+      expect((yield* Ref.get(harness.guideRequests)).map((ref) => ref.projectId)).toEqual([
+        "project-azure",
+      ]);
+    }),
+  );
+
+  it.effect("reads a stored guide and says when a push left it behind", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ thread: activeGuideCaller() });
+      const result = yield* harness.call("read_pull_request_guide", {
+        repository: "t3tools/t3code",
+        number: 3,
+      });
+      expect(result).toMatchObject({ number: 3, guide: null, run: null, stale: false });
+    }),
+  );
+});
+
+it.effect("refuses guide generation after the caller ends and without the PR capability", () =>
+  Effect.gen(function* () {
+    const ended = yield* makeHarness();
+    const error = yield* ended
+      .call("write_pull_request_guides", {
+        pullRequests: [{ repository: "t3tools/t3code", number: 1 }],
+      })
+      .pipe(Effect.flip);
+    expect(error).toMatchObject({ _tag: "PullRequestGuideFailedError" });
+    expect(yield* Ref.get(ended.guideRequests)).toEqual([]);
+    const active = yield* makeHarness({ thread: activeGuideCaller() });
+    const denied = yield* active
+      .call(
+        "write_pull_request_guides",
+        { pullRequests: [{ repository: "t3tools/t3code", number: 1 }] },
+        [],
+      )
+      .pipe(Effect.flip);
+    expect(denied).toMatchObject({ _tag: "McpCapabilityUnavailableError" });
+    expect(yield* Ref.get(active.guideRequests)).toEqual([]);
+  }),
+);

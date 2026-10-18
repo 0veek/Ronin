@@ -4,9 +4,29 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 const readPreparedConnection = vi.fn();
 
 vi.mock("~/state/session", () => ({ readPreparedConnection }));
+vi.mock("~/env", () => ({ isElectron: true }));
 
 describe("browser target resolver", () => {
   beforeEach(() => readPreparedConnection.mockReset());
+
+  it("keeps primary desktop loopback local while mapping remote environments", async () => {
+    const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver");
+    const environmentId = EnvironmentId.make("desktop-network");
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://192.168.1.25:3773",
+      target: { _tag: "PrimaryConnectionTarget" },
+    });
+    expect(resolveDiscoveredServerUrl(environmentId, "http://localhost:5173/app")).toBe(
+      "http://localhost:5173/app",
+    );
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://192.168.1.25:3773",
+      target: { _tag: "RemoteConnectionTarget" },
+    });
+    expect(resolveDiscoveredServerUrl(environmentId, "http://localhost:5173/app")).toBe(
+      "http://192.168.1.25:5173/app",
+    );
+  });
 
   it("maps environment ports onto a private network host", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://192.168.1.25:3773" });

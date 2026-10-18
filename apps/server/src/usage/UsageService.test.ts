@@ -12,7 +12,8 @@ import {
   UsageDay,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -24,7 +25,12 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { totalTokens } from "./usageTranscripts.ts";
+import * as Schema from "effect/Schema";
+const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+
 import * as UsageService from "./UsageService.ts";
+import * as CursorUsageReader from "./cursorUsageReader.ts";
 
 function claudeLine(id: number, outputTokens: number): string {
   return `${JSON.stringify({
@@ -74,11 +80,24 @@ const serviceLayers = (input: {
   /** Defaults to an unparsable document so every scan retries the fetch. */
   readonly ratesDocument?: unknown;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly readCursor?: CursorUsageReader.CursorAccountReader["Service"]["read"];
 }) =>
   ServerConfig.layerTest(process.cwd(), { prefix: input.prefix }).pipe(
     Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(
+      Layer.succeed(CursorUsageReader.CursorAccountReader, {
+        read:
+          input.readCursor ??
+          (() => Effect.succeed({ accountKey: null, records: [], missing: true, error: null })),
+      }),
+    ),
     Layer.provideMerge(ServerSettings.layerTest(input.settings)),
-    Layer.provideMerge(Layer.succeed(HostProcessEnvironment, input.environment ?? {})),
+    Layer.provideMerge(
+      Layer.succeed(HostProcessEnvironment, {
+        PI_CODING_AGENT_DIR: NodePath.join(NodeOS.tmpdir(), `ronin-unused-pi-${input.prefix}`),
+        ...input.environment,
+      }),
+    ),
     Layer.provideMerge(
       Layer.succeed(
         HttpClient.HttpClient,
@@ -99,6 +118,427 @@ function totalOutputTokens(summary: { buckets: readonly { totals: { outputTokens
 }
 
 describe("UsageService", () => {
+  it.live("uses Pi's configured agent directory and session directory overrides", () =>
+    Effect.gen(function* () {
+      const { home, settings } = yield* setup;
+      for (const sessionOverride of [false, true]) {
+        const configured = NodePath.join(home, "configured-pi");
+        const target = sessionOverride
+          ? NodePath.join(home, "explicit-sessions")
+          : NodePath.join(configured, "sessions");
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(target, { recursive: true });
+          await NodeFSP.writeFile(
+            NodePath.join(target, "usage.jsonl"),
+            [
+              { type: "session", id: "custom-session" },
+              {
+                type: "usage",
+                id: "call",
+                timestamp: "2026-08-01T10:00:00Z",
+                provider: "openai",
+                model: "unknown",
+                usage: { input: 7 },
+              },
+            ]
+              .map((line) => JSON.stringify(line))
+              .join("\n") + "\n",
+          );
+        });
+        const service = yield* UsageService.make.pipe(
+          Effect.provide(
+            serviceLayers({
+              prefix: `usage-pi-override-${sessionOverride}`,
+              settings: {
+                ...settings,
+                providers: { ...settings.providers, pi: { agentDir: configured } },
+              },
+              environment: {
+                PI_CODING_AGENT_DIR: NodePath.join(home, "ignored-pi"),
+                ...(sessionOverride ? { PI_CODING_AGENT_SESSION_DIR: target } : {}),
+              },
+            }),
+          ),
+        );
+        const summary = yield* service.readSummary(WINDOW);
+        const source = summary.sources.find((source) => source.fingerprint.provider === "pi");
+        assert.strictEqual(source?.fingerprint.resolvedHomePath, target);
+        assert.strictEqual(
+          summary.buckets.find((bucket) => bucket.provider === "pi")?.totals.uncachedInputTokens,
+          7,
+        );
+      }
+    }).pipe(Effect.scoped),
+  );
+
+  it.live(
+    "reads Pi per-model usage and auxiliary costs once across forks and repeated entries",
+    () =>
+      Effect.gen(function* () {
+        const { home, settings } = yield* setup;
+        const dir = NodePath.join(home, "pi", "sessions", "project");
+        const usage = {
+          input: 10,
+          output: 5,
+          cacheRead: 20,
+          cacheWrite: 3,
+          reasoning: 2,
+          totalTokens: 38,
+          cost: { input: 0.1, output: 0.2, cacheRead: 0.3, cacheWrite: 0.4, total: 1 },
+        };
+        const parent = {
+          type: "message",
+          id: "a123abcd",
+          parentId: null,
+          timestamp: "2026-08-01T10:00:00Z",
+          message: {
+            role: "assistant",
+            provider: "anthropic",
+            model: "requested-model",
+            responseModel: "actual-model",
+            usage,
+          },
+        };
+        const auxiliary = [
+          {
+            type: "message",
+            id: "tool",
+            message: { role: "toolResult", toolName: "classify", usage },
+          },
+          {
+            type: "message",
+            id: "image",
+            message: {
+              role: "toolResult",
+              toolName: "image",
+              usage: { ...usage, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            },
+          },
+          { type: "compaction", id: "compact", usage },
+          { type: "branch_summary", id: "summary", usage },
+        ].map((entry) => ({ ...entry, timestamp: "2026-08-01T11:00:00Z" }));
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(dir, { recursive: true });
+          await NodeFSP.writeFile(
+            NodePath.join(dir, "parent.jsonl"),
+            [
+              { type: "session", id: "parent" },
+              parent,
+              ...auxiliary,
+              {
+                type: "usage",
+                id: "warm",
+                timestamp: "2026-08-01T12:00:00Z",
+                kind: "cache_warm",
+                provider: "openai",
+                model: "actual-model",
+                usage: { ...usage, cost: { ...usage.cost, total: 0 } },
+              },
+            ]
+              .map((line) => encodeUnknownJsonString(line))
+              .join("\n") + "\n",
+          );
+          await NodeFSP.writeFile(
+            NodePath.join(dir, "fork.jsonl"),
+            [
+              { type: "session", id: "fork", parentSession: NodePath.join(dir, "parent.jsonl") },
+              { ...parent, parentId: "relinked" },
+              parent,
+              ...auxiliary,
+              {
+                ...parent,
+                timestamp: "2026-08-01T13:00:00Z",
+                message: { ...parent.message, provider: "openai", responseModel: "another-model" },
+              },
+              { type: "get_session_stats", usage: { ...usage, cost: { total: 1000 } } },
+            ]
+              .map((line) => encodeUnknownJsonString(line))
+              .join("\n") + "\n",
+          );
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* UsageService.make;
+          const first = yield* service.readSummary(WINDOW);
+          const pi = first.buckets.filter((bucket) => bucket.provider === "pi");
+          assert.strictEqual(
+            pi.reduce((total, bucket) => total + bucket.costUsd, 0),
+            44,
+          );
+          assert.strictEqual(
+            pi.reduce((total, bucket) => total + totalTokens(bucket.totals), 0),
+            228,
+          );
+          assert.deepStrictEqual(pi.map((bucket) => bucket.model).sort(), [
+            "Tools/summaries",
+            "anthropic/actual-model",
+            "openai/actual-model",
+            "openai/another-model",
+          ]);
+          const assistant = pi.find((bucket) => bucket.model === "anthropic/actual-model");
+          assert.deepStrictEqual(assistant?.totals, {
+            uncachedInputTokens: 10,
+            outputTokens: 5,
+            cachedInputTokens: 20,
+            cacheCreationTokens: 3,
+            reasoningTokens: 2,
+          });
+          assert.strictEqual(assistant?.costSource, "providerReported");
+          assert.approximately(assistant?.categoryCostUsd?.input ?? NaN, 10 / 38, 1e-6);
+          assert.approximately(assistant?.categoryCostUsd?.cacheRead ?? NaN, 2 / 38, 1e-6);
+          assert.approximately(assistant?.categoryCostUsd?.cacheWrite ?? NaN, 6 / 38, 1e-6);
+          assert.approximately(assistant?.categoryCostUsd?.output ?? NaN, 20 / 38, 1e-6);
+          assert.strictEqual(assistant?.cacheSavingsUsd, 18);
+          const warm = pi.find((bucket) => bucket.model === "openai/actual-model");
+          assert.strictEqual(warm?.costSource, "modelPriced");
+          assert.strictEqual(warm?.costUsd, 38);
+          assert.deepStrictEqual(warm?.categoryCostUsd, {
+            input: 10,
+            cacheRead: 2,
+            cacheWrite: 6,
+            output: 20,
+          });
+          assert.strictEqual(warm?.cacheSavingsUsd, 18);
+          assert.strictEqual(
+            first.sources.filter((source) => source.fingerprint.provider === "pi").length,
+            1,
+          );
+          // Warm scans retain header state and only charge appended entries.
+          yield* Effect.promise(() =>
+            NodeFSP.appendFile(
+              NodePath.join(dir, "fork.jsonl"),
+              encodeUnknownJsonString({
+                ...parent,
+                id: "new",
+                timestamp: "2026-08-01T14:00:00Z",
+                message: { ...parent.message, responseModel: "latest-model" },
+              }) + "\n",
+            ),
+          );
+          const grown = yield* service.readSummary(WINDOW);
+          assert.strictEqual(
+            grown.buckets
+              .filter((bucket) => bucket.provider === "pi")
+              .reduce((total, bucket) => total + bucket.costUsd, 0),
+            45,
+          );
+          yield* service.awaitPersisted;
+          const restarted = yield* UsageService.make;
+          assert.deepStrictEqual((yield* restarted.readSummary(WINDOW)).buckets, grown.buckets);
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            serviceLayers({
+              prefix: "usage-pi-fork",
+              environment: { PI_CODING_AGENT_DIR: NodePath.join(home, "pi") },
+              ratesDocument: {
+                "actual-model": {
+                  input_cost_per_token: 1,
+                  output_cost_per_token: 4,
+                  cache_read_input_token_cost: 0.1,
+                  cache_creation_input_token_cost: 2,
+                },
+              },
+              settings: {
+                ...settings,
+                providerInstances: {
+                  [ProviderInstanceId.make("pi-extra")]: {
+                    driver: ProviderDriverKind.make("pi"),
+                    enabled: false,
+                    environment: [
+                      {
+                        name: "PI_CODING_AGENT_DIR",
+                        value: NodePath.join(home, "pi"),
+                        sensitive: false,
+                      },
+                    ],
+                  },
+                },
+              },
+            }),
+          ),
+        );
+      }).pipe(Effect.scoped),
+  );
+
+  it.live("reports missing Pi history and skips malformed records without losing valid usage", () =>
+    Effect.gen(function* () {
+      const { home, settings } = yield* setup;
+      yield* Effect.gen(function* () {
+        const service = yield* UsageService.make;
+        const missing = yield* service.readSummary(WINDOW);
+        assert.strictEqual(
+          missing.sources.find((source) => source.fingerprint.provider === "pi")?.status,
+          "missing",
+        );
+        const dir = NodePath.join(home, "pi", "sessions");
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(dir, { recursive: true });
+          await NodeFSP.writeFile(
+            NodePath.join(dir, "session.jsonl"),
+            [
+              "{broken",
+              "null",
+              encodeUnknownJsonString({ type: "session", id: "valid" }),
+              encodeUnknownJsonString({
+                type: "message",
+                id: "bad",
+                timestamp: "invalid",
+                message: {
+                  role: "assistant",
+                  provider: "openai",
+                  model: "model",
+                  usage: { input: 100 },
+                },
+              }),
+              encodeUnknownJsonString({
+                type: "message",
+                id: "valid",
+                timestamp: "2026-08-01T10:00:00Z",
+                message: {
+                  role: "assistant",
+                  provider: "openai",
+                  model: "model",
+                  usage: {
+                    input: -1,
+                    cacheRead: "100",
+                    output: 7,
+                    reasoning: 50,
+                    cost: { total: -1 },
+                  },
+                },
+              }),
+            ].join("\n") + "\n",
+          );
+        });
+        const summary = yield* service.readSummary(WINDOW);
+        const pi = summary.buckets.filter((bucket) => bucket.provider === "pi");
+        assert.strictEqual(pi.length, 1);
+        assert.strictEqual(pi[0] && totalTokens(pi[0].totals), 7);
+        assert.strictEqual(pi[0]?.totals.reasoningTokens, 7);
+        assert.strictEqual(pi[0]?.costSource, "unpriced");
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          serviceLayers({
+            prefix: "usage-pi-malformed",
+            settings,
+            environment: { PI_CODING_AGENT_DIR: NodePath.join(home, "pi") },
+          }),
+        ),
+      );
+    }).pipe(Effect.scoped),
+  );
+
+  it.live.skipIf(HostProcessPlatform.defaultValue() === "win32" || process.getuid?.() === 0)(
+    "reports unreadable transcripts as partial and recovers once they can be read",
+    () =>
+      Effect.gen(function* () {
+        const { transcript, settings, home } = yield* setup;
+        const unreadable = NodePath.join(NodePath.dirname(transcript), "other.jsonl");
+        yield* Effect.promise(async () => {
+          await NodeFSP.writeFile(transcript, claudeLine(1, 5));
+          await NodeFSP.writeFile(unreadable, claudeLine(2, 7));
+          await NodeFSP.chmod(unreadable, 0);
+        });
+        yield* Effect.addFinalizer(() => Effect.promise(() => NodeFSP.chmod(unreadable, 0o600)));
+        const service = yield* UsageService.make.pipe(
+          Effect.provide(
+            serviceLayers({
+              prefix: "usage-unreadable-test",
+              settings,
+              environment: {
+                GROK_HOME: NodePath.join(home, "grok"),
+                OPENCODE_DATA_DIR: NodePath.join(home, "opencode"),
+                ANTIGRAVITY_DATA_DIR: NodePath.join(home, "antigravity"),
+              },
+            }),
+          ),
+        );
+        const partial = yield* service.readSummary(WINDOW);
+        assert.strictEqual(totalOutputTokens(partial), 5);
+        assert.strictEqual(partial.sources[0]?.status, "partial");
+        yield* Effect.promise(() => NodeFSP.chmod(unreadable, 0o600));
+        const healthy = yield* service.readSummary(WINDOW);
+        assert.strictEqual(totalOutputTokens(healthy), 12);
+        assert.strictEqual(healthy.sources[0]?.status, "ok");
+        assert.isNull(healthy.sources[0]?.message);
+      }).pipe(Effect.scoped),
+  );
+
+  it.live("answers local usage before Cursor and joins one refresh for the final summary", () =>
+    Effect.gen(function* () {
+      const { home, transcript, settings } = yield* setup;
+      yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(transcript, claudeLine(1, 17));
+        await NodeFSP.mkdir(NodePath.join(home, "cursor"), { recursive: true });
+        await NodeFSP.writeFile(NodePath.join(home, "cursor", "auth.json"), "{}");
+      });
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let reads = 0;
+      const service = yield* UsageService.make.pipe(
+        Effect.provide(
+          serviceLayers({
+            prefix: "usage-provisional-test",
+            settings,
+            environment: {
+              HOME: home,
+              XDG_CONFIG_HOME: home,
+              OPENCODE_DATA_DIR: NodePath.join(home, "opencode"),
+              ANTIGRAVITY_DATA_DIR: NodePath.join(home, "antigravity"),
+              GROK_HOME: NodePath.join(home, "grok"),
+            },
+            readCursor: () =>
+              Effect.gen(function* () {
+                reads += 1;
+                yield* Deferred.succeed(started, undefined);
+                yield* Deferred.await(release);
+                return {
+                  accountKey: "test-account",
+                  missing: false,
+                  error: null,
+                  records: [
+                    {
+                      provider: "cursor" as const,
+                      timestampMs: Date.parse("2026-08-01T10:00:00Z"),
+                      model: "test",
+                      sessionId: "cursor-session",
+                      totals: {
+                        uncachedInputTokens: 0,
+                        cachedInputTokens: 0,
+                        cacheCreationTokens: 0,
+                        outputTokens: 50,
+                        reasoningTokens: 0,
+                      },
+                      reportedCostUsd: null,
+                      speed: "standard" as const,
+                      dedupeKey: "cursor-record",
+                    },
+                  ],
+                };
+              }),
+          }).pipe(Layer.provideMerge(Layer.succeed(HostProcessPlatform, "linux"))),
+        ),
+      );
+      const provisional = yield* service.readSummary(WINDOW);
+      yield* Deferred.await(started);
+      assert.isTrue(
+        provisional.sources.some(
+          (source) => source.fingerprint.provider === "cursor" && source.refreshing === true,
+        ),
+      );
+      assert.strictEqual(totalOutputTokens(provisional), 17);
+      const final = yield* service
+        .readSummary({ ...WINDOW, awaitRefresh: true })
+        .pipe(Effect.forkChild);
+      yield* Deferred.succeed(release, undefined);
+      const summary = yield* Fiber.join(final);
+      assert.strictEqual(totalOutputTokens(summary), 67);
+      assert.isFalse(summary.sources.some((source) => source.refreshing));
+      assert.strictEqual(reads, 1);
+      yield* service.awaitPersisted;
+    }).pipe(Effect.scoped),
+  );
   it.live("reads history from disabled configured account homes", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
@@ -155,6 +595,75 @@ describe("UsageService", () => {
       yield* Effect.promise(() => NodeFSP.appendFile(transcript, claudeLine(2, 7)));
       const second = yield* service.readSummary(WINDOW);
       assert.strictEqual(totalOutputTokens(second) - totalOutputTokens(first), 7);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("keeps concurrent usage reads on their own provider settings snapshot", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      const nextHome = NodePath.join(home, "next-claude");
+      yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(transcript, claudeLine(1, 5));
+        await NodeFSP.mkdir(NodePath.join(nextHome, "projects"), { recursive: true });
+        await NodeFSP.writeFile(
+          NodePath.join(nextHome, "projects", "session.jsonl"),
+          claudeLine(2, 17),
+        );
+        await NodeFSP.mkdir(NodePath.join(home, "cursor"));
+        await NodeFSP.writeFile(NodePath.join(home, "cursor", "auth.json"), "{}");
+      });
+      const cursorStarted = yield* Deferred.make<void>();
+      const releaseCursor = yield* Deferred.make<void>();
+      const secondScan = yield* Deferred.make<void>();
+      let rates = 0;
+      yield* Effect.gen(function* () {
+        const service = yield* UsageService.make;
+        const settingsService = yield* ServerSettings.ServerSettingsService;
+        const first = yield* service
+          .readSummary({ ...WINDOW, awaitRefresh: true })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(cursorStarted);
+        yield* settingsService.updateSettings({
+          providers: { claudeAgent: { homePath: nextHome } },
+        });
+        const second = yield* service
+          .readSummary({ ...WINDOW, awaitRefresh: true })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(secondScan);
+        yield* Deferred.succeed(releaseCursor, undefined);
+        const firstResult = yield* Fiber.join(first);
+        const secondResult = yield* Fiber.join(second);
+        assert.strictEqual(totalOutputTokens(firstResult), 5);
+        assert.strictEqual(totalOutputTokens(secondResult), 17);
+        assert.include(
+          secondResult.sources.map((source) => source.fingerprint.resolvedHomePath),
+          NodePath.join(nextHome, "projects"),
+        );
+      }).pipe(
+        Effect.provide(
+          serviceLayers({
+            prefix: "usage-settings-snapshot-test",
+            settings,
+            environment: {
+              HOME: home,
+              XDG_CONFIG_HOME: home,
+              GROK_HOME: NodePath.join(home, "grok"),
+              OPENCODE_DATA_DIR: NodePath.join(home, "opencode"),
+              ANTIGRAVITY_DATA_DIR: NodePath.join(home, "antigravity"),
+            },
+            onRatesFetch: () => {
+              rates += 1;
+              if (rates === 2) Deferred.doneUnsafe(secondScan, Effect.void);
+            },
+            readCursor: () =>
+              Effect.gen(function* () {
+                yield* Deferred.succeed(cursorStarted, undefined);
+                yield* Deferred.await(releaseCursor);
+                return { accountKey: null, records: [], missing: true, error: null };
+              }),
+          }).pipe(Layer.provideMerge(Layer.succeed(HostProcessPlatform, "linux"))),
+        ),
+      );
     }).pipe(Effect.scoped),
   );
 

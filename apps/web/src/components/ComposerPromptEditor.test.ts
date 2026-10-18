@@ -24,6 +24,7 @@ import {
 import {
   $consumeComposerCitationCommentRequest,
   $createComposerCitationNode,
+  $removeFreshComposerCitation,
   ComposerCitationNode,
   type ComposerCitationCommentRequest,
 } from "./ComposerCitationNode";
@@ -731,6 +732,26 @@ describe("context reference paste", () => {
 });
 
 describe("citation comment opening", () => {
+  it.each([
+    [true, true, "beforeafter"],
+    [false, true, "before after"],
+    [true, false, "before after"],
+    [false, false, "before  after"],
+  ] as const)(
+    "cancels only inserted whitespace (before %s, after %s)",
+    (before, after, expected) => {
+      vi.stubGlobal("ClipboardEvent", TestClipboardEvent);
+      const editor = createCitationEditor();
+      pasteText(editor, `before ${citationSource} after`);
+      editor.update(
+        () => {
+          $removeFreshComposerCitation($citationNodes()[0]!.getKey(), { before, after });
+        },
+        { discrete: true },
+      );
+      expect(editor.getEditorState().read(() => $getRoot().getTextContent())).toBe(expected);
+    },
+  );
   const sourceAnchor: AssistantCitationSourceAnchor = {
     source: { nodeType: 1 } as HTMLElement,
     range: { collapsed: false } as Range,
@@ -755,6 +776,7 @@ describe("citation comment opening", () => {
       value,
       citationStart,
       sourceAnchor,
+      insertedSpaces: { before: false, after: true },
     };
     const requestRef = { current: request as ComposerCitationCommentRequest | null };
 
@@ -792,7 +814,13 @@ describe("citation comment opening", () => {
     const previousState = editor.getEditorState();
     const value = `before ${citationSource} `;
     const requestRef: { current: ComposerCitationCommentRequest | null } = {
-      current: { previousValue: "before ", value, citationStart: "before ".length, sourceAnchor },
+      current: {
+        previousValue: "before ",
+        value,
+        citationStart: "before ".length,
+        sourceAnchor,
+        insertedSpaces: { before: false, after: true },
+      },
     };
     pasteText(editor, `${citationSource} `);
     const insertedState = editor.getEditorState();
@@ -834,7 +862,13 @@ describe("citation comment opening", () => {
     vi.stubGlobal("ClipboardEvent", TestClipboardEvent);
     const editor = createCitationEditor();
     const requestRef: { current: ComposerCitationCommentRequest | null } = {
-      current: { previousValue: "", value: citationSource, citationStart: 0, sourceAnchor },
+      current: {
+        previousValue: "",
+        value: citationSource,
+        citationStart: 0,
+        sourceAnchor,
+        insertedSpaces: { before: false, after: false },
+      },
     };
     editor.update(
       () => {

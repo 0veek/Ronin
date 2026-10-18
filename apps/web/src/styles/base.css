@@ -20,6 +20,11 @@
   * {
     @apply border-border outline-ring/50;
   }
+  *,
+  ::before,
+  ::after {
+    outline-offset: -2px;
+  }
   :where([data-slot="menu-popup"], [data-slot="select-popup"], [data-slot="popover-popup"]):focus,
   :where(
     [data-slot="menu-popup"],

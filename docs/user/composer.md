@@ -211,6 +211,10 @@ say exactly which image you mean. Deleting an image chip leaves the image on the
 the thumbnail asks first when the image is still mentioned in your text, then removes both. Files
 exist only as chips: deleting a file's last chip removes the file from the message.
 
+File references use their environment's metadata to distinguish files from folders, including
+extensionless files and folders with dots in their names. Hover to see the path and file size
+when available. Without metadata, chips use the filename’s icon.
+
 Copy text that holds chips and paste it into another draft, in the same thread or another one,
 and the chips come along with what they point to. Images and files are fetched again from the
 environment they came from; while that happens the chip shows a dashed outline, and if it cannot

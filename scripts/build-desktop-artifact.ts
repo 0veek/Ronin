@@ -708,6 +708,41 @@ export const LINUX_FILE_EXCLUSIONS = [
 export const WINDOWS_NATIVE_ASAR_UNPACK_GLOB =
   "{**/*.node,**/*.dll,**/*.exe,**/*.so,**/*.so.*,**/*.dylib}";
 
+/** Selects real Windows addons for unpacking and signing, leaving foreign prebuilds archived. */
+export const resolveWindowsNativeAsarUnpack = Effect.fn("resolveWindowsNativeAsarUnpack")(
+  function* (sourceDir: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const globs = ["**/*.dll", "**/*.exe", "**/*.so", "**/*.so.*", "**/*.dylib"];
+    for (const entry of yield* fs.readDirectory(sourceDir, { recursive: true })) {
+      if (!entry.endsWith(".node")) continue;
+      const addonPath = path.join(sourceDir, entry);
+      if ((yield* fs.stat(addonPath)).type !== "File") continue;
+      const bytes = yield* fs.readFile(addonPath);
+      if (bytes[0] !== 0x4d || bytes[1] !== 0x5a) continue;
+      // electron-builder hoists pnpm's dependency tree while packing. Match the
+      // package-relative path in both the staged and the packaged location.
+      const posixPath = entry.split(path.sep).join("/");
+      const modulesIndex = posixPath.lastIndexOf("node_modules/");
+      const packagedPath = modulesIndex === -1 ? posixPath : posixPath.slice(modulesIndex);
+      if (/[\\*?[\]{}(),]/.test(packagedPath)) {
+        return yield* new WindowsNativeAddonPathError({ path: packagedPath });
+      }
+      globs.push(`**/${packagedPath}`);
+    }
+    return globs;
+  },
+);
+
+export class WindowsNativeAddonPathError extends Schema.TaggedErrorClass<WindowsNativeAddonPathError>()(
+  "WindowsNativeAddonPathError",
+  { path: Schema.String },
+) {
+  override get message() {
+    return `Native addon path contains glob syntax: ${this.path}`;
+  }
+}
+
 // node-pty publishes both Darwin prebuilds in one package. Single-architecture
 // apps only need the native target; universal apps need both. An omitted arch
 // preserves the existing common exclusions for callers that only inspect the
@@ -1669,6 +1704,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
+        NSLocalNetworkUsageDescription:
+          "Ronin connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
           "Ronin captures the active window when you use the window capture shortcut.",
       },
@@ -1723,6 +1760,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const winConfig: Record<string, unknown> = {
       target: [target],
       icon: "icon.ico",
+      // Smart App Control checks loaded native libraries independently of the app.
+      signExts: [".node", ".dll"],
       // Resource editing applies the product metadata and icon independently
       // of code signing. Disabling it for local unsigned builds leaves the
       // packaged executable with Electron's stock icon.
@@ -2021,6 +2060,12 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     }),
     { label: "vp install --prod", verbose: options.verbose },
   );
+
+  if (options.platform === "win") {
+    stagePackageJson.build.asarUnpack = yield* resolveWindowsNativeAsarUnpack(stageAppDir);
+    const windowsPackageJson = yield* encodeJsonString(stagePackageJson);
+    yield* fs.writeFileString(path.join(stageAppDir, "package.json"), `${windowsPackageJson}\n`);
+  }
 
   // electron-builder treats several set-but-empty variables (e.g. CSC_LINK="")
   // as enabled, so copy the host env and scrub empty values instead of relying

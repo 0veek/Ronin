@@ -24,12 +24,21 @@ import {
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { RuntimeTaskId, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import { Bot, Braces, Check, ChevronDown, ChevronRight, Square, X } from "lucide-react";
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { cn } from "~/lib/utils";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { WorkflowMemberConversation } from "./WorkflowMemberConversation";
 import { ScrollArea } from "~/components/ui/scroll-area";
 
 /**
@@ -42,6 +51,11 @@ import { ScrollArea } from "~/components/ui/scroll-area";
  * `null` when nothing here can be stopped — no thread to act on, or a provider
  * without per-agent stop — which is what hides the control entirely.
  */
+const ConversationEnvironmentContext = createContext<{
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+} | null>(null);
+
 const StopAgentContext = createContext<((agent: RuntimeSubagent) => Promise<void>) | null>(null);
 
 /**
@@ -179,6 +193,8 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
 function AgentStopButton({ agent }: { agent: RuntimeSubagent }) {
   const stopAgent = useContext(StopAgentContext);
   const [stopping, setStopping] = useState(false);
+  const stopLabel =
+    agent.kind === "workflow" ? `workflow ${agent.workflowName ?? agent.title}` : agent.title;
 
   // A stopped agent that comes back (Codex idle → running) must be stoppable
   // again, and a stop that failed must not leave the row inert.
@@ -198,8 +214,9 @@ function AgentStopButton({ agent }: { agent: RuntimeSubagent }) {
         setStopping(true);
         void stopAgent(agent).finally(() => setStopping(false));
       }}
-      aria-label={stopping ? `Stopping ${agent.title}` : `Stop ${agent.title}`}
+      aria-label={stopping ? `Stopping ${stopLabel}` : `Stop ${stopLabel}`}
       aria-busy={stopping}
+      disabled={stopping}
       className={cn(
         "pointer-events-none absolute inset-y-0 right-0 my-auto inline-flex size-5 items-center justify-center rounded-sm opacity-0 transition-opacity",
         "text-muted-foreground hover:bg-accent hover:text-destructive-foreground focus-visible:opacity-100",
@@ -212,10 +229,33 @@ function AgentStopButton({ agent }: { agent: RuntimeSubagent }) {
   );
 }
 
-/** Flat agent status line. No unfold; the only control is Stop. */
-function AgentRow({ agent }: { agent: RuntimeSubagent }) {
-  const stopAgent = useContext(StopAgentContext);
-  const stoppable = stopAgent !== null && isStoppableAgent(agent);
+function AgentRowTitle({
+  agent,
+  canOpen,
+  open,
+  onToggle,
+}: {
+  agent: RuntimeSubagent;
+  canOpen: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return canOpen ? (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-label={`${open ? "Close" : "Open"} ${agent.title} conversation`}
+      className="min-w-0 truncate rounded-sm text-left text-sm font-medium hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {agent.title}
+    </button>
+  ) : (
+    <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
+  );
+}
+
+function agentRowPresentation(agent: RuntimeSubagent) {
   const visuals = STATUS_VISUALS[agent.status];
   const activity = agentActivityText(agent);
   const modelLabel = formatSubagentModelLabel(agent.model, agent.effort);
@@ -229,44 +269,77 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
     agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
     agent.activationCount > 1 ? `run ${agent.activationCount}` : null,
   ].filter((value): value is string => value !== null);
+  return { visuals, activity, role, metadata };
+}
+
+/** Fixed-height status row; workflow members can open their conversation below it. */
+function AgentRow({
+  agent,
+  suppressStop = false,
+}: {
+  agent: RuntimeSubagent;
+  suppressStop?: boolean;
+}) {
+  const [conversationOpen, setConversationOpen] = useState(false);
+  const environment = useContext(ConversationEnvironmentContext);
+  const canOpenConversation =
+    agent.kind === "workflow_agent" && !!agent.workflowAgentId && environment !== null;
+  const stopAgent = useContext(StopAgentContext);
+  const stoppable = !suppressStop && stopAgent !== null && isStoppableAgent(agent);
+  const { visuals, activity, role, metadata } = agentRowPresentation(agent);
 
   return (
-    <div className="group grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
-      <span className="col-start-1 row-start-1 flex items-center">
-        <StatusDot status={agent.status} />
-      </span>
-      <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
-        <span className="min-w-0 truncate text-sm font-medium">{agent.title}</span>
-        {role ? (
-          <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-3xs text-muted-foreground">
-            {role}
-          </span>
-        ) : null}
-      </span>
-      <span className="relative col-start-3 row-start-1 min-w-14 text-right font-mono text-2xs text-muted-foreground/80">
-        <span
-          className={cn("inline-flex items-center gap-1", stoppable && "group-hover:invisible")}
-        >
-          <AgentElapsed agent={agent} />
-          {agent.status === "completed" ? (
-            <Check aria-hidden className="size-3 text-success" />
+    <>
+      <div className="group grid h-[3.875rem] grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1">
+        <span className="col-start-1 row-start-1 flex items-center">
+          <StatusDot status={agent.status} />
+        </span>
+        <span className="col-start-2 row-start-1 flex min-w-0 items-baseline gap-2">
+          <AgentRowTitle
+            agent={agent}
+            canOpen={canOpenConversation}
+            open={conversationOpen}
+            onToggle={() => setConversationOpen((open) => !open)}
+          />
+          {role ? (
+            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-3xs text-muted-foreground">
+              {role}
+            </span>
           ) : null}
         </span>
-        <AgentStopButton agent={agent} />
-      </span>
-      <span
-        className={cn(
-          "col-start-2 col-end-4 row-start-2 block truncate text-xs",
-          agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
-        )}
-      >
-        {activity ?? visuals.label}
-      </span>
-      <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-2xs tabular-nums text-muted-foreground/70">
-        {metadata.join(" · ")}
-      </span>
-      <span className="sr-only">{visuals.label}</span>
-    </div>
+        <span className="relative col-start-3 row-start-1 min-w-14 text-right font-mono text-2xs text-muted-foreground/80">
+          <span
+            className={cn("inline-flex items-center gap-1", stoppable && "group-hover:invisible")}
+          >
+            <AgentElapsed agent={agent} />
+            {agent.status === "completed" ? (
+              <Check aria-hidden className="size-3 text-success" />
+            ) : null}
+          </span>
+          {!suppressStop ? <AgentStopButton agent={agent} /> : null}
+        </span>
+        <span
+          className={cn(
+            "col-start-2 col-end-4 row-start-2 block truncate text-xs",
+            agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
+          )}
+        >
+          {activity ?? visuals.label}
+        </span>
+        <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-2xs tabular-nums text-muted-foreground/70">
+          {metadata.join(" · ")}
+        </span>
+        <span className="sr-only">{visuals.label}</span>
+      </div>
+      {conversationOpen && canOpenConversation ? (
+        <WorkflowMemberConversation
+          key={`${agent.workflowAgentId}:${agent.attempt}`}
+          agent={agent}
+          environmentId={environment.environmentId}
+          threadId={environment.threadId}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -477,7 +550,7 @@ function ExpandedWorkflowSection({
   const canShowScript = scriptPath !== undefined && environmentId !== null && threadId !== null;
   return (
     <section className="rounded-lg border border-border/50 bg-card/30 p-1.5">
-      <div className="flex items-center gap-2 px-1.5 pt-0.5 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="group flex items-center gap-2 px-1.5 pt-0.5 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
         <StatusDot status={group.workflow.status} />
         <span className="min-w-0 truncate">
           {group.workflow.workflowName ?? group.workflow.title}
@@ -495,7 +568,10 @@ function ExpandedWorkflowSection({
             {"{}"} script
           </button>
         ) : null}
-        <span className="ml-auto font-mono normal-case text-muted-foreground/80">
+        <span className="relative ml-auto inline-flex size-5 shrink-0 normal-case">
+          <AgentStopButton agent={group.workflow} />
+        </span>
+        <span className="font-mono normal-case text-muted-foreground/80">
           {settled}/{members.length} settled
         </span>
         <button
@@ -523,7 +599,7 @@ function ExpandedWorkflowSection({
         <AgentRow key={member.id} agent={member} />
       ))}
       {group.phases.length === 0 && group.unphasedMembers.length === 0 ? (
-        <AgentRow agent={group.workflow} />
+        <AgentRow agent={group.workflow} suppressStop />
       ) : null}
     </section>
   );
@@ -627,6 +703,11 @@ export function AgentsPanel({
     [environmentId, threadId, stopThreadAgent],
   );
 
+  const conversationEnvironment = useMemo(
+    () => (environmentId && threadId ? { environmentId, threadId } : null),
+    [environmentId, threadId],
+  );
+
   if (!model.hasAgents) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -641,45 +722,52 @@ export function AgentsPanel({
   }
 
   return (
-    <StopAgentContext.Provider
-      value={environmentId && threadId && canStopAgents ? stopAgent : null}
+    <ConversationEnvironmentContext.Provider
+      key={`${environmentId}:${threadId}`}
+      value={conversationEnvironment}
     >
-      <div className="flex h-full min-h-0 flex-col">
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="flex flex-col gap-2 p-2">
-            {model.workflows.map((group) => (
-              <WorkflowSection
-                key={group.workflow.id}
-                group={group}
-                environmentId={environmentId}
-                threadId={threadId}
-              />
-            ))}
-            {model.directAgents.length > 0 ? (
-              <section>
-                <div className="px-1.5 pt-1 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Direct spawns
-                </div>
-                {model.directAgents.map((agent) => (
-                  <AgentRow key={agent.id} agent={agent} />
-                ))}
-              </section>
-            ) : null}
-          </div>
-        </ScrollArea>
-        <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-2xs text-muted-foreground">
-          <span className="flex items-center gap-2">
-            {model.runningCount + model.waitingCount > 0 ? (
-              <span className="text-info-foreground">
-                ● {model.runningCount + model.waitingCount} working
-              </span>
-            ) : null}
-            {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
-            {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
-          </span>
-          <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
-        </footer>
-      </div>
-    </StopAgentContext.Provider>
+      <StopAgentContext.Provider
+        value={environmentId && threadId && canStopAgents ? stopAgent : null}
+      >
+        <div className="flex h-full min-h-0 flex-col">
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-2 p-2">
+              {model.workflows.map((group) => (
+                <WorkflowSection
+                  key={group.workflow.id}
+                  group={group}
+                  environmentId={environmentId}
+                  threadId={threadId}
+                />
+              ))}
+              {model.directAgents.length > 0 ? (
+                <section>
+                  <div className="px-1.5 pt-1 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Direct spawns
+                  </div>
+                  {model.directAgents.map((agent) => (
+                    <AgentRow key={agent.id} agent={agent} />
+                  ))}
+                </section>
+              ) : null}
+            </div>
+          </ScrollArea>
+          <footer className="flex items-center justify-between border-t border-border/60 px-3 py-1.5 font-mono text-2xs text-muted-foreground">
+            <span className="flex items-center gap-2">
+              {model.runningCount + model.waitingCount > 0 ? (
+                <span className="text-info-foreground">
+                  ● {model.runningCount + model.waitingCount} working
+                </span>
+              ) : null}
+              {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
+              {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
+            </span>
+            <span className="tabular-nums">
+              Σ {formatSubagentTokenCount(model.totalTokens)} tok
+            </span>
+          </footer>
+        </div>
+      </StopAgentContext.Provider>
+    </ConversationEnvironmentContext.Provider>
   );
 }

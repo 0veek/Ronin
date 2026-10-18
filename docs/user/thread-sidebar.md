@@ -113,6 +113,9 @@ position, so using **Un-settle** returns it to the top. Pinning and snoozing pre
 position until you move it again. Thread activity does not change the order. The settled shelf
 continues to use settlement time.
 
+Waking a snoozed thread restarts its inactivity timer, so an old conversation has time to be read
+before it settles again. Its sidebar position stays the same.
+
 If dragging is unavailable for one environment, update the Ronin server running in that
 environment. Pinned and active reordering require server support. Older servers can still pin and
 unpin threads, but do not understand synced ordering; their pinned threads keep the default

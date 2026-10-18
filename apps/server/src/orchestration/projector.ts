@@ -557,6 +557,11 @@ export function projectEvent(
           threads: updateThread(nextBase.threads, payload.threadId, {
             snoozedUntil: null,
             snoozedAt: null,
+            ...(nextBase.threads.some(
+              (thread) => thread.id === payload.threadId && thread.snoozedUntil != null,
+            )
+              ? { lastSnoozeWakeAt: payload.updatedAt }
+              : {}),
             updatedAt: payload.updatedAt,
           }),
         })),

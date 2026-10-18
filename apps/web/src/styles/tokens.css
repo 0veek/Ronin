@@ -557,6 +557,7 @@
   --provider-codex: #1baf7a;
   --provider-grok: #2a78d6;
   --provider-antigravity: #a73f9c;
+  --provider-pi: #4d9f8a;
   /* Peak opacity of an area wash. Dark canvases swallow a fill that reads
      correctly on white, so the two modes carry their own value. */
   --provider-area-opacity: 0.14;

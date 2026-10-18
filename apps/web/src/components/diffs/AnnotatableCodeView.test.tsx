@@ -51,6 +51,7 @@ describe("AnnotatableCodeView", () => {
         composerDraftTarget={"draft-test" as never}
         options={{}}
         renderHeaderPrefix={() => null}
+        onRevealSearchMatch={() => {}}
         renderHeaderFilenameSuffix={() => null}
       />,
     );

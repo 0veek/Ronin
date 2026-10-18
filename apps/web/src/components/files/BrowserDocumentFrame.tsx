@@ -55,7 +55,7 @@ export function BrowserDocumentFrame(props: {
       src={props.src}
       title={props.title}
       className={className}
-      sandbox="allow-scripts allow-forms allow-popups"
+      sandbox="allow-scripts allow-forms allow-popups allow-downloads"
     />
   );
 }
@@ -125,7 +125,7 @@ export function HtmlRenderDocument(props: {
       src={src}
       title={props.title}
       // Never allow-same-origin: the opaque origin keeps the page out of the app's session.
-      sandbox="allow-scripts allow-forms"
+      sandbox="allow-scripts allow-forms allow-downloads"
       loading="lazy"
       onLoad={() => {
         setLoaded(true);

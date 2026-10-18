@@ -1,7 +1,14 @@
 import type { EnvironmentId, UsageProviderKind } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
-import { ArrowLeftIcon, CheckIcon, InfoIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  ChevronDownIcon,
+  CheckIcon,
+  InfoIcon,
+  RefreshCwIcon,
+  XIcon,
+} from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 
 import {
@@ -13,6 +20,12 @@ import {
   type ProviderTotals,
 } from "@t3tools/shared/usageMerge";
 
+import {
+  usageLoadingState,
+  usageEnvironmentProgress,
+  updatingProvidersLabel,
+} from "@t3tools/client-runtime/state/usageProgress";
+import { withoutProviders } from "../../state/usageProviderFilter";
 import { cn } from "../../lib/utils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
@@ -38,6 +51,7 @@ import {
   makeWindow,
 } from "@t3tools/shared/usageFormat";
 import { Button, InlineButton } from "../ui/button";
+import { Menu, MenuTrigger, MenuPopup, MenuCheckboxItem, MenuSeparator } from "../ui/menu";
 import { Kbd } from "../ui/kbd";
 import { ScrollArea } from "../ui/scroll-area";
 import { SidebarInset } from "../ui/sidebar";
@@ -195,15 +209,25 @@ export function UsagePage() {
     ),
   }));
   const metric = preferences.metric;
+  const hiddenProviders = useMemo(
+    () => new Set(preferences.hiddenProviders),
+    [preferences.hiddenProviders],
+  );
+  const visibleProviders = useMemo(
+    () => PROVIDER_ORDER.filter((provider) => !hiddenProviders.has(provider)),
+    [hiddenProviders],
+  );
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const [selectedModelKey, setSelectedModelKey] = useState<string | null>(null);
   const { days: windowDays, window } = windowSelection;
   const isPast24Hours = windowDays === 1;
-  const { merged, environments, isPending, isPartial, refresh } = useUsage(window);
+  const { merged, environments, isPending, refresh } = useUsage(window, hiddenProviders);
   const selectedModel = merged.models.find(
     (model) => `${model.provider}:${model.model}` === selectedModelKey,
   );
-  const cursorAccessEnvironments = cursorKeychainAccessEnvironments(environments);
+  const cursorAccessEnvironments = hiddenProviders.has("cursor")
+    ? []
+    : cursorKeychainAccessEnvironments(environments);
   const sourceMessages = [
     ...new Set(
       environments.flatMap(
@@ -211,6 +235,7 @@ export function UsagePage() {
           environment.summary?.sources.flatMap((source) =>
             source.message &&
             !source.action &&
+            !hiddenProviders.has(source.fingerprint.provider) &&
             (source.status === "partial" ||
               source.status === "failed" ||
               source.fingerprint.provider === "cursor")
@@ -249,10 +274,36 @@ export function UsagePage() {
     return () => globalThis.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // Hold the content until every environment is terminal. Rendering merged
-  // totals while devices are still answering makes every number on the page
-  // jump as each one lands.
-  const settling = isPending || isPartial;
+  const settling = isPending;
+  const visibleEnvironments = useMemo(
+    () => withoutProviders(environments, hiddenProviders),
+    [environments, hiddenProviders],
+  );
+  const loading = useMemo(() => {
+    const state = usageLoadingState(
+      environments.map((environment) => ({
+        ...environment,
+        isConnected: environment.canReadDiagnostics,
+      })),
+    );
+    const providers = new Set(
+      [...state.providers].filter((provider) => !hiddenProviders.has(provider)),
+    );
+    return {
+      everyProvider: state.everyProvider,
+      providers,
+      partial: state.everyProvider || providers.size > 0,
+    };
+  }, [environments, hiddenProviders]);
+  const loadingProviders = useMemo(
+    () =>
+      new Set(
+        visibleProviders.filter(
+          (provider) => loading.everyProvider || loading.providers.has(provider),
+        ),
+      ),
+    [visibleProviders, loading],
+  );
 
   const days = useMemo(
     () => enumerateDays(window.sinceDay, window.untilDay),
@@ -272,7 +323,10 @@ export function UsagePage() {
     [isPast24Hours, merged.daily, merged.hourly],
   );
 
-  const orderedProviders = useMemo(() => providerRows(merged.providers), [merged.providers]);
+  const orderedProviders = useMemo(
+    () => providerRows(merged.providers).filter((entry) => !hiddenProviders.has(entry.provider)),
+    [merged.providers, hiddenProviders],
+  );
   // The table answers whichever question the metric toggle is asking, so its
   // order follows the toggle too: a cheap model that burned the most tokens
   // belongs at the top of a token breakdown.
@@ -295,7 +349,7 @@ export function UsagePage() {
   const cachedShare = observedInput === 0 ? 0 : merged.cachedInputTokens / observedInput;
   const selectWindow = (days: number) => {
     if (!isUsageWindowDays(days)) return;
-    const nextPreferences = { metric, windowDays: days };
+    const nextPreferences = { ...preferences, metric, windowDays: days };
     setPreferences(nextPreferences);
     saveUsagePagePreferences(nextPreferences);
     setWindowSelection({
@@ -304,7 +358,7 @@ export function UsagePage() {
     });
   };
   const selectMetric = (nextMetric: UsageChartMetric) => {
-    const nextPreferences = { metric: nextMetric, windowDays };
+    const nextPreferences = { ...preferences, metric: nextMetric, windowDays };
     setPreferences(nextPreferences);
     saveUsagePagePreferences(nextPreferences);
   };
@@ -354,6 +408,14 @@ export function UsagePage() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background text-foreground">
         <WorkspaceTopbar>
           <UsagePageHeader onBack={navigateBackWithinApp} />
+          <UsageProviderFilter
+            hiddenProviders={hiddenProviders}
+            onChange={(hiddenProviders) => {
+              const next = { ...preferences, hiddenProviders };
+              setPreferences(next);
+              saveUsagePagePreferences(next);
+            }}
+          />
         </WorkspaceTopbar>
 
         <ScrollArea className="min-h-0 flex-1">
@@ -400,11 +462,14 @@ export function UsagePage() {
               </p>
             ) : settling ? (
               <>
-                {environments.length > 1 ? <UsageDeviceStrip environments={environments} /> : null}
+                {environments.length > 1 ? (
+                  <UsageDeviceStrip environments={visibleEnvironments} />
+                ) : null}
                 <UsageSkeleton resolution={isPast24Hours ? "hour" : "day"} />
               </>
             ) : (
               <>
+                {loading.partial ? <UsageDeviceStrip environments={visibleEnvironments} /> : null}
                 {cursorAccessEnvironments.map((environment) => (
                   <CursorUsagePrompt
                     key={environment.environmentId}
@@ -426,7 +491,10 @@ export function UsagePage() {
                 {/* The headline answers "what did this cost", full width and on
                     its own, with the unit toggle beside it because the toggle
                     is what decides which question it is answering. */}
-                <section className="flex flex-wrap items-start justify-between gap-4 rounded-md border border-border bg-card px-5 py-4">
+                <section
+                  aria-busy={loading.partial}
+                  className="flex flex-wrap items-start justify-between gap-4 rounded-md border border-border bg-card px-5 py-4"
+                >
                   <div className="flex min-w-0 flex-col gap-1">
                     <span className="label-meta text-muted-foreground">
                       {metric === "cost" ? "Raw token cost" : "Processed tokens"}
@@ -434,7 +502,12 @@ export function UsagePage() {
                     {/* Proportional figures, not tabular: at display size a
                         fixed-width digit leaves visible gutters inside the
                         number. Columns elsewhere on the page stay tabular. */}
-                    <span className="text-4xl font-semibold tracking-tight text-foreground">
+                    <span
+                      className={cn(
+                        "text-4xl font-semibold tracking-tight text-foreground transition-opacity",
+                        loading.partial && "opacity-40 delay-150",
+                      )}
+                    >
                       {metric === "cost"
                         ? formatUsd(merged.costUsd)
                         : formatTokens(merged.totalTokens)}
@@ -442,16 +515,18 @@ export function UsagePage() {
                         <span className="text-muted-foreground/60">*</span>
                       ) : null}
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      {metric === "cost"
-                        ? `* if billed at full API rate · ${formatTokens(merged.totalTokens)} tokens across ${formatCount(merged.sessions)} sessions`
-                        : `Input, cache reads and output across ${formatCount(merged.sessions)} sessions`}
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                      <span>
+                        {metric === "cost"
+                          ? `* if billed at full API rate · ${formatTokens(merged.totalTokens)} tokens across ${formatCount(merged.sessions)} sessions`
+                          : `Input, cache reads and output across ${formatCount(merged.sessions)} sessions`}
+                      </span>
                       {metric === "cost" && merged.costQuality.unpricedShare > 0 ? (
                         <Tooltip>
                           <TooltipTrigger
                             render={
                               <InlineButton
-                                className="ml-1 align-middle"
+                                className="shrink-0"
                                 aria-label="Unpriced usage details"
                               />
                             }
@@ -491,6 +566,7 @@ export function UsagePage() {
                             <ProviderRow
                               key={provider.provider}
                               provider={provider}
+                              loading={loadingProviders.has(provider.provider)}
                               metric={metric}
                             />
                           ))}
@@ -503,9 +579,11 @@ export function UsagePage() {
                             {isPast24Hours ? "Hourly" : "Daily"}{" "}
                             {metric === "tokens" ? "processed tokens" : "cost"}
                           </h2>
-                          <UsageChartLegend />
+                          <UsageChartLegend providers={visibleProviders} />
                         </div>
                         <UsageProviderChart
+                          providers={visibleProviders}
+                          loadingProviders={loadingProviders}
                           days={days}
                           daily={merged.daily}
                           hours={hours}
@@ -571,12 +649,14 @@ export function UsagePage() {
                       {breakdown === "model" ? (
                         <ModelBreakdown
                           models={breakdownModels}
+                          loadingProviders={loadingProviders}
                           metric={metric}
                           onSelectModel={setSelectedModelKey}
                         />
                       ) : (
                         <TimeBreakdown
                           periods={breakdownPeriods}
+                          loadingProviders={loadingProviders}
                           providers={activeProviders}
                           isPast24Hours={isPast24Hours}
                           timeZone={window.timeZone}
@@ -699,9 +779,11 @@ function ProviderShareBar({
 function ProviderRow({
   provider,
   metric,
+  loading = false,
 }: {
   readonly provider: ProviderTotals;
   readonly metric: UsageChartMetric;
+  readonly loading?: boolean;
 }) {
   const share = metric === "cost" ? provider.costShare : provider.tokenShare;
   const isIdle = provider.records === 0;
@@ -710,7 +792,7 @@ function ProviderRow({
     <div
       className={cn(
         "flex flex-col gap-0.5 border-t border-border/60 py-2.5 first:border-t-0 first:pt-0 last:pb-0",
-        isIdle && "opacity-50",
+        loading ? "opacity-40 delay-150" : isIdle && "opacity-50",
       )}
     >
       <div className="flex items-baseline justify-between gap-3">
@@ -719,15 +801,21 @@ function ProviderRow({
           {PROVIDER_LABEL[provider.provider]}
         </span>
         <span className="text-sm text-foreground tabular-nums">
-          {metric === "cost" ? formatUsd(provider.costUsd) : formatTokens(provider.totalTokens)}
+          {loading && isIdle
+            ? "—"
+            : metric === "cost"
+              ? formatUsd(provider.costUsd)
+              : formatTokens(provider.totalTokens)}
         </span>
       </div>
       <span className="text-xs text-muted-foreground">
-        {isIdle
-          ? "No activity in this window"
-          : metric === "cost"
-            ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
-            : `${formatPercent(share)} of tokens · ${formatUsd(provider.costUsd)}`}
+        {loading && isIdle
+          ? "Updating…"
+          : isIdle
+            ? "No activity in this window"
+            : metric === "cost"
+              ? `${formatPercent(share)} of cost · ${formatTokens(provider.totalTokens)} tokens`
+              : `${formatPercent(share)} of tokens · ${formatUsd(provider.costUsd)}`}
       </span>
     </div>
   );
@@ -736,9 +824,11 @@ function ProviderRow({
 function ModelBreakdown({
   models,
   metric,
+  loadingProviders,
   onSelectModel,
 }: {
   readonly models: readonly ModelTotals[];
+  readonly loadingProviders: ReadonlySet<UsageProviderKind>;
   readonly metric: UsageChartMetric;
   readonly onSelectModel: (key: string) => void;
 }) {
@@ -763,7 +853,10 @@ function ModelBreakdown({
           models.map((model) => (
             <tr
               key={`${model.provider}:${model.model}`}
-              className="border-b border-border/50 last:border-b-0"
+              className={cn(
+                "border-b border-border/50 last:border-b-0 transition-opacity",
+                loadingProviders.has(model.provider) && "opacity-40 delay-150",
+              )}
             >
               <td className="py-2 text-foreground">
                 <button
@@ -815,11 +908,13 @@ function ModelBreakdown({
 
 function TimeBreakdown({
   periods,
+  loadingProviders,
   providers,
   isPast24Hours,
   timeZone,
 }: {
   readonly periods: readonly (DailyTotals | HourlyTotals)[];
+  readonly loadingProviders: ReadonlySet<UsageProviderKind>;
   /** Only providers that billed something in the window; see `providersWithUsage`. */
   readonly providers: readonly UsageProviderKind[];
   readonly isPast24Hours: boolean;
@@ -858,7 +953,13 @@ function TimeBreakdown({
                   : formatDayShort(period.day)}
               </td>
               {providers.map((provider) => (
-                <td key={provider} className="py-2 text-right text-muted-foreground tabular-nums">
+                <td
+                  key={provider}
+                  className={cn(
+                    "py-2 text-right text-muted-foreground tabular-nums transition-opacity",
+                    loadingProviders.has(provider) && "opacity-40 delay-150",
+                  )}
+                >
                   {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
                 </td>
               ))}
@@ -1011,6 +1112,16 @@ function UsageDeviceStrip({
   return (
     <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-md border border-border bg-card px-4 py-3 text-xs">
       {environments.map((environment) => {
+        const progress = usageEnvironmentProgress({
+          ...environment,
+          isConnected: environment.canReadDiagnostics,
+        });
+        if (progress.phase === "partway")
+          return (
+            <span key={environment.environmentId} className="text-muted-foreground">
+              {updatingProvidersLabel(progress.providers, (provider) => PROVIDER_LABEL[provider])}
+            </span>
+          );
         if (environment.summary !== null) {
           return (
             <span
@@ -1131,5 +1242,65 @@ function UsageSkeleton({ resolution }: { readonly resolution: "day" | "hour" }) 
         <div className="h-44 rounded-sm bg-muted/35" />
       </section>
     </>
+  );
+}
+
+/** Provider visibility shared by every tab. Stored as the hidden set. */
+function UsageProviderFilter({
+  hiddenProviders,
+  onChange,
+}: {
+  readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
+  readonly onChange: (hiddenProviders: readonly UsageProviderKind[]) => void;
+}) {
+  const visible = PROVIDER_ORDER.filter((provider) => !hiddenProviders.has(provider));
+  const label =
+    visible.length === PROVIDER_ORDER.length
+      ? "All providers"
+      : visible.length === 0
+        ? "No providers"
+        : visible.length === 1
+          ? PROVIDER_LABEL[visible[0]!]
+          : `${visible.length} providers`;
+
+  return (
+    <Menu>
+      <MenuTrigger render={<InlineButton />} className="group/usage-provider min-w-0 max-w-full">
+        <span className="min-w-0 truncate">{label}</span>
+        <ChevronDownIcon
+          className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/usage-provider:opacity-100 group-focus-visible/usage-provider:opacity-100 group-data-popup-open/usage-provider:opacity-100"
+          aria-hidden
+        />
+      </MenuTrigger>
+      <MenuPopup align="start">
+        <MenuCheckboxItem
+          checked={hiddenProviders.size === 0}
+          closeOnClick={false}
+          onCheckedChange={(checked) => onChange(checked ? [] : PROVIDER_ORDER)}
+        >
+          All providers
+        </MenuCheckboxItem>
+        <MenuSeparator />
+        {PROVIDER_ORDER.map((provider) => (
+          <MenuCheckboxItem
+            key={provider}
+            checked={!hiddenProviders.has(provider)}
+            closeOnClick={false}
+            onCheckedChange={(checked) =>
+              onChange(
+                PROVIDER_ORDER.filter((entry) =>
+                  entry === provider ? !checked : hiddenProviders.has(entry),
+                ),
+              )
+            }
+          >
+            <span className="flex min-w-0 items-center gap-2">
+              <ProviderMark provider={provider} className="size-3.5" />
+              <span className="truncate">{PROVIDER_LABEL[provider]}</span>
+            </span>
+          </MenuCheckboxItem>
+        ))}
+      </MenuPopup>
+    </Menu>
   );
 }

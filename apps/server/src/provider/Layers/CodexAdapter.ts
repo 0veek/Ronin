@@ -31,6 +31,8 @@ import {
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 import * as Crypto from "effect/Crypto";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -69,6 +71,9 @@ import {
 } from "./CodexSessionRuntime.ts";
 import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
+import { McpAppReadResourceResult } from "@t3tools/contracts";
+import * as Predicate from "effect/Predicate";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -2111,6 +2116,98 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               });
               return;
             }
+            const completedItem =
+              event.method === "item/completed" &&
+              runtimeEvents.some(
+                (mapped) =>
+                  mapped.type === "item.completed" && mapped.payload.itemType === "mcp_tool_call",
+              )
+                ? readPayload(EffectCodexSchema.V2ItemCompletedNotification, event.payload)?.item
+                : undefined;
+            const uri =
+              completedItem?.type === "mcpToolCall"
+                ? (completedItem.mcpAppUi?.resourceUri ??
+                  completedItem.mcpAppResourceUri ??
+                  completedItem.appContext?.resourceUri)
+                : undefined;
+            if (
+              completedItem?.type === "mcpToolCall" &&
+              completedItem.status === "completed" &&
+              completedItem.error == null &&
+              typeof uri === "string" &&
+              uri.startsWith("ui://") &&
+              runtime.mcpAppRequest
+            ) {
+              const rawPayload = Predicate.isObject(event.payload) ? event.payload : undefined;
+              const nativeThreadId = rawPayload?.threadId;
+              if (typeof nativeThreadId === "string") {
+                const readResource = runtime.mcpAppRequest.bind(runtime);
+                // Resource reads run off the notification reader. Legacy ingestion remains
+                // alive after the root settles, so the completed app can land afterward.
+                yield* Effect.uninterruptibleMask((restore) =>
+                  Effect.gen(function* () {
+                    const reference = yield* restore(
+                      readResource({
+                        operation: "readResource",
+                        nativeThreadId,
+                        providerInstanceId: boundInstanceId,
+                        server: completedItem.server,
+                        uri,
+                      }).pipe(
+                        Effect.flatMap(Schema.decodeUnknownEffect(McpAppReadResourceResult)),
+                        Effect.flatMap((response) =>
+                          snapshotMcpApp({
+                            attachmentsDir: serverConfig.attachmentsDir,
+                            threadId: event.threadId,
+                            server: completedItem.server,
+                            tool: completedItem.tool,
+                            resourceUri: uri,
+                            contents: response.contents,
+                          }),
+                        ),
+                        Effect.provideService(FileSystem.FileSystem, fileSystem),
+                        Effect.timeoutOption("20 seconds"),
+                        Effect.map(Option.getOrUndefined),
+                        Effect.catchCauseIf(
+                          (cause) => !Cause.hasInterruptsOnly(cause),
+                          (cause) =>
+                            Effect.logWarning(
+                              "Failed to capture MCP app; showing its tool result.",
+                              { cause },
+                            ).pipe(Effect.as(undefined)),
+                        ),
+                      ),
+                    );
+                    yield* Queue.offerAll(
+                      runtimeEventQueue,
+                      reference === undefined
+                        ? runtimeEvents
+                        : runtimeEvents.map((mapped) => {
+                            if (mapped.type !== "item.completed") return mapped;
+                            const data = Predicate.isObject(mapped.payload.data)
+                              ? mapped.payload.data
+                              : {};
+                            return {
+                              ...mapped,
+                              payload: {
+                                ...mapped.payload,
+                                data: {
+                                  ...data,
+                                  mcpApp: {
+                                    ...reference,
+                                    nativeThreadId,
+                                    providerInstanceId: boundInstanceId,
+                                  },
+                                },
+                              },
+                            };
+                          }),
+                    );
+                  }),
+                ).pipe(Effect.forkIn(sessionScope));
+                return;
+              }
+            }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);
           }),
         ).pipe(Effect.forkIn(sessionScope));
@@ -2201,6 +2298,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         : undefined;
     return yield* session.runtime
       .sendTurn({
+        ...(input.appContext === undefined ? {} : { appContext: input.appContext }),
         ...(input.input !== undefined ? { input: input.input } : {}),
         ...(input.modelSelection?.instanceId === boundInstanceId
           ? { model: input.modelSelection.model }
@@ -2216,6 +2314,23 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       })
       .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)));
   });
+
+  const mcpAppRequest: NonNullable<CodexAdapterShape["mcpAppRequest"]> = (threadId, input) =>
+    requireSession(threadId).pipe(
+      Effect.flatMap((session) =>
+        session.runtime.mcpAppRequest
+          ? session.runtime
+              .mcpAppRequest(input)
+              .pipe(Effect.mapError((cause) => mapCodexRuntimeError(threadId, "mcp-app", cause)))
+          : Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "mcp-app",
+                detail: "This Codex version cannot run MCP Apps.",
+              }),
+            ),
+      ),
+    );
 
   const requireSession = Effect.fn("requireSession")(function* (threadId: ThreadId) {
     const session = sessions.get(threadId);
@@ -2373,6 +2488,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
 
   return {
     provider: PROVIDER,
+    mcpAppRequest,
     capabilities: {
       sessionModelSwitch: "in-session",
       promptlessTurnContinuation: true,

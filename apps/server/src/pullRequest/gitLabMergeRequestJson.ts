@@ -43,6 +43,7 @@ const RawPipelineSchema = Schema.Struct({
 });
 
 const RawMergeRequestSchema = Schema.Struct({
+  sha: Schema.optional(Schema.NullOr(Schema.String)),
   iid: Schema.Int,
   title: Schema.String,
   web_url: Schema.String,
@@ -220,6 +221,7 @@ export interface GitLabMergeRequestListItem {
 }
 
 export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
+  readonly headSha?: string;
   readonly body: string;
   readonly changedFiles: number;
   readonly mergedAt: string | null;
@@ -370,6 +372,7 @@ function toDetail(raw: Schema.Schema.Type<typeof RawMergeRequestSchema>): GitLab
       : raw.merge_when_pipeline_succeeds === true || raw.auto_merge_enabled === true;
   return {
     ...listItem,
+    ...(trimmed(raw.sha) === null ? {} : { headSha: trimmed(raw.sha)! }),
     body: raw.description ?? "",
     changedFiles: toChangedFiles(raw.changes_count),
     mergedAt: trimmed(raw.merged_at),

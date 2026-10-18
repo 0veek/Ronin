@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, afterEach, describe, expect, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -10,6 +11,8 @@ import { VcsProcessExitError, VcsProcessSpawnError } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as AzureDevOpsCli from "./AzureDevOpsCli.ts";
+
+const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const processOutput = (stdout: string): VcsProcess.VcsProcessOutput => ({
   exitCode: ChildProcessSpawner.ExitCode(0),
@@ -89,6 +92,31 @@ describe("AzureDevOpsCli.layer", () => {
         cwd: "/repo",
         timeoutMs: 30_000,
       });
+      assert.strictEqual(result.isCrossRepository, false);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("marks a pull request from a fork as cross-repository", () =>
+    Effect.gen(function* () {
+      mockRun.mockReturnValueOnce(
+        Effect.succeed(
+          processOutput(
+            encodeUnknownJsonString({
+              pullRequestId: 43,
+              title: "From a fork",
+              sourceRefName: "refs/heads/main",
+              targetRefName: "refs/heads/main",
+              status: "active",
+              forkSource: { name: "refs/heads/main", repository: { name: "repo-fork" } },
+            }),
+          ),
+        ),
+      );
+
+      const az = yield* AzureDevOpsCli.AzureDevOpsCli;
+      const result = yield* az.getPullRequest({ cwd: "/repo", reference: "43" });
+
+      assert.strictEqual(result.isCrossRepository, true);
     }).pipe(Effect.provide(layer)),
   );
 

@@ -6,6 +6,7 @@ import { DraftId } from "./composerDraftStore";
 import {
   buildDraftThreadRouteParams,
   buildThreadRouteParams,
+  isThreadRouteSnapshotAuthoritative,
   resolveActiveThreadRouteRef,
   resolveThreadRouteRenderState,
   resolveThreadRouteRef,
@@ -13,6 +14,43 @@ import {
 } from "./threadRoutes";
 
 describe("threadRoutes", () => {
+  it.each(["empty", "cached", "synchronizing", "live"] as const)(
+    "only trusts a live shell when a link is missing: %s",
+    (status) => {
+      const bootstrapComplete = isThreadRouteSnapshotAuthoritative(status);
+      expect(bootstrapComplete).toBe(status === "live");
+      expect(
+        resolveThreadRouteRenderState({
+          bootstrapComplete,
+          serverThreadShellExists: false,
+          serverThreadDetailExists: false,
+          serverThreadDetailDeleted: false,
+          draftThreadExists: false,
+        }),
+      ).toBe(status === "live" ? "missing" : "loading");
+      expect(
+        resolveThreadRouteRenderState({
+          bootstrapComplete,
+          serverThreadShellExists: true,
+          serverThreadDetailExists: false,
+          serverThreadDetailDeleted: true,
+          draftThreadExists: false,
+        }),
+      ).toBe(status === "live" ? "missing" : "loading");
+    },
+  );
+  it.each(["details", "draft"])("keeps available %s visible before the shell is live", (source) => {
+    expect(
+      resolveThreadRouteRenderState({
+        bootstrapComplete: false,
+        serverThreadShellExists: source === "details",
+        serverThreadDetailExists: source === "details",
+        serverThreadDetailDeleted: false,
+        draftThreadExists: source === "draft",
+      }),
+    ).toBe("ready");
+  });
+
   it("builds canonical thread route params from a scoped ref", () => {
     const ref = scopeThreadRef("env-1" as never, ThreadId.make("thread-1"));
 

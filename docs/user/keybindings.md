@@ -162,3 +162,29 @@ Examples:
 - For a key event, the last rule where both `key` matches and `when` evaluates to `true` wins.
 - Precedence is across commands, not only within the same command. A later rule for a different
   command can take a key away from an earlier one.
+
+## Find in the current thread
+
+Press `mod+f`, use the search button in the thread header, or choose **Find in
+current thread** from the command palette. Search covers saved user messages,
+assistant messages, and proposed plans, including older turns that are not
+loaded yet. It matches displayed text and labels, without searching tool output
+or attached context.
+
+Enter and `Shift+Enter` move between matches and wrap at either end. Selecting an
+older match loads its history and reveals folded content. Escape or the close
+button closes search. Change the shortcut under **Settings** → **Keybindings**
+→ **Chat: Find in Thread**. Connected environments need a server version that
+supports thread search. Focused terminals, browser previews, and diffs keep their
+own search behavior.
+
+## Find in a diff
+
+Click into a diff in the Diff panel or a pull request's Code tab, then press
+`mod+f` to search its loaded files, including folded files and unchanged lines.
+Enter and `Shift+Enter` move between matches, and a match in a folded file opens
+it. Escape closes search. This shortcut is not configurable. Large diffs load
+files as you scroll; search covers the files loaded so far.
+
+`mod+1` through `mod+9` jump to threads. While the model picker is open,
+they select models instead, and thread jumps are inactive.

@@ -1,14 +1,15 @@
+import { observeResize } from "~/lib/observeResize";
 import {
+  type CSSProperties,
   type ReactNode,
   type RefObject,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from "react";
 
 import { isElectron } from "~/env";
-import { useResizableWidth } from "~/hooks/useResizableWidth";
+import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "~/hooks/useResizableWidth";
 import { cn } from "~/lib/utils";
 
 import { RightPanelResizeHandle } from "./RightPanelResizeHandle";
@@ -134,10 +135,15 @@ export function PreviewPanelShell(props: {
       )}
       style={
         isInline
-          ? {
-              width: maximized ? "100%" : collapsible && !open ? "0px" : `${width}px`,
+          ? ({
+              [RESIZABLE_WIDTH_PROPERTY]: `${width}px`,
+              width: maximized
+                ? "100%"
+                : collapsible && !open
+                  ? "0px"
+                  : `var(${RESIZABLE_WIDTH_PROPERTY})`,
               transitionDuration: suppressWidthTransition ? "0ms" : undefined,
-            }
+            } as CSSProperties)
           : undefined
       }
       data-preview-panel-mode={props.mode}
@@ -147,7 +153,11 @@ export function PreviewPanelShell(props: {
       <div className={cn("h-full min-h-0 w-full", collapsible && "overflow-clip")}>
         <div
           className="flex h-full min-h-0 min-w-0 flex-col"
-          style={collapsible && !maximized ? { width: `calc(${width}px - 1px)` } : undefined}
+          style={
+            collapsible && !maximized
+              ? { width: `calc(var(${RESIZABLE_WIDTH_PROPERTY}) - 1px)` }
+              : undefined
+          }
         >
           {useDragRegion ? <div className="electron-drag-region h-0 w-full" aria-hidden /> : null}
           {props.children}
@@ -167,43 +177,29 @@ export function PreviewPanelShell(props: {
  * never apply the resulting width, so they skip the observer entirely.
  */
 function useClampedMaxWidth(hostRef: RefObject<HTMLDivElement | null>, enabled: boolean): number {
-  const [vw, setVw] = useState(() => (typeof window === "undefined" ? 1280 : window.innerWidth));
-  const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
-  useEffect(() => {
+  const [maxWidth, setMaxWidth] = useState(() =>
+    getPreviewPanelMaxWidth(typeof window === "undefined" ? 1280 : window.innerWidth),
+  );
+  useLayoutEffect(() => {
     if (typeof window === "undefined") return;
+    const row = enabled ? hostRef.current?.parentElement : null;
+    const measure = () => setMaxWidth(getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth));
+    measure();
     let frame = 0;
     const onResize = () => {
-      // Coalesce rapid resize events into one rAF tick.
-      if (frame !== 0) return;
+      if (frame) return;
       frame = window.requestAnimationFrame(() => {
         frame = 0;
-        setVw(window.innerWidth);
+        measure();
       });
     };
     window.addEventListener("resize", onResize);
+    const stopObserving = row ? observeResize(row, measure) : undefined;
     return () => {
       window.removeEventListener("resize", onResize);
-      if (frame !== 0) window.cancelAnimationFrame(frame);
-    };
-  }, []);
-  useLayoutEffect(() => {
-    if (!enabled) return;
-    const parent = hostRef.current?.parentElement;
-    if (!parent) return;
-    // Measure before first paint: the persisted width must be clamped
-    // against the row on the initial render, not one observer tick later
-    // (the panel would flash over-wide on every mount). clientWidth is
-    // integral, so sub-pixel resize deltas bail out of re-rendering.
-    const measure = () => {
-      setContainerWidth(parent.clientWidth);
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(parent);
-    return () => {
-      observer.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      stopObserving?.();
     };
   }, [hostRef, enabled]);
-  return getPreviewPanelMaxWidth(vw, containerWidth);
+  return maxWidth;
 }

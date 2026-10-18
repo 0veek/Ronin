@@ -168,9 +168,13 @@ export async function readOpenCodeUsage(
           found = true;
           const id = entry.name.slice(0, -5);
           if (seen.has(`opencode:${id}`)) continue;
-          const file = { path, records: [] as UsageRecord[] };
-          files.push(file);
           try {
+            // Directory entries already identify symlinks without failed readLink calls.
+            // Only files written within the window can contain eligible messages.
+            const info = await NodeFSP.lstat(path);
+            if (!info.isFile() || info.mtimeMs < sinceMs) continue;
+            const file = { path, records: [] as UsageRecord[] };
+            files.push(file);
             append(
               file.records,
               parseOpenCodeMessage(await NodeFSP.readFile(path, "utf8"), { id }),

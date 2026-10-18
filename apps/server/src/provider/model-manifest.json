@@ -1,15 +1,24 @@
 {
   "version": 1,
-  "updatedAt": "2026-09-30T22:00:00Z",
+  "updatedAt": "2026-10-09T23:31:10Z",
   "compatibility": [
     {
       "driver": "codex",
       "t3CodeRange": ">=0.0.42",
       "recommendedRange": ">=0.156.0",
       "ranges": [
-        { "range": ">=0.156.0", "status": "supported" },
-        { "range": ">=0.149.0 <0.156.0", "status": "unsupported" },
-        { "range": "<0.149.0", "status": "broken" }
+        {
+          "range": ">=0.156.0",
+          "status": "supported"
+        },
+        {
+          "range": ">=0.149.0 <0.156.0",
+          "status": "unsupported"
+        },
+        {
+          "range": "<0.149.0",
+          "status": "broken"
+        }
       ]
     },
     {
@@ -17,9 +26,18 @@
       "t3CodeRange": ">=0.0.42",
       "recommendedRange": ">=2.1.280",
       "ranges": [
-        { "range": ">=2.1.280", "status": "supported" },
-        { "range": ">=2.1.111 <2.1.280", "status": "graceful" },
-        { "range": "<2.1.111", "status": "unsupported" }
+        {
+          "range": ">=2.1.280",
+          "status": "supported"
+        },
+        {
+          "range": ">=2.1.111 <2.1.280",
+          "status": "graceful"
+        },
+        {
+          "range": "<2.1.111",
+          "status": "unsupported"
+        }
       ]
     },
     {
@@ -27,8 +45,14 @@
       "t3CodeRange": ">=0.0.42",
       "recommendedRange": ">=2026.05.09",
       "ranges": [
-        { "range": ">=2026.05.09", "status": "supported" },
-        { "range": "<2026.05.09", "status": "unknown" }
+        {
+          "range": ">=2026.05.09",
+          "status": "supported"
+        },
+        {
+          "range": "<2026.05.09",
+          "status": "unknown"
+        }
       ]
     },
     {
@@ -36,8 +60,14 @@
       "t3CodeRange": ">=0.0.42",
       "recommendedRange": ">=1.0.13",
       "ranges": [
-        { "range": ">=1.0.13", "status": "supported" },
-        { "range": "<1.0.13", "status": "broken" }
+        {
+          "range": ">=1.0.13",
+          "status": "supported"
+        },
+        {
+          "range": "<1.0.13",
+          "status": "broken"
+        }
       ]
     },
     {
@@ -46,16 +76,30 @@
       "recommendedRange": ">=1.14.19 <2.0.0",
       "recommendedVersion": "1.14.19",
       "ranges": [
-        { "range": ">=2.0.0", "status": "broken" },
-        { "range": ">=1.14.19 <2.0.0", "status": "supported" },
-        { "range": "<1.14.19", "status": "broken" }
+        {
+          "range": ">=2.0.0",
+          "status": "broken"
+        },
+        {
+          "range": ">=1.14.19 <2.0.0",
+          "status": "supported"
+        },
+        {
+          "range": "<1.14.19",
+          "status": "broken"
+        }
       ]
     },
     {
       "driver": "antigravity",
       "t3CodeRange": ">=0.0.42",
       "recommendedRange": "=1.1.1",
-      "ranges": [{ "range": "=1.1.1", "status": "supported" }]
+      "ranges": [
+        {
+          "range": "=1.1.1",
+          "status": "supported"
+        }
+      ]
     },
     {
       "driver": "droid",
@@ -71,6 +115,21 @@
       "driver": "pi",
       "t3CodeRange": ">=0.0.42",
       "ranges": []
+    },
+    {
+      "driver": "muse",
+      "t3CodeRange": ">=0.0.46",
+      "recommendedRange": ">=1.4.6",
+      "ranges": [
+        {
+          "range": ">=1.4.6",
+          "status": "supported"
+        },
+        {
+          "range": "<1.4.6",
+          "status": "unknown"
+        }
+      ]
     }
   ],
   "currentModels": {
@@ -81,7 +140,7 @@
       "gpt-daybreak-blue-latest",
       "gpt-daybreak-red-latest"
     ],
-    "claudeAgent": ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-sonnet-5"]
+    "claudeAgent": ["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]
   },
   "providers": {
     "claudeAgent": {
@@ -129,22 +188,6 @@
                   }
                 ],
                 "promptInjectedValues": ["ultrathink"]
-              },
-              {
-                "id": "contextWindow",
-                "label": "Context Window",
-                "type": "select",
-                "options": [
-                  {
-                    "id": "200k",
-                    "label": "200k",
-                    "isDefault": true
-                  },
-                  {
-                    "id": "1m",
-                    "label": "1M"
-                  }
-                ]
               }
             ]
           },
@@ -154,15 +197,7 @@
                 "ultracode": "xhigh",
                 "ultrathink": null
               },
-              "modelSuffixes": {
-                "contextWindow": {
-                  "1m": "[1m]"
-                }
-              },
-              "contextWindowTokens": {
-                "200k": 200000,
-                "1m": 1000000
-              }
+              "fixedContextWindowTokens": 1000000
             }
           }
         },
@@ -174,37 +209,53 @@
                 "label": "Reasoning",
                 "type": "select",
                 "options": [
-                  { "id": "low", "label": "Low" },
-                  { "id": "medium", "label": "Medium", "isDefault": true },
-                  { "id": "high", "label": "High" },
-                  { "id": "xhigh", "label": "Extra High" },
-                  { "id": "max", "label": "Max" },
+                  {
+                    "id": "low",
+                    "label": "Low"
+                  },
+                  {
+                    "id": "medium",
+                    "label": "Medium",
+                    "isDefault": true
+                  },
+                  {
+                    "id": "high",
+                    "label": "High"
+                  },
+                  {
+                    "id": "xhigh",
+                    "label": "Extra High"
+                  },
+                  {
+                    "id": "max",
+                    "label": "Max"
+                  },
                   {
                     "id": "ultracode",
                     "label": "Ultracode",
                     "description": "xhigh effort plus multi-agent workflow orchestration"
                   },
-                  { "id": "ultrathink", "label": "Ultrathink" }
+                  {
+                    "id": "ultrathink",
+                    "label": "Ultrathink"
+                  }
                 ],
                 "promptInjectedValues": ["ultrathink"]
               },
-              { "id": "fastMode", "label": "Fast Mode", "type": "boolean" },
               {
-                "id": "contextWindow",
-                "label": "Context Window",
-                "type": "select",
-                "options": [
-                  { "id": "200k", "label": "200k" },
-                  { "id": "1m", "label": "1M", "isDefault": true }
-                ]
+                "id": "fastMode",
+                "label": "Fast Mode",
+                "type": "boolean"
               }
             ]
           },
           "adapter": {
             "claudeCode": {
-              "effortMap": { "ultracode": "xhigh", "ultrathink": null },
-              "modelSuffixes": { "contextWindow": { "1m": "[1m]" } },
-              "contextWindowTokens": { "200k": 200000, "1m": 1000000 }
+              "effortMap": {
+                "ultracode": "xhigh",
+                "ultrathink": null
+              },
+              "fixedContextWindowTokens": 1000000
             }
           }
         },
@@ -253,22 +304,6 @@
                 "id": "fastMode",
                 "label": "Fast Mode",
                 "type": "boolean"
-              },
-              {
-                "id": "contextWindow",
-                "label": "Context Window",
-                "type": "select",
-                "options": [
-                  {
-                    "id": "200k",
-                    "label": "200k",
-                    "isDefault": true
-                  },
-                  {
-                    "id": "1m",
-                    "label": "1M"
-                  }
-                ]
               }
             ]
           },
@@ -278,15 +313,7 @@
                 "ultracode": "xhigh",
                 "ultrathink": null
               },
-              "modelSuffixes": {
-                "contextWindow": {
-                  "1m": "[1m]"
-                }
-              },
-              "contextWindowTokens": {
-                "200k": 200000,
-                "1m": 1000000
-              }
+              "fixedContextWindowTokens": 1000000
             }
           }
         },
@@ -508,7 +535,9 @@
             ]
           },
           "adapter": {
-            "claudeCode": {}
+            "claudeCode": {
+              "fixedContextWindowTokens": 200000
+            }
           }
         },
         "sonnet-5": {
@@ -546,22 +575,6 @@
                   }
                 ],
                 "promptInjectedValues": ["ultrathink"]
-              },
-              {
-                "id": "contextWindow",
-                "label": "Context Window",
-                "type": "select",
-                "options": [
-                  {
-                    "id": "200k",
-                    "label": "200k",
-                    "isDefault": true
-                  },
-                  {
-                    "id": "1m",
-                    "label": "1M"
-                  }
-                ]
               }
             ]
           },
@@ -570,15 +583,7 @@
               "effortMap": {
                 "ultrathink": null
               },
-              "modelSuffixes": {
-                "contextWindow": {
-                  "1m": "[1m]"
-                }
-              },
-              "contextWindowTokens": {
-                "200k": 200000,
-                "1m": 1000000
-              }
+              "fixedContextWindowTokens": 1000000
             }
           }
         },
@@ -650,6 +655,53 @@
             }
           }
         },
+        "haiku-5-5": {
+          "capabilities": {
+            "optionDescriptors": [
+              {
+                "id": "effort",
+                "label": "Reasoning",
+                "type": "select",
+                "options": [
+                  {
+                    "id": "low",
+                    "label": "Low"
+                  },
+                  {
+                    "id": "medium",
+                    "label": "Medium",
+                    "isDefault": true
+                  },
+                  {
+                    "id": "high",
+                    "label": "High"
+                  },
+                  {
+                    "id": "xhigh",
+                    "label": "Extra High"
+                  },
+                  {
+                    "id": "max",
+                    "label": "Max"
+                  },
+                  {
+                    "id": "ultrathink",
+                    "label": "Ultrathink"
+                  }
+                ],
+                "promptInjectedValues": ["ultrathink"]
+              }
+            ]
+          },
+          "adapter": {
+            "claudeCode": {
+              "effortMap": {
+                "ultrathink": null
+              },
+              "fixedContextWindowTokens": 1000000
+            }
+          }
+        },
         "haiku-4-5": {
           "capabilities": {
             "optionDescriptors": [
@@ -661,7 +713,9 @@
             ]
           },
           "adapter": {
-            "claudeCode": {}
+            "claudeCode": {
+              "fixedContextWindowTokens": 200000
+            }
           }
         }
       },
@@ -669,11 +723,26 @@
         {
           "slug": "claude-opus-5-5",
           "name": "Claude Opus 5.5",
-          "aliases": ["opus-5.5", "claude-opus-5.5"],
+          "aliases": ["opus", "opus-5.5", "claude-opus-5.5"],
           "status": "current",
-          "badge": "new",
           "profile": "opus-5-5",
-          "adapter": { "claudeCode": { "minVersion": "2.1.280" } }
+          "adapter": {
+            "claudeCode": {
+              "minVersion": "2.1.280"
+            }
+          }
+        },
+        {
+          "slug": "claude-sonnet-5-5",
+          "name": "Claude Sonnet 5.5",
+          "aliases": ["sonnet", "sonnet-5.5", "claude-sonnet-5.5"],
+          "status": "current",
+          "profile": "sonnet-5",
+          "adapter": {
+            "claudeCode": {
+              "minVersion": "2.1.284"
+            }
+          }
         },
         {
           "slug": "claude-fable-5-1",
@@ -702,8 +771,8 @@
         {
           "slug": "claude-opus-5",
           "name": "Claude Opus 5",
-          "aliases": ["opus", "opus-5", "claude-opus-5.0", "claude-opus-5-0"],
-          "status": "current",
+          "aliases": ["opus-5", "claude-opus-5.0", "claude-opus-5-0"],
+          "status": "legacy",
           "profile": "opus-5",
           "adapter": {
             "claudeCode": {
@@ -749,19 +818,10 @@
           "profile": "opus-4-5"
         },
         {
-          "slug": "claude-sonnet-5-5",
-          "name": "Claude Sonnet 5.5",
-          "aliases": ["sonnet-5.5", "claude-sonnet-5.5"],
-          "status": "current",
-          "badge": "new",
-          "profile": "sonnet-5",
-          "adapter": { "claudeCode": { "minVersion": "2.1.284" } }
-        },
-        {
           "slug": "claude-sonnet-5",
           "name": "Claude Sonnet 5",
-          "aliases": ["sonnet", "sonnet-5", "claude-sonnet-5.0", "claude-sonnet-5-0"],
-          "status": "current",
+          "aliases": ["sonnet-5", "claude-sonnet-5.0", "claude-sonnet-5-0"],
+          "status": "legacy",
           "profile": "sonnet-5"
         },
         {
@@ -772,11 +832,84 @@
           "profile": "sonnet-4-6"
         },
         {
+          "slug": "claude-haiku-5-5",
+          "name": "Claude Haiku 5.5",
+          "aliases": ["haiku", "haiku-5.5", "claude-haiku-5.5"],
+          "status": "current",
+          "badge": "new",
+          "profile": "haiku-5-5",
+          "adapter": {
+            "claudeCode": {
+              "minVersion": "2.1.293"
+            }
+          }
+        },
+        {
           "slug": "claude-haiku-4-5",
           "name": "Claude Haiku 4.5",
-          "aliases": ["haiku", "haiku-4.5", "claude-haiku-4.5", "claude-haiku-4-5-20251001"],
+          "aliases": ["haiku-4.5", "claude-haiku-4.5", "claude-haiku-4-5-20251001"],
           "status": "legacy",
           "profile": "haiku-4-5"
+        }
+      ]
+    },
+    "codex": {
+      "profiles": {},
+      "models": [
+        {
+          "slug": "gpt-6.1-sol",
+          "name": "GPT-6.1 Sol",
+          "status": "current",
+          "adapter": {
+            "codex": {
+              "minVersion": "0.153.0"
+            }
+          }
+        },
+        {
+          "slug": "gpt-6-astra",
+          "name": "GPT-6 Astra",
+          "status": "current",
+          "adapter": {
+            "codex": {
+              "minVersion": "0.153.0"
+            }
+          }
+        },
+        {
+          "slug": "gpt-6-luna",
+          "name": "GPT-6 Luna",
+          "status": "current",
+          "adapter": {
+            "codex": {
+              "minVersion": "0.155.0"
+            }
+          }
+        },
+        {
+          "slug": "gpt-6-sol",
+          "name": "GPT-6 Sol",
+          "status": "legacy"
+        },
+        {
+          "slug": "gpt-5.6-sol",
+          "name": "GPT-5.6 Sol",
+          "status": "legacy"
+        },
+        {
+          "slug": "gpt-5.6-terra",
+          "name": "GPT-5.6 Terra",
+          "status": "legacy"
+        },
+        {
+          "slug": "gpt-5.6-luna",
+          "name": "GPT-5.6 Luna",
+          "status": "legacy"
+        },
+        {
+          "slug": "gpt-5.5",
+          "name": "GPT-5.5",
+          "status": "legacy"
         }
       ]
     }

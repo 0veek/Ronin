@@ -282,6 +282,53 @@ it.effect("shares detail and activity for a minute, and for ten once merged", ()
   }),
 );
 
+it.effect("lists GitHub Enterprise PRs for a stored unknown repository after host discovery", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "p1",
+          title: "enterprise",
+          workspaceRoot: "/repo",
+          repository: "team/project",
+          provider: "unknown",
+          host: "code.example.test",
+        }),
+      ],
+      providers: [
+        fakeProvider("github", {
+          /** Supplies a PR only after verifying discovery retained the Enterprise repository target. */
+          listChangeRequests: ({ host, repository }) => {
+            assert.strictEqual(host, "code.example.test");
+            assert.strictEqual(repository, "team/project");
+            return Effect.succeed({
+              items: [changeRequest(42, "2026-07-05T00:00:00Z")],
+              truncated: false,
+              continues: false,
+            });
+          },
+        }),
+      ],
+      /** Stands in for discovery claiming the custom host as GitHub. */
+      resolveHandle: ({ context }) => {
+        assert.ok(context);
+        return Effect.succeed({
+          context: {
+            ...context,
+            provider: { ...context.provider, kind: "github", name: "GitHub Self-Hosted" },
+          },
+          provider: undefined as never,
+        });
+      },
+    });
+    const result = yield* service.list({ state: "open" });
+    assert.deepStrictEqual(
+      result.entries.map(({ host, number }) => [host, number]),
+      [["code.example.test", 42]],
+    );
+  }),
+);
+
 it.effect("refines unknown self-hosted GitLab projects before listing merge requests", () =>
   Effect.gen(function* () {
     let refinementCalls = 0;
@@ -5335,4 +5382,67 @@ it.effect.each(["list", "listStats"] as const)(
       assert.deepStrictEqual(yield* Fiber.join(replacement), [1]);
       assert.strictEqual(hostCalls, 2);
     }),
+);
+
+it.effect("rechecks a state reported by another environment without trusting the report", () =>
+  Effect.gen(function* () {
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () =>
+            Effect.succeed({
+              ...hostedChangeRequest("body"),
+              state: "open",
+              updatedAt: "2026-07-02T00:00:00Z",
+            }),
+        }),
+      ],
+    });
+    yield* service.detail(reference);
+    const changes = yield* service.subscribeStateChanges;
+    const first = yield* Stream.runHead(changes).pipe(Effect.forkChild({ startImmediately: true }));
+    yield* service.reportState({ reference, state: "closed" });
+    assert.deepEqual(Option.getOrThrow(yield* Fiber.join(first)), {
+      host: "github.com",
+      repository: "acme/web",
+      number: 1,
+    });
+    assert.equal((yield* service.detail(reference)).state, "open");
+    yield* TestClock.adjust("5 minutes");
+    const again = yield* Stream.runHead(changes).pipe(Effect.forkChild({ startImmediately: true }));
+    yield* service.reportState({ reference, state: "closed" });
+    assert.isTrue(Option.isSome(yield* Fiber.join(again)));
+    assert.equal((yield* service.detail(reference)).state, "open");
+  }),
+);
+
+it.effect("reports each host's actions with its summary, so rows can offer them unread", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "p1",
+          title: "web",
+          workspaceRoot: "/repo",
+          repository: "acme/web",
+          provider: "bitbucket",
+          host: "bitbucket.org",
+        }),
+      ],
+      providers: [
+        fakeProvider("bitbucket", {
+          capabilities: {
+            ...fakeProvider("bitbucket").capabilities,
+            actions: ["merge", "close"],
+          },
+        }),
+      ],
+    });
+
+    const result = yield* service.list({ state: "open" });
+
+    assert.deepStrictEqual(result.providers[0]?.actions, ["merge", "close"]);
+  }),
 );

@@ -23,6 +23,7 @@ import type {
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
+import type { McpAppProviderRequest } from "../../mcpApps/McpAppProvider.ts";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
@@ -83,6 +84,11 @@ export interface ProviderThreadSnapshot {
 }
 
 export interface ProviderAdapterShape<TError> {
+  /** Absent for providers whose protocol does not expose MCP Apps operations. */
+  readonly mcpAppRequest?: (
+    threadId: ThreadId,
+    input: McpAppProviderRequest,
+  ) => Effect.Effect<unknown, TError>;
   /**
    * Provider kind implemented by this adapter.
    */

@@ -1,3 +1,4 @@
+import { observeResize } from "~/lib/observeResize";
 import type { LegendListRef } from "@legendapp/list/react";
 import type { AssistantCitation, MessageId, ScopedThreadRef } from "@t3tools/contracts";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
@@ -303,9 +304,7 @@ export function observeAssistantCitationSource({
     }
   });
   observer.observe(scrollNode, { childList: true, characterData: true, subtree: true });
-  const resizeObserver = new ResizeObserver(schedule);
-  resizeObserver.observe(root);
-  resizeObserver.observe(scrollNode);
+  const stopObservingResize = observeResize([root, scrollNode], schedule);
   const state = list.getState();
   const unsubscribe = [
     state.listenToPosition(itemKey, schedule),
@@ -334,7 +333,7 @@ export function observeAssistantCitationSource({
     pulseAnimation?.cancel();
     if (frame !== null) cancelAnimationFrame(frame);
     observer.disconnect();
-    resizeObserver.disconnect();
+    stopObservingResize();
     for (const stop of unsubscribe) stop();
     if (activation.cancelScroll === cancelScroll) delete activation.cancelScroll;
     clear();

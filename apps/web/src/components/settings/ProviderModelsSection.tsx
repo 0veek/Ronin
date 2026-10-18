@@ -92,8 +92,12 @@ interface ProviderModelsSectionProps {
    * `providerInstances[id].config`).
    */
   readonly onChange: (next: ReadonlyArray<CustomModelDefinition>) => void;
-  readonly onHiddenModelsChange: (next: ReadonlyArray<string>) => void;
+  readonly onHiddenModelsChange: (
+    next: ReadonlyArray<string>,
+    affectedModels?: ReadonlyArray<string>,
+  ) => void;
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
+  readonly onToggleFavorite: (model: string) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
 }
 
@@ -121,6 +125,7 @@ export function ProviderModelsSection({
   onChange,
   onHiddenModelsChange,
   onFavoriteModelsChange,
+  onToggleFavorite,
   onModelOrderChange,
 }: ProviderModelsSectionProps) {
   const [input, setInput] = useState("");
@@ -199,21 +204,15 @@ export function ProviderModelsSection({
 
   const handleToggleHidden = (slug: string) => {
     if (!canWritePreferences) return;
-    if (hiddenModelSet.has(slug)) {
-      onHiddenModelsChange(hiddenModels.filter((model) => model !== slug));
-      return;
-    }
-    onHiddenModelsChange([...hiddenModels, slug]);
+    onHiddenModelsChange(
+      hiddenModelSet.has(slug)
+        ? hiddenModels.filter((model) => model !== slug)
+        : [...hiddenModels, slug],
+      [slug],
+    );
   };
-
   const handleToggleFavorite = (slug: string) => {
-    if (!canWritePreferences) return;
-    if (favoriteModelSet.has(slug)) {
-      if (canWritePreferences)
-        onFavoriteModelsChange(favoriteModels.filter((model) => model !== slug));
-      return;
-    }
-    onFavoriteModelsChange([...favoriteModels, slug]);
+    if (canWritePreferences) onToggleFavorite(slug);
   };
 
   const handleMove = (slug: string, direction: -1 | 1) => {
@@ -244,7 +243,10 @@ export function ProviderModelsSection({
             size="xs"
             variant="ghost"
             onClick={() =>
-              onHiddenModelsChange(nextHiddenModelsForBulkToggle(models, hiddenModels))
+              onHiddenModelsChange(
+                nextHiddenModelsForBulkToggle(models, hiddenModels),
+                builtInModels.map((model) => model.slug),
+              )
             }
           >
             {allBuiltInModelsHidden ? "Enable all" : "Disable all"}

@@ -27,6 +27,8 @@ export class BearerConnectionProfile extends Schema.TaggedClass<BearerConnection
      * server reports a different address, for example after a DHCP change.
      */
     learned: Schema.optionalKey(Schema.Literal(true)),
+    /** Confirmed by the environment, since shared VPN IPv4 ranges are ambiguous. */
+    network: Schema.optionalKey(Schema.Literal("tailscale")),
   },
 ) {}
 

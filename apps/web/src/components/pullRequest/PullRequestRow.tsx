@@ -1,3 +1,4 @@
+import type { PullRequestAction } from "@t3tools/contracts";
 import { SearchIcon } from "lucide-react";
 import { PullRequestStackPopover } from "./PullRequestStackPopover";
 import {
@@ -83,6 +84,7 @@ function PullRequestRowImpl({
   statsRef,
   onSelect,
   speedMode,
+  hostActions,
   onActed,
   ...closeSweepProps
 }: {
@@ -103,6 +105,7 @@ function PullRequestRowImpl({
   statsRef?: RefCallback<HTMLDivElement>;
   onSelect: (entry: PullRequestRowTarget) => void;
   speedMode: boolean;
+  hostActions: ReadonlySet<PullRequestAction>;
   onActed: (result: PullRequestSpeedActionResult) => void;
   closing?: boolean;
   sweeping?: boolean;
@@ -247,9 +250,10 @@ function PullRequestRowImpl({
           </span>
         </span>
       </button>
-      {entry.state !== "merged" && entry.provider === "github" ? (
+      {hostActions.size > 0 ? (
         <PullRequestSpeedActions
           entry={entry}
+          hostActions={hostActions}
           visible={speedMode}
           onActed={onActed}
           {...closeSweepProps}

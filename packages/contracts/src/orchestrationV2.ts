@@ -405,6 +405,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** Manual wakes restart inactivity without changing the sidebar's sort position. */
+  lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecovery)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
@@ -960,6 +962,8 @@ export const OrchestrationV2ProviderTurnTokenUsage = Schema.Struct({
   cachedInputTokens: Schema.optional(NonNegativeInt),
   outputTokens: Schema.optional(NonNegativeInt),
   reasoningOutputTokens: Schema.optional(NonNegativeInt),
+  /** Lifetime of the prompt cache written by this report. */
+  promptCacheTtlMs: Schema.optional(PositiveInt),
   /** ISO timestamp of the provider's report; string so wire encoding is stable. */
   updatedAt: Schema.String,
 });
@@ -1078,6 +1082,8 @@ export const OrchestrationV2NotificationSource = kindUnionWithFallback(
     CommandNotificationSource,
     Schema.Struct({ kind: Schema.Literal("monitor") }),
     Schema.Struct({ kind: Schema.Literal("background_task") }),
+    /** Ronin itself, such as a restart continuing an interrupted turn. */
+    Schema.Struct({ kind: Schema.Literal("system") }),
   ],
   (kind) => Schema.Struct({ kind }),
   () => ({ kind: "background_task" }),
@@ -1980,6 +1986,7 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   lastVisitedAt: Schema.NullOr(Schema.DateTimeUtcFromString).pipe(

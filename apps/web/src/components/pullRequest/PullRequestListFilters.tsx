@@ -119,6 +119,7 @@ export function PullRequestSearchInput({
   busy?: boolean;
   onChange: (value: string) => void;
 }) {
+  const [draft, setDraft] = useState<string | null>(null);
   return (
     <div className="relative min-w-0 flex-1">
       {busy ? (
@@ -134,8 +135,13 @@ export function PullRequestSearchInput({
       )}
       <input
         type="text"
-        value={value}
-        onChange={(event) => onChange(event.currentTarget.value)}
+        value={draft ?? value}
+        onFocus={() => setDraft(value)}
+        onBlur={() => setDraft(null)}
+        onChange={(event) => {
+          setDraft(event.currentTarget.value);
+          onChange(event.currentTarget.value);
+        }}
         placeholder="Search pull requests, or label:bug"
         aria-label="Search pull requests"
         // Tracks the shared input's height at both widths, so it stays level with the icon

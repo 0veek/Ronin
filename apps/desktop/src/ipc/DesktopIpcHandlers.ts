@@ -1,6 +1,11 @@
 import * as Effect from "effect/Effect";
 
 import * as DesktopIpc from "./DesktopIpc.ts";
+import {
+  getCliCommandState,
+  installCliCommand,
+  uninstallCliCommand,
+} from "./methods/cliCommand.ts";
 import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import {
   checkAppUpdate,
@@ -89,6 +94,9 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(checkAppUpdate);
   yield* ipc.handle(downloadAppUpdate);
   yield* ipc.handle(installAppUpdate);
+  yield* ipc.handle(getCliCommandState);
+  yield* ipc.handle(installCliCommand);
+  yield* ipc.handle(uninstallCliCommand);
 
   yield* ipc.handle(getClientSettings);
   yield* ipc.handle(setClientSettings);

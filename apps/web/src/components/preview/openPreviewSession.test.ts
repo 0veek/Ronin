@@ -1,3 +1,6 @@
+import { openUrlInPreview } from "~/browser/openFileInPreview";
+import { useRightPanelStore } from "~/rightPanelStore";
+import { applyPreviewServerSnapshot, setActivePreviewTab } from "~/previewStateStore";
 import {
   DEFAULT_BROWSER_PROFILE_ID,
   FILL_PREVIEW_VIEWPORT,
@@ -31,7 +34,10 @@ const snapshot: PreviewSessionSnapshot = {
   updatedAt: "2026-06-11T23:00:00.000Z",
 };
 
-beforeEach(resetPreviewStateForTests);
+beforeEach(() => {
+  resetPreviewStateForTests();
+  useRightPanelStore.setState({ byThreadKey: {} });
+});
 
 describe("openPreviewSession", () => {
   it("creates an idle tab without recording a recently visited URL", async () => {
@@ -87,5 +93,84 @@ describe("openPreviewSession", () => {
     expect(result._tag).toBe("Failure");
     expect(readThreadPreviewState(threadRef).snapshot).toBeNull();
     expect(readThreadPreviewState(threadRef).recentlySeenUrls).toEqual([]);
+  });
+});
+
+describe("openUrlInPreview from a link", () => {
+  it("opens under the source tab's profile instead of the default", async () => {
+    const openPreview = vi.fn(async (_arg: { input: PreviewOpenInput }) =>
+      AsyncResult.success(snapshot),
+    );
+
+    await openUrlInPreview({ openPreview, threadRef, url: "https://t3.chat/", profileId: "work" });
+
+    expect(openPreview.mock.calls[0]?.[0].input.profileId).toBe("work");
+  });
+
+  it("keeps the current tab active for a background open", async () => {
+    applyPreviewServerSnapshot(threadRef, { ...snapshot, tabId: "tab-current" });
+
+    await openUrlInPreview({
+      openPreview: async () => AsyncResult.success(snapshot),
+      threadRef,
+      url: "https://t3.chat/",
+      background: true,
+    });
+
+    const state = readThreadPreviewState(threadRef);
+    expect(state.activeTabId).toBe("tab-current");
+    expect(Object.keys(state.sessions).toSorted()).toEqual(["tab-1", "tab-current"]);
+  });
+
+  it("keeps a tab the user picked while a background open was in flight", async () => {
+    applyPreviewServerSnapshot(threadRef, { ...snapshot, tabId: "tab-current" });
+    applyPreviewServerSnapshot(threadRef, { ...snapshot, tabId: "tab-other" });
+    setActivePreviewTab(threadRef, "tab-current");
+
+    await openUrlInPreview({
+      openPreview: async () => {
+        // The server activates the new tab, then the user selects another one
+        // before the open resolves.
+        applyPreviewServerSnapshot(threadRef, snapshot);
+        setActivePreviewTab(threadRef, "tab-other");
+        return AsyncResult.success(snapshot);
+      },
+      threadRef,
+      url: "https://t3.chat/",
+      background: true,
+    });
+
+    expect(readThreadPreviewState(threadRef).activeTabId).toBe("tab-other");
+  });
+
+  it("keeps the new tab when the user picks it while a background open is in flight", async () => {
+    applyPreviewServerSnapshot(threadRef, { ...snapshot, tabId: "tab-current" });
+    setActivePreviewTab(threadRef, "tab-current");
+
+    await openUrlInPreview({
+      openPreview: async () => {
+        // The server activates the new tab, then the user clicks that same tab.
+        applyPreviewServerSnapshot(threadRef, snapshot);
+        useRightPanelStore.getState().openBrowser(threadRef, snapshot.tabId);
+        return AsyncResult.success(snapshot);
+      },
+      threadRef,
+      url: "https://t3.chat/",
+      background: true,
+    });
+
+    expect(readThreadPreviewState(threadRef).activeTabId).toBe(snapshot.tabId);
+  });
+
+  it("activates the new tab for a foreground open", async () => {
+    applyPreviewServerSnapshot(threadRef, { ...snapshot, tabId: "tab-current" });
+
+    await openUrlInPreview({
+      openPreview: async () => AsyncResult.success(snapshot),
+      threadRef,
+      url: "https://t3.chat/",
+    });
+
+    expect(readThreadPreviewState(threadRef).activeTabId).toBe("tab-1");
   });
 });

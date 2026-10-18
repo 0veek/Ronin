@@ -1,5 +1,6 @@
 import { DRIVER_LABEL } from "@t3tools/shared/providerVocabulary";
 import { readHtmlRenderReference, type HtmlRenderReference } from "@t3tools/shared/htmlRender";
+import { readMcpAppReference, type McpAppReference } from "@t3tools/shared/mcpApp";
 import { AssetResource, SecretRequestActivity } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
@@ -192,12 +193,20 @@ export const PROVIDER_OPTIONS: Array<{
     available: true,
     pickerSidebarBadge: "new",
   },
+
+  {
+    value: ProviderDriverKind.make("muse"),
+    label: "Muse Code",
+    available: true,
+    pickerSidebarBadge: "new",
+  },
 ];
 
 const decodeSecretRequestActivity = Schema.decodeUnknownOption(SecretRequestActivity);
 const decodeToolOutputImages = Schema.decodeUnknownOption(Schema.Array(AssetResource));
 
 export interface WorkLogEntry {
+  mcpApp?: McpAppReference;
   htmlRender?: HtmlRenderReference;
   secretRequest?: SecretRequestActivity;
   questionAnswer?: UserInputAttachmentAnswerPayload;
@@ -953,6 +962,10 @@ function toDerivedWorkLogEntry(
   if (activity.kind === "html-render.published") {
     const reference = readHtmlRenderReference(payload?.htmlRender);
     if (reference) entry.htmlRender = reference;
+  }
+  if (activity.kind === "tool.completed") {
+    const reference = readMcpAppReference(asRecord(payload?.data)?.mcpApp);
+    if (reference) entry.mcpApp = reference;
   }
   const providerBoundary = extractProviderBoundary(activity, payload, options);
   if (providerBoundary) {

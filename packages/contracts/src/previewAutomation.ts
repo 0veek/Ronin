@@ -722,7 +722,7 @@ export class PreviewAutomationNoAvailableHostError extends Schema.TaggedErrorCla
   },
 ) {
   override get message(): string {
-    return `No preview automation host is available for ${this.operation} in environment ${this.environmentId}. Preview tools run in a Ronin desktop app that is open and connected to this environment; a headless server has no browser of its own. Do not retry. To check a page, use a headless browser from the shell, such as Playwright, or curl, or ask the user to open this thread in the Ronin desktop app.`;
+    return `No preview automation host is available for ${this.operation} in environment ${this.environmentId}. Preview tools run in a Ronin desktop app that is open and connected to this environment; a headless server has no browser of its own. Retry preview_status, then call preview_open if no tab is available. If it remains unavailable, report the browser connection failure and ask the user to open this thread in the Ronin desktop app.`;
   }
 }
 

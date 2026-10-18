@@ -386,8 +386,12 @@ interface ProviderInstanceCardProps {
   readonly hiddenModels: ReadonlyArray<string>;
   readonly favoriteModels: ReadonlyArray<string>;
   readonly modelOrder: ReadonlyArray<string>;
-  readonly onHiddenModelsChange: (next: ReadonlyArray<string>) => void;
+  readonly onHiddenModelsChange: (
+    next: ReadonlyArray<string>,
+    affectedModels?: ReadonlyArray<string>,
+  ) => void;
   readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
+  readonly onToggleFavorite: (model: string) => void;
   readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
   readonly onRunUpdate?: (() => void) | undefined;
   readonly onInstallRecommended?: (() => void) | undefined;
@@ -431,6 +435,7 @@ export function ProviderInstanceCard({
   modelOrder,
   onHiddenModelsChange,
   onFavoriteModelsChange,
+  onToggleFavorite,
   onModelOrderChange,
   onRunUpdate,
   onInstallRecommended,
@@ -464,6 +469,18 @@ export function ProviderInstanceCard({
     enabled,
   );
   const updateCommand = versionAdvisory?.updateCommand ?? null;
+  const updateState = liveProvider?.updateState;
+  // The server reports each update step. `isUpdating` also covers the moment
+  // between the click and the server's first report.
+  const updateProgress = isUpdating
+    ? ((updateState?.status === "queued" || updateState?.status === "running"
+        ? updateState.message
+        : null) ?? "Starting update")
+    : null;
+  const updateProblem =
+    !isUpdating && (updateState?.status === "failed" || updateState?.status === "unchanged")
+      ? updateState.message
+      : null;
   const hasCompatibilityWarning =
     compatibility !== undefined &&
     compatibility.status !== "supported" &&
@@ -678,9 +695,13 @@ export function ProviderInstanceCard({
                 ? "text-warning hover:text-warning"
                 : "text-update-foreground hover:text-update-foreground",
             )}
-            aria-label={`${versionAdvisory.title} — view details`}
+            aria-label={`${updateProgress ? "Updating" : versionAdvisory.title} — view details`}
           >
-            <VersionAdvisoryIcon className="size-3.5" />
+            {updateProgress ? (
+              <Spinner className="size-3.5 animate-spin" />
+            ) : (
+              <VersionAdvisoryIcon className="size-3.5" />
+            )}
           </Button>
         }
       />
@@ -719,6 +740,17 @@ export function ProviderInstanceCard({
                   ? `Install ${getProviderVersionLabel(versionAdvisory.targetVersion)}`
                   : "Update now"}
             </Button>
+          ) : null}
+          {updateProgress || updateProblem ? (
+            <p
+              aria-live="polite"
+              className={cn(
+                "text-xs leading-snug [overflow-wrap:anywhere]",
+                updateProblem ? "text-warning" : "text-muted-foreground",
+              )}
+            >
+              {updateProgress ?? updateProblem}
+            </p>
           ) : null}
           {onRunVersionAction && updateCommand ? (
             <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -799,12 +831,14 @@ export function ProviderInstanceCard({
               {versionAdvisoryNode}
             </span>
             <span className="mt-0.5 flex items-start gap-1.5 text-sm leading-[1.45] text-muted-foreground/80">
-              {statusDotNode ? (
+              {statusDotNode && !updateProgress ? (
                 <span className="flex h-[1.45em] shrink-0 items-center">{statusDotNode}</span>
               ) : null}
-              <span className="line-clamp-2 [overflow-wrap:anywhere]">
-                {summary.headline}
-                {(needsAttention || hasCompatibilityWarning) && inlineStatusDetail
+              <span aria-live="polite" className="line-clamp-2 [overflow-wrap:anywhere]">
+                {updateProgress ? `Updating · ${updateProgress}` : summary.headline}
+                {!updateProgress &&
+                (needsAttention || hasCompatibilityWarning) &&
+                inlineStatusDetail
                   ? ` · ${inlineStatusDetail}`
                   : null}
               </span>
@@ -960,6 +994,10 @@ export function ProviderInstanceCard({
             className={cn("px-4 py-5 lg:h-full lg:min-h-0", readOnly && "opacity-50 select-none")}
             hidden={visibleTab !== "models"}
           >
+            <p className="mb-3 text-xs text-muted-foreground">
+              Favorites, visibility, and ordering are saved on the selected environment and shared
+              with its connected clients.
+            </p>
             <ProviderModelsSection
               canManageCustomModels={!readOnly}
               canWritePreferences={canWriteSettings}
@@ -973,6 +1011,7 @@ export function ProviderInstanceCard({
               onChange={updateCustomModels}
               onHiddenModelsChange={onHiddenModelsChange}
               onFavoriteModelsChange={onFavoriteModelsChange}
+              onToggleFavorite={onToggleFavorite}
               onModelOrderChange={onModelOrderChange}
             />
           </div>

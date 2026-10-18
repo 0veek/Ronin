@@ -1,3 +1,4 @@
+import { AgentScope, AgentScopeThreadId } from "@t3tools/shared/AgentScope";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -244,6 +245,9 @@ interface PendingCompaction {
  * reads the logger off the tag.
  */
 export interface ProviderServiceLiveOptions {
+  readonly readMcpAppContext?: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ReadonlyArray<{ readonly key: string; readonly text: string }>>;
   readonly canonicalEventLogger?: EventNdjsonLogger;
   /**
    * Overrides MCP credential issuance. The real issuer reads a module-global
@@ -398,6 +402,7 @@ const correlateRuntimeEventWithInstance = (
 const makeProviderService = Effect.fn("makeProviderService")(function* (
   options?: ProviderServiceLiveOptions,
 ) {
+  const agentScope = yield* AgentScope;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const eventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
   // Options-provided logger wins (test overrides); otherwise we take whatever
@@ -999,6 +1004,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         });
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         yield* prepareMcpSession(threadId, resolvedInstanceId);
+        yield* agentScope.clear(threadId);
         const session = yield* adapter
           .startSession({
             ...input,
@@ -1006,6 +1012,10 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             ...(effectiveCwd !== undefined ? { cwd: effectiveCwd } : {}),
             ...(effectiveResumeCursor !== undefined ? { resumeCursor: effectiveResumeCursor } : {}),
           })
+          .pipe(
+            Effect.provideService(AgentScope, agentScope),
+            Effect.provideService(AgentScopeThreadId, threadId),
+          )
           .pipe(Effect.onError(() => clearMcpSession(threadId)));
 
         if (session.provider !== adapter.provider) {
@@ -1195,7 +1205,16 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       // rather than issuing a new one: sessions that go a long time between
       // browser tool calls used to lose the toolkit outright.
       yield* McpSessionRegistry.touchActiveMcpThread(input.threadId);
-      const turn = yield* routed.adapter.sendTurn(input);
+      const appContext =
+        routed.adapter.mcpAppRequest && options?.readMcpAppContext
+          ? yield* options.readMcpAppContext(input.threadId)
+          : [];
+      const { appContext: _untrustedAppContext, ...trustedInput } = input;
+      const turn = yield* routed.adapter.sendTurn({
+        ...trustedInput,
+        // Never accept app context from the caller; it comes from stored app notes.
+        ...(appContext.length === 0 ? {} : { appContext }),
+      });
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,
@@ -1428,6 +1447,26 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       );
     },
   );
+
+  const mcpAppRequest: ProviderServiceMethod<"mcpAppRequest"> = Effect.fn(
+    "ProviderService.mcpAppRequest",
+  )(function* (threadId, input) {
+    const routed = yield* resolveRoutableSession({
+      threadId,
+      operation: "ProviderService.mcpAppRequest",
+      allowRecovery: false,
+    });
+    if (!routed.isActive) return yield* new ProviderSessionNotFoundError({ threadId });
+    if (routed.instanceId !== input.providerInstanceId)
+      return yield* new ProviderSessionNotFoundError({ threadId });
+    if (!routed.adapter.mcpAppRequest) {
+      return yield* new ProviderOperationUnsupportedError({
+        provider: routed.adapter.provider,
+        operation: "MCP Apps",
+      });
+    }
+    return yield* routed.adapter.mcpAppRequest(routed.threadId, input);
+  });
 
   const respondToRequest: ProviderServiceMethod<"respondToRequest"> = Effect.fn("respondToRequest")(
     function* (rawInput) {
@@ -1841,6 +1880,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     compactThread,
     interruptTurn,
     stopAgent,
+    mcpAppRequest,
     respondToRequest,
     respondToUserInput,
     stopSession,

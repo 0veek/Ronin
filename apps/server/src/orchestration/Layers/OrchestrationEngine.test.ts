@@ -417,6 +417,7 @@ describe("OrchestrationEngine", () => {
     const layer = OrchestrationEngineLive.pipe(
       Layer.provide(
         Layer.succeed(ProjectionSnapshotQuery, {
+          getTaskActivity: () => Effect.die("unused task activity query"),
           getUserInputActivity: () => Effect.die("unused"),
           listActivitiesByKind: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.succeed(commandReadModel),
@@ -455,6 +456,14 @@ describe("OrchestrationEngine", () => {
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+          searchThread: () =>
+            Effect.succeed({
+              snapshotSequence: 0,
+              totalMatches: 0,
+              activeIndex: 0,
+              navigation: [],
+              match: null,
+            }),
           searchThreads: () => Effect.succeed({ matches: [] }),
         }),
       ),

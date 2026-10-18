@@ -1,3 +1,5 @@
+import { NewProjectPublishControls } from "./NewProjectPublishControls";
+import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import { AuthFilesystemReadScope } from "@t3tools/contracts";
 
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
@@ -10,8 +12,9 @@ import {
   getCloneDestinationPath,
   getCloneDirectoryName,
   getDefaultCloneUrl,
-  getNewProjectGitHubRepository,
-  getNewProjectGitHubTarget,
+  getNewProjectRepository,
+  getNewProjectPublishTarget,
+  getNewProjectPublishTargets,
   getNewProjectPathPreview,
   normalizePastedCloneUrl,
 } from "@t3tools/client-runtime/operations/projects";
@@ -39,7 +42,6 @@ import {
   type KeybindingCommand,
   type ProjectId,
   type SourceControlDiscoveryResult,
-  type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
@@ -186,7 +188,6 @@ import {
 } from "./CommandPaletteResults";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon, ForgejoIcon } from "./Icons";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
-import { Checkbox } from "./ui/checkbox";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
@@ -198,7 +199,11 @@ import {
   CommandPaletteMetaDot,
   ThreadCommandSubtitle,
 } from "./ThreadCommandSubtitle";
-import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
+import {
+  ThreadSearchPullRequestNumber,
+  ThreadRowLeadingStatus,
+  ThreadRowTrailingStatus,
+} from "./ThreadStatusIndicators";
 import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
 import { deriveProviderInstanceEntries, type ProviderInstanceEntry } from "../providerInstances";
 import { useBoardUiStore } from "../boardUiStore";
@@ -313,10 +318,7 @@ interface AddProjectEnvironmentOption {
   readonly status: string;
 }
 
-type AddProjectRemoteProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
->;
+type AddProjectRemoteProviderKind = "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops";
 type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
 type AddProjectCloneFlow =
@@ -891,7 +893,8 @@ function OpenCommandPaletteDialog(props: {
     readonly environmentId: EnvironmentId;
     readonly sourcesEnvironmentId: EnvironmentId | null;
   } | null>(null);
-  const [newProjectPublishesToGitHub, setNewProjectPublishesToGitHub] = useState(false);
+  const [newProjectPublishes, setNewProjectPublishes] = useState(false);
+  const [newProjectPublishKind, setNewProjectPublishKind] = useState<string | null>(null);
   const [isCreatingNewProject, setIsCreatingNewProject] = useState(false);
   const newProjectSubmittingRef = useRef(false);
   const createNewProject = useNewProject();
@@ -1458,7 +1461,12 @@ function OpenCommandPaletteDialog(props: {
         sortOrder: clientSettings.sidebarThreadSortOrder,
         icon: <MessageSquareIcon className={ITEM_ICON_CLASS} />,
         renderLeadingContent: (thread) => <ThreadRowLeadingStatus thread={thread} />,
-        renderTrailingContent: (thread) => <ThreadRowTrailingStatus thread={thread} />,
+        renderTrailingContent: (thread) => (
+          <>
+            <ThreadSearchPullRequestNumber thread={thread} query={threadSearchQuery} />
+            <ThreadRowTrailingStatus thread={thread} />
+          </>
+        ),
         renderDescription: (thread, { projectTitle }) => {
           const modelInstanceId =
             thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
@@ -1522,6 +1530,7 @@ function OpenCommandPaletteDialog(props: {
       providerEntryByEnvironmentAndInstanceId,
       threadContentMatchByKey,
       threadSearch.query,
+      threadSearchQuery,
       threads,
     ],
   );
@@ -1633,7 +1642,8 @@ function OpenCommandPaletteDialog(props: {
       setAddProjectEnvironmentId(environmentId);
       setAddProjectCloneFlow(null);
       setNewProjectFlow({ environmentId, sourcesEnvironmentId });
-      setNewProjectPublishesToGitHub(false);
+      setNewProjectPublishes(false);
+      setNewProjectPublishKind(null);
       pushPaletteView({
         addonIcon: <FolderGit2Icon className={ADDON_ICON_CLASS} />,
         groups: [],
@@ -1951,7 +1961,7 @@ function OpenCommandPaletteDialog(props: {
           </>
         ),
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: "chat.new",
+        shortcutCommand: "chat.newLocal",
         run: async () => {
           await startNewThreadFromContext({
             activeDraftThread,
@@ -1986,6 +1996,23 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  if (
+    activeThread &&
+    environments.find((e) => e.environmentId === activeThread.environmentId)?.serverConfig
+      ?.threadFind === true
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "find-current-thread",
+      title: "Find in current thread",
+      searchTerms: ["find", "search", "messages", "plans"],
+      icon: <TextSearchIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.find",
+      run: async () => {
+        requestThreadFindOpen();
+      },
+    });
+  }
   if (activeThreadReferenceCopyTarget !== null) {
     actionItems.push({
       kind: "action",
@@ -2587,8 +2614,12 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
-  const newProjectGitHubTarget =
-    newProjectFlow === null ? null : getNewProjectGitHubTarget(sourceControlDiscovery.data ?? null);
+  const newProjectPublishTargets =
+    newProjectFlow === null ? [] : getNewProjectPublishTargets(sourceControlDiscovery.data ?? null);
+  const newProjectPublishTarget = getNewProjectPublishTarget(
+    newProjectPublishTargets,
+    newProjectPublishKind,
+  );
   const newProjectName = query.trim();
   const canSubmitNewProject =
     newProjectFlow !== null &&
@@ -2604,7 +2635,7 @@ function OpenCommandPaletteDialog(props: {
       const created = await createNewProject({
         environmentId: newProjectFlow.environmentId,
         name: newProjectName,
-        github: newProjectPublishesToGitHub ? newProjectGitHubTarget : null,
+        publishTo: newProjectPublishes ? newProjectPublishTarget : null,
       });
       if (created) setOpen(false);
     } finally {
@@ -2910,7 +2941,7 @@ function OpenCommandPaletteDialog(props: {
   const newProjectsRoot = newProjectFlow ? newProjectsRootFor(newProjectFlow.environmentId) : null;
   const newProjectPathPreview =
     newProjectsRoot === null ? null : getNewProjectPathPreview(newProjectsRoot, newProjectName);
-  const newProjectGitHubToggleValue = "new-project:github";
+  const newProjectPublishToggleValue = "new-project:publish";
   const showExistingProjectSources = (environmentId: EnvironmentId) => {
     const sourcesEnvironmentId = newProjectFlow?.sourcesEnvironmentId ?? null;
     if (sourcesEnvironmentId === environmentId) {
@@ -2987,7 +3018,7 @@ function OpenCommandPaletteDialog(props: {
           ],
         };
   const newProjectOptionGroups: CommandPaletteView["groups"] =
-    newProjectGitHubTarget === null || newProjectPathPreview === null
+    newProjectPublishTarget === null || newProjectPathPreview === null
       ? []
       : [
           {
@@ -2996,21 +3027,33 @@ function OpenCommandPaletteDialog(props: {
             items: [
               {
                 kind: "action",
-                value: newProjectGitHubToggleValue,
+                value: newProjectPublishToggleValue,
                 searchTerms: [],
-                title: "Create private repository on GitHub",
+                title:
+                  newProjectPublishTargets.length > 1
+                    ? "Create private repository"
+                    : `Create private repository on ${newProjectPublishTarget.definition.label}`,
                 description:
                   newProjectName.length > 0
-                    ? getNewProjectGitHubRepository(newProjectGitHubTarget, newProjectPathPreview)
-                    : (newProjectGitHubTarget.account ?? "Your GitHub account"),
-                icon: <GitHubIcon className={ITEM_ICON_CLASS} />,
+                    ? getNewProjectRepository(newProjectPublishTarget, newProjectPathPreview)
+                    : (newProjectPublishTarget.owner ??
+                      `Your ${newProjectPublishTarget.definition.label} account`),
+                icon: remoteProjectSourceIcon(
+                  newProjectPublishTarget.definition.kind,
+                  ITEM_ICON_CLASS,
+                ),
                 titleTrailingContent: (
-                  <span className="pointer-events-none ms-auto flex">
-                    <Checkbox checked={newProjectPublishesToGitHub} tabIndex={-1} aria-hidden />
-                  </span>
+                  <NewProjectPublishControls
+                    targets={newProjectPublishTargets}
+                    target={newProjectPublishTarget}
+                    checked={newProjectPublishes}
+                    disabled={isCreatingNewProject}
+                    onHostChange={setNewProjectPublishKind}
+                  />
                 ),
                 keepOpen: true,
-                run: async () => setNewProjectPublishesToGitHub((publishes) => !publishes),
+                disabled: isCreatingNewProject,
+                run: async () => setNewProjectPublishes((publishes) => !publishes),
               },
             ],
           },
@@ -3139,6 +3182,15 @@ function OpenCommandPaletteDialog(props: {
         .find((item) => item.shortcutCommand === command);
       if (matchingItem) {
         executeItem(matchingItem);
+      }
+      return;
+    }
+    if (command === "chat.find") {
+      const item = actionItems.find((item) => item.shortcutCommand === "chat.find");
+      if (item) {
+        event.preventDefault();
+        event.stopPropagation();
+        executeItem(item);
       }
       return;
     }
@@ -3408,7 +3460,7 @@ function OpenCommandPaletteDialog(props: {
     newProjectFlow !== null
       ? highlightedItemValue === null
         ? "Create"
-        : highlightedItemValue === newProjectGitHubToggleValue
+        : highlightedItemValue === newProjectPublishToggleValue
           ? "Toggle"
           : "Select"
       : addProjectCloneFlow?.step === "repository"

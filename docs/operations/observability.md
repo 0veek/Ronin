@@ -150,6 +150,9 @@ Default Grafana login:
 
 #### 2. Export OTLP env vars
 
+You can also save trace and metric endpoints in Diagnostics. See the
+[user guide](../user/telemetry.md). Environment variables take precedence.
+
 ```bash
 export T3CODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces
 export T3CODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics

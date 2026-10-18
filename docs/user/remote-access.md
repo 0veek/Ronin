@@ -296,3 +296,10 @@ Use `t3 auth --help` and the nested subcommand help pages for the full reference
 - Anyone with a valid pairing credential can create a session until that credential expires or is revoked.
 - Hosted pairing links keep the credential in the URL hash so it is not sent to the hosted app server, but it can still be exposed through browser history, screenshots, logs, or copy/paste.
 - Use `t3 auth` to revoke credentials or sessions you no longer trust.
+
+Open **Settings → Connections → Permissions** to see what your current connection
+can do. For a saved remote environment, choose **Permissions** beside **Routes**.
+The list applies to the active route; other routes are not checked and may grant
+different permissions. Reconnect to refresh a session that has expired or been revoked.
+
+An address in `100.64.0.0/10` is labeled **VPN** until the environment confirms it belongs to its Tailscale interface. Other VPNs, including Cloudflare WARP, use that range too. Confirmed Tailscale addresses and MagicDNS names keep the **Tailscale** label.

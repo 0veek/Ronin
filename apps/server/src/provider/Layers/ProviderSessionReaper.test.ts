@@ -164,6 +164,7 @@ describe("ProviderSessionReaper", () => {
     );
 
     const providerService: ProviderServiceShape = {
+      mcpAppRequest: () => Effect.die("unused"),
       startSession: () => unsupported(),
       sendTurn: () => unsupported(),
       compactThread: () => unsupported(),
@@ -212,6 +213,7 @@ describe("ProviderSessionReaper", () => {
       Layer.provideMerge(Layer.succeed(ProviderService, providerService)),
       Layer.provideMerge(
         Layer.succeed(ProjectionSnapshotQuery, {
+          getTaskActivity: () => Effect.die("unused task activity query"),
           getUserInputActivity: () => Effect.die("unused"),
           listActivitiesByKind: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.die("unused"),
@@ -239,6 +241,14 @@ describe("ProviderSessionReaper", () => {
             ),
           getThreadDetailById: () => Effect.die("unused"),
           getThreadDetailSnapshot: () => Effect.die("unused"),
+          searchThread: () =>
+            Effect.succeed({
+              snapshotSequence: 0,
+              totalMatches: 0,
+              activeIndex: 0,
+              navigation: [],
+              match: null,
+            }),
           searchThreads: () => Effect.succeed({ matches: [] }),
         }),
       ),

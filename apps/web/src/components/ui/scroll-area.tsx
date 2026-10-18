@@ -34,7 +34,8 @@ function ScrollArea({
           "h-full max-h-[inherit] overflow-auto overscroll-contain rounded-[inherit] focus-ring data-has-overflow-x:overscroll-x-contain",
           chainVerticalScroll && "overscroll-y-auto",
           scrollFade &&
-            "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] mask-l-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-start)))] mask-r-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-end)))] [--fade-size:1.5rem]",
+            "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] mask-l-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-start)))] mask-r-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-x-end)))] focus-visible:mask-none [--fade-size:1.5rem]",
+          scrollFade && !scrollFadePadding && "has-focus-visible:mask-none",
           scrollFade && scrollFadePadding && "scroll-p-[var(--fade-size)]",
           scrollbarGutter && "scrollbar-gutter-stable",
           hideScrollbars &&

@@ -23,8 +23,14 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
-import { readProjects, readThreadShell, useProjects, useThread } from "../state/entities";
+import { resolveNewThreadEnvMode } from "@t3tools/shared/threadEnvMode";
+import {
+  readProjects,
+  readThreadShell,
+  readThreadShells,
+  useProjects,
+  useThread,
+} from "../state/entities";
 import {
   hasExplicitComposerModelSelection,
   resolveNewDraftStartFromOrigin,
@@ -159,7 +165,7 @@ export function useNewThreadHandler() {
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
         if (isScratch) return "local";
         const consultProjectFile = project !== undefined && project.defaultThreadEnvMode == null;
-        return resolveDefaultThreadEnvMode({
+        return resolveNewThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,
           projectFile: consultProjectFile
             ? await readT3ProjectFileDefaultThreadEnvMode(
@@ -168,6 +174,15 @@ export function useNewThreadHandler() {
               )
             : null,
           globalDefault: primaryServerSettings.defaultThreadEnvMode,
+          workspaceRoot: project?.workspaceRoot ?? null,
+          newProjectsRoot: appAtomRegistry
+            .get(environmentServerConfigsAtom)
+            .get(projectRef.environmentId)?.newProjectsRoot,
+          projectHasThreads: readThreadShells().some(
+            (thread) =>
+              thread.environmentId === projectRef.environmentId &&
+              thread.projectId === projectRef.projectId,
+          ),
         });
       };
       const logicalProjectKey = project

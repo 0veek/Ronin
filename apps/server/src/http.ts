@@ -85,7 +85,8 @@ export function downloadContentDisposition(fileName?: string): string {
 // HTML previews are agent output, not the app. The sandbox gives the document an
 // opaque origin: scripts run, but same-origin cookies, storage, and API calls are
 // out of reach. Relative sibling assets still load through their signed URLs.
-const HTML_CONTENT_SECURITY_POLICY = "sandbox allow-scripts allow-forms allow-popups";
+const HTML_CONTENT_SECURITY_POLICY =
+  "sandbox allow-scripts allow-forms allow-popups allow-downloads";
 
 export function assetResponseHeaders(
   filePath: string,

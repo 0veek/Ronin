@@ -79,6 +79,7 @@ export function AutomationModelField({
       {usesOverride && pickerSelection && activeEntry ? (
         <div className="flex flex-wrap items-center gap-1.5">
           <ProviderModelPicker
+            environmentId={environmentId}
             disabled={disabled}
             preserveMissingModel
             activeInstanceId={pickerSelection.instanceId}

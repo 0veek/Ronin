@@ -117,6 +117,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       never send the commands under version skew. */
   threadSettlement: Schema.optionalKey(Schema.Boolean),
   /** Server evaluates merge and inactivity settlement without a client. */
+  otlpEndpointCheck: Schema.optionalKey(Schema.Boolean),
   threadAutoSettlement: Schema.optionalKey(Schema.Boolean),
   /** Server persists the opt-in for continuing interrupted threads after restarts. */
   threadRestartContinuation: Schema.optionalKey(Schema.Boolean),

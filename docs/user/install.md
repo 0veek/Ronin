@@ -71,7 +71,8 @@ to use, then authenticate it.
 | Antigravity | Antigravity CLI                                       | `agy`          | the CLI's own sign-in |
 | Droid       | Factory Droid CLI                                     | `droid`        | `droid`               |
 | Kilo        | Kilo CLI (`@kilocode/cli`)                            | `kilo`         | the CLI's own sign-in |
-| Pi          | Pi (`@earendil-works/pi-coding-agent`)                | `pi`           | the CLI's own sign-in |
+| Pi          | [Pi setup](./providers-pi.md#install), Node.js 22.19+ | `pi`           | `pi`, then `/login`   |
+| Muse Code   | [Muse Code](https://muse.meta.com)                    | `muse`         | `muse login`          |
 
 Codex, Claude, and Cursor are on by default. Every other provider is off by default; turn one on
 in **Settings** → the provider's card when you want to use it.
@@ -114,6 +115,19 @@ authenticated shows its status in **Settings** and fails at session start with t
 to run.
 
 For multi-account setups, see [Codex](./providers-codex.md) and [Claude](./providers-claude.md).
+
+## The `t3` command
+
+The desktop app includes the `t3` command-line tool. Open **Settings → General → About**
+and choose **Install** next to **t3 command** to use it from a terminal. On macOS and
+Linux it links the launcher into a command folder; on Windows it adds the launcher's
+folder to your PATH. Open a new terminal afterwards. If the folder is outside your
+PATH, Settings shows where to add it. **Remove** undoes the installation and preserves
+any existing npm installation of `t3`.
+
+On macOS and Linux, if another `t3` runs first on PATH, Settings shows its location
+and installation stops. Remove that command or adjust PATH before installing
+Ronin's launcher.
 
 ## Next Steps
 

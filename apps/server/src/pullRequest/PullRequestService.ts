@@ -38,6 +38,7 @@ import {
   type PullRequestDiffInput,
   type PullRequestDiffResult,
   type PullRequestInvalidateInput,
+  type PullRequestReportStateInput,
   type PullRequestListEntry,
   type PullRequestListFilters,
   type PullRequestListInput,
@@ -215,6 +216,13 @@ export class PullRequestService extends Context.Service<
       never,
       Scope.Scope
     >;
+    /**
+     * The state a read routed to another environment saw. A new one reaches
+     * `subscribeStateChanges`, so the host is asked again; the report itself is never trusted.
+     */
+    readonly reportState: (
+      input: PullRequestReportStateInput,
+    ) => Effect.Effect<void, PullRequestError>;
     readonly subscribeRefreshes: Stream.Stream<number>;
     readonly refreshAfterTurn: (projectId: ProjectId) => Effect.Effect<void>;
     readonly detail: (input: PullRequestRef) => Effect.Effect<PullRequestDetail, PullRequestError>;
@@ -1093,20 +1101,24 @@ export const make = Effect.gen(function* () {
       // One summary per host, which is what the viewer lookup already answers for: two GitHub
       // hosts sign in separately, so collapsing them by kind would report one as the other.
       const providers: ReadonlyArray<PullRequestProviderSummary> = [
-        ...viewerResults.map((result) => ({
-          host: result.host,
-          kind: result.kind,
-          searchesOnHost:
-            projects.find((project) => project.host === result.host)?.api.capabilities.search ??
-            false,
-          projectCount: projectCounts.get(result.host) ?? 1,
-          configured: result.viewer !== null,
-          detail: result.error === null ? null : providerDetail(result.error),
-        })),
+        ...viewerResults.map((result) => {
+          const capabilities = projects.find((project) => project.host === result.host)?.api
+            .capabilities;
+          return {
+            host: result.host,
+            kind: result.kind,
+            searchesOnHost: capabilities?.search ?? false,
+            actions: capabilities?.actions ?? [],
+            projectCount: projectCounts.get(result.host) ?? 1,
+            configured: result.viewer !== null,
+            detail: result.error === null ? null : providerDetail(result.error),
+          };
+        }),
         ...[...unimplemented].map(([host, { kind, projectCount }]) => ({
           host,
           kind,
           searchesOnHost: false,
+          actions: [],
           projectCount,
           configured: false,
           detail: "This host cannot be browsed here yet.",
@@ -1612,6 +1624,7 @@ export const make = Effect.gen(function* () {
             deletions: changeRequest.deletions,
             changedFiles: changeRequest.changedFiles,
             headBranch: changeRequest.headBranch,
+            ...(changeRequest.headSha == null ? {} : { headSha: changeRequest.headSha }),
             ...(changeRequest.headRepositoryNameWithOwner === undefined
               ? {}
               : { headRepositoryNameWithOwner: changeRequest.headRepositoryNameWithOwner }),
@@ -2516,6 +2529,7 @@ export const make = Effect.gen(function* () {
   const refEpochs = new Map<string, number>();
   const projectEpochs = new Map<ProjectId, number>();
   let projectEpochFloor = 0;
+  const REPORTED_STATE_DEDUPE_MS = 5 * 60 * 1_000;
   const REF_EPOCH_CAPACITY = 2_048;
   const refScope = (ref: PullRequestRef) =>
     JSON.stringify([
@@ -2831,6 +2845,36 @@ export const make = Effect.gen(function* () {
           })
         : Effect.void;
     });
+  // The last state each routed read reported, kept apart from `detailStates`: an unverified report
+  // must never outrank a reading this environment made itself.
+  const reportedStates = new Map<
+    string,
+    { readonly state: PullRequestState; readonly atMs: number }
+  >();
+  const reportState: PullRequestService["Service"]["reportState"] = ({ reference, state }) =>
+    Effect.all([canonicalRef(reference), Clock.currentTimeMillis]).pipe(
+      Effect.flatMap(([ref, nowMs]) =>
+        Effect.suspend(() => {
+          const scope = refScope(ref);
+          const reported = reportedStates.get(scope);
+          if (reported?.state === state && nowMs - reported.atMs < REPORTED_STATE_DEDUPE_MS)
+            return Effect.void;
+          reportedStates.delete(scope);
+          if (reportedStates.size >= REF_EPOCH_CAPACITY) {
+            const oldest = reportedStates.keys().next().value;
+            if (oldest !== undefined) reportedStates.delete(oldest);
+          }
+          reportedStates.set(scope, { state, atMs: nowMs });
+          return ref.host === undefined
+            ? Effect.void
+            : PubSub.publish(stateChanges, {
+                host: ref.host,
+                repository: ref.repository,
+                number: ref.number,
+              });
+        }),
+      ),
+    );
   const detail: PullRequestService["Service"]["detail"] = (input) => {
     const key = refCacheKey(input);
     // Record the summary from a host or cache read, not the stale value
@@ -3079,6 +3123,7 @@ export const make = Effect.gen(function* () {
     subscribeStateChanges: PubSub.subscribe(stateChanges).pipe(
       Effect.map((subscription) => Stream.fromSubscription(subscription)),
     ),
+    reportState,
     subscribeRefreshes: SubscriptionRef.changes(pullRequestRefreshes).pipe(
       Stream.filter((revision) => revision > 0),
     ),

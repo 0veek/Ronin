@@ -684,6 +684,14 @@ export const DesktopPreviewTabStateSchema: Schema.Codec<DesktopPreviewTabState> 
   updatedAt: Schema.String,
 });
 
+/** A `target="_blank"` link the previewed page asked to open beside itself. */
+export interface DesktopPreviewOpenLinkEvent {
+  tabId: string;
+  url: string;
+  /** True for middle-click / Cmd-click, which should not take focus. */
+  background: boolean;
+}
+
 export interface DesktopPreviewPointerEvent {
   tabId: string;
   phase: "move" | "click";
@@ -1155,7 +1163,22 @@ export const DesktopPreviewAutomationWaitForInputSchema = Schema.Struct({
  */
 export type DesktopWindowVibrancy = "vibrancy" | "acrylic";
 
+export const DesktopCliCommandStateSchema = Schema.Struct({
+  supported: Schema.Boolean,
+  installedPath: Schema.NullOr(Schema.String),
+  onPath: Schema.Boolean,
+  /** Another t3 earlier on PATH; installation refuses while it runs first. */
+  shadowedBy: Schema.optional(Schema.String),
+});
+export type DesktopCliCommandState = typeof DesktopCliCommandStateSchema.Type;
+
 export interface DesktopBridge {
+  /** Optional for older desktop builds and browser clients. */
+  cliCommand?: {
+    getState: () => Promise<DesktopCliCommandState>;
+    install: () => Promise<DesktopCliCommandState>;
+    uninstall: () => Promise<DesktopCliCommandState>;
+  };
   getAppBranding: () => DesktopAppBranding | null;
   setNotificationBadge?: (badge: { count: number; image: string | null }) => Promise<void>;
   onNotificationBadgeClear?: (listener: () => void) => () => void;
@@ -1388,6 +1411,7 @@ export interface DesktopPreviewBridge {
   };
   onStateChange: (listener: (tabId: string, state: DesktopPreviewTabState) => void) => () => void;
   onPointerEvent: (listener: (event: DesktopPreviewPointerEvent) => void) => () => void;
+  onOpenLink: (listener: (event: DesktopPreviewOpenLinkEvent) => void) => () => void;
 }
 
 export type ConfirmDialogVariant = "default" | "destructive";

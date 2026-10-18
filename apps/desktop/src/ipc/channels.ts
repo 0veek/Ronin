@@ -107,3 +107,8 @@ export const CHECK_APP_UPDATE_CHANNEL = "desktop:check-app-update";
 export const DOWNLOAD_APP_UPDATE_CHANNEL = "desktop:download-app-update";
 export const INSTALL_APP_UPDATE_CHANNEL = "desktop:install-app-update";
 export const APP_UPDATE_STATE_CHANNEL = "desktop:app-update-state";
+export const CLI_COMMAND_GET_STATE_CHANNEL = "desktop:cli-command-get-state";
+export const CLI_COMMAND_INSTALL_CHANNEL = "desktop:cli-command-install";
+export const CLI_COMMAND_UNINSTALL_CHANNEL = "desktop:cli-command-uninstall";
+
+export const PREVIEW_OPEN_LINK_CHANNEL = "desktop:preview-open-link";

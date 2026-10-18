@@ -33,6 +33,7 @@ export interface SettingsSearchAvailability {
  * subtitles both render from this record, so each label exists once.
  */
 export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
+  "/settings/diagnostics": SETTINGS_PAGE_META["/settings/diagnostics"].label,
   "/settings/general": SETTINGS_PAGE_META["/settings/general"].label,
   "/settings/appearance": SETTINGS_PAGE_META["/settings/appearance"].label,
   "/settings/keybindings": SETTINGS_PAGE_META["/settings/keybindings"].label,
@@ -55,6 +56,19 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
  * here once instead of separately in the panel and the index.
  */
 export const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "app-version",
+    title: "Version",
+    to: "/settings/general",
+    searchTerms: ["about check for updates download install upgrade release"],
+  },
+  {
+    id: "cli-command",
+    title: "t3 command",
+    to: "/settings/general",
+    searchTerms: ["cli terminal shell path install command line"],
+    desktopOnly: true,
+  },
   {
     id: "source-control-worktrees-location",
     title: "Worktree location",
@@ -333,6 +347,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/general",
   },
   {
+    id: "telemetry-export",
+    title: "OpenTelemetry export",
+    to: "/settings/diagnostics",
+    targetId: "telemetry-export",
+    searchTerms: ["OTel OTLP telemetry export endpoints traces metrics Grafana"],
+  },
+  {
     id: "diagnostics",
     title: "Diagnostics",
     searchTerms: ["logs traces processes resource history failures spans cpu memory"],
@@ -537,6 +558,26 @@ export const SETTINGS_SEARCH_ITEMS = [
       "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
     ],
     to: "/settings/source-control",
+  },
+  {
+    id: "review-guides",
+    title: "Review guides (beta)",
+    to: "/settings/source-control",
+    searchTerms: ["pull request pr guided review guide tour beta"],
+  },
+  {
+    id: "review-guide-model",
+    title: "Review guide model",
+    to: "/settings/source-control",
+    targetId: "review-guides",
+    searchTerms: ["pull request pr tour claude codex model"],
+  },
+  {
+    id: "review-guide-instructions",
+    title: "Review guide instructions",
+    to: "/settings/source-control",
+    targetId: "review-guides",
+    searchTerms: ["pull request pr guide preferences instructions prompt"],
   },
   {
     id: "github-accounts",

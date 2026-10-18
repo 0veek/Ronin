@@ -1,3 +1,4 @@
+import { changeRequestProviderKindFromUrl } from "@t3tools/shared/sourceControl";
 import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
@@ -26,7 +27,11 @@ import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../sta
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveChangeRequestPresentation } from "../sourceControlPresentation";
-import { resolveThreadStatusPill, type ThreadStatusPill } from "./Sidebar.logic";
+import {
+  pullRequestMatchesSearchQuery,
+  resolveThreadStatusPill,
+  type ThreadStatusPill,
+} from "./Sidebar.logic";
 import type { SidebarThreadSummary } from "../types";
 import { formatWorktreePathForDisplay } from "../worktreeCleanup";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
@@ -111,15 +116,7 @@ export function linkedPullRequestSnapshotStatus(
 ): LinkedThreadPullRequestStatus | null {
   const snapshot = link.snapshot;
   if (snapshot === null) return null;
-  const kind = link.url.includes("/-/merge_requests/")
-    ? "gitlab"
-    : link.url.includes("/pullrequest/")
-      ? "azure-devops"
-      : link.url.includes("/pull-requests/")
-        ? "bitbucket"
-        : link.url.includes("/pulls/")
-          ? "forgejo"
-          : "github";
+  const kind = changeRequestProviderKindFromUrl(link.url) ?? "github";
   return {
     pr: {
       number: link.number,
@@ -596,4 +593,46 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
       ) : null}
     </span>
   );
+}
+
+/** Shows the PR number that made a compact thread search result match. */
+export function ThreadSearchPullRequestNumber({
+  thread,
+  query,
+  enabled = true,
+}: {
+  thread: SidebarThreadSummary;
+  query: string;
+  enabled?: boolean;
+}) {
+  const matchedLink = visibleThreadPullRequests(thread.pullRequests).find((pr) =>
+    pullRequestMatchesSearchQuery({ pullRequests: [pr] }, query),
+  );
+  const candidates =
+    thread.pullRequests.length === 0
+      ? [thread.linkedPullRequest, thread.branchPullRequest]
+      : [thread.branchPullRequest];
+  const fallback = matchedLink
+    ? undefined
+    : candidates.find(
+        (pr) => pr != null && pullRequestMatchesSearchQuery({ linkedPullRequest: pr }, query),
+      );
+  const legacyStatus = useLinkedThreadPullRequest(
+    thread.environmentId,
+    fallback,
+    enabled,
+    undefined,
+    fallback,
+  );
+  const reference = matchedLink ?? fallback;
+  const linked = matchedLink ? linkedPullRequestSnapshotStatus(matchedLink) : legacyStatus;
+  const status = prStatusIndicator(linked?.pr ?? null, linked?.sourceControlProvider);
+  return reference ? (
+    <span
+      className={cn("shrink-0 text-xs tabular-nums", status?.colorClass ?? "text-muted-foreground")}
+      aria-label={status?.tooltip ?? `Pull request #${reference.number}`}
+    >
+      #{reference.number}
+    </span>
+  ) : null;
 }

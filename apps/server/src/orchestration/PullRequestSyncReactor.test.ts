@@ -19,6 +19,7 @@ import * as Crypto from "effect/Crypto";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import { GitManager } from "../git/GitManager.ts";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Queue from "effect/Queue";
@@ -205,6 +206,7 @@ const makeHarness = Effect.fn("makePullRequestSyncHarness")(function* (options: 
   };
 
   const dependencies = Layer.mergeAll(
+    Layer.mock(GitManager)({ subscribePullRequestStateChanges: Effect.succeed(Stream.empty) }),
     Layer.mock(ProjectionSnapshotQuery)({
       listThreadsWithPullRequests: () =>
         Queue.offer(snapshotReads, undefined).pipe(

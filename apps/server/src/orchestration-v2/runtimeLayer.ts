@@ -159,6 +159,7 @@ export function layerWithAdapters<R>(adapters: Layer.Layer<ProviderAdapterRegist
     Layer.provide(Layer.merge(projectionStoreLayer, providerSessionManagerProvided)),
   );
   const checkpointRollbackServiceProvided = checkpointRollbackServiceLayer.pipe(
+    Layer.provide(ThreadCommandExecutor.layer),
     Layer.provide(
       Layer.mergeAll(
         ProjectStore.layer,

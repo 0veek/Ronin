@@ -103,6 +103,7 @@ interface AnnotatableCodeViewProps {
    * which is what every read-only surface wants.
    */
   hunkActions?: DiffHunkActionsConfig | undefined;
+  onRevealSearchMatch: (fileKey: string) => void;
 }
 
 interface DiffSelectionContext {
@@ -121,6 +122,7 @@ export function AnnotatableCodeView({
   renderHeaderFilenameSuffix,
   renderHeaderPrefix,
   hunkActions,
+  onRevealSearchMatch,
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
@@ -260,6 +262,7 @@ export function AnnotatableCodeView({
       items={items}
       selectedLines={selectedLines}
       onSelectedLinesChange={setSelectedLines}
+      onRevealSearchMatch={(item) => onRevealSearchMatch(item.id)}
       options={{
         ...options,
         enableGutterUtility: !hasOpenComment,

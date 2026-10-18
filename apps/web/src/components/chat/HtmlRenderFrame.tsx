@@ -1,3 +1,4 @@
+import { observeResize } from "~/lib/observeResize";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
@@ -39,11 +40,9 @@ export function HtmlRenderFrame(props: {
     const box = boxRef.current;
     if (!box) return;
     setWidth(box.clientWidth);
-    const observer = new ResizeObserver(([entry]) => {
+    return observeResize(box, ([entry]) => {
       if (entry) setWidth(entry.contentRect.width);
     });
-    observer.observe(box);
-    return () => observer.disconnect();
   }, []);
   // Client fonts can wrap a page taller than the server measured it; a frame
   // left short would scroll inside the thread and take the reader's scroll.

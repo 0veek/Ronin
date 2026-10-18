@@ -25,6 +25,42 @@ import {
 
 let nextActivityId = 0;
 
+it("retains an MCP app as a completed tool entry while collapsing its earlier lifecycle rows", () => {
+  const app = {
+    attachmentId: "thread-app-html",
+    server: "weather",
+    tool: "show",
+    resourceUri: "ui://weather/app",
+    nativeThreadId: "native",
+    providerInstanceId: "codex",
+  };
+  const entries = deriveWorkLogEntries([
+    makeActivity({
+      id: EventId.make("app-start"),
+      kind: "tool.updated",
+      payload: {
+        itemType: "mcp_tool_call",
+        status: "inProgress",
+        data: { item: { id: "app-item", type: "mcpToolCall", server: "weather", tool: "show" } },
+      },
+    }),
+    makeActivity({
+      id: EventId.make("app-complete"),
+      kind: "tool.completed",
+      payload: {
+        itemType: "mcp_tool_call",
+        status: "completed",
+        data: {
+          mcpApp: app,
+          item: { id: "app-item", type: "mcpToolCall", server: "weather", tool: "show" },
+        },
+      },
+    }),
+  ]);
+  expect(entries.filter((entry) => entry.mcpApp)).toHaveLength(1);
+  expect(entries.find((entry) => entry.mcpApp)).toMatchObject({ id: "app-complete", mcpApp: app });
+});
+
 it("keeps a published page as its own timeline entry without retaining page bytes", () => {
   const htmlRender = { attachmentId: "thread-page", title: "Chart", height: 420 };
   const entries = deriveWorkLogEntries([

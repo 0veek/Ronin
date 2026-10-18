@@ -1,3 +1,5 @@
+import { SessionPermissions } from "./SessionPermissions";
+import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import * as Schema from "effect/Schema";
 import { AuthFilesystemReadScope } from "@t3tools/contracts";
 import { canRevokeOtherClients } from "./ConnectionsSettings.logic";
@@ -18,15 +20,10 @@ import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthSettingsWriteScope,
-  AuthProvidersManageScope,
   AuthEnvironmentMaintainScope,
   AuthDiagnosticsReadScope,
-  AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
-  AuthPreviewOperateScope,
-  AuthSourceControlWriteScope,
   AuthStandardClientScopes,
-  AuthTerminalOperateScope,
   AuthTerminalReadScope,
   type AuthClientSession,
   type AuthEnvironmentScope,
@@ -65,6 +62,7 @@ import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 import { EnvironmentIconPicker } from "./EnvironmentIconPicker";
 import { GitHubRoutingSettings } from "./GitHubRoutingSettings";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
+import { isLocalEnvironmentDisabled } from "../../localEnvironment";
 import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { Input } from "../ui/input";
 import { CommandShortcut } from "../ui/command";
@@ -175,83 +173,6 @@ function formatAccessTimestamp(value: string): string {
   }
   return accessTimestampFormatter.format(parsed);
 }
-
-const PAIRING_SCOPE_OPTIONS: ReadonlyArray<{
-  readonly scope: AuthGrantScope;
-  readonly title: string;
-  readonly description: string;
-}> = [
-  {
-    scope: AuthOrchestrationReadScope,
-    title: "View environment",
-    description: "Read threads, status, checkpoints, and configuration.",
-  },
-  {
-    scope: AuthOrchestrationOperateScope,
-    title: "Operate tasks",
-    description: "Start, update, and stop tasks.",
-  },
-  {
-    scope: AuthSettingsWriteScope,
-    title: "Change environment settings",
-    description: "Edit environment preferences and keybindings.",
-  },
-  {
-    scope: AuthProvidersManageScope,
-    title: "Manage providers",
-    description: "Configure, install, sign in to, and update providers and usage sources.",
-  },
-  {
-    scope: AuthEnvironmentMaintainScope,
-    title: "Maintain environment",
-    description: "Update the server and control environment processes.",
-  },
-  {
-    scope: AuthPreviewOperateScope,
-    title: "Control previews",
-    description: "Open browser previews and host browser automation.",
-  },
-  {
-    scope: AuthDiagnosticsReadScope,
-    title: "View diagnostics and usage",
-    description: "Read process diagnostics, resource history, and usage totals.",
-  },
-  {
-    scope: AuthTerminalReadScope,
-    title: "View terminals",
-    description: "Read existing terminal output and status.",
-  },
-  {
-    scope: AuthTerminalOperateScope,
-    title: "Use terminals",
-    description: "Create terminals and send input to running shells.",
-  },
-  {
-    scope: AuthSourceControlWriteScope,
-    title: "Change source control",
-    description: "Commit, push, manage branches and repositories, and change pull requests.",
-  },
-  {
-    scope: AuthFilesystemReadScope,
-    title: "Read files",
-    description: "Browse host files, search workspaces, and inspect local changes.",
-  },
-  {
-    scope: "filesystem:write",
-    title: "Write files",
-    description: "Edit workspace files and save plans to disk.",
-  },
-  {
-    scope: AuthAccessReadScope,
-    title: "View access",
-    description: "Inspect pairing links and authorized clients.",
-  },
-  {
-    scope: AuthAccessWriteScope,
-    title: "Manage access",
-    description: "Issue and revoke credentials for other clients.",
-  },
-];
 
 function AccessScopeSummary({
   scopes,
@@ -891,7 +812,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                       role="radio"
                       aria-checked={isSelected}
                       className={cn(
-                        "flex w-full items-baseline gap-2 rounded-lg border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "flex w-full items-baseline gap-2 rounded-lg border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                         isSelected
                           ? "border-foreground/60 bg-muted/30"
                           : "border-border/50 hover:bg-muted/20",
@@ -1482,6 +1403,7 @@ function SavedBackendListRow({
   onAddRoute,
 }: SavedBackendListRowProps) {
   const [routesOpen, setRoutesOpen] = useState(false);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
   const environmentId = environment.environmentId;
   const connectionState = environment.connection.phase;
   const unsupported = connectionState === "unsupported";
@@ -1633,6 +1555,15 @@ function SavedBackendListRow({
           >
             {connectionRoutes(environment.entry).length} routes
           </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            aria-expanded={permissionsOpen}
+            aria-controls={`remote-permissions-${environmentId}`}
+            onClick={() => setPermissionsOpen((open) => !open)}
+          >
+            Permissions
+          </Button>
           <Switch
             checked={enabled}
             disabled={removingEnvironmentId === environmentId || unsupported}
@@ -1649,6 +1580,11 @@ function SavedBackendListRow({
           </Button>
         </div>
       </div>
+      {permissionsOpen && (
+        <div id={`remote-permissions-${environmentId}`} className="mt-2 border-t border-border/50">
+          <SessionPermissions environmentId={environmentId} connected={isConnected} routeContext />
+        </div>
+      )}
       {routesOpen ? (
         <EnvironmentRoutesList
           environment={environment}
@@ -2906,6 +2842,17 @@ export function ConnectionsSettings() {
                 }
               />
             ) : null}
+            {primaryEnvironment && (
+              <details className="group px-3 sm:px-4">
+                <summary className="flex min-h-11 cursor-pointer items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  Permissions
+                </summary>
+                <SessionPermissions
+                  environmentId={primaryEnvironment.environmentId}
+                  connected={primaryEnvironment.connection.phase === "connected"}
+                />
+              </details>
+            )}
             {desktopBridge ? (
               <>
                 {renderNetworkAccessRow()}
@@ -3097,8 +3044,13 @@ export function ConnectionsSettings() {
   );
 
   return (
-    <SettingsPageContainer className="max-w-6xl">
+    <SettingsPageContainer>
       {primarySettings}
+      {!canManageLocalBackend && isLocalEnvironmentDisabled() ? (
+        <SettingsSection title="This computer">
+          <LocalEnvironmentSetting />
+        </SettingsSection>
+      ) : null}
       <SettingsSection
         {...searchableSetting("remote-environments")}
         title="Environments"

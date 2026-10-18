@@ -31,7 +31,8 @@ const KNOWN_SHARED_DIRECTORIES = [
 
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "models_cache.json"]);
 const SHADOW_LOCAL_ENTRY_NAMES = new Set(["log", "memories", "tmp"]);
-const REPLACEABLE_SHARED_RUNTIME_DIRECTORIES = new Set(["mcp-oauth-locks"]);
+// Runtime locks created before the shared home has them must also become shared links.
+const REPLACEABLE_SHARED_RUNTIME_ENTRIES = new Set(["mcp-oauth-locks", ".sqlite-maintenance.lock"]);
 
 function resolveHomePath(path: Path.Path, value: string | undefined): string {
   const expanded =
@@ -243,7 +244,7 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
   );
 
   if (state._tag === "NotSymlink") {
-    if (!REPLACEABLE_SHARED_RUNTIME_DIRECTORIES.has(input.entryName)) {
+    if (!REPLACEABLE_SHARED_RUNTIME_ENTRIES.has(input.entryName)) {
       return yield* new CodexShadowHomeEntryConflictError({
         sharedHomePath: input.sharedHomePath,
         effectiveHomePath: input.effectiveHomePath,

@@ -6,6 +6,9 @@ import {
   AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
   ThreadId,
+  CommandId,
+  ProjectId,
+  ORCHESTRATION_WS_METHODS,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSourceControlWriteScope,
@@ -27,6 +30,22 @@ import {
 import * as RpcAuthorization from "./RpcAuthorization.ts";
 
 describe("RPC authorization scopes", () => {
+  it("requires settings access when project metadata carries executable scripts", () => {
+    const command = {
+      type: "project.meta.update",
+      commandId: CommandId.make("scripts"),
+      projectId: ProjectId.make("project"),
+    };
+    expect(
+      RpcAuthorization.requiredScopesForRpcCall(ORCHESTRATION_WS_METHODS.dispatchCommand, command),
+    ).toEqual([AuthOrchestrationOperateScope]);
+    expect(
+      RpcAuthorization.requiredScopesForRpcCall(ORCHESTRATION_WS_METHODS.dispatchCommand, {
+        ...command,
+        scripts: [],
+      }),
+    ).toEqual([AuthOrchestrationOperateScope, AuthSettingsWriteScope]);
+  });
   it("declares exactly one scope for every RPC in the server group", () => {
     expect(new Set(Object.keys(RPC_REQUIRED_SCOPES))).toEqual(new Set(WsRpcGroup.requests.keys()));
   });
@@ -100,6 +119,43 @@ it("requires operate permission for tool updates even alongside a read-only chec
   );
   expect(requiredScopeForDeviceList({ updateTool: "hub" })).toBe(AuthSettingsWriteScope);
 });
+
+it.effect("requires settings access before checking an OTLP endpoint", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (
+          tag,
+        ): tag is Exclude<
+          keyof typeof RPC_REQUIRED_SCOPES,
+          typeof WS_METHODS.serverCheckOtlpEndpoint
+        > => tag !== WS_METHODS.serverCheckOtlpEndpoint,
+      ),
+    );
+    let calls = 0;
+    const handler = group.toLayerHandler(WS_METHODS.serverCheckOtlpEndpoint, () =>
+      Effect.sync(() => {
+        calls++;
+        return { _tag: "Accepted" as const, latencyMs: 1 };
+      }),
+    );
+    const input = { signal: "traces" as const, url: "http://collector/v1/traces" };
+    const denied = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.mergeAll(handler, RpcAuthorization.layer([AuthDiagnosticsReadScope]))),
+    );
+    expect(
+      yield* denied[WS_METHODS.serverCheckOtlpEndpoint](input).pipe(Effect.flip),
+    ).toMatchObject({ requiredPermission: AuthSettingsWriteScope });
+    expect(calls).toBe(0);
+    const allowed = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(Layer.mergeAll(handler, RpcAuthorization.layer([AuthSettingsWriteScope]))),
+    );
+    expect(yield* allowed[WS_METHODS.serverCheckOtlpEndpoint](input)).toMatchObject({
+      _tag: "Accepted",
+    });
+    expect(calls).toBe(1);
+  }).pipe(Effect.scoped),
+);
 
 describe("RPC scope middleware", () => {
   const tested = [WS_METHODS.serverProbe, WS_METHODS.serverRetryResourceTelemetry] as const;

@@ -761,6 +761,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             ...existingRow.value,
             snoozedUntil: null,
             snoozedAt: null,
+            lastSnoozeWakeAt:
+              existingRow.value.snoozedUntil == null
+                ? existingRow.value.lastSnoozeWakeAt
+                : event.payload.updatedAt,
             updatedAt: event.payload.updatedAt,
           });
           return;

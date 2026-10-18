@@ -1,3 +1,5 @@
+import { ThreadSearchPullRequestNumber } from "./ThreadStatusIndicators";
+import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { EnvironmentId } from "@t3tools/contracts";
 import { discardComposerDraft } from "../lib/discardComposerDraft";
 import { requestCustomSnooze } from "./CustomSnoozeDialog";
@@ -50,6 +52,7 @@ import {
   ClockIcon,
   EyeIcon,
   FolderIcon,
+  ListFilterIcon,
   GitBranchIcon,
   MessageCircleQuestionIcon,
   PinIcon,
@@ -1119,6 +1122,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   environmentLabel: string | null;
   environmentMachine: EnvironmentMachineKind;
   projectCwd: string | null;
+  scratchWorkspaceRoot?: string | null | undefined;
+  showScratchMachine?: boolean;
   projectFaviconPath: string | null;
   projectIcon: ProjectIconOverride | null;
   projectTitle: string | null;
@@ -1321,6 +1326,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // that is every thread, which is the point: the glyph is what tells rows on
   // different machines apart.
   const isRemote = thread.environmentId !== props.currentEnvironmentId;
+  const showsScratchMachine =
+    !thread.branch &&
+    props.showScratchMachine &&
+    props.projectCwd !== null &&
+    isScratchProject({ workspaceRoot: props.projectCwd }, props.scratchWorkspaceRoot) &&
+    props.environmentLabel !== null;
 
   const detailsTooltip = (
     <SidebarThreadTooltip
@@ -1671,7 +1682,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               type="button"
               aria-label="Unpin thread"
               onClick={handleUnpinClick}
-              className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+              className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             />
           }
         >
@@ -1732,7 +1743,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               hover so the tail stays scannable when you're hunting. */}
             <span
               className={cn(
-                "shrink-0 transition-opacity",
+                "flex shrink-0 items-center transition-opacity",
                 (!props.isActive || variantAction === "unsettle") &&
                   "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
               )}
@@ -1960,7 +1971,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                                 aria-label="Dismiss Woke notification"
                                 onClick={handleAcknowledgeWokeClick}
                                 className={cn(
-                                  "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring",
+                                  "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                                   topStatus.className,
                                 )}
                               >
@@ -2081,6 +2092,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     className="flex-1 text-muted-foreground/40"
                   />
                 </>
+              ) : showsScratchMachine ? (
+                <>
+                  <EnvironmentMachineIcon
+                    aria-hidden
+                    kind={props.environmentMachine}
+                    className="size-3 shrink-0 text-muted-foreground/40"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground/40">
+                    {props.environmentLabel}
+                  </span>
+                </>
               ) : (
                 <span className="flex-1" />
               )}
@@ -2088,15 +2110,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               {prBadge}
               {diff ? (
                 <span className="shrink-0 font-mono">
-                  <span className="text-diff-addition-foreground">+{diff.insertions}</span>{" "}
-                  <span className="text-diff-deletion-foreground">−{diff.deletions}</span>
+                  <span className="text-diff-addition-foreground">
+                    +{formatDiffCount(diff.insertions)}
+                  </span>{" "}
+                  <span className="text-diff-deletion-foreground">
+                    −{formatDiffCount(diff.deletions)}
+                  </span>
                 </span>
               ) : null}
               <span
                 aria-hidden
                 className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
               >
-                {isRemote ? (
+                {isRemote && !showsScratchMachine ? (
                   <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
                     <EnvironmentMachineIcon
                       aria-hidden
@@ -2143,6 +2169,7 @@ function latestTurnDiff(
 }
 
 const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
+  searchQuery: string;
   thread: SidebarThreadSummary;
   projectCwd: string | null;
   projectFaviconPath: string | null;
@@ -2258,6 +2285,11 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
             className="size-4 shrink-0"
           />
           <span className="min-w-0 flex-1 truncate">{thread.title}</span>
+          <ThreadSearchPullRequestNumber
+            thread={thread}
+            query={props.searchQuery}
+            enabled={leaseLiveStatus}
+          />
           <span className="shrink-0 text-xs text-muted-foreground/55 tabular-nums">
             {threadTimeLabel(thread)}
           </span>
@@ -4943,7 +4975,7 @@ export default function Sidebar() {
                         />
                       </span>
                     ) : (
-                      <FolderIcon className="size-4" />
+                      <ListFilterIcon className="size-4" />
                     )}
                   </ComboboxTrigger>
                   <ComboboxPopup
@@ -5099,6 +5131,7 @@ export default function Sidebar() {
                     );
                     return (
                       <SidebarSearchResultRow
+                        searchQuery={threadSearchQuery}
                         key={threadKey}
                         thread={thread}
                         projectCwd={
@@ -5276,6 +5309,10 @@ export default function Sidebar() {
                               showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
                             }
                             currentEnvironmentId={primaryEnvironmentId}
+                            showScratchMachine={showProjectEnvironments}
+                            scratchWorkspaceRoot={
+                              serverConfigs.get(thread.environmentId)?.scratchWorkspaceRoot
+                            }
                             environmentLabel={
                               environmentLabelById.get(thread.environmentId) ?? null
                             }
@@ -5552,3 +5589,4 @@ export default function Sidebar() {
     </>
   );
 }
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";

@@ -1,3 +1,4 @@
+import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
 import { useAtomValue } from "@effect/atom-react";
 import {
   AuthOrchestrationOperateScope,
@@ -238,13 +239,10 @@ function getMenuActionDisabledReason({
   if (!hasBranch) {
     return `Detached HEAD: check out a branch before creating a ${terminology.singular}.`;
   }
-  if (hasChanges) {
-    return `Commit local changes before creating a ${terminology.singular}.`;
-  }
   if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
     return `Add an "origin" remote before creating a ${terminology.singular}.`;
   }
-  if (!isAhead) {
+  if ((gitStatus.aheadOfDefaultCount ?? gitStatus.aheadCount) <= 0) {
     return `No local commits to include in a ${terminology.singular}.`;
   }
   if (isBehind) {
@@ -1348,9 +1346,13 @@ export default function GitActionsControl({
                                     <span className="text-muted-foreground">Excluded</span>
                                   ) : (
                                     <>
-                                      <span className="text-diff-addition">+{file.insertions}</span>
+                                      <span className="text-diff-addition">
+                                        +{formatDiffCount(file.insertions)}
+                                      </span>
                                       <span className="text-muted-foreground"> / </span>
-                                      <span className="text-diff-deletion">-{file.deletions}</span>
+                                      <span className="text-diff-deletion">
+                                        -{formatDiffCount(file.deletions)}
+                                      </span>
                                     </>
                                   )}
                                 </span>
@@ -1362,11 +1364,11 @@ export default function GitActionsControl({
                     </ScrollArea>
                     <div className="flex justify-end font-mono">
                       <span className="text-diff-addition">
-                        +{selectedFiles.reduce((sum, f) => sum + f.insertions, 0)}
+                        +{formatDiffCount(selectedFiles.reduce((sum, f) => sum + f.insertions, 0))}
                       </span>
                       <span className="text-muted-foreground"> / </span>
                       <span className="text-diff-deletion">
-                        -{selectedFiles.reduce((sum, f) => sum + f.deletions, 0)}
+                        -{formatDiffCount(selectedFiles.reduce((sum, f) => sum + f.deletions, 0))}
                       </span>
                     </div>
                   </div>

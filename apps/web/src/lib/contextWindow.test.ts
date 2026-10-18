@@ -43,6 +43,27 @@ describe("contextWindow", () => {
     expect(snapshot?.autoCompactThreshold).toBe(200_000);
   });
 
+  it("selects the newest valid report by time and preserves its cache lifetime", () => {
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity(
+        "new",
+        "context-window.updated",
+        { usedTokens: 200_000, promptCacheTtlMs: 300_000 },
+        "2026-03-23T12:00:00.000Z",
+      ),
+      makeActivity(
+        "old",
+        "context-window.updated",
+        { usedTokens: 100_000 },
+        "2026-03-23T09:00:00.000Z",
+      ),
+      makeActivity("malformed", "context-window.updated", {}, "2026-03-23T13:00:00.000Z"),
+    ]);
+    expect(snapshot?.usedTokens).toBe(200_000);
+    expect(snapshot?.promptCacheTtlMs).toBe(300_000);
+    expect(snapshot?.updatedAt).toBe("2026-03-23T12:00:00.000Z");
+  });
+
   it("ignores malformed payloads", () => {
     const snapshot = deriveLatestContextWindowSnapshot([
       makeActivity("activity-1", "context-window.updated", {}),

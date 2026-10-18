@@ -21,7 +21,7 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 
-import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
+import { isGitImport, parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
 import {
   checkpointRefForThreadTurn,
   resolveThreadWorkspaceCwd,
@@ -264,25 +264,31 @@ const make = Effect.gen(function* () {
     // Git may have been initialized during this turn, leaving no pre-turn
     // snapshot. Keep the completion checkpoint for future turns, but do not
     // invent a baseline or attempt a diff against a ref that does not exist.
+    const comparison = {
+      cwd: input.cwd,
+      fromCheckpointRef,
+      toCheckpointRef: targetCheckpointRef,
+      fallbackFromToHead: false,
+      ignoreWhitespace: false,
+      format: "numstat" as const,
+    };
     const files = yield* (
       fromCheckpointExists
-        ? checkpointStore.diffCheckpoints({
-            cwd: input.cwd,
-            fromCheckpointRef,
-            toCheckpointRef: targetCheckpointRef,
-            fallbackFromToHead: false,
-            ignoreWhitespace: false,
-            format: "numstat",
-          })
-        : Effect.succeed("")
+        ? Effect.all([
+            checkpointStore.diffCheckpoints(comparison),
+            checkpointStore.listAuthoredPaths(comparison).pipe(Effect.orElseSucceed(() => null)),
+          ])
+        : Effect.succeed<[string, ReadonlySet<string> | null]>(["", null])
     ).pipe(
-      Effect.map((diff) =>
-        parseTurnDiffFilesFromNumstat(diff).map((file) => ({
-          path: file.path,
-          kind: "modified" as const,
-          additions: file.additions,
-          deletions: file.deletions,
-        })),
+      Effect.map(([diff, authoredPaths]) =>
+        parseTurnDiffFilesFromNumstat(diff)
+          .filter((file) => !isGitImport(file, authoredPaths))
+          .map((file) => ({
+            path: file.path,
+            kind: "modified" as const,
+            additions: file.additions,
+            deletions: file.deletions,
+          })),
       ),
       Effect.tapError((error) =>
         appendCaptureFailureActivity({

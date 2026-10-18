@@ -107,6 +107,10 @@ export const THEME_COLOR_ROLES = [
   "messageAction",
   "messageActionForeground",
   "messageActionHover",
+  "searchMatchBackground",
+  "searchMatchForeground",
+  "searchMatchActiveBackground",
+  "searchMatchActiveForeground",
   "codeBackground",
   "codeForeground",
   "sidebar",
@@ -448,6 +452,10 @@ function legacyThemeMode(theme: ThemePreference): ThemeAppearance | null {
 // pixels users see after Sakura's blur and noise layers are composited.
 // Foreground pairs deviate where necessary to keep normal text at WCAG AA.
 const SAKURA_LIGHT_COLORS: ThemeColors = {
+  searchMatchBackground: "#ffde8b",
+  searchMatchForeground: "#21180a",
+  searchMatchActiveBackground: "#eea52b",
+  searchMatchActiveForeground: "#21180a",
   canvas: "#fdf7fd",
   // Ronin's workspace header belongs to the chat panel, so keep it seamless
   // with the light chat canvas rather than mapping it to Sakura's outer shell.
@@ -516,6 +524,10 @@ const SAKURA_LIGHT_COLORS: ThemeColors = {
 };
 
 const SAKURA_DARK_COLORS: ThemeColors = {
+  searchMatchBackground: "#8c6c1f",
+  searchMatchForeground: "#f5f5f5",
+  searchMatchActiveBackground: "#eea52b",
+  searchMatchActiveForeground: "#21180a",
   canvas: "#1f1a24",
   // Ronin's workspace header belongs to the chat panel, so keep it seamless
   // with the canvas rather than mapping it to Sakura's outer shell.
@@ -598,6 +610,10 @@ const SAKURA_DARK_COLORS: ThemeColors = {
  * colors are stored as opaque OKLCH tokens.
  */
 const T3_CODE_LIGHT_THEME_COLORS: ThemeColors = {
+  searchMatchBackground: "#ffde8b",
+  searchMatchForeground: "#21180a",
+  searchMatchActiveBackground: "#eea52b",
+  searchMatchActiveForeground: "#21180a",
   canvas: "#fcfcfc",
   chrome: "#fcfcfc",
   toolbar: "#fcfcfc",
@@ -658,6 +674,10 @@ const T3_CODE_LIGHT_THEME_COLORS: ThemeColors = {
 };
 
 const T3_CODE_DARK_THEME_COLORS: ThemeColors = {
+  searchMatchBackground: "#8c6c1f",
+  searchMatchForeground: "#f5f5f5",
+  searchMatchActiveBackground: "#eea52b",
+  searchMatchActiveForeground: "#21180a",
   canvas: "#121316",
   chrome: "#121316",
   toolbar: "#121316",
@@ -1670,6 +1690,18 @@ export function updateThemeColorFamily(
         messageSurface: normalized,
         messageForeground: foregroundOn(selectedOnCanvas),
       };
+    case "searchMatchBackground":
+      return {
+        ...colors,
+        searchMatchBackground: normalized,
+        searchMatchForeground: foregroundOn(selectedOnCanvas),
+      };
+    case "searchMatchActiveBackground":
+      return {
+        ...colors,
+        searchMatchActiveBackground: normalized,
+        searchMatchActiveForeground: foregroundOn(selectedOnCanvas),
+      };
     case "codeBackground":
       return {
         ...colors,
@@ -2328,6 +2360,10 @@ const APP_THEME_VARIABLES: Readonly<Record<ThemeColorRole, string>> = {
   messageAction: "--app-theme-message-action",
   messageActionForeground: "--app-theme-message-action-foreground",
   messageActionHover: "--app-theme-message-action-hover",
+  searchMatchBackground: "--app-theme-search-match-background",
+  searchMatchForeground: "--app-theme-search-match-foreground",
+  searchMatchActiveBackground: "--app-theme-search-match-active-background",
+  searchMatchActiveForeground: "--app-theme-search-match-active-foreground",
   codeBackground: "--app-theme-code-background",
   codeForeground: "--app-theme-code-foreground",
   sidebar: "--app-theme-sidebar",

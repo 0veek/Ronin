@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import { afterEach, assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -6,6 +7,8 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import * as AzureDevOpsCli from "../sourceControl/AzureDevOpsCli.ts";
 import * as AzureDevOpsPullRequestCli from "./AzureDevOpsPullRequestCli.ts";
 import * as AzureDevOpsPullRequestProvider from "./AzureDevOpsPullRequestProvider.ts";
+
+const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const mockedExecute = vi.fn<AzureDevOpsCli.AzureDevOpsCli["Service"]["execute"]>();
 
@@ -340,14 +343,53 @@ layer("AzureDevOpsPullRequestCli.layer", (it) => {
     }),
   );
 
-  it.effect("fails when nobody is signed in", () =>
+  it.effect("names a token sign-in by the viewer's own pull request", () =>
     Effect.gen(function* () {
-      mockedExecute.mockReturnValueOnce(Effect.succeed(output("")));
+      const notLoggedIn = new AzureDevOpsCli.AzureDevOpsCliAuthenticationError({
+        operation: "execute",
+        command: "az",
+        cwd: "/w",
+        argumentCount: 7,
+        cause: new Error("Please run 'az login' to setup account."),
+      });
+      mockedExecute
+        .mockReturnValueOnce(Effect.fail(notLoggedIn))
+        .mockReturnValueOnce(
+          Effect.succeed(
+            output(
+              encodeUnknownJsonString([
+                { ...pullRequestRows(1, 42)[0], createdBy: { uniqueName: "bilal@acme.dev" } },
+              ]),
+            ),
+          ),
+        )
+        .mockReturnValueOnce(Effect.succeed(output("")))
+        .mockReturnValueOnce(Effect.succeed(output("[]")));
+      const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
+
+      assert.strictEqual(yield* cli.getViewer({ cwd: "/w" }), "bilal@acme.dev");
+      expect(argsOfCall(1)).toEqual(expect.arrayContaining(["--creator", "me", "--top", "1"]));
+      // Someone who has opened nothing has no name to compare rows against.
+      const error = yield* Effect.flip(cli.getViewer({ cwd: "/w" }));
+      assert.strictEqual(error._tag, "AzureDevOpsViewerUnavailableError");
+    }),
+  );
+
+  it.effect("fails when no sign-in can read pull requests", () =>
+    Effect.gen(function* () {
+      const signedOut = new AzureDevOpsCli.AzureDevOpsCliAuthenticationError({
+        operation: "execute",
+        command: "az",
+        cwd: "/w",
+        argumentCount: 7,
+        cause: new Error("signed out"),
+      });
+      mockedExecute.mockReturnValue(Effect.fail(signedOut));
       const cli = yield* AzureDevOpsPullRequestCli.AzureDevOpsPullRequestCli;
 
       const error = yield* Effect.flip(cli.getViewer({ cwd: "/w" }));
 
-      assert.strictEqual(error._tag, "AzureDevOpsViewerUnavailableError");
+      assert.strictEqual(error._tag, "AzureDevOpsCliAuthenticationError");
     }),
   );
 

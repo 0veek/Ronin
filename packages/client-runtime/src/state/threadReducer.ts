@@ -217,6 +217,7 @@ export function applyThreadDetailEvent(
           ...thread,
           snoozedUntil: null,
           snoozedAt: null,
+          ...(thread.snoozedUntil != null ? { lastSnoozeWakeAt: event.payload.updatedAt } : {}),
           updatedAt: event.payload.updatedAt,
         },
       };

@@ -1,3 +1,6 @@
+import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
+import { FetchHttpClient } from "effect/unstable/http";
+import * as PlatformError from "effect/PlatformError";
 import * as DefectReporter from "./observability/DefectReporter.ts";
 import * as NodeOS from "node:os";
 
@@ -31,6 +34,7 @@ import {
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
+  VcsProcessSpawnError,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
   type OrchestrationShellStreamEvent,
@@ -127,6 +131,7 @@ import * as PortScanner from "./preview/PortScanner.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
+import { readWorkflowConversation } from "./orchestration/workflowConversationQuery.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
@@ -153,6 +158,7 @@ import * as QuotaResumeService from "./quotaResume/QuotaResumeService.ts";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import * as AutomationService from "./automation/AutomationService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
+import { makeMcpAppRequests } from "./mcpApps/McpAppRequests.ts";
 import { AutomationWebhooks } from "./automation/AutomationWebhooks.ts";
 import * as BuildSystemService from "./buildSystem/BuildSystemService.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
@@ -160,6 +166,7 @@ import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -633,6 +640,7 @@ const makeWsRpcLayer = (
       );
       const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
       const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
+      const otlpEndpointCheck = yield* OtlpEndpointCheck.OtlpEndpointCheck;
       const automaticGitFetchInterval = serverSettings.getSettings.pipe(
         Effect.map(
           (settings) => resolveServerBackgroundActivitySettings(settings).automaticGitFetchInterval,
@@ -646,6 +654,7 @@ const makeWsRpcLayer = (
       const sourceControlRepositories =
         yield* SourceControlRepositoryService.SourceControlRepositoryService;
       const pullRequests = yield* PullRequestService.PullRequestService;
+      const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const withPullRequestViewer = pullRequests.withRoutingCredential;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
@@ -659,6 +668,7 @@ const makeWsRpcLayer = (
       const quotaResume = yield* QuotaResumeService.QuotaResumeService;
       const automations = yield* AutomationService.AutomationService;
       const secretRequests = yield* SecretRequests.SecretRequests;
+      const mcpApps = yield* makeMcpAppRequests();
       const webhooks = yield* AutomationWebhooks;
       const buildSystems = yield* BuildSystemService.BuildSystemService;
       const speechToText = yield* SpeechToTextService.SpeechToTextService;
@@ -1744,14 +1754,21 @@ const makeWsRpcLayer = (
       // Scratch threads run in a plain folder under the data dir. Inside a
       // checkout (a dev worktree's .ronin, a dotfiles home) that folder would
       // inherit the repo's git status and checkpoints, so it is only offered
-      // when the data dir is outside any work tree. Detection failures and
+      // when the data dir is outside any work tree, or Git is not installed. Other detection failures and
       // defects fail closed and hide the folder, never the config.
       // Probed once per connection: a negative VCS detection is not cached.
       // An interrupt stays an interrupt, so a config load cancelled mid-probe
       // invalidates the cache and the next load probes again.
+      const isVcsSpawnError = Schema.is(VcsProcessSpawnError);
+      const isGitMissing = (error: GitManagerServiceError) =>
+        error._tag === "GitManagerError" &&
+        isVcsSpawnError(error.cause) &&
+        error.cause.cause instanceof PlatformError.PlatformError &&
+        error.cause.cause.reason._tag === "NotFound";
       const [cachedScratchWorkspaceRoot, invalidateScratchWorkspaceRoot] =
         yield* Effect.cachedInvalidateWithTTL(
           gitWorkflow.isRepository(config.baseDir).pipe(
+            Effect.catchIf(isGitMissing, () => Effect.succeed(false)),
             Effect.map((isRepository) =>
               isRepository ? undefined : path.resolve(config.baseDir, "scratch"),
             ),
@@ -2077,6 +2094,7 @@ const makeWsRpcLayer = (
           shellResumeCompletionMarker: true,
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
+          threadFind: true,
           ...(scratchWorkspaceRoot === undefined ? {} : { scratchWorkspaceRoot }),
           newProjectsRoot,
         };
@@ -2169,6 +2187,13 @@ const makeWsRpcLayer = (
                   }),
             ),
           ),
+        [ORCHESTRATION_WS_METHODS.getWorkflowConversation]: (input) =>
+          readWorkflowConversation(input).pipe(
+            Effect.provideService(
+              ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+              projectionSnapshotQuery,
+            ),
+          ),
         [ORCHESTRATION_WS_METHODS.getWorkflowScript]: (input) =>
           readWorkflowScript({ scriptPath: input.scriptPath }),
         [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>
@@ -2187,6 +2212,16 @@ const makeWsRpcLayer = (
               (cause) =>
                 new OrchestrationGetFullThreadDiffError({
                   message: "Failed to load full thread diff",
+                  cause,
+                }),
+            ),
+          ),
+        [ORCHESTRATION_WS_METHODS.searchThread]: (input) =>
+          projectionSnapshotQuery.searchThread(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationSearchThreadsError({
+                  message: "Failed to search thread",
                   cause,
                 }),
             ),
@@ -2675,6 +2710,7 @@ const makeWsRpcLayer = (
         [WS_METHODS.serverTranscribeAudio]: (input) => speechToText.transcribe(input),
         [WS_METHODS.serverGetSpeechToTextKeyStatus]: (_input) => speechToText.keyStatus,
         [WS_METHODS.serverSetSpeechToTextKey]: (input) => speechToText.setKey(input),
+        [WS_METHODS.serverCheckOtlpEndpoint]: (input) => otlpEndpointCheck.check(input),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) => resourceTelemetry.retry,
         [WS_METHODS.serverSignalProcess]: (input) => processDiagnostics.signal(input),
         [WS_METHODS.serverReportClientActivity]: (input, metadata) =>
@@ -2716,6 +2752,10 @@ const makeWsRpcLayer = (
           withPullRequestViewer(input, pullRequests.detail(input)),
         [WS_METHODS.pullRequestsActivity]: (input) =>
           withPullRequestViewer(input, pullRequests.activity(input)),
+        [WS_METHODS.pullRequestsReviewGuide]: (input) =>
+          withPullRequestViewer(input, reviewGuides.get(input)),
+        [WS_METHODS.pullRequestsGenerateReviewGuide]: (input) =>
+          withPullRequestViewer(input, reviewGuides.generate(input)),
         [WS_METHODS.pullRequestsThreadComments]: (input) =>
           withPullRequestViewer(input, pullRequests.threadComments(input)),
         [WS_METHODS.pullRequestsDiffFileContents]: (input) =>
@@ -2744,6 +2784,7 @@ const makeWsRpcLayer = (
           withPullRequestViewer(input, pullRequests.setThreadResolution(input)),
         [WS_METHODS.pullRequestsSetReaction]: (input) =>
           withPullRequestViewer(input, pullRequests.setReaction(input)),
+        [WS_METHODS.pullRequestsReportState]: (input) => pullRequests.reportState(input),
         [WS_METHODS.pullRequestsInvalidate]: (input) =>
           pullRequests.invalidate(input).pipe(
             // A reader asking for fresh host state also wants the thread badges it feeds to
@@ -2881,6 +2922,7 @@ const makeWsRpcLayer = (
         [WS_METHODS.projectsEnsureScratch]: () => ensureScratchProject,
         [WS_METHODS.projectsCreateNew]: (input) => createNewProject(input),
         [WS_METHODS.shellOpenInEditor]: (input) => externalLauncher.launchEditor(input),
+        [WS_METHODS.filesystemGetMetadata]: (input) => workspaceFileSystem.getMetadata(input),
         [WS_METHODS.filesystemBrowse]: (input) =>
           workspaceEntries.browse(input).pipe(
             Effect.mapError(
@@ -2894,6 +2936,11 @@ const makeWsRpcLayer = (
           ),
         [WS_METHODS.attachmentsCreateUploadUrl]: (input) => issueAttachmentUploadUrl(input),
         [WS_METHODS.attachmentsDelete]: (input) => deletePendingAttachment(input.attachmentId),
+        [WS_METHODS.mcpAppsGetCall]: mcpApps.getCall,
+        [WS_METHODS.mcpAppsCallTool]: mcpApps.callTool,
+        [WS_METHODS.mcpAppsToolInfo]: mcpApps.toolInfo,
+        [WS_METHODS.mcpAppsReadResource]: mcpApps.readResource,
+        [WS_METHODS.mcpAppsUpdateModelContext]: mcpApps.updateModelContext,
         [WS_METHODS.assetsCreateUrl]: (input) =>
           Effect.gen(function* () {
             if (
@@ -3314,6 +3361,7 @@ export const websocketRpcRouteLayer = Layer.unwrap(
         ),
     });
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
     const sql = yield* SqlClient.SqlClient;
     return HttpRouter.add(
       "GET",
@@ -3347,12 +3395,19 @@ export const websocketRpcRouteLayer = Layer.unwrap(
             makeWsRpcLayer(session, previewAutomationBroker).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               Layer.provide(DefectReporter.layer),
+              Layer.provide(OtlpEndpointCheck.layer.pipe(Layer.provide(FetchHttpClient.layer))),
               Layer.provide(Layer.succeed(SqlClient.SqlClient, sql)),
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
               // One server-lifetime service means clients share the same PR caches, and a WS
               // mutation invalidates the HTTP diff cache that every client reads from.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
+              Layer.provide(
+                Layer.succeed(
+                  PullRequestReviewGuideService.PullRequestReviewGuideService,
+                  reviewGuides,
+                ),
+              ),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

@@ -53,6 +53,7 @@ A few providers cannot offer every mode:
 
 - **Pi** cannot pause to ask before it acts, so it does not support **Supervised**. A thread in
   that mode refuses to start a Pi session rather than running one with no approvals at all.
+- **Muse Code** offers **Supervised** and **Full access**. Supervised uses Muse's ask-me permission profile so commands and edits wait for your decision.
 - **Antigravity** answers its own permission prompts in print mode, so a **Supervised** turn ends
   up reporting what it was not allowed to do instead of asking you.
 - **OpenCode** and **Kilo** have no equivalent of **Auto**, so that mode asks like **Supervised**.

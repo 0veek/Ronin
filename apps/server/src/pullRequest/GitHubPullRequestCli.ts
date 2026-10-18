@@ -1377,42 +1377,45 @@ export const make = Effect.gen(function* () {
    * its first hundred. Each page names the head it read, so a push mid-walk fails rather than
    * mixing two revisions' checks.
    */
+  type CheckContextsPage = Result.Result.Success<
+    ReturnType<typeof decodePullRequestCheckContextsJson>
+  >;
   const readAllCheckContexts = (
     input: Parameters<GitHubPullRequestCli["Service"]["getPullRequestDetail"]>[0],
     allowReserve: boolean,
   ) =>
     Effect.gen(function* () {
       const { owner, name } = parseRepositorySelector(input.repository);
-      const contexts: GitHubCheckContext[] = [];
-      let headSha: string | null = null;
-      let after: string | null = null;
-      for (let page = 0; page < CHECK_CONTEXT_PAGES; page++) {
-        const read: {
-          readonly headSha: string;
-          readonly contexts: ReadonlyArray<GitHubCheckContext>;
-          readonly nextCursor: string | null;
-        } = yield* graphqlRead({
-          cwd: input.cwd,
-          host: input.host,
-          operation: "getPullRequestDetail",
-          allowReserve,
-          variables: { owner, name, number: input.number, after },
-          query: pullRequestCheckContextsGraphQlQuery(input.host),
-          decode: decodePullRequestCheckContextsJson,
-        });
-        if (headSha !== null && read.headSha !== headSha) {
-          return yield* readError(
-            input.cwd,
-            "getPullRequestDetail",
-            new Error("Pull request head changed while reading checks."),
-          );
-        }
-        headSha = read.headSha;
-        contexts.push(...read.contexts);
-        after = read.nextCursor;
-        if (after === null) break;
-      }
-      return { headSha, contexts, truncated: after !== null };
+      const { pages, truncated } = yield* readGraphQlPages(
+        (after, previous: ReadonlyArray<CheckContextsPage>) =>
+          graphqlRead({
+            cwd: input.cwd,
+            host: input.host,
+            operation: "getPullRequestDetail",
+            allowReserve,
+            variables: { owner, name, number: input.number, after },
+            query: pullRequestCheckContextsGraphQlQuery(input.host),
+            decode: decodePullRequestCheckContextsJson,
+          }).pipe(
+            // Each page names the head it read, so a push mid-walk fails rather than mixing
+            // two revisions' checks.
+            Effect.filterOrFail(
+              (page) => previous.length === 0 || page.headSha === previous[0]!.headSha,
+              () =>
+                readError(
+                  input.cwd,
+                  "getPullRequestDetail",
+                  new Error("Pull request head changed while reading checks."),
+                ),
+            ),
+          ),
+        { maxPages: CHECK_CONTEXT_PAGES, nextCursor: (page) => page.nextCursor },
+      );
+      return {
+        headSha: pages[0]?.headSha ?? null,
+        contexts: pages.flatMap((page) => page.contexts),
+        truncated,
+      };
     });
 
   const getPullRequestDetail: GitHubPullRequestCli["Service"]["getPullRequestDetail"] = (input) => {
@@ -1464,7 +1467,10 @@ export const make = Effect.gen(function* () {
   const workflowApprovalReadError = (cwd: string, cause: unknown) =>
     readError(cwd, "listWorkflowRunsRequiringApproval", cause);
 
-  /** Every open pull request whose head branch carries this name, up to one past the limit. */
+  /**
+   * Every open pull request whose head branch carries this name, up to one past the limit.
+   * `truncated` says some were never read, which is never enough to call a head unique.
+   */
   const listHeadsByBranch = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -1473,25 +1479,25 @@ export const make = Effect.gen(function* () {
   }) =>
     Effect.gen(function* () {
       const { owner, name } = parseRepositorySelector(input.repository);
-      const heads: GitHubPullRequestHead[] = [];
-      let after: string | null = null;
-      do {
-        const page: {
-          readonly heads: ReadonlyArray<GitHubPullRequestHead>;
-          readonly nextCursor: string | null;
-        } = yield* graphqlRead({
-          cwd: input.cwd,
-          host: input.host,
-          operation: "listWorkflowRunsRequiringApproval",
-          allowReserve: true,
-          variables: { owner, name, head: input.headBranch, after },
-          query: PULL_REQUEST_HEADS_GRAPHQL_QUERY,
-          decode: decodePullRequestHeadsJson,
-        });
-        heads.push(...page.heads);
-        after = page.nextCursor;
-      } while (after !== null && heads.length <= workflowApprovalLimit);
-      return heads;
+      const countHeads = (pages: ReadonlyArray<{ readonly heads: ReadonlyArray<unknown> }>) =>
+        pages.reduce((total, page) => total + page.heads.length, 0);
+      const { pages, truncated } = yield* readGraphQlPages(
+        (after) =>
+          graphqlRead({
+            cwd: input.cwd,
+            host: input.host,
+            operation: "listWorkflowRunsRequiringApproval",
+            allowReserve: true,
+            variables: { owner, name, head: input.headBranch, after },
+            query: PULL_REQUEST_HEADS_GRAPHQL_QUERY,
+            decode: decodePullRequestHeadsJson,
+          }),
+        {
+          nextCursor: (page) => page.nextCursor,
+          until: (pages) => countHeads(pages) > workflowApprovalLimit,
+        },
+      );
+      return { heads: pages.flatMap((page) => page.heads), truncated };
     });
 
   /**
@@ -1528,9 +1534,10 @@ export const make = Effect.gen(function* () {
         [
           listHeadsByBranch(input).pipe(
             Effect.flatMap(
-              (
+              ({
                 heads,
-              ): Effect.Effect<
+                truncated,
+              }): Effect.Effect<
                 GitHubPullRequestHead,
                 GitHubPullRequestReadError | GitHubWorkflowApprovalRefusedError
               > => {
@@ -1541,7 +1548,7 @@ export const make = Effect.gen(function* () {
                     pullRequest.headRepositoryOwner?.toLowerCase() ===
                       input.headRepositoryOwner.toLowerCase(),
                 );
-                if (heads.length > workflowApprovalLimit) {
+                if (truncated || heads.length > workflowApprovalLimit) {
                   return Effect.fail(
                     new GitHubWorkflowApprovalRefusedError({
                       command: "gh",
@@ -1715,16 +1722,22 @@ export const make = Effect.gen(function* () {
         ) => Effect.Effect<GitHubPullRequestListPage, GitHubPullRequestCliError>,
       ) =>
         Effect.gen(function* () {
-          const items: GitHubPullRequestListItem[] = [];
-          let rawCount = 0;
-          let after: string | null = null;
-          do {
-            const read: GitHubPullRequestListPage = yield* page(after, rows - rawCount);
-            items.push(...read.items);
-            rawCount += read.rawCount;
-            after = read.endCursor;
-          } while (after !== null && rawCount < rows);
-          return { items, rawCount };
+          const countRows = (pages: ReadonlyArray<GitHubPullRequestListPage>) =>
+            pages.reduce((total, read) => total + read.rawCount, 0);
+          const { pages, truncated } = yield* readGraphQlPages(
+            (after, pages: ReadonlyArray<GitHubPullRequestListPage>) =>
+              page(after, rows - countRows(pages)),
+            {
+              nextCursor: (read) => read.endCursor,
+              until: (pages) => countRows(pages) >= rows,
+            },
+          );
+          // `truncated` also covers a cursor GitHub repeated before `rows` arrived.
+          return {
+            items: pages.flatMap((read) => read.items),
+            rawCount: countRows(pages),
+            truncated,
+          };
         });
       const read = (
         continues: boolean,
@@ -1750,7 +1763,7 @@ export const make = Effect.gen(function* () {
                 decode: decodePullRequestListJson,
               }),
         ).pipe(
-          Effect.flatMap(({ items: rawItems, rawCount }) => {
+          Effect.flatMap(({ items: rawItems, rawCount, truncated: cutShort }) => {
             const items = continues
               ? rawItems
               : rawItems.filter((item) => matchesUnsortedListing(item, input));
@@ -1767,9 +1780,11 @@ export const make = Effect.gen(function* () {
               items: items.slice(0, input.limit),
               // One row over the page size is the probe for a next page, and it is
               // counted before decoding: a skipped malformed row must not end paging.
-              truncated: continues
-                ? rawCount > input.limit
-                : items.length > input.limit || rawCount >= requestedRows,
+              truncated:
+                cutShort ||
+                (continues
+                  ? rawCount > input.limit
+                  : items.length > input.limit || rawCount >= requestedRows),
               continues,
             });
           }),
@@ -2135,23 +2150,26 @@ export const make = Effect.gen(function* () {
         // Almost never entered: the embedded page already holds every dismissal a pull request
         // ordinarily accrues. Followed so a review whose event fell past that page still finds
         // its reason.
-        let dismissalPage = 0;
-        while (dismissalCursor !== null && dismissalPage < REVIEW_THREAD_PAGES) {
-          const read: {
-            readonly dismissalsByReviewId: ReadonlyMap<string, string>;
-            readonly nextCursor: string | null;
-          } = yield* graphqlRead({
-            cwd: input.cwd,
-            host: input.host,
-            operation: "listReviewThreadComments",
-            variables: { owner, name, number: input.number, cursor: dismissalCursor },
-            query: REVIEW_DISMISSALS_GRAPHQL_QUERY,
-            decode: decodeReviewDismissalsJson,
-          });
-          for (const [id, message] of read.dismissalsByReviewId)
-            dismissalsByReviewId.set(id, message);
-          dismissalCursor = read.nextCursor;
-          dismissalPage += 1;
+        if (dismissalCursor !== null) {
+          const { pages } = yield* readGraphQlPages(
+            (cursor) =>
+              graphqlRead({
+                cwd: input.cwd,
+                host: input.host,
+                operation: "listReviewThreadComments",
+                variables: { owner, name, number: input.number, cursor },
+                query: REVIEW_DISMISSALS_GRAPHQL_QUERY,
+                decode: decodeReviewDismissalsJson,
+              }),
+            {
+              from: dismissalCursor,
+              maxPages: REVIEW_THREAD_PAGES,
+              nextCursor: (read) => read.nextCursor,
+            },
+          );
+          for (const read of pages)
+            for (const [id, message] of read.dismissalsByReviewId)
+              dismissalsByReviewId.set(id, message);
         }
 
         const reviewThreads = entries.map((entry) => ({
@@ -2613,3 +2631,4 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(GitHubPullRequestCli, make);
+import { readGraphQlPages } from "../sourceControl/githubGraphQl.ts";

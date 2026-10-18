@@ -19,8 +19,11 @@ import {
   applyPreviewServerSnapshot,
   isPreviewSupportedInRuntime,
   rememberPreviewUrl,
+  readThreadPreviewState,
+  setActivePreviewTab,
+  updatePreviewServerSnapshot,
 } from "~/previewStateStore";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { selectSelectedRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 
 import {
   browserDefaultOpenProfileId,
@@ -46,8 +49,17 @@ export async function openUrlInPreview<E>(input: {
   readonly threadRef: ScopedThreadRef;
   readonly url: string;
   readonly openPreview: OpenPreviewMutation<E>;
+  readonly profileId?: PreviewOpenInput["profileId"];
+  readonly background?: boolean;
 }): Promise<AtomCommandResult<void, E>> {
   const defaults = await resolveBrowserDefaults();
+  const previousActiveTabId = readThreadPreviewState(input.threadRef).activeTabId;
+  // The server's "opened" event switches the preview tab but not the panel's
+  // selection, so a changed selection means the user picked a tab themselves.
+  const selectedSurface = () =>
+    selectSelectedRightPanelSurface(useRightPanelStore.getState().byThreadKey, input.threadRef)
+      ?.id ?? null;
+  const surfaceBeforeOpen = selectedSurface();
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
@@ -57,12 +69,25 @@ export async function openUrlInPreview<E>(input: {
       // maps the result differently, so the configured defaults have to be
       // applied explicitly or file/link opens would ignore them.
       viewport: browserDefaultOpenViewport(defaults),
-      profileId: browserDefaultOpenProfileId(defaults),
+      profileId: input.profileId ?? browserDefaultOpenProfileId(defaults),
     },
   });
   return mapAtomCommandResult(result, (snapshot) => {
-    applyPreviewServerSnapshot(input.threadRef, snapshot);
     rememberPreviewUrl(input.threadRef, input.url);
+    if (input.background) {
+      updatePreviewServerSnapshot(input.threadRef, snapshot);
+      // The server's "opened" event activates the new tab; hand focus back,
+      // unless the user picked a tab, this one included, while the open was in flight.
+      if (
+        previousActiveTabId &&
+        readThreadPreviewState(input.threadRef).activeTabId === snapshot.tabId &&
+        selectedSurface() === surfaceBeforeOpen
+      ) {
+        setActivePreviewTab(input.threadRef, previousActiveTabId);
+      }
+      return;
+    }
+    applyPreviewServerSnapshot(input.threadRef, snapshot);
     useRightPanelStore.getState().openBrowser(input.threadRef, snapshot.tabId);
   });
 }

@@ -1,0 +1,46 @@
+diff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
+--- a/src/NodeChildProcessSpawner.ts
++++ b/src/NodeChildProcessSpawner.ts
+@@ -354,6 +354,11 @@
+   ) => {
+     if (globalThis.process.platform === "win32") {
+       return Effect.callback<void, PlatformError.PlatformError>((resume) => {
++        // An exited leader's PID may already belong to another process.
++        if (childProcess.exitCode !== null || childProcess.signalCode !== null) {
++          resume(Effect.void)
++          return
++        }
+         NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, (error) => {
+           if (error) {
+             resume(Effect.fail(toPlatformError("kill", toError(error), command)))
+@@ -376,6 +381,7 @@
+     signal: NodeJS.Signals
+   ): void => {
+     if (globalThis.process.platform === "win32") {
++      if (childProcess.exitCode !== null || childProcess.signalCode !== null) return
+       NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, () => {
+         // ignore errors during best-effort cleanup
+       })
+diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
+--- a/dist/NodeChildProcessSpawner.js
++++ b/dist/NodeChildProcessSpawner.js
+@@ -256,6 +256,11 @@
+   const killProcessGroup = (command, childProcess, signal) => {
+     if (globalThis.process.platform === "win32") {
+       return Effect.callback(resume => {
++        // An exited leader's PID may already belong to another process.
++        if (childProcess.exitCode !== null || childProcess.signalCode !== null) {
++          resume(Effect.void);
++          return;
++        }
+         NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, error => {
+           if (error) {
+             resume(Effect.fail(toPlatformError("kill", toError(error), command)));
+@@ -274,6 +279,7 @@
+   };
+   const killProcessGroupOnExit = (childProcess, signal) => {
+     if (globalThis.process.platform === "win32") {
++      if (childProcess.exitCode !== null || childProcess.signalCode !== null) return;
+       NodeChildProcess.exec(`taskkill /pid ${childProcess.pid} /T /F`, () => {
+         // ignore errors during best-effort cleanup
+       });

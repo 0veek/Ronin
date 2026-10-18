@@ -128,6 +128,10 @@ export function BranchToolbarBranchSelector({
     threadEnvironment.updateMetadata,
     "thread metadata update",
   );
+  // An automatic default loses to any launch that lands first; that rejection is expected.
+  const updateEmptyThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
   const switchRef = useAtomCommand(vcsEnvironment.switchRef, {
     reportFailure: false,
   });
@@ -192,17 +196,21 @@ export function BranchToolbarBranchSelector({
         });
       }
       if (hasServerThread) {
-        void updateThreadMetadata({
+        void (automatic ? updateEmptyThreadMetadata : updateThreadMetadata)({
           environmentId,
           input: {
             threadId: activeThreadId,
             branch,
             worktreePath,
+            // A launched thread records its own worktree; a late default must not reset it.
+            ...(automatic ? { expectedEmpty: true } : {}),
           },
         });
       }
       if (hasServerThread) {
-        onActiveThreadBranchOverrideChange?.(branch);
+        // An automatic default can lose to launch; use the server's response
+        // rather than leave the rejected branch as an optimistic label.
+        if (!automatic) onActiveThreadBranchOverrideChange?.(branch);
         return;
       }
       const nextDraftEnvMode = resolveDraftEnvModeAfterBranchChange({
@@ -232,6 +240,7 @@ export function BranchToolbarBranchSelector({
       effectiveEnvMode,
       draftThread?.environmentSelection,
       stopThreadSession,
+      updateEmptyThreadMetadata,
       updateThreadMetadata,
     ],
   );
@@ -546,8 +555,13 @@ export function BranchToolbarBranchSelector({
     ? null
     : (defaultBranchName ?? currentGitBranch);
 
+  // A started thread's server is creating its worktree and records the branch
+  // itself; defaulting it here would reset the thread to the base checkout and
+  // detach the agent that just started.
+  const threadStarted = serverSession !== null;
   useEffect(() => {
     if (
+      threadStarted ||
       effectiveEnvMode !== "worktree" ||
       activeWorktreePath ||
       activeThreadBranch ||
@@ -561,6 +575,7 @@ export function BranchToolbarBranchSelector({
     activeWorktreePath,
     effectiveEnvMode,
     setThreadBranch,
+    threadStarted,
     worktreeBaseBranchCandidate,
   ]);
 

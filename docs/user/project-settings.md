@@ -50,3 +50,7 @@ Ronin closes idle terminals first, then runs the selected action in the thread's
 in a fresh terminal. It runs once per settlement; reopening and settling the thread again runs it
 again. Missing worktrees are skipped, and a failed action keeps its terminal open for inspection.
 Only one action can be selected for this trigger. Clear the switch to stop automatic runs.
+
+macOS app projects can also use `Resources/AppIcon.icns` or `AppIcon.icns`. Ronin serves
+an embedded PNG from the icon file, so it displays on remote clients too. You can select
+an `.icns` file as a project icon; older icon files without an embedded PNG use the fallback.

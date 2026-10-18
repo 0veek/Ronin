@@ -2,6 +2,7 @@ import { ProjectId, type PullRequestSummary, type VcsStatusResult } from "@t3too
 import { describe, expect, it } from "@effect/vitest";
 import {
   ChangeRequestStatusIcon,
+  linkedPullRequestSnapshotStatus,
   prStatusIndicator,
   resolveThreadPullRequestBadgePresentation,
 } from "./ThreadStatusIndicators";
@@ -143,4 +144,30 @@ describe("resolveThreadPullRequestBadgePresentation", () => {
       text: 3,
     });
   });
+});
+
+it.each([
+  ["https://github.com/acme/repo/pull/1?next=/-/merge_requests/9#x/pulls/5", "github"],
+  ["https://forge.test/acme/repo/pulls/1?next=/pullrequest/9", "forgejo"],
+  ["https://gitlab.test/acme/repo/-/merge_requests/1", "gitlab"],
+])("identifies the saved PR host from the path of %s", (url, kind) => {
+  const status = linkedPullRequestSnapshotStatus({
+    host: new URL(url).hostname,
+    repository: "acme/repo",
+    stack: null,
+    number: 1,
+    url,
+    source: "manual",
+    linkedAt: "2026-10-10T00:00:00.000Z",
+    snapshot: {
+      title: "Saved PR",
+      state: "open",
+      isDraft: false,
+      headBranch: "feature",
+      baseBranch: "main",
+      updatedAt: null,
+      syncedAt: "2026-10-10T00:00:00.000Z",
+    },
+  });
+  expect(status?.sourceControlProvider?.kind).toBe(kind);
 });

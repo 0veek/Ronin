@@ -1,3 +1,4 @@
+import DEVICE_TOOL_VERSIONS from "./deviceToolVersions.json" with { type: "json" };
 import type { DeviceToolVersions } from "@t3tools/contracts";
 /**
  * Pinned installs of the two external tools device support is built on.
@@ -26,9 +27,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as ProcessRunner from "../processRunner.ts";
 
 const DEVICE_HUB_PACKAGE = "expo-device-hub";
-export const DEVICE_HUB_VERSION = "0.12.0";
+export const DEVICE_HUB_VERSION = DEVICE_TOOL_VERSIONS[DEVICE_HUB_PACKAGE];
 const AGENT_DEVICE_PACKAGE = "agent-device";
-export const AGENT_DEVICE_VERSION = "0.21.12";
+export const AGENT_DEVICE_VERSION = DEVICE_TOOL_VERSIONS[AGENT_DEVICE_PACKAGE];
 
 const INSTALL_TIMEOUT = Duration.minutes(10);
 const installLock = Semaphore.makeUnsafe(1);

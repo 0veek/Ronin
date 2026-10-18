@@ -258,5 +258,13 @@ export const makeDroidTextGeneration = Effect.fn("makeDroidTextGeneration")(func
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReviewGuide: () =>
+      Effect.fail(
+        new TextGenerationError({
+          operation: "generateReviewGuide",
+          detail:
+            "Droid cannot investigate a checkout read-only. Choose Claude or Codex as the review guide model.",
+        }),
+      ),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

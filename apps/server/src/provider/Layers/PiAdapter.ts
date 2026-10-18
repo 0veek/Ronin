@@ -54,6 +54,7 @@ interface PiSessionContext {
   unsubscribe: (() => void) | undefined;
   readonly turns: PiStoredTurn[];
   activeTurnId: TurnId | undefined;
+  nativeAborted: boolean;
   stopped: boolean;
 }
 
@@ -222,11 +223,14 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
           unsubscribe: undefined,
           turns: [],
           activeTurnId: undefined,
+          nativeAborted: false,
           stopped: false,
         };
         ctx.unsubscribe = runtime.session.subscribe?.((event) => {
           void runDetached(logNative(input.threadId, event.type ?? "unknown", event));
           if (ctx.activeTurnId === undefined) return;
+          if (event.type === "agent_start") ctx.nativeAborted = false;
+          if (event.type === "agent_settled") ctx.nativeAborted = event.aborted === true;
           if (event.type === "message_update" && typeof event.text === "string" && event.text) {
             const turnId = ctx.activeTurnId;
             void runDetached(
@@ -285,6 +289,7 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
         }
         const turnId = TurnId.make(yield* randomUUIDv4);
         ctx.activeTurnId = turnId;
+        ctx.nativeAborted = false;
         ctx.turns.push({ id: turnId, items: [] });
         ctx.session = {
           ...ctx.session,
@@ -313,6 +318,7 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
         }).pipe(
           Effect.tap(() =>
             Effect.gen(function* () {
+              if (ctx.stopped || ctx.activeTurnId !== turnId) return;
               ctx.activeTurnId = undefined;
               const updatedAt = yield* nowIso;
               const { activeTurnId: _activeTurnId, ...readySession } = ctx.session;
@@ -323,12 +329,13 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
                 provider: PROVIDER,
                 threadId: input.threadId,
                 turnId,
-                payload: { state: "completed" },
+                payload: { state: ctx.nativeAborted ? "cancelled" : "completed" },
               });
             }),
           ),
           Effect.tapError((error) =>
             Effect.gen(function* () {
+              if (ctx.stopped || ctx.activeTurnId !== turnId) return;
               ctx.activeTurnId = undefined;
               const updatedAt = yield* nowIso;
               const { activeTurnId: _activeTurnId, ...readySession } = ctx.session;
@@ -339,7 +346,9 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
                 provider: PROVIDER,
                 threadId: input.threadId,
                 turnId,
-                payload: { state: "failed", errorMessage: error.detail },
+                payload: ctx.nativeAborted
+                  ? { state: "cancelled" }
+                  : { state: "failed", errorMessage: error.detail },
               });
             }),
           ),
@@ -352,6 +361,9 @@ export function makePiAdapter(settings: PiSettings, options?: PiAdapterLiveOptio
       Effect.gen(function* () {
         const ctx = yield* requireSession(threadId);
         const interruptedTurnId = turnId ?? ctx.activeTurnId;
+        // Retire the prompt before abort resolves it, so its completion cannot
+        // report success or clear a later turn's state.
+        ctx.activeTurnId = undefined;
         yield* Effect.tryPromise({
           try: async () => {
             await ctx.runtime.session.abort?.();

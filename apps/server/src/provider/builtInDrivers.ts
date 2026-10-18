@@ -29,6 +29,7 @@ import { GrokDriver, type GrokDriverEnv } from "./Drivers/GrokDriver.ts";
 import { KiloDriver, type KiloDriverEnv } from "./Drivers/KiloDriver.ts";
 import { OpenCodeDriver, type OpenCodeDriverEnv } from "./Drivers/OpenCodeDriver.ts";
 import { PiDriver, type PiDriverEnv } from "./Drivers/PiDriver.ts";
+import { MuseDriver, type MuseDriverEnv } from "./Drivers/MuseDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";
 
 /**
@@ -45,7 +46,8 @@ export type BuiltInDriversEnv =
   | GrokDriverEnv
   | KiloDriverEnv
   | OpenCodeDriverEnv
-  | PiDriverEnv;
+  | PiDriverEnv
+  | MuseDriverEnv;
 
 /**
  * Ordered list of built-in drivers. Order matters only for tie-breaking in
@@ -62,4 +64,5 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   DroidDriver,
   KiloDriver,
   PiDriver,
+  MuseDriver,
 ];

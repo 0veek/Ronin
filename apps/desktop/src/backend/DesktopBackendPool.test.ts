@@ -92,6 +92,7 @@ function makePoolLayer(
           dispatchSnapShotEvent: () => Effect.die("unexpected snapshot event"),
           openDesktopUrl: () => Effect.die("unexpected desktop url"),
           zoomMain: () => Effect.die("unexpected zoom"),
+          runMainContentsCommand: () => Effect.void,
           syncAppearance: Effect.void,
         } satisfies DesktopWindow.DesktopWindow["Service"]),
       ),

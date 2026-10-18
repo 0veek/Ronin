@@ -206,7 +206,9 @@ function SourceControlItemMark({
 }) {
   const dotClassName = itemStatusDot(item);
   const Icon = isProviderDiscoveryItem(item)
-    ? SOURCE_CONTROL_PROVIDER_ICONS[item.kind]
+    ? Object.hasOwn(SOURCE_CONTROL_PROVIDER_ICONS, item.kind)
+      ? SOURCE_CONTROL_PROVIDER_ICONS[item.kind]
+      : undefined
     : VCS_ICONS[item.kind];
 
   if (!Icon) {

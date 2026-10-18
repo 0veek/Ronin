@@ -1,4 +1,4 @@
-import { filePreviewReadErrorMessage } from "./filePreviewMode";
+import { filePreviewReadErrorMessage, workspaceAssetResource } from "./filePreviewMode";
 import { AuthFilesystemWriteScope } from "@t3tools/contracts";
 import { useFilesystemReadAccess } from "~/state/filesystem";
 import { useEnvironmentScope } from "~/state/session";
@@ -160,15 +160,22 @@ type FilePostRender = <LAnnotation>(
 function WorkspaceImagePreview(props: {
   readonly environmentId: EnvironmentId;
   readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly workspaceRoot: string;
   readonly absolutePath: string;
   readonly alt: string;
   readonly workspaceMutationId: string | null;
 }) {
-  const assetUrl = useAssetUrlState(props.environmentId, {
-    _tag: "workspace-file",
-    threadId: props.threadRef.threadId,
-    path: props.absolutePath,
-  });
+  const assetUrl = useAssetUrlState(
+    props.environmentId,
+    workspaceAssetResource({
+      kind: "workspace-file",
+      threadRef: props.threadRef,
+      draft: props.draft,
+      workspaceRoot: props.workspaceRoot,
+      absolutePath: props.absolutePath,
+    }),
+  );
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const revisionSuffix =
     props.workspaceMutationId === null
@@ -207,17 +214,22 @@ const isPdfPreviewFile = (path: string): boolean => /\.pdf$/i.test(path.split(/[
 function WorkspaceBrowserPreview(props: {
   readonly environmentId: EnvironmentId;
   readonly threadRef: ScopedThreadRef;
+  readonly draft: boolean;
+  readonly workspaceRoot: string;
   readonly absolutePath: string;
   readonly title: string;
   readonly workspaceMutationId: string | null;
 }) {
   const resource = useMemo(
-    () => ({
-      _tag: "workspace-file" as const,
-      threadId: props.threadRef.threadId,
-      path: props.absolutePath,
-    }),
-    [props.threadRef.threadId, props.absolutePath],
+    () =>
+      workspaceAssetResource({
+        kind: "workspace-file",
+        threadRef: props.threadRef,
+        draft: props.draft,
+        workspaceRoot: props.workspaceRoot,
+        absolutePath: props.absolutePath,
+      }),
+    [props.threadRef, props.draft, props.workspaceRoot, props.absolutePath],
   );
   const assetUrl = useAssetUrlState(props.environmentId, resource);
 
@@ -251,7 +263,7 @@ function WorkspaceBrowserPreview(props: {
       src={src}
       title={props.title}
       className={className}
-      sandbox="allow-scripts allow-forms allow-popups allow-modals"
+      sandbox="allow-scripts allow-forms allow-popups allow-modals allow-downloads"
     />
   );
 }
@@ -1178,6 +1190,8 @@ export default function FilePreviewPanel({
               key={absolutePath}
               environmentId={environmentId}
               threadRef={threadRef}
+              draft={typeof composerDraftTarget === "string"}
+              workspaceRoot={cwd}
               absolutePath={absolutePath}
               title={relativePath}
               workspaceMutationId={workspaceMutationId}
@@ -1187,12 +1201,17 @@ export default function FilePreviewPanel({
               key={absolutePath}
               environmentId={environmentId}
               threadRef={threadRef}
+              draft={typeof composerDraftTarget === "string"}
+              workspaceRoot={cwd}
               absolutePath={absolutePath}
               alt={relativePath}
               workspaceMutationId={workspaceMutationId}
             />
           ) : relativePath && file.error && file.data === null ? (
-            <div role="alert" className="flex min-h-0 flex-1 flex-col overflow-auto">
+            <div
+              role="alert"
+              className="scrollbar-gutter-both flex min-h-0 flex-1 flex-col overflow-auto"
+            >
               <div className="my-auto flex shrink-0 flex-col gap-3 px-6 py-6 text-center text-xs leading-relaxed">
                 <p className="text-destructive">
                   {file.readError ? filePreviewReadErrorMessage(file.readError) : file.error}

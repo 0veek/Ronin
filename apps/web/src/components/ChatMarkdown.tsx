@@ -1,4 +1,10 @@
+import {
+  CHAT_MARKDOWN_REMARK_PLUGINS,
+  CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
+  CHAT_MARKDOWN_REHYPE_PLUGINS,
+} from "@t3tools/shared/markdownPipeline";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
+import { MarkdownFindContext } from "./chat/markdownFindContext";
 import { AuthFilesystemReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -72,24 +78,16 @@ import ReactMarkdown from "react-markdown";
 import { toHtml } from "hast-util-to-html";
 import { defaultUrlTransform } from "react-markdown";
 import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
-import rehypeRaw from "rehype-raw";
-import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
-import remarkBreaks from "remark-breaks";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
-import remarkGfm from "remark-gfm";
-import { remarkKeepWindowsPathDestinations } from "../markdown-windows-paths";
-import { remarkGithubAlerts } from "../markdown-github-alerts";
-import { remarkHtmlPreview } from "../markdown-html-preview";
 import {
   artifactTemplateFromHastProperties,
-  CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES,
-  remarkCodexDirectives,
   renderCodexFileCitationsAsMarkdown,
 } from "@t3tools/client-runtime/codex-markdown-directives";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
+import { WorkspaceEntryTooltip } from "./chat/WorkspaceEntryIcon";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { InlineHtmlPreview } from "./chat/InlineHtmlPreview";
@@ -131,7 +129,6 @@ import {
   serializeTableElementToCsv,
   serializeTableElementToMarkdown,
 } from "../markdown-clipboard";
-import { remarkNormalizeListItemIndentation } from "../markdown-list-indentation";
 import {
   extractMarkdownLinkHrefs,
   normalizeMarkdownLinkDestination,
@@ -293,6 +290,7 @@ function CodexArtifactTemplateCard(props: {
           size="sm"
           variant="outline"
           className="shrink-0"
+          data-thread-find-ignore
           onClick={() => props.onUse?.(props.template)}
         >
           Use template
@@ -353,107 +351,6 @@ export function orderedListGutterStyle(
   if (markerWidth <= 1) return undefined;
   return { "--list-gutter": `${markerWidth + 2}ch` };
 }
-
-const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
-  ...defaultSchema,
-  attributes: {
-    ...defaultSchema.attributes,
-    "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
-    code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
-    blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
-    p: [...(defaultSchema.attributes?.p ?? []), "dataHtmlPreview"],
-    div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
-    a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
-  },
-  protocols: {
-    ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), "file", "t3-citation", "t3-context"],
-    src: [...(defaultSchema.protocols?.src ?? []), "file", "t3-context"],
-  },
-} satisfies Parameters<typeof rehypeSanitize>[0];
-
-const CHAT_MARKDOWN_REMARK_PLUGINS = [
-  remarkGfm,
-  remarkKeepWindowsPathDestinations,
-  remarkGithubAlerts,
-  remarkHtmlPreview,
-  remarkNormalizeListItemIndentation,
-  remarkCodexDirectives,
-  remarkPreserveCodeMeta,
-  remarkNormalizeLinksAndTagInlineCode,
-] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-
-const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
-  remarkGfm,
-  remarkKeepWindowsPathDestinations,
-  remarkGithubAlerts,
-  remarkHtmlPreview,
-  remarkNormalizeListItemIndentation,
-  remarkCodexDirectives,
-  remarkBreaks,
-  remarkPreserveCodeMeta,
-  remarkNormalizeLinksAndTagInlineCode,
-] satisfies NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
-
-interface MarkdownImageHastNode {
-  type: string;
-  value?: string;
-  children?: MarkdownImageHastNode[];
-}
-
-/** Keep unmatched inline `<A>` placeholders from opening an HTML link over later blocks. */
-function rehypePreserveBareAnchorPlaceholders() {
-  return (tree: MarkdownImageHastNode) => {
-    const anchors: Array<MarkdownImageHastNode | null> = [];
-    let rawTextTag: string | undefined;
-    const visit = (node: MarkdownImageHastNode) => {
-      if (node.type === "raw" && typeof node.value === "string") {
-        // Raw blocks can contain several tags. Consume whole tags, quoted attributes,
-        // and comments so text resembling a closing anchor cannot pair a placeholder.
-        const tags = /<!--[\s\S]*?(?:-->|$)|<\/?[A-Za-z](?:[^"'<>]|"[^"]*"|'[^']*')*>/g;
-        let offset = 0;
-        while (rawTextTag !== "plaintext") {
-          // Raw text ends at its closing tag even inside comment-looking text.
-          const matcher = rawTextTag ? new RegExp(`</${rawTextTag}\\s*>`, "gi") : tags;
-          matcher.lastIndex = offset;
-          const match = matcher.exec(node.value);
-          if (!match) break;
-          const [tag] = match;
-          offset = matcher.lastIndex;
-          if (rawTextTag) {
-            rawTextTag = undefined;
-            continue;
-          }
-          if (tag.startsWith("<!--")) continue;
-          const closing = /^<\/([a-z]+)\s*>$/i.exec(tag)?.[1]?.toLowerCase();
-          const opening = /^<([a-z]+)(?:\s|\/?>)/i.exec(tag)?.[1]?.toLowerCase();
-          if (
-            opening &&
-            /^(?:script|style|textarea|title|xmp|iframe|noembed|noframes|plaintext)$/.test(opening)
-          ) {
-            rawTextTag = opening;
-          } else if (opening === "a") {
-            anchors.push(node.value === tag && /^<a\s*\/?>$/i.test(tag) ? node : null);
-          } else if (closing === "a") {
-            anchors.pop();
-          }
-        }
-      }
-      node.children?.forEach(visit);
-    };
-
-    visit(tree);
-    for (const anchor of anchors) {
-      if (anchor) anchor.type = "text";
-    }
-  };
-}
-
-const CHAT_MARKDOWN_REHYPE_PLUGINS = [
-  rehypePreserveBareAnchorPlaceholders,
-  rehypeRaw,
-  [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
-] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
 /** GitHub's own five alert kinds, in its colors: the glyph names the urgency, the title says it. */
 const GITHUB_ALERT_PRESENTATIONS: Record<
@@ -545,68 +442,6 @@ function isClosedCodeFence(node: unknown, text: string): boolean {
     opening[0] === closing[0] &&
     closing.length >= opening.length
   );
-}
-
-type MarkdownAstNode = {
-  type?: string;
-  value?: string;
-  meta?: unknown;
-  url?: string;
-  data?: {
-    hProperties?: Record<string, unknown>;
-  };
-  children?: MarkdownAstNode[];
-};
-
-function remarkPreserveCodeMeta() {
-  return (tree: MarkdownAstNode) => {
-    const visit = (node: MarkdownAstNode) => {
-      if (node.type === "code" && typeof node.meta === "string" && node.meta.trim().length > 0) {
-        node.data = {
-          ...node.data,
-          hProperties: {
-            ...node.data?.hProperties,
-            dataCodeMeta: node.meta.trim(),
-          },
-        };
-      }
-      node.children?.forEach(visit);
-    };
-
-    visit(tree);
-  };
-}
-
-/**
- * Preserve Windows drive links as allowed `file:` URLs before sanitization.
- * The same traversal tags inline code while it can still be distinguished
- * from fenced code. Code inside links stays untagged to avoid nested anchors.
- */
-function remarkNormalizeLinksAndTagInlineCode() {
-  return (tree: MarkdownAstNode) => {
-    const visit = (node: MarkdownAstNode, insideLink: boolean) => {
-      if (
-        (node.type === "link" || node.type === "definition") &&
-        typeof node.url === "string" &&
-        WINDOWS_DRIVE_PATH_REGEX.test(node.url)
-      ) {
-        node.url = `file:///${node.url.replaceAll("\\", "/")}`;
-      }
-      if (node.type === "inlineCode" && !insideLink) {
-        node.data = {
-          ...node.data,
-          hProperties: {
-            ...node.data?.hProperties,
-            dataInlineCode: "",
-          },
-        };
-      }
-      const childInsideLink = insideLink || node.type === "link" || node.type === "linkReference";
-      node.children?.forEach((child) => visit(child, childInsideLink));
-    };
-
-    visit(tree, false);
-  };
 }
 
 function nodeToPlainText(node: ReactNode): string {
@@ -797,6 +632,7 @@ function MarkdownDetails({
   open = false,
 }: Pick<React.ComponentProps<"details">, "children" | "open">) {
   const [isOpen, setIsOpen] = useState(open);
+  const searching = use(MarkdownFindContext);
   const childNodes = Children.toArray(children);
   const summaryIndex = childNodes.findIndex(
     (child) => isValidElement(child) && child.type === "summary",
@@ -810,11 +646,11 @@ function MarkdownDetails({
 
   return (
     <Collapsible
-      defaultOpen={open}
+      open={isOpen || searching}
       onOpenChange={setIsOpen}
       className="chat-markdown-details my-2 border-y border-border/60"
       data-markdown-details=""
-      data-markdown-details-open={isOpen ? "true" : "false"}
+      data-markdown-details-open={isOpen || searching ? "true" : "false"}
     >
       <CollapsibleTrigger
         className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium text-foreground data-panel-open:[&_svg]:rotate-90"
@@ -977,7 +813,10 @@ function MarkdownCodeBlock({
     return (
       <div className="my-[0.65rem]" data-language={language}>
         {children}
-        <div className="mt-0.5 flex items-center justify-between select-none">
+        <div
+          data-thread-find-ignore
+          className="mt-0.5 flex items-center justify-between select-none"
+        >
           {leadingActions}
           {copyButton}
         </div>
@@ -991,7 +830,7 @@ function MarkdownCodeBlock({
       data-language={language}
       data-wrap={wrapped ? "true" : "false"}
     >
-      <div className="chat-markdown-codeblock-header select-none">
+      <div data-thread-find-ignore className="chat-markdown-codeblock-header select-none">
         <span className="chat-markdown-codeblock-title">
           <MarkdownCodeBlockTitleContent
             fenceTitle={fenceTitle}
@@ -1068,7 +907,8 @@ function MarkdownMermaidCodeBlock({
   children: ReactNode;
 }) {
   const [showCode, setShowCode] = useState(false);
-  const showDiagram = !showCode && !isStreaming && code.trim().length > 0;
+  const searching = use(MarkdownFindContext);
+  const showDiagram = !showCode && !searching && !isStreaming && code.trim().length > 0;
   const toggleLabel = showCode ? "Show diagram" : "Show code";
   return (
     <MarkdownCodeBlock
@@ -1226,6 +1066,7 @@ function UncachedShikiCodeBlock({
 }
 
 interface MarkdownFileLinkProps {
+  environmentId: EnvironmentId | null;
   href: string;
   targetPath: string;
   iconPath: string;
@@ -1720,15 +1561,76 @@ function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, 
     return;
   }
 
-  const target = findMarkdownFragmentTarget(event.currentTarget, href);
-  if (!target) return;
-
+  // Never let the browser follow the fragment or write it to the URL: desktop keeps
+  // its route in the hash, so replacing the hash navigates away from the thread.
   event.preventDefault();
-  const nextUrl = new URL(window.location.href);
-  nextUrl.hash = href.slice(1);
-  window.history.pushState(window.history.state, "", nextUrl);
-  target.scrollIntoView({ block: "nearest" });
+  findMarkdownFragmentTarget(event.currentTarget, href)?.scrollIntoView({ block: "start" });
 }
+
+type HeadingHastNode = {
+  type?: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HeadingHastNode[];
+};
+
+/** GitHub's heading anchor slug, so `[Setup](#setup)` table-of-contents links find their heading. */
+function githubHeadingSlug(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
+    .replace(/ /g, "-");
+}
+
+/**
+ * Gives headings without an authored id GitHub's slug id, deduplicated per document. Like the
+ * sanitizer's ids, they carry the `user-content-` prefix so they cannot clobber app element ids;
+ * fragment lookup strips it.
+ */
+function rehypeHeadingIds() {
+  return (tree: HeadingHastNode) => {
+    // Every id already in the document, authored or assigned, so a suffix never
+    // lands on one that exists: `Setup`, `Setup`, `Setup-1` get three distinct ids.
+    const taken = new Set<string>();
+    const collect = (node: HeadingHastNode) => {
+      const id = node.properties?.id;
+      if (typeof id === "string") taken.add(id);
+      node.children?.forEach(collect);
+    };
+    collect(tree);
+    const nextSuffix = new Map<string, number>();
+    const visit = (node: HeadingHastNode) => {
+      if (node.type === "element" && node.tagName && /^h[1-6]$/.test(node.tagName)) {
+        const slug = githubHeadingSlug(hastPlainTextDeep(node));
+        if (node.properties?.id === undefined && slug) {
+          let count = nextSuffix.get(slug) ?? 0;
+          let id = `${SANITIZED_FRAGMENT_PREFIX}${slug}`;
+          while (taken.has(id)) {
+            count += 1;
+            id = `${SANITIZED_FRAGMENT_PREFIX}${slug}-${count}`;
+          }
+          nextSuffix.set(slug, count);
+          taken.add(id);
+          node.properties = { ...node.properties, id };
+        }
+        return;
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
+// Heading ids are added after sanitizing, which would prefix them a second time.
+const CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS = [
+  ...CHAT_MARKDOWN_REHYPE_PLUGINS,
+  rehypeHeadingIds,
+] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
+const CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS = [rehypeHeadingIds] satisfies NonNullable<
+  ReactMarkdownOptions["rehypePlugins"]
+>;
 
 function MarkdownExternalLinkContent({
   host,
@@ -1781,6 +1683,7 @@ function MarkdownExternalLinkContent({
 }
 
 const MarkdownFileLink = memo(function MarkdownFileLink({
+  environmentId,
   href,
   targetPath,
   iconPath,
@@ -2079,7 +1982,13 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
               }}
               onContextMenu={handleContextMenu}
             >
-              <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
+              <FileTagChipContent
+                path={iconPath}
+                environmentId={environmentId}
+                label={label}
+                theme={theme}
+                selectable
+              />
             </a>
           ) : (
             <button
@@ -2096,7 +2005,13 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
               onClick={handleContextMenu}
               onContextMenu={handleContextMenu}
             >
-              <FileTagChipContent path={iconPath} label={label} theme={theme} selectable />
+              <FileTagChipContent
+                path={iconPath}
+                environmentId={environmentId}
+                label={label}
+                theme={theme}
+                selectable
+              />
             </button>
           )
         }
@@ -2108,7 +2023,7 @@ const MarkdownFileLink = memo(function MarkdownFileLink({
         {/* The full path: the chip already shows the shortened form, and a link
             to the workspace root collapses to a bare label that repeats it. */}
         <div className="markdown-file-link-tooltip-scroll overflow-x-auto whitespace-nowrap">
-          {targetPath}
+          <WorkspaceEntryTooltip path={iconPath} label={targetPath} environmentId={environmentId} />
         </div>
       </TooltipPopup>
     </Tooltip>
@@ -2120,6 +2035,7 @@ function areMarkdownFileLinkPropsEqual(
   next: Readonly<MarkdownFileLinkProps>,
 ): boolean {
   return (
+    previous.environmentId === next.environmentId &&
     previous.href === next.href &&
     previous.targetPath === next.targetPath &&
     previous.iconPath === next.iconPath &&
@@ -2443,6 +2359,7 @@ function ChatMarkdown({
 
       return (
         <MarkdownFileLink
+          environmentId={environmentId}
           href={fileLinkMeta.targetPath}
           targetPath={fileLinkMeta.targetPath}
           iconPath={fileLinkMeta.filePath}
@@ -2526,7 +2443,10 @@ function ChatMarkdown({
         // text under a colored title — which is how the host renders it.
         return (
           <div role="note" className={cn("my-1 border-l-2 pl-3", alert.borderClassName)}>
-            <p className={cn("flex items-center gap-1.5 font-medium", alert.titleClassName)}>
+            <p
+              data-thread-find-ignore
+              className={cn("flex items-center gap-1.5 font-medium", alert.titleClassName)}
+            >
               <alert.Icon aria-hidden className="size-3.5 shrink-0" />
               {alert.label}
             </p>
@@ -2589,7 +2509,9 @@ function ChatMarkdown({
         if (contextReference) {
           const label = hastPlainTextDeep(node) || contextReference.contextId;
           return renderContextReference ? (
-            renderContextReference({ ...contextReference, label })
+            <span data-thread-find-ignore>
+              {renderContextReference({ ...contextReference, label })}
+            </span>
           ) : (
             <span>{label}</span>
           );
@@ -2601,6 +2523,7 @@ function ChatMarkdown({
           : null;
         if (!fileLinkMeta) {
           const faviconHost = resolveExternalWebLinkHost(href);
+          const hasText = hastHasText(node);
           const pullRequestAutolink = String(
             (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
           );
@@ -2621,6 +2544,7 @@ function ChatMarkdown({
               {...props}
               className={cn(props.className, pullRequestAutolink === "commit" && "font-mono")}
               data-markdown-copy={pullRequestCopy}
+              data-markdown-image-link={!hasText || undefined}
               href={href}
               target={isSameDocumentLink ? undefined : "_blank"}
               rel={isSameDocumentLink ? undefined : "noopener noreferrer"}
@@ -2719,7 +2643,7 @@ function ChatMarkdown({
                 });
               }}
             >
-              {faviconHost && hastHasText(node) && !isPullRequestAutolink ? (
+              {faviconHost && hasText && !isPullRequestAutolink ? (
                 <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
                   {linkChildren}
                 </MarkdownExternalLinkContent>
@@ -2782,7 +2706,9 @@ function ChatMarkdown({
         if (contextReference) {
           const label = alt || contextReference.contextId;
           return renderContextReference ? (
-            renderContextReference({ ...contextReference, label })
+            <span data-thread-find-ignore>
+              {renderContextReference({ ...contextReference, label })}
+            </span>
           ) : (
             <span>{label}</span>
           );
@@ -2924,7 +2850,11 @@ function ChatMarkdown({
     >
       <ReactMarkdown
         remarkPlugins={remarkPlugins}
-        rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+        rehypePlugins={
+          parseRawHtml
+            ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
+            : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
+        }
         skipHtml={false}
         components={markdownComponents}
         urlTransform={markdownUrlTransform}

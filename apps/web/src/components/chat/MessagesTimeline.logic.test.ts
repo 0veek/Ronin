@@ -1,3 +1,6 @@
+import { EnvironmentId } from "@t3tools/contracts";
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
+import { shouldCollapseUserMessage } from "./MessagesTimeline.logic";
 import { describe, expect, it } from "vite-plus/test";
 import {
   computeStableMessagesTimelineRows,
@@ -1506,6 +1509,55 @@ describe("deriveMessagesTimelineRows", () => {
     }
   });
 
+  it("keeps an MCP app visible after its parent turn folds", () => {
+    const turnId = TurnId.make("app-turn");
+    const at = "2026-10-07T00:00:00Z";
+    const message = (id: string) => ({
+      kind: "message" as const,
+      id,
+      createdAt: at,
+      message: {
+        id: MessageId.make(id),
+        role: "assistant" as const,
+        text: id,
+        turnId,
+        createdAt: at,
+        updatedAt: at,
+        streaming: false,
+      },
+    });
+    const app = {
+      id: "app",
+      createdAt: at,
+      turnId,
+      tone: "tool" as const,
+      label: "Weather",
+      mcpApp: {
+        attachmentId: "app-html",
+        server: "weather",
+        tool: "show",
+        resourceUri: "ui://weather/app",
+      },
+    };
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("before"),
+        { kind: "work", id: app.id, createdAt: at, entry: app },
+        message("final"),
+      ],
+      latestTurn: {
+        turnId,
+        state: "completed",
+        startedAt: at,
+        completedAt: "2026-10-07T00:00:02Z",
+      },
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+    });
+    expect(rows.map((row) => row.id)).toEqual(["turn-fold:app-turn", "app", "final"]);
+  });
+
   it("keeps subagent spawn rows visible after their turn settles", () => {
     const turnId = TurnId.make("spawn-turn");
     const spawn = {
@@ -1625,6 +1677,39 @@ describe("deriveMessagesTimelineRows", () => {
 
     expect(assistantRow?.showAssistantMeta).toBe(false);
     expect(assistantRow?.showAssistantCopyButton).toBe(false);
+  });
+
+  it("keeps the latest thought visible while later tools run", () => {
+    const entries = ["old-thought", "latest-thought", "read", "edit"].map((id, index) => ({
+      kind: "work" as const,
+      id,
+      createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+      entry: {
+        id,
+        createdAt: `2026-01-01T00:00:0${index + 1}Z`,
+        tone: (id.endsWith("thought") ? "thinking" : "tool") as "thinking" | "tool",
+        toolLifecycleStatus: "completed" as const,
+        label: id,
+        detail: id,
+      },
+    }));
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: entries,
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaries: [],
+    });
+    expect(rows.filter((row) => row.kind === "work").map((row) => row.id)).toEqual([
+      "latest-thought",
+      "edit",
+    ]);
+    const settled = deriveMessagesTimelineRows({
+      timelineEntries: entries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+    });
+    expect(settled.filter((row) => row.kind === "work").map((row) => row.id)).toEqual(["edit"]);
   });
 
   it("models work log overflow expansion as inserted list rows", () => {
@@ -1909,5 +1994,38 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(reordered).not.toBe(initial);
     expect(reordered.result).toEqual([initial.result[1], initial.result[0]]);
+  });
+});
+
+describe("shouldCollapseUserMessage", () => {
+  it("measures a quote chip by its label, not its encoded link", () => {
+    const quote = "A long assistant paragraph that the user quoted. ".repeat(40);
+    const citation = serializeAssistantCitation({
+      version: 1,
+      environmentId: EnvironmentId.make("environment"),
+      threadId: ThreadId.make("thread"),
+      messageId: MessageId.make("source"),
+      text: quote,
+      comment: "Why does this matter?",
+      start: 0,
+      end: quote.length,
+      prefix: "",
+      suffix: "",
+    });
+
+    expect(shouldCollapseUserMessage(`${citation} Can you expand on this?`)).toBe(false);
+    expect(shouldCollapseUserMessage(`${citation} ${"More text. ".repeat(60)}`)).toBe(true);
+  });
+
+  it("measures file links and context chips by their label", () => {
+    const links = Array.from(
+      { length: 8 },
+      (_, index) =>
+        `[file${index}.ts](/workspace/projects/example/packages/some/deeply/nested/directory/file${index}.ts)`,
+    );
+    const text = `Compare ${links.join(", ")} with [terminal 1](t3-context://v1/terminal/${"a".repeat(36)}).`;
+
+    expect(text.length).toBeGreaterThan(600);
+    expect(shouldCollapseUserMessage(text)).toBe(false);
   });
 });

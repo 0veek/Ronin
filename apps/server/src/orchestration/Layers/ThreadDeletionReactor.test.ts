@@ -1,3 +1,4 @@
+import { PreviewManager } from "../../preview/Manager.ts";
 import {
   CommandId,
   CorrelationId,
@@ -82,6 +83,7 @@ describe("ThreadDeletionReactor drain", () => {
   effectIt.effect("waits for a published deletion the subscriber has not consumed yet", () =>
     Effect.gen(function* () {
       const stops: Array<number> = [];
+      const closedPreviews: string[] = [];
       const firstCleanupDone = yield* Deferred.make<void>();
       // The engine has already committed and published sequence 2, but the
       // subscriber has not received it yet: the stream releases it on demand.
@@ -97,6 +99,7 @@ describe("ThreadDeletionReactor drain", () => {
         ),
       } as unknown as OrchestrationEngineShape;
       const providerService = {
+        clearContinuationLedger: () => Effect.void,
         stopSession: () =>
           Effect.gen(function* () {
             stops.push(stops.length + 1);
@@ -109,6 +112,14 @@ describe("ThreadDeletionReactor drain", () => {
         close: () => Effect.void,
       } as unknown as TerminalManager.TerminalManager["Service"];
       const layer = ThreadDeletionReactorLive.pipe(
+        Layer.provide(
+          Layer.mock(PreviewManager, {
+            close: (input) =>
+              Effect.sync(() => {
+                closedPreviews.push(input.threadId);
+              }),
+          }),
+        ),
         Layer.provide(Layer.succeed(ProviderService, providerService)),
         Layer.provide(Layer.succeed(TerminalManager.TerminalManager, terminalManager)),
         Layer.provide(Layer.succeed(OrchestrationEngineService, engine)),
@@ -132,6 +143,7 @@ describe("ThreadDeletionReactor drain", () => {
           yield* Deferred.succeed(releaseSecondEvent, undefined);
           yield* Fiber.join(drained);
           expect(stops).toEqual([1, 2]);
+          expect(closedPreviews).toEqual([threadId, threadId]);
         }),
       ).pipe(Effect.provide(layer));
     }),

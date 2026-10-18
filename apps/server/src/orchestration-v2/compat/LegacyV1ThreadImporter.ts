@@ -55,6 +55,7 @@ interface LegacyThreadRow {
   readonly unsettled_at: string | null;
   readonly snoozed_until: string | null;
   readonly snoozed_at: string | null;
+  readonly last_snooze_wake_at: string | null;
   readonly pinned_at: string | null;
   readonly auto_settle_disabled_at: string | null;
   readonly pin_order_key: string | null;
@@ -238,6 +239,7 @@ function importedThread(row: LegacyThreadRow): OrchestrationV2AppThread {
     unsettledAt: nullableDateTime(row.unsettled_at),
     snoozedUntil: nullableDateTime(row.snoozed_until),
     snoozedAt: nullableDateTime(row.snoozed_at),
+    lastSnoozeWakeAt: nullableDateTime(row.last_snooze_wake_at),
     pinnedAt: nullableDateTime(row.pinned_at),
     autoSettleDisabledAt: nullableDateTime(row.auto_settle_disabled_at),
     pinOrderKey: row.pin_order_key?.trim() || null,
@@ -459,6 +461,7 @@ const make = Effect.gen(function* () {
         thread.unsettled_at,
         thread.snoozed_until,
         thread.snoozed_at,
+        thread.last_snooze_wake_at,
         thread.pinned_at,
         thread.auto_settle_disabled_at,
         thread.pin_order_key,
@@ -563,6 +566,7 @@ const make = Effect.gen(function* () {
         thread.unsettled_at,
         thread.snoozed_until,
         thread.snoozed_at,
+        thread.last_snooze_wake_at,
         thread.pinned_at,
         thread.auto_settle_disabled_at,
         thread.pin_order_key,

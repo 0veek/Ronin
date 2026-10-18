@@ -82,6 +82,7 @@ function toChangeRequest(pullRequest: AzureDevOpsPullRequest): ProviderChangeReq
     url: pullRequest.url,
     author: pullRequest.author,
     headBranch: pullRequest.headBranch,
+    ...(pullRequest.headSha === undefined ? {} : { headSha: pullRequest.headSha }),
     baseBranch: pullRequest.baseBranch,
     state: pullRequest.state,
     isDraft: pullRequest.isDraft,

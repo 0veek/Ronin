@@ -4,6 +4,8 @@ import type * as CodexClient from "effect-codex-app-server/client";
 
 import {
   applyPreferredCodexDefaultModel,
+  codexAppServerEnvironment,
+  buildCodexInitializeParams,
   mapCodexModelCapabilities,
   registerCodexSkillRoots,
 } from "./CodexProvider.ts";
@@ -201,4 +203,22 @@ it("ignores custom models that shadow a preferred slug", () => {
   ]);
 
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.4");
+});
+
+it("uses Ronin's client identity before startup catalog refresh, preserving explicit overrides", () => {
+  const name = buildCodexInitializeParams().clientInfo.name;
+  assert.strictEqual(codexAppServerEnvironment({}).CODEX_INTERNAL_ORIGINATOR_OVERRIDE, name);
+  assert.strictEqual(name, "ronin_desktop");
+  assert.deepStrictEqual(
+    codexAppServerEnvironment({
+      CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "custom_client",
+      CODEX_HOME: "/custom",
+    }),
+    { CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "custom_client", CODEX_HOME: "/custom" },
+  );
+  assert.strictEqual(
+    codexAppServerEnvironment({ CODEX_INTERNAL_ORIGINATOR_OVERRIDE: undefined })
+      .CODEX_INTERNAL_ORIGINATOR_OVERRIDE,
+    name,
+  );
 });

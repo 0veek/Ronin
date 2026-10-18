@@ -9,6 +9,7 @@ import {
   $getNodeByKey,
   $getRoot,
   $isElementNode,
+  $isTextNode,
   DecoratorNode,
   HISTORY_PUSH_TAG,
   SKIP_DOM_SELECTION_TAG,
@@ -36,12 +37,13 @@ export type ComposerCitationCommentRequest = {
   value: string;
   citationStart: number;
   sourceAnchor: AssistantCitationSourceAnchor;
+  insertedSpaces: { before: boolean; after: boolean };
 };
 
 export type ComposerCitationCommentTarget = {
   nodeKey: NodeKey;
   sourceAnchor?: AssistantCitationSourceAnchor;
-  removeOnCancel?: boolean;
+  removeOnCancel?: ComposerCitationCommentRequest["insertedSpaces"];
 };
 
 export const ComposerCitationCommentContext = createContext<{
@@ -70,12 +72,31 @@ export function $consumeComposerCitationCommentRequest(requestRef: {
       return {
         nodeKey: node.getKey(),
         sourceAnchor: request.sourceAnchor,
-        removeOnCancel: true,
+        removeOnCancel: request.insertedSpaces,
       };
     }
     offset += node.getTextContentSize();
   }
   return null;
+}
+
+/** Undo only the spaces owned by this fresh insertion, preserving existing whitespace. */
+export function $removeFreshComposerCitation(
+  nodeKey: NodeKey,
+  spaces: ComposerCitationCommentRequest["insertedSpaces"],
+) {
+  const node = $getNodeByKey(nodeKey);
+  if (!(node instanceof ComposerCitationNode)) return;
+  const before = node.getPreviousSibling();
+  const after = node.getNextSibling();
+  if (spaces.before && $isTextNode(before) && before.getTextContent().endsWith(" ")) {
+    before.spliceText(before.getTextContentSize() - 1, 1, "");
+  }
+  if (spaces.after && $isTextNode(after) && after.getTextContent().startsWith(" ")) {
+    after.spliceText(0, 1, "");
+  }
+  node.selectPrevious();
+  node.remove();
 }
 
 function ComposerCitationDecorator(props: { citation: AssistantCitation; nodeKey: NodeKey }) {
@@ -108,14 +129,11 @@ function ComposerCitationDecorator(props: { citation: AssistantCitation; nodeKey
   };
   /** Cancelling a comment on a just-created citation removes the chip the cite action added. */
   const onRemove = () => {
-    if (!editor.isEditable()) return;
+    const spaces = commentTarget?.removeOnCancel;
+    if (!editor.isEditable() || !spaces) return;
     editor.update(
       () => {
-        const node = $getNodeByKey(props.nodeKey);
-        if (node instanceof ComposerCitationNode) {
-          node.selectPrevious();
-          node.remove();
-        }
+        $removeFreshComposerCitation(props.nodeKey, spaces);
       },
       { tag: HISTORY_PUSH_TAG },
     );

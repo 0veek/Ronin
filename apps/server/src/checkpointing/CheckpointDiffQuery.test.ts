@@ -54,6 +54,7 @@ describe("CheckpointDiffQuery.layer", () => {
       }> = [];
 
       const checkpointStore: CheckpointStore.CheckpointStore["Service"] = {
+        listAuthoredPaths: () => Effect.succeed(null),
         isGitRepository: () => Effect.succeed(true),
         captureCheckpoint: () => Effect.void,
         hasCheckpointRef: () => Effect.succeed(true),
@@ -75,6 +76,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            getTaskActivity: () => Effect.die("unused task activity query"),
             getUserInputActivity: () => Effect.die("unused"),
             listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
@@ -115,6 +117,14 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            searchThread: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                totalMatches: 0,
+                activeIndex: 0,
+                navigation: [],
+                match: null,
+              }),
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -170,6 +180,7 @@ describe("CheckpointDiffQuery.layer", () => {
       });
 
       const checkpointStore: CheckpointStore.CheckpointStore["Service"] = {
+        listAuthoredPaths: () => Effect.succeed(null),
         isGitRepository: () => Effect.succeed(true),
         captureCheckpoint: () => Effect.void,
         hasCheckpointRef: () => Effect.succeed(true),
@@ -191,6 +202,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            getTaskActivity: () => Effect.die("unused task activity query"),
             getUserInputActivity: () => Effect.die("unused"),
             listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
@@ -216,6 +228,14 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            searchThread: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                totalMatches: 0,
+                activeIndex: 0,
+                navigation: [],
+                match: null,
+              }),
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -266,6 +286,7 @@ describe("CheckpointDiffQuery.layer", () => {
       });
 
       const checkpointStore: CheckpointStore.CheckpointStore["Service"] = {
+        listAuthoredPaths: () => Effect.succeed(null),
         isGitRepository: () => Effect.succeed(true),
         captureCheckpoint: () => Effect.void,
         hasCheckpointRef: () => Effect.succeed(true),
@@ -282,6 +303,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            getTaskActivity: () => Effect.die("unused task activity query"),
             getUserInputActivity: () => Effect.die("unused"),
             listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
@@ -307,6 +329,14 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            searchThread: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                totalMatches: 0,
+                activeIndex: 0,
+                navigation: [],
+                match: null,
+              }),
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -342,6 +372,7 @@ describe("CheckpointDiffQuery.layer", () => {
       });
 
       const checkpointStore: CheckpointStore.CheckpointStore["Service"] = {
+        listAuthoredPaths: () => Effect.succeed(null),
         isGitRepository: () => Effect.succeed(true),
         captureCheckpoint: () => Effect.void,
         hasCheckpointRef: () =>
@@ -358,6 +389,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            getTaskActivity: () => Effect.die("unused task activity query"),
             getUserInputActivity: () => Effect.die("unused"),
             listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
@@ -383,6 +415,14 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            searchThread: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                totalMatches: 0,
+                activeIndex: 0,
+                navigation: [],
+                match: null,
+              }),
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -407,6 +447,7 @@ describe("CheckpointDiffQuery.layer", () => {
       const threadId = ThreadId.make("thread-missing");
 
       const checkpointStore: CheckpointStore.CheckpointStore["Service"] = {
+        listAuthoredPaths: () => Effect.succeed(null),
         isGitRepository: () => Effect.succeed(true),
         captureCheckpoint: () => Effect.void,
         hasCheckpointRef: () => Effect.succeed(true),
@@ -419,6 +460,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            getTaskActivity: () => Effect.die("unused task activity query"),
             getUserInputActivity: () => Effect.die("unused"),
             listActivitiesByKind: () => Effect.die("unused"),
             getCommandReadModel: () =>
@@ -444,6 +486,14 @@ describe("CheckpointDiffQuery.layer", () => {
             getThreadShellById: () => Effect.succeed(Option.none()),
             getThreadDetailById: () => Effect.succeed(Option.none()),
             getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            searchThread: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                totalMatches: 0,
+                activeIndex: 0,
+                navigation: [],
+                match: null,
+              }),
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -467,5 +517,50 @@ describe("CheckpointDiffQuery.layer", () => {
         "Checkpoint invariant violation in CheckpointDiffQuery.getTurnDiff: Thread 'thread-missing' not found.",
       );
     }),
+  );
+});
+
+it.effect("filters imported files before generating bounded full-thread patches", () => {
+  const threadId = ThreadId.make("large-authored-diff");
+  const ownPaths = Array.from({ length: 1000 }, (_, i) => `src/module-${i}/file.ts`);
+  const calls: string[][] = [];
+  return Effect.gen(function* () {
+    const query = yield* CheckpointDiffQuery.CheckpointDiffQuery;
+    const result = yield* query.getFullThreadDiff({ threadId, toTurnCount: 2 });
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.flat().toSorted()).toEqual(ownPaths.toSorted());
+    expect(result.diff).not.toContain("upstream.ts");
+  }).pipe(
+    Effect.provide(
+      CheckpointDiffQuery.layer.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+              getFullThreadDiffContext: () =>
+                Effect.succeed(
+                  Option.some({
+                    threadId,
+                    projectId: ProjectId.make("project"),
+                    workspaceRoot: "/repo",
+                    worktreePath: null,
+                    latestCheckpointTurnCount: 2,
+                    toCheckpointRef: checkpointRefForThreadTurn(threadId, 2),
+                  }),
+                ),
+            }),
+            Layer.mock(CheckpointStore.CheckpointStore)({
+              listAuthoredPaths: () => Effect.succeed(new Set(ownPaths)),
+              diffCheckpoints: (input) =>
+                Effect.sync(() => {
+                  if (input.format === "numstat")
+                    return [...ownPaths, "upstream.ts"].map((path) => `1\t0\t${path}\0`).join("");
+                  calls.push([...(input.filePaths ?? [])]);
+                  return input.filePaths?.join("\n") ?? "upstream.ts";
+                }),
+            }),
+          ),
+        ),
+      ),
+    ),
   );
 });

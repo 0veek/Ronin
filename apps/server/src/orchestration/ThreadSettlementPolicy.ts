@@ -105,8 +105,14 @@ export function resolveAutoSettlementAt(input: {
     }
   }
   if (input.autoSettleAfterDays === null || activityAt === null) return null;
-  return Date.parse(activityAt) < Date.parse(input.now) - input.autoSettleAfterDays * DAY_MS
-    ? activityAt
+  const timerWakeAt =
+    thread.snoozedUntil != null && Date.parse(thread.snoozedUntil) <= Date.parse(input.now)
+      ? thread.snoozedUntil
+      : null;
+  const inactivityAt =
+    latestTimestamp([activityAt, thread.lastSnoozeWakeAt, timerWakeAt]) ?? activityAt;
+  return Date.parse(inactivityAt) < Date.parse(input.now) - input.autoSettleAfterDays * DAY_MS
+    ? inactivityAt
     : null;
 }
 

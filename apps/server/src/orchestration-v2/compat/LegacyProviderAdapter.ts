@@ -1,5 +1,6 @@
 import {
   ApprovalRequestId,
+  ProviderApprovalDecision,
   MessageId,
   NodeId,
   PlanId,
@@ -26,6 +27,7 @@ import * as Predicate from "effect/Predicate";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import { readMcpAppReference } from "@t3tools/shared/mcpApp";
 import type { ProviderInstance } from "../../provider/ProviderDriver.ts";
 import type { ProviderService } from "../../provider/Services/ProviderService.ts";
 import {
@@ -202,11 +204,15 @@ export function makeLegacyProviderAdapterV2(
         messages: [...messages.values()],
         runtimeRequests: [...requests.values()],
       });
-      const hasPendingBackgroundWork = Effect.sync(() =>
-        [...tasks.keys()].some((taskId) => {
-          const status = nodes.get(`${instance.instanceId}:task:${taskId}`)?.status;
-          return status === "pending" || status === "running" || status === "waiting";
-        }),
+      const hasPendingBackgroundWork = Effect.sync(
+        () =>
+          [...requests.values()].some(
+            (request) => request.providerTurnId === null && request.status === "pending",
+          ) ||
+          [...tasks.keys()].some((taskId) => {
+            const status = nodes.get(`${instance.instanceId}:task:${taskId}`)?.status;
+            return status === "pending" || status === "running" || status === "waiting";
+          }),
       );
       const convert: (
         event: ProviderRuntimeEvent,
@@ -241,6 +247,112 @@ export function makeLegacyProviderAdapterV2(
           yield* Deferred.succeed(held.released, undefined);
           if ((held.stopped || goalStopping) && event.type === "turn.completed") {
             event = { ...event, payload: { ...event.payload, state: "interrupted" } };
+          }
+        }
+        // Muse workflow children can ask before a resumed turn or after its root ends.
+        // Keep their requests off the completed run so finalization cannot hide them.
+        if (
+          driver === "muse" &&
+          (event.type === "request.opened" || event.type === "request.resolved") &&
+          event.requestId !== undefined
+        ) {
+          const requestId = RuntimeRequestId.make(event.requestId);
+          const previous = requests.get(requestId);
+          const child =
+            event.type === "request.opened" &&
+            Predicate.isObject(event.payload.args) &&
+            Predicate.isObject(event.payload.args.subagentOrigin);
+          if (child || previous?.providerTurnId === null) {
+            const occurredAt = DateTime.makeUnsafe(event.createdAt);
+            const resolved = event.type === "request.resolved";
+            const nodeId =
+              previous?.nodeId ?? NodeId.make(`request:${input.threadId}:${requestId}`);
+            const request: OrchestrationV2RuntimeRequest = {
+              id: requestId,
+              nodeId,
+              providerTurnId: null,
+              nativeRequestRef: { driver, nativeId: requestId, strength: "strong" },
+              kind: requestKind(event.payload.requestType),
+              status: resolved ? "resolved" : "pending",
+              responseCapability: { type: "live", providerSessionId: input.providerSessionId },
+              createdAt: previous?.createdAt ?? occurredAt,
+              resolvedAt: resolved ? occurredAt : null,
+              ...(event.type === "request.resolved" &&
+              Schema.is(ProviderApprovalDecision)(event.payload.decision)
+                ? { decision: event.payload.decision }
+                : {}),
+            };
+            requests.set(requestId, request);
+            const node: OrchestrationV2ExecutionNode = {
+              id: nodeId,
+              threadId: input.threadId,
+              runId: null,
+              parentNodeId: null,
+              rootNodeId: nodeId,
+              kind: "approval_request",
+              status: resolved ? "completed" : "waiting",
+              countsForRun: false,
+              providerThreadId: providerThread.id,
+              providerTurnId: null,
+              nativeItemRef: request.nativeRequestRef,
+              runtimeRequestId: requestId,
+              checkpointScopeId: null,
+              startedAt: request.createdAt,
+              completedAt: resolved ? occurredAt : null,
+            };
+            nodes.set(nodeId, node);
+            const key = `request:${input.threadId}:${requestId}`;
+            const previousItem = items.get(key);
+            const item =
+              event.type === "request.opened"
+                ? {
+                    id: TurnItemId.make(key),
+                    threadId: input.threadId,
+                    runId: null,
+                    nodeId,
+                    providerThreadId: providerThread.id,
+                    providerTurnId: null,
+                    nativeItemRef: request.nativeRequestRef,
+                    parentItemId: null,
+                    ordinal: previousItem?.ordinal ?? ++ordinal,
+                    status: "waiting",
+                    title: null,
+                    startedAt: request.createdAt,
+                    completedAt: null,
+                    updatedAt: occurredAt,
+                    type: "approval_request",
+                    requestId,
+                    requestKind: request.kind,
+                    prompt: event.payload.detail,
+                    options: event.payload.options,
+                  }
+                : previousItem
+                  ? {
+                      ...previousItem,
+                      status: "completed",
+                      completedAt: occurredAt,
+                      updatedAt: occurredAt,
+                    }
+                  : null;
+            const output: ProviderAdapterV2Event[] = [
+              {
+                type: "runtime_request.updated",
+                driver,
+                threadId: input.threadId,
+                runtimeRequest: request,
+              },
+              { type: "node.updated", driver, node },
+            ];
+            if (item) {
+              const update = yield* decodeEvent({
+                type: "turn_item.updated",
+                driver,
+                turnItem: item,
+              });
+              if (update.type === "turn_item.updated") items.set(key, update.turnItem);
+              output.push(update);
+            }
+            return output;
           }
         }
         if (active === undefined && event.type !== "session.exited") return [];
@@ -825,12 +937,21 @@ export function makeLegacyProviderAdapterV2(
               ? {}
               : { toolSource: event.payload.toolSource }),
           };
+          const app = Predicate.isObject(event.payload.data)
+            ? readMcpAppReference(event.payload.data.mcpApp)
+            : undefined;
           const item: OrchestrationV2TurnItem = {
             ...base,
             type: "dynamic_tool",
-            toolName: event.payload.title ?? event.payload.itemType,
+            toolName: app
+              ? `${app.server}.${app.tool}`
+              : (event.payload.title ?? event.payload.itemType),
             input: event.payload.data ?? null,
-            ...(event.payload.detail === undefined ? {} : { output: event.payload.detail }),
+            ...(app
+              ? { output: { t3McpApp: app } }
+              : event.payload.detail === undefined
+                ? {}
+                : { output: event.payload.detail }),
           };
           nodes.set(key, node);
           items.set(key, item);
@@ -1119,9 +1240,14 @@ export function makeLegacyProviderAdapterV2(
             messages.clear();
             for (const [key, item] of items)
               if (
-                item.type !== "subagent" ||
-                item.nativeItemRef?.nativeId == null ||
-                !tasks.has(item.nativeItemRef.nativeId)
+                !(
+                  (item.type === "approval_request" || item.type === "user_input_request") &&
+                  requests.get(item.requestId)?.providerTurnId === null &&
+                  requests.get(item.requestId)?.status === "pending"
+                ) &&
+                (item.type !== "subagent" ||
+                  item.nativeItemRef?.nativeId == null ||
+                  !tasks.has(item.nativeItemRef.nativeId))
               )
                 items.delete(key);
             for (const [key, node] of nodes)

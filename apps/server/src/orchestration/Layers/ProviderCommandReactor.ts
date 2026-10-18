@@ -1178,13 +1178,22 @@ const make = Effect.gen(function* () {
       settings.skills.disabled,
     );
     const referencedSkills = resolveInvokedSkills(input.messageText, availableSkills);
+    const leadingPiSkill = /^\/skill:([^\s]+)(?:\s|$)/u.exec(input.messageText)?.[1];
     const skillInlineText =
       referencedSkills.length === 0
         ? ""
         : yield* Effect.tryPromise(() =>
             buildInlineSkillInstructions({
               skills: referencedSkills,
-              nativeSkillPaths: (activeProvider?.skills ?? []).map((skill) => skill.path),
+              // Pi expands a single leading /skill: command, but does not load
+              // the composer's $skill mentions. Inline those through the same
+              // bounded loader used for portable skills.
+              nativeSkillPaths:
+                ensured.boundProviderName === "pi"
+                  ? (activeProvider?.skills ?? [])
+                      .filter((skill) => skill.name === leadingPiSkill)
+                      .map((skill) => skill.path)
+                  : (activeProvider?.skills ?? []).map((skill) => skill.path),
               maxChars: Math.max(
                 0,
                 PROVIDER_SEND_TURN_MAX_INPUT_CHARS -

@@ -1,6 +1,6 @@
 import ChatMarkdown from "./ChatMarkdown";
 import { ReadOnlySourcePreview } from "./files/AttachmentFilePreview";
-import type { PreviewAnnotationPayload } from "@t3tools/contracts";
+import type { EnvironmentId, PreviewAnnotationPayload } from "@t3tools/contracts";
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { videoMimeType } from "@t3tools/shared/video";
 import { MessageCircleIcon, MousePointerClickIcon } from "lucide-react";
@@ -66,6 +66,8 @@ export type ComposerDraftContextRecord =
 
 /** What a chip can do beyond showing itself; the composer supplies the handlers. */
 export interface ComposerContextActions {
+  environmentId?: EnvironmentId | null;
+  cwd?: string | undefined;
   expandImage: (imageId: string) => void;
   expandVideo: (fileId: string) => void;
   openFile: (fileId: string) => void;

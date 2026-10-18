@@ -26,6 +26,12 @@ source cannot be rendered, Ronin shows the error and keeps the source visible.
 - The file must be local and end in `.html` or `.htm`. Remote pages are not framed; use the browser
   panel for those.
 - Relative assets work. The page's own stylesheets, scripts, images, and fonts load normally.
+- Download buttons and links can save files from an HTML preview.
+
+In rendered Markdown, table-of-contents links scroll to their heading while keeping your thread
+open. Browser-panel links that request a new tab keep the original page open and use its profile.
+Middle-click and Cmd/Ctrl-click open background tabs without switching away. Fullscreen video
+fills the preview area.
 
 ## Safety
 

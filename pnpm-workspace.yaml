@@ -64,7 +64,7 @@ minimumReleaseAgeExclude:
   - alchemy@2.0.0-beta.65
   - effect@4.0.0-beta.103
   - "@legendapp/list@3.3.5"
-  - electron@44.1.0
+  - electron@44.4.5
 
 overrides:
   # The dbus-next patch drops usocket from the package, but pnpm resolves from the
@@ -109,8 +109,9 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
+  "@effect/platform-node-shared@4.0.0-beta.103": patches/@effect__platform-node-shared@4.0.0-beta.103.patch
   "@effect/vitest@4.0.0-beta.103": patches/@effect__vitest@4.0.0-beta.103.patch
-  "@ff-labs/fff-node@0.9.4": patches/@ff-labs__fff-node@0.9.4.patch
+  "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch
   "@legendapp/list@3.3.5": patches/@legendapp__list@3.3.5.patch
   # Exports the dependency-light subpaths the web diff parser imports, and keeps
   # measured wrapped-row heights above an edit (fileEditorVirtualization.test.ts).

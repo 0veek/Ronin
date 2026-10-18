@@ -133,8 +133,8 @@
   text-decoration: none;
 }
 
-.chat-markdown a:not(.chat-markdown-file-link):hover,
-.chat-markdown a:not(.chat-markdown-file-link):focus-visible {
+.chat-markdown a:not(.chat-markdown-file-link, [data-markdown-image-link]):hover,
+.chat-markdown a:not(.chat-markdown-file-link, [data-markdown-image-link]):focus-visible {
   background-image: radial-gradient(circle, currentcolor 0.75px, transparent 1px);
   background-position: left bottom;
   background-repeat: repeat-x;
@@ -189,6 +189,8 @@
 }
 
 .chat-markdown :not(pre) > code {
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   border: 1px solid var(--border);
   border-radius: var(--control-radius);
   background: var(--muted);
@@ -209,7 +211,7 @@
 
 .chat-markdown .chat-markdown-file-link:focus-visible {
   outline: 1px solid var(--ring);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 .chat-markdown pre {
@@ -391,4 +393,18 @@
   align-items: center;
   justify-content: space-between;
   margin-top: 0.125rem;
+}
+
+/* Paint find results without changing rendered Markdown or copied text. */
+::highlight(t3-thread-find) {
+  background: var(--app-theme-search-match-background, #ffde8b);
+  color: var(--app-theme-search-match-foreground, #21180a);
+  @variant dark {
+    background: var(--app-theme-search-match-background, #8c6c1f);
+    color: var(--app-theme-search-match-foreground, #f5f5f5);
+  }
+}
+::highlight(t3-thread-find-active) {
+  background: var(--app-theme-search-match-active-background, #eea52b);
+  color: var(--app-theme-search-match-active-foreground, #21180a);
 }

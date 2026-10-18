@@ -341,3 +341,12 @@ describe("decodeThreadsJson", () => {
     expect(comments).toEqual([]);
   });
 });
+
+it("preserves the host-reported head for a pinned review guide", () => {
+  const result = expectSuccess(
+    decodePullRequestJson(
+      JSON.stringify(pullRequest({ lastMergeSourceCommit: { commitId: "a".repeat(40) } })),
+    ),
+  );
+  expect(result?.headSha).toBe("a".repeat(40));
+});

@@ -27,6 +27,7 @@ import * as Stream from "effect/Stream";
 import type * as Scope from "effect/Scope";
 
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
+import { GitManager } from "../git/GitManager.ts";
 import { PullRequestProviderError } from "../pullRequest/PullRequestProvider.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as OrchestrationEngine from "./Services/OrchestrationEngine.ts";
@@ -149,6 +150,7 @@ export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;
   const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const pullRequests = yield* PullRequestService.PullRequestService;
+  const git = yield* GitManager;
   const crypto = yield* Crypto.Crypto;
 
   const lastSyncedAt = new Map<string, number>();
@@ -393,7 +395,10 @@ export const make = Effect.gen(function* () {
   const start: PullRequestSyncReactor["Service"]["start"] = Effect.fn(
     "PullRequestSyncReactor.start",
   )(function* () {
-    const stateChanges = yield* pullRequests.subscribeStateChanges;
+    const stateChanges = Stream.merge(
+      yield* pullRequests.subscribeStateChanges,
+      yield* git.subscribePullRequestStateChanges,
+    );
     yield* forkParked(
       Stream.runForEach(stateChanges, requestSync).pipe(
         Effect.catchCause(logSkipped("pull request state change stream failed", {})),

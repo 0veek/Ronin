@@ -73,6 +73,9 @@ export interface RuntimeSubagent {
   readonly outputFile: string | null;
   readonly parentAgentId: string | null;
   readonly agentIndex: number | null;
+  readonly workflowAgentId?: string | null;
+  readonly promptPreview?: string | null;
+  readonly resultPreview?: string | null;
   readonly phaseIndex: number | null;
   readonly phaseTitle: string | null;
   readonly attempt: number | null;
@@ -242,6 +245,9 @@ interface MutableAgent {
   outputFile: string | null;
   parentAgentId: string | null;
   agentIndex: number | null;
+  workflowAgentId: string | null;
+  promptPreview: string | null;
+  resultPreview: string | null;
   phaseIndex: number | null;
   phaseTitle: string | null;
   attempt: number | null;
@@ -299,6 +305,9 @@ function getOrCreate(
     outputFile: null,
     parentAgentId: asString(payload.parentAgentId) ?? null,
     agentIndex: asCount(payload.agentIndex) ?? null,
+    workflowAgentId: null,
+    promptPreview: null,
+    resultPreview: null,
     phaseIndex: asCount(payload.phaseIndex) ?? null,
     phaseTitle: asString(payload.phaseTitle) ?? null,
     attempt: asCount(payload.attempt) ?? null,
@@ -317,6 +326,26 @@ function getOrCreate(
 
 /** Metadata fill from any payload: never downgrades known values to null. */
 function fillMetadata(agent: MutableAgent, payload: Record<string, unknown>): void {
+  const nextAttempt = asCount(payload.attempt);
+  if (nextAttempt !== undefined && agent.attempt !== null && nextAttempt > agent.attempt) {
+    agent.workflowAgentId = null;
+    agent.promptPreview = null;
+    agent.resultPreview = null;
+    agent.progress = null;
+    agent.lastToolName = null;
+    agent.usage = null;
+    agent.model = null;
+    agent.startedAt = null;
+  }
+  const workflowAgentId = asString(payload.workflowAgentId);
+  if (workflowAgentId) agent.workflowAgentId = workflowAgentId;
+  if (typeof payload.promptPreview === "string")
+    agent.promptPreview = payload.promptPreview.slice(0, 4000);
+  if (typeof payload.resultPreview === "string") {
+    agent.resultPreview = payload.resultPreview.slice(0, 4000);
+    agent.result = bounded(payload.resultPreview);
+  }
+
   if (payload.taskType === "subagent_batch") agent.kind = "subagent_batch";
   const title = asString(payload.title);
   if (title) agent.title = title;
@@ -368,7 +397,11 @@ function fillMetadata(agent: MutableAgent, payload: Record<string, unknown>): vo
       }
     }
     if (phases.length > 0) {
-      agent.phases = phases.slice().sort((a, b) => a.index - b.index);
+      agent.phases = Array.from(
+        new Map([...agent.phases, ...phases].map((phase) => [phase.index, phase])).values(),
+      )
+        .sort((a, b) => a.index - b.index)
+        .slice(0, 64);
     }
   }
   if (typeof payload.runHandles === "object" && payload.runHandles !== null) {
@@ -472,6 +505,19 @@ export function foldSubagentActivities(
     }
     const payload = activity.payload as Record<string, unknown>;
     const at = activity.createdAt;
+    const known = agents.get(asString(payload.taskId) ?? "");
+    if (known?.kind === "workflow_agent") {
+      const attempt = asCount(payload.attempt) ?? known.attempt ?? 0;
+      if (attempt < (known.attempt ?? 0)) continue;
+      const status = asRuntimeStatus(payload.status);
+      if (
+        attempt === (known.attempt ?? 0) &&
+        status &&
+        ((isTerminalSubagentStatus(known.status) && !isTerminalSubagentStatus(status)) ||
+          (known.status === "running" && status === "pending"))
+      )
+        continue;
+    }
 
     switch (activity.kind) {
       case "task.started": {

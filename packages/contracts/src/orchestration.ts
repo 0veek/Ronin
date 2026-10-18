@@ -40,9 +40,11 @@ import {
 export const ORCHESTRATION_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getWorkflowScript: "orchestration.getWorkflowScript",
+  getWorkflowConversation: "orchestration.getWorkflowConversation",
   getTurnDiff: "orchestration.getTurnDiff",
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
+  searchThread: "orchestration.searchThread",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
@@ -450,7 +452,7 @@ export type ProjectScript = typeof ProjectScript.Type;
 
 export const ProjectFaviconPath = TrimmedNonEmptyString.check(
   Schema.isMaxLength(1024),
-  Schema.isPattern(/\.(?:avif|gif|ico|jpe?g|png|svg|webp)$/i),
+  Schema.isPattern(/\.(?:avif|gif|icns|ico|jpe?g|png|svg|webp)$/i),
 );
 export type ProjectFaviconPath = typeof ProjectFaviconPath.Type;
 
@@ -906,6 +908,7 @@ export const OrchestrationThread = Schema.Struct({
   // Optional so payloads from pre-snooze servers still decode.
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  lastSnoozeWakeAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   // Active pinned threads render in the pinned block. Settled and snoozed
   // threads remain in their respective shelves even when pinned.
   // Optional so payloads from pre-pinning servers still decode.
@@ -995,6 +998,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   unsettledAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
   snoozedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  lastSnoozeWakeAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   pinOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   activeOrderKey: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -1331,6 +1335,8 @@ const ThreadMetaUpdateCommand = Schema.Struct({
   type: Schema.Literal("thread.meta.update"),
   commandId: CommandId,
   threadId: ThreadId,
+  /** Automatic defaults yield to a message or session that has already started. */
+  expectedEmpty: Schema.optional(Schema.Boolean),
   title: Schema.optional(TrimmedNonEmptyString),
   regenerateTitle: Schema.optional(Schema.Literal(true)),
   modelSelection: Schema.optional(ModelSelection),
@@ -2537,6 +2543,50 @@ export const OrchestrationGetWorkflowScriptResult = Schema.Struct({
 });
 export type OrchestrationGetWorkflowScriptResult = typeof OrchestrationGetWorkflowScriptResult.Type;
 
+export class OrchestrationWorkflowFileError extends Schema.TaggedErrorClass<OrchestrationWorkflowFileError>()(
+  "OrchestrationWorkflowFileError",
+  {
+    reason: Schema.Literals([
+      "invalid-path",
+      "root-unavailable",
+      "not-found",
+      "outside-root",
+      "wrong-extension",
+      "not-regular-file",
+      "changed-during-read",
+      "read-failed",
+    ]),
+    path: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Workflow file could not be read (${this.reason}).`;
+  }
+}
+
+export const OrchestrationGetWorkflowConversationInput = Schema.Struct({
+  threadId: ThreadId,
+  taskId: RuntimeTaskId,
+  workflowAgentId: TrimmedNonEmptyString,
+  attempt: Schema.optional(NonNegativeInt),
+});
+export type OrchestrationGetWorkflowConversationInput =
+  typeof OrchestrationGetWorkflowConversationInput.Type;
+
+export const OrchestrationGetWorkflowConversationResult = Schema.Struct({
+  prompt: Schema.NullOr(Schema.String),
+  answers: Schema.Array(Schema.String),
+  truncated: Schema.Boolean,
+  /** A progress excerpt is displayed explicitly when the transcript is not yet available. */
+  partial: Schema.Boolean,
+});
+
+export class OrchestrationGetWorkflowConversationError extends Schema.TaggedErrorClass<OrchestrationGetWorkflowConversationError>()(
+  "OrchestrationGetWorkflowConversationError",
+  { message: Schema.String },
+) {}
+
 const WORKFLOW_SCRIPT_ERROR_MESSAGES = {
   "invalid-path": "Workflow scripts must be absolute .js paths.",
   "root-unavailable": "Script root unavailable.",
@@ -2570,7 +2620,48 @@ export class OrchestrationGetWorkflowScriptError extends Schema.TaggedErrorClass
   }
 }
 
+export const OrchestrationSearchThreadInput = Schema.Struct({
+  threadId: ThreadId,
+  query: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200)),
+  index: Schema.optionalKey(NonNegativeInt),
+  start: Schema.optionalKey(
+    Schema.Struct({ entryId: TrimmedNonEmptyString, occurrence: NonNegativeInt }),
+  ),
+  offset: Schema.optionalKey(Schema.Int),
+  skills: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({ name: Schema.String, displayName: Schema.optionalKey(Schema.String) }),
+    ).check(Schema.isMaxLength(1000)),
+  ),
+});
+export type OrchestrationSearchThreadInput = typeof OrchestrationSearchThreadInput.Type;
+export const OrchestrationSearchThreadResult = Schema.Struct({
+  complete: Schema.optionalKey(Schema.Boolean),
+  snapshotSequence: NonNegativeInt,
+  totalMatches: NonNegativeInt,
+  activeIndex: NonNegativeInt,
+  navigation: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        entryId: Schema.String,
+        runId: Schema.NullOr(TurnId),
+        count: NonNegativeInt,
+        startIndex: NonNegativeInt,
+      }),
+    ),
+  ),
+  match: Schema.NullOr(
+    Schema.Struct({
+      entryId: Schema.String,
+      runId: Schema.NullOr(TurnId),
+      occurrence: NonNegativeInt,
+    }),
+  ),
+});
+export type OrchestrationSearchThreadResult = typeof OrchestrationSearchThreadResult.Type;
+
 export const OrchestrationRpcSchemas = {
+  searchThread: { input: OrchestrationSearchThreadInput, output: OrchestrationSearchThreadResult },
   dispatchCommand: {
     input: ClientOrchestrationCommand,
     output: DispatchResult,

@@ -172,6 +172,19 @@ describe("shouldOfferResumeCompaction", () => {
     ).toBe(false);
   });
 
+  it.each([5 * 60_000, 60 * 60_000])("uses the reported cache lifetime: %s", (promptCacheTtlMs) => {
+    const offer = (age: number) =>
+      shouldOfferResumeCompaction({
+        provider: "claudeAgent",
+        usedTokens: 200_000,
+        updatedAt: new Date(Date.parse(now) - age).toISOString(),
+        promptCacheTtlMs,
+        now,
+      });
+    expect(offer(promptCacheTtlMs)).toBe(true);
+    expect(offer(promptCacheTtlMs - 1)).toBe(false);
+  });
+
   it("does not show Claude's resume prompt for another provider", () => {
     expect(
       shouldOfferResumeCompaction({

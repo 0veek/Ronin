@@ -1,3 +1,4 @@
+import { TelemetryExportSettings } from "./TelemetryExportSettings";
 import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
 import { environmentSession } from "../../state/session";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
@@ -1424,6 +1425,7 @@ export function DiagnosticsSettingsPanel() {
           <EmptyRows label={isInitialLoading ? "Loading span names..." : "No spans found."} />
         )}
       </SettingsSection>
+      <TelemetryExportSettings />
     </SettingsPageContainer>
   );
 }

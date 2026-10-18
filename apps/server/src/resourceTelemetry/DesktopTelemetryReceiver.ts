@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
 
 import * as NodeStream from "@effect/platform-node/NodeStream";
 import {
@@ -436,13 +437,10 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
 
   if (config.desktopTelemetryFd !== undefined) {
     const fd = config.desktopTelemetryFd;
+    // Socket reads can be cancelled while the desktop keeps its pipe open.
     const readable = yield* Effect.acquireRelease(
       Effect.try({
-        try: () =>
-          NodeFS.createReadStream("", {
-            fd,
-            autoClose: true,
-          }),
+        try: () => new NodeNet.Socket({ fd, readable: true, writable: false }),
         catch: (cause) => new DesktopTelemetryStreamFailed({ fd, cause }),
       }),
       (stream) =>
@@ -492,13 +490,11 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         if (message.type === "desktopTelemetryHello") {
           return recordContact.pipe(
             Effect.andThen(
-              updateHealth(
-                (current): DesktopTelemetryReceiverHealth => ({
-                  ...current,
-                  status: "healthy",
-                  lastError: Option.none(),
-                }),
-              ),
+              updateHealth((current): DesktopTelemetryReceiverHealth => ({
+                ...current,
+                status: "healthy",
+                lastError: Option.none(),
+              })),
             ),
           );
         }
@@ -514,22 +510,18 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         );
       }),
       Effect.andThen(
-        updateHealth(
-          (current): DesktopTelemetryReceiverHealth => ({
-            ...current,
-            status: "stopped",
-            lastError: Option.some(new DesktopTelemetryStreamClosed({ fd }).message),
-          }),
-        ),
+        updateHealth((current): DesktopTelemetryReceiverHealth => ({
+          ...current,
+          status: "stopped",
+          lastError: Option.some(new DesktopTelemetryStreamClosed({ fd }).message),
+        })),
       ),
       Effect.catch((error) =>
-        updateHealth(
-          (current): DesktopTelemetryReceiverHealth => ({
-            ...current,
-            status: "degraded",
-            lastError: Option.some(error.message),
-          }),
-        ),
+        updateHealth((current): DesktopTelemetryReceiverHealth => ({
+          ...current,
+          status: "degraded",
+          lastError: Option.some(error.message),
+        })),
       ),
       Effect.forkScoped,
     );

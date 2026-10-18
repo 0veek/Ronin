@@ -62,6 +62,9 @@ ready. Providers with native promptless continuation use it; other providers rec
 instruction to continue where they left off. Terminal commands and other running work may still be
 interrupted during the update.
 
+A resumed thread shows a **Ronin restarted** notice in its activity with the continuation
+instruction, so you can see why work resumed.
+
 The update does not remove saved threads, settings, or project files.
 
 Messages waiting to reach a provider can be cancelled when the server restarts. Ronin

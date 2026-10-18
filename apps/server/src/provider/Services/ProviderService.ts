@@ -34,6 +34,7 @@ import type * as Stream from "effect/Stream";
 import type { ProviderServiceError } from "../Errors.ts";
 import type { ProviderAdapterCapabilities, ProviderThreadSnapshot } from "./ProviderAdapter.ts";
 import type { ProviderInstanceRoutingInfo } from "./ProviderAdapterRegistry.ts";
+import type { McpAppProviderRequest } from "../../mcpApps/McpAppProvider.ts";
 
 /**
  * What an instance can still pick up on a thread it is not currently bound to.
@@ -60,6 +61,10 @@ export interface ProviderContinuationState {
  * ProviderServiceShape - Service API for provider session and turn orchestration.
  */
 export interface ProviderServiceShape {
+  readonly mcpAppRequest: (
+    threadId: ThreadId,
+    input: McpAppProviderRequest,
+  ) => Effect.Effect<unknown, ProviderServiceError>;
   /**
    * Start a provider session.
    */

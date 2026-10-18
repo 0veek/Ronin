@@ -1,3 +1,4 @@
+import { observeResize } from "~/lib/observeResize";
 import { ChartSplineIcon, Settings2Icon, SquareKanbanIcon } from "lucide-react";
 import { memo, useCallback, type ReactNode } from "react";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -95,11 +96,9 @@ export function SidebarBrandWidthProbe({
 }) {
   const observeWidth = useCallback(
     (probe: HTMLDivElement) => {
-      const observer = new ResizeObserver(([entry]) => {
+      return observeResize(probe, ([entry]) => {
         if (entry) onWidthChange(entry.borderBoxSize[0]?.inlineSize ?? probe.offsetWidth);
       });
-      observer.observe(probe);
-      return () => observer.disconnect();
     },
     [onWidthChange],
   );

@@ -104,7 +104,7 @@ export function resolveChangeRequestPresentation(
       return AZURE_DEVOPS_CHANGE_REQUEST_PRESENTATION;
     case "bitbucket":
       return BITBUCKET_CHANGE_REQUEST_PRESENTATION;
-    case "unknown":
+    default:
       return GENERIC_CHANGE_REQUEST_PRESENTATION;
   }
 }
@@ -320,4 +320,19 @@ export function canonicalRepositoryKey(key: string): string {
       /^([^.]+)\.visualstudio\.com\/(?:defaultcollection\/)?([^/]+)\/_git\/([^/]+)$/u,
       "dev.azure.com/$1/$2/_git/$3",
     );
+}
+
+/** Identifies a change-request route without interpreting query or fragment text as a path. */
+export function changeRequestProviderKindFromUrl(value: string): SourceControlProviderKind | null {
+  let pathname: string;
+  try {
+    pathname = new URL(value).pathname;
+  } catch {
+    return null;
+  }
+  if (/\/-\/merge_requests\/\d+(?:\/|$)/u.test(pathname)) return "gitlab";
+  if (/\/pullrequest\/\d+(?:\/|$)/u.test(pathname)) return "azure-devops";
+  if (/\/pull-requests\/\d+(?:\/|$)/u.test(pathname)) return "bitbucket";
+  if (/\/pulls\/\d+(?:\/|$)/u.test(pathname)) return "forgejo";
+  return /\/pull\/\d+(?:\/|$)/u.test(pathname) ? "github" : null;
 }

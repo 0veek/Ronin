@@ -286,6 +286,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         yield* writeKeybindingsConfig(keybindingsConfigPath, [
           { key: "mod+shift+y", command: "terminal.toggle" },
           { key: "mod+shift+r", command: "script.run-tests.run" },
+          { key: "mod+alt+b", command: "script.custom-panel.run", when: "composerFocus" },
         ]);
 
         yield* Effect.gen(function* () {
@@ -307,6 +308,13 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
           assert.isTrue(byCommand.has(defaultRule.command), `expected ${defaultRule.command}`);
         }
         assert.isTrue(byCommand.has("script.run-tests.run"));
+        const configState = yield* (yield* Keybindings.Keybindings).loadConfigState;
+        assert.deepEqual(
+          configState.keybindings
+            .filter((entry) => entry.shortcut.key === "b" && entry.shortcut.altKey)
+            .map((entry) => entry.command),
+          ["rightPanel.toggle", "script.custom-panel.run"],
+        );
       }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 

@@ -1,3 +1,5 @@
+import * as Redacted from "effect/Redacted";
+import * as GitHubCredentials from "./GitHubCredentials.ts";
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
@@ -99,7 +101,10 @@ function makeRegistry(input: {
         Layer.mock(BitbucketApi.BitbucketApi)({}),
         ServerSettings.ServerSettingsService.layerTest(),
         Layer.mock(GitHubCli.GitHubCli)(input.github ?? {}),
-        Layer.mock(GitHubApi.GitHubApi)(input.githubApi ?? {}),
+        Layer.mock(GitHubApi.GitHubApi)({
+          credential: (host) => Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host })),
+          ...input.githubApi,
+        }),
         Layer.mock(GitLabCli.GitLabCli)(input.gitlab ?? {}),
         Layer.mock(ForgejoCli.ForgejoCli)({ listLogins: () => Effect.succeed([]) }),
         ServerConfig.layerTest(process.cwd(), {
@@ -355,4 +360,76 @@ it.effect(
         );
       }
     }).pipe(Effect.scoped),
+);
+
+it.effect.each([
+  { name: "a credential", credential: "found", expected: "github" },
+  // Claimed so the error says the host is turned off, not that it is unsupported.
+  { name: "a host turned off in Settings", credential: "disabled", expected: "github" },
+  { name: "no credential", credential: "missing", expected: "unknown" },
+] as const)("resolves custom-host remotes with $name", (scenario) =>
+  Effect.gen(function* () {
+    const hosts: Array<string> = [];
+    const commands: Array<string> = [];
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@code.example.test:team/project.git" }],
+      process: {
+        run: ({ command }) => {
+          commands.push(command);
+          return Effect.succeed(processOutput(""));
+        },
+      },
+      githubApi: {
+        credential: (host) => {
+          hosts.push(host);
+          return scenario.credential === "found"
+            ? Effect.succeed({ token: Redacted.make("token"), fingerprint: `${host}:fingerprint` })
+            : scenario.credential === "disabled"
+              ? Effect.fail(new GitHubCredentials.GitHubHostDisabledError({ host }))
+              : Effect.fail(new GitHubCredentials.GitHubNotSignedInError({ host }));
+        },
+      },
+    });
+    const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+    assert.strictEqual(handle.provider.kind, scenario.expected);
+    assert.strictEqual(handle.context?.provider.baseUrl, "https://code.example.test");
+    assert.deepStrictEqual(hosts, ["code.example.test"]);
+    // Recognition goes through the credential layer; gh is only one of its sources.
+    assert.notInclude(commands, "gh");
+  }),
+);
+
+it.effect("skips GitHub discovery for the identity resolver's empty base URL", () =>
+  Effect.gen(function* () {
+    const hosts: string[] = [];
+    const remoteUrl = "git@githubenterprise.dev.example.com:team/workspace.git";
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: remoteUrl }],
+      githubApi: {
+        credential: (host) => {
+          hosts.push(host);
+          return Effect.succeed({
+            token: Redacted.make("token"),
+            fingerprint: `${host}:fingerprint`,
+          });
+        },
+      },
+    });
+    const context = {
+      provider: { kind: "unknown" as const, name: "Unknown", baseUrl: "" },
+      remoteName: "origin",
+      remoteUrl,
+    };
+    const unresolved = yield* registry.resolveHandle({ cwd: "/repo", context });
+    assert.deepStrictEqual(unresolved.context, context);
+    assert.deepStrictEqual(hosts, []);
+
+    const resolved = yield* registry.resolveHandle({ cwd: "/repo" });
+    assert.strictEqual(resolved.provider.kind, "github");
+    assert.strictEqual(
+      resolved.context?.provider.baseUrl,
+      "https://githubenterprise.dev.example.com",
+    );
+    assert.deepStrictEqual(hosts, ["githubenterprise.dev.example.com"]);
+  }),
 );

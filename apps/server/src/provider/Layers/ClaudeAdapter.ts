@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 // @effect-diagnostics nodeBuiltinImport:off
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
@@ -12,6 +13,7 @@ import * as NodeUtil from "node:util";
 import { nextClaudeGoal, providerGoalsEqual } from "../nativeGoals.ts";
 import {
   type CanUseTool,
+  type Query as SdkClaudeQuery,
   query,
   getSessionMessages,
   forkSession,
@@ -362,11 +364,13 @@ interface ClaudeTaskState {
  */
 interface ClaudeTaskAgentState {
   readonly taskId: string;
+  launchedByTurnId: TurnId | undefined;
   toolUseId: string | undefined;
   description: string | undefined;
   subagentType: string | undefined;
   taskType: string | undefined;
   workflowName: string | undefined;
+  phases?: ReadonlyArray<{ index: number; title: string }>;
   skipTranscript: boolean;
   runHandles: TaskRunHandles | undefined;
   /** Set when this task was launched from inside a subagent. */
@@ -442,6 +446,7 @@ interface ClaudeSessionContext {
    * even when nothing changed for most members.
    */
   readonly workflowMemberFingerprints: Map<string, string>;
+  readonly workflowMembers: Map<string, ClaudeWorkflowAgentEntry>;
   /** Task ids that have started and not yet reached a terminal state. */
   readonly liveTaskIds: Set<string>;
   turnState: ClaudeTurnState | undefined;
@@ -462,6 +467,7 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
    * subagent at a time from the Agents surface, which is the only caller left.
    */
   readonly stopTask?: (taskId: string) => Promise<void>;
+  readonly setMcpServers: SdkClaudeQuery["setMcpServers"];
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
@@ -665,6 +671,15 @@ function claudeUsageInputTokens(usage: Record<string, unknown>): number {
   );
 }
 
+function claudePromptCacheTtlMs(usage: Record<string, unknown>): number | undefined {
+  const creation = usage.cache_creation;
+  if (!creation || typeof creation !== "object" || Array.isArray(creation)) return undefined;
+  const cache = creation as Record<string, unknown>;
+  if ((finiteNonNegativeInteger(cache.ephemeral_1h_input_tokens) ?? 0) > 0) return 60 * 60_000;
+  if ((finiteNonNegativeInteger(cache.ephemeral_5m_input_tokens) ?? 0) > 0) return 5 * 60_000;
+  return undefined;
+}
+
 function claudeUsageOutputTokens(usage: Record<string, unknown>): number {
   return finiteNonNegativeInteger(usage.output_tokens) ?? 0;
 }
@@ -696,6 +711,7 @@ function claudeTotalProcessedTokens(value: unknown): number | undefined {
 
 function makeClaudeTokenUsageSnapshot(input: {
   readonly activeTokens: number;
+  readonly promptCacheTtlMs?: number;
   readonly inputTokens?: number;
   readonly outputTokens?: number;
   readonly contextWindow?: number;
@@ -721,6 +737,7 @@ function makeClaudeTokenUsageSnapshot(input: {
   return {
     usedTokens,
     lastUsedTokens,
+    ...(input.promptCacheTtlMs !== undefined ? { promptCacheTtlMs: input.promptCacheTtlMs } : {}),
     ...(totalProcessedTokens !== undefined && totalProcessedTokens > usedTokens
       ? { totalProcessedTokens }
       : {}),
@@ -754,7 +771,9 @@ function normalizeClaudeActiveTokenUsage(
     return undefined;
   }
 
+  const promptCacheTtlMs = claudePromptCacheTtlMs(activeUsage);
   return makeClaudeTokenUsageSnapshot({
+    ...(promptCacheTtlMs !== undefined ? { promptCacheTtlMs } : {}),
     activeTokens,
     inputTokens,
     outputTokens,
@@ -1137,6 +1156,7 @@ function applyClaudeTaskToolResult(
     if (!Array.isArray(resultTasks)) {
       return false;
     }
+    const hadTasks = tasks.size > 0;
     tasks.clear();
     for (const entry of resultTasks) {
       if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
@@ -1155,7 +1175,7 @@ function applyClaudeTaskToolResult(
         blockedBy: new Set(readStringArray(task.blockedBy)),
       });
     }
-    return tasks.size > 0;
+    return hadTasks || tasks.size > 0;
   }
 
   if (tool.toolName === "TaskCreate") {
@@ -1174,6 +1194,9 @@ function applyClaudeTaskToolResult(
     return true;
   }
 
+  if (result?.success === false) {
+    return false;
+  }
   const taskId = readString(tool.input.taskId) ?? readString(result?.taskId);
   if (!taskId) {
     return false;
@@ -1181,6 +1204,10 @@ function applyClaudeTaskToolResult(
   const task = tasks.get(taskId);
   if (!task) {
     return false;
+  }
+  if (tool.input.status === "deleted") {
+    tasks.delete(taskId);
+    return true;
   }
   const subject = readString(tool.input.subject);
   if (subject && task.subject !== subject) {
@@ -1327,6 +1354,7 @@ function taskLinkageFor(
     ...(agent.effort ? { effort: agent.effort } : {}),
     ...(agent.toolUseId ? { toolUseId: agent.toolUseId } : {}),
     ...(agent.workflowName ? { workflowName: agent.workflowName } : {}),
+    ...(agent.phases ? { phases: agent.phases } : {}),
     ...(agent.runHandles ? { runHandles: agent.runHandles } : {}),
   };
 }
@@ -1338,6 +1366,9 @@ interface ClaudeWorkflowAgentEntry {
   readonly index: number;
   readonly state: string;
   readonly label: string | undefined;
+  readonly workflowAgentId: string | undefined;
+  readonly promptPreview: string | undefined;
+  readonly resultPreview: string | undefined;
   readonly phaseIndex: number | undefined;
   readonly phaseTitle: string | undefined;
   readonly model: string | undefined;
@@ -1393,12 +1424,23 @@ function parseWorkflowProgress(value: unknown): ClaudeWorkflowProgress | undefin
       index,
       state,
       label: trimmedString(record.label),
+      workflowAgentId: trimmedString(record.agentId),
+      promptPreview:
+        typeof record.promptPreview === "string" ? record.promptPreview.slice(0, 4000) : undefined,
+      resultPreview:
+        typeof record.resultPreview === "string" ? record.resultPreview.slice(0, 4000) : undefined,
       phaseIndex: nonNegativeInt(record.phaseIndex),
       phaseTitle: trimmedString(record.phaseTitle),
       model: trimmedString(record.model),
       attempt: nonNegativeInt(record.attempt),
       lastToolName: trimmedString(record.lastToolName),
-      startedAt: trimmedString(record.startedAt),
+      startedAt:
+        typeof record.startedAt === "number" &&
+        Number.isSafeInteger(record.startedAt) &&
+        record.startedAt >= 0 &&
+        record.startedAt <= 8_640_000_000_000_000
+          ? DateTime.formatIso(DateTime.makeUnsafe(record.startedAt))
+          : trimmedString(record.startedAt),
       error: trimmedString(record.error),
       tokens: nonNegativeInt(record.tokens),
       toolCalls: nonNegativeInt(record.toolCalls),
@@ -1428,13 +1470,15 @@ function workflowAgentStatus(entry: ClaudeWorkflowAgentEntry): RuntimeTaskStatus
       return "pending";
     case "start":
     case "running":
-      return entry.startedAt === undefined ? "pending" : "running";
+      return "running";
     case "done":
+    case "completed":
       return "completed";
     case "error":
+    case "failed":
       return "failed";
     default:
-      return entry.startedAt === undefined ? "pending" : "running";
+      return "running";
   }
 }
 
@@ -1665,6 +1709,25 @@ function isResultForOtherTurn(result: SDKResultMessage, turn: ClaudeTurnState): 
   ];
   if (echoed.length > 0) return !echoed.includes(turn.turnId);
   return result.origin !== undefined && result.origin.kind !== "human";
+}
+
+/** A gateway's outer 503 can wrap a rate-limit refusal with an explicit cooldown. */
+function gatewayRateLimitResetAt(result: SDKResultMessage, now: DateTime.Utc): string | undefined {
+  if (
+    result.subtype !== "success" ||
+    !result.is_error ||
+    result.terminal_reason !== "api_error" ||
+    result.api_error_status !== 503
+  )
+    return;
+  const match =
+    /^API Error: 503 \[[^\]\r\n]+\] \[429\]: \{"type":"error","error":\{"type":"rate_limit_error",[^\r\n]*\} \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(
+      result.result,
+    );
+  if (!match) return;
+  const seconds = Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0);
+  const resetMs = DateTime.toEpochMillis(now) + seconds * 1000;
+  if (seconds > 0 && resetMs < 8.64e15) return DateTime.formatIso(DateTime.makeUnsafe(resetMs));
 }
 
 /** Derives turn status and its error from the same provider result. */
@@ -2037,6 +2100,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig;
   const crypto = yield* Crypto.Crypto;
+  const agentScope = yield* AgentScope;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
@@ -2526,9 +2590,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     },
   ) {
     const plan = planStepsFromClaudeTasks(context.claudeTasks);
-    if (plan.length === 0) {
-      return;
-    }
 
     const stamp = yield* makeEventStamp();
     yield* offerRuntimeEvent({
@@ -2678,6 +2739,19 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(errorMessage ? { errorMessage } : {}),
       });
       return;
+    }
+
+    if (status !== "completed") {
+      const workflows = Array.from(context.taskAgents.values()).filter(
+        (task) =>
+          task.taskType === "local_workflow" &&
+          task.launchedByTurnId === turnState.turnId &&
+          context.liveTaskIds.has(task.taskId),
+      );
+      yield* Effect.forEach(workflows, (task) => stopLiveTask(context, task.taskId), {
+        concurrency: "unbounded",
+        discard: true,
+      }).pipe(Effect.timeoutOption("15 seconds"), Effect.ignore);
     }
 
     for (const [index, tool] of context.inFlightTools.entries()) {
@@ -3104,7 +3178,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    for (const toolResult of toolResultBlocksFromUserMessage(message)) {
+    const toolResults = toolResultBlocksFromUserMessage(message);
+    for (const toolResult of toolResults) {
       const toolEntry = Array.from(context.inFlightTools.entries()).find(
         ([, tool]) => tool.itemId === toolResult.toolUseId,
       );
@@ -3226,13 +3301,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           const existing = context.taskAgents.get(workflowTaskId);
           context.taskAgents.set(workflowTaskId, {
             taskId: workflowTaskId,
+            launchedByTurnId: existing?.launchedByTurnId ?? context.turnState?.turnId,
             toolUseId: existing?.toolUseId ?? tool.itemId,
             description: existing?.description,
             subagentType: existing?.subagentType,
             taskType: existing?.taskType ?? "local_workflow",
             workflowName: existing?.workflowName,
+            ...(existing?.phases ? { phases: existing.phases } : {}),
             skipTranscript: existing?.skipTranscript ?? false,
-            runHandles,
+            runHandles: { ...existing?.runHandles, ...runHandles },
             owningAgentId: existing?.owningAgentId,
             model: existing?.model,
             effort: existing?.effort,
@@ -3242,6 +3319,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       if (
         !toolResult.isError &&
+        !tool.parentToolUseId &&
+        !message.parent_tool_use_id &&
+        toolResults.length === 1 &&
         applyClaudeTaskToolResult(context.claudeTasks, tool, toolUseResult)
       ) {
         yield* emitClaudeTaskPlanUpdated(context, {
@@ -3453,7 +3533,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       (turn && (turn.rejectedRateLimitTypes.size > 0 || turn.latestAssistantRateLimited)
         ? "Claude usage limit reached. Send the message again once the limit resets."
         : undefined);
-    const { status, errorMessage } = resultOutcome(message, failureHint);
+    const gatewayResetAt =
+      failureHint === undefined ? gatewayRateLimitResetAt(message, yield* DateTime.now) : undefined;
+    const { status, errorMessage } = resultOutcome(
+      message,
+      failureHint ??
+        (gatewayResetAt === undefined
+          ? undefined
+          : `Claude API rate limit reached. Limit resets at ${gatewayResetAt}.`),
+    );
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
@@ -3482,8 +3570,29 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
     const coordinatorId = message.task_id;
-    for (const entry of progress.agents) {
-      const memberTaskId = `${coordinatorId}:wf:${entry.index}`;
+    for (const incoming of progress.agents) {
+      const memberTaskId = `${coordinatorId}:wf:${incoming.index}`;
+      const previous = context.workflowMembers.get(memberTaskId);
+      const previousAttempt = previous?.attempt ?? 0;
+      const nextAttempt = incoming.attempt ?? previousAttempt;
+      if (nextAttempt < previousAttempt) continue;
+      const newAttempt = nextAttempt > previousAttempt;
+      const rank = (entry: ClaudeWorkflowAgentEntry) => {
+        const status = workflowAgentStatus(entry);
+        return status === "pending" ? 0 : status === "running" ? 1 : 2;
+      };
+      if (previous && !newAttempt && rank(incoming) < rank(previous)) continue;
+      const inherited = newAttempt
+        ? {
+            phaseIndex: previous?.phaseIndex,
+            phaseTitle: previous?.phaseTitle,
+          }
+        : previous;
+      const entry = {
+        ...inherited,
+        ...Object.fromEntries(Object.entries(incoming).filter(([, value]) => value !== undefined)),
+      } as ClaudeWorkflowAgentEntry;
+      context.workflowMembers.set(memberTaskId, entry);
       const status = workflowAgentStatus(entry);
       // Material-transition filter: the wire repeats every member each tick.
       // Emit only when something the client renders actually changed, so a
@@ -3500,6 +3609,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         entry.phaseIndex ?? "",
         entry.phaseTitle ?? "",
         entry.attempt ?? "",
+        entry.workflowAgentId ?? "",
+        entry.promptPreview ?? "",
+        entry.resultPreview ?? "",
+        entry.startedAt ?? "",
+        context.taskAgents.get(coordinatorId)?.runHandles?.transcriptDir ?? "",
       ].join("\u001f");
       if (context.workflowMemberFingerprints.get(memberTaskId) === fingerprint) {
         continue;
@@ -3526,6 +3640,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
                   ...(entry.toolCalls !== undefined ? { toolUses: entry.toolCalls } : {}),
                 },
               }
+            : {}),
+          ...(entry.workflowAgentId ? { workflowAgentId: entry.workflowAgentId } : {}),
+          ...(entry.promptPreview !== undefined ? { promptPreview: entry.promptPreview } : {}),
+          ...(entry.resultPreview !== undefined ? { resultPreview: entry.resultPreview } : {}),
+          ...(context.taskAgents.get(coordinatorId)?.runHandles
+            ? { runHandles: context.taskAgents.get(coordinatorId)!.runHandles }
+            : {}),
+          ...(claudeEnvironment.CLAUDE_CONFIG_DIR
+            ? { workflowConfigDir: claudeEnvironment.CLAUDE_CONFIG_DIR }
             : {}),
           parentAgentId: coordinatorId,
           agentIndex: entry.index,
@@ -3701,16 +3824,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           trimmedString(rawLaunchEffort) ??
           (typeof rawLaunchEffort === "number" && Number.isFinite(rawLaunchEffort)
             ? String(rawLaunchEffort)
-            : context.currentEffort);
+            : ((owningAgentId ? context.taskAgents.get(owningAgentId)?.effort : undefined) ??
+              context.currentEffort));
         // Remember the agent identity so every later task.* payload for this
         // taskId is self-describing (identity must survive activity retention).
         context.taskAgents.set(message.task_id, {
           taskId: message.task_id,
+          launchedByTurnId:
+            context.taskAgents.get(message.task_id)?.launchedByTurnId ?? context.turnState?.turnId,
           toolUseId: message.tool_use_id,
           description: message.description,
           subagentType: message.subagent_type,
           taskType: message.task_type,
           workflowName: message.workflow_name,
+          ...(context.taskAgents.get(message.task_id)?.phases
+            ? { phases: context.taskAgents.get(message.task_id)!.phases }
+            : {}),
           skipTranscript: message.skip_transcript === true,
           runHandles: context.taskAgents.get(message.task_id)?.runHandles,
           owningAgentId,
@@ -3745,7 +3874,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
             rawPayload: message,
           },
         );
-        const linkage = taskLinkageFor(context.taskAgents, message.task_id);
         const typedUsage = normalizeTaskUsage(message.usage);
         // Phases ride on the coordinator's ONE progress row per tick. A
         // separate phases-only row shared the stable ingestion activity id
@@ -3754,6 +3882,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         const workflowPhases = parseWorkflowProgress(
           (message as unknown as Record<string, unknown>).workflow_progress,
         )?.phases;
+        const task = context.taskAgents.get(message.task_id);
+        if (task && workflowPhases?.length) {
+          task.phases = Array.from(
+            new Map(
+              [...(task.phases ?? []), ...workflowPhases].map((phase) => [phase.index, phase]),
+            ).values(),
+          )
+            .sort((a, b) => a.index - b.index)
+            .slice(0, WORKFLOW_PHASE_CAP);
+        }
+        const linkage = taskLinkageFor(context.taskAgents, message.task_id);
         yield* offerRuntimeEvent({
           ...base,
           type: "task.progress",
@@ -4083,6 +4222,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     context.claudeTasks.clear();
     context.taskAgents.clear();
     context.workflowMemberFingerprints.clear();
+    context.workflowMembers.clear();
     context.liveTaskIds.clear();
     context.lastKnownTokenUsage = undefined;
     context.lastKnownTotalProcessedTokens = undefined;
@@ -4895,6 +5035,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(input.cwd ? [input.cwd] : []),
         serverConfig.attachmentsDir,
       ];
+      const { RONIN_MCP_AUTHORIZATION: _previousAuthorization, ...queryEnvironment } =
+        McpProviderSession.withAgentDeviceEnvironment(claudeEnvironment, mcpSession);
+      const mcpServers: ClaudeQueryOptions["mcpServers"] = mcpSession
+        ? {
+            [McpProviderSession.MCP_SERVER_NAME]: {
+              type: "http",
+              url: mcpSession.endpoint,
+              headers: { Authorization: mcpSession.authorizationHeader },
+            },
+          }
+        : undefined;
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -4924,22 +5075,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         canUseTool,
         onUserDialog,
         supportedDialogKinds: ["resume_return"],
-        env: McpProviderSession.withAgentDeviceEnvironment(claudeEnvironment, mcpSession),
+        env: queryEnvironment,
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
-        ...(mcpSession
-          ? {
-              mcpServers: {
-                [McpProviderSession.MCP_SERVER_NAME]: {
-                  type: "http",
-                  url: mcpSession.endpoint,
-                  headers: {
-                    Authorization: mcpSession.authorizationHeader,
-                  },
-                },
-              },
-            }
-          : {}),
       };
 
       yield* Effect.annotateCurrentSpan({
@@ -4967,20 +5105,76 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "claude.query.path_to_executable": claudeBinaryPath,
       });
 
-      const queryRuntime = yield* Effect.try({
-        try: () =>
-          createQuery({
-            prompt,
-            options: queryOptions,
-          }),
-        catch: (cause) =>
-          new ProviderAdapterProcessError({
-            provider: PROVIDER,
+      const launch = [".js", ".mjs", ".tsx", ".ts", ".jsx"].some((ext) =>
+        claudeBinaryPath.endsWith(ext),
+      )
+        ? undefined
+        : yield* agentScope.wrap({
+            command: claudeBinaryPath,
+            args: [],
+            name: "claude",
             threadId,
-            detail: "Failed to start Claude runtime session.",
-            cause,
-          }),
-      });
+            env: queryOptions.env,
+          });
+      const scopedOptions =
+        launch === undefined || launch.args.length === 0
+          ? queryOptions
+          : {
+              ...queryOptions,
+              pathToClaudeCodeExecutable: launch.command,
+              executableArgs: [...launch.args, ...(queryOptions.executableArgs ?? [])],
+            };
+      const queryRuntime = yield* Effect.uninterruptibleMask((restore) =>
+        Effect.try({
+          try: () => createQuery({ prompt, options: scopedOptions }),
+          catch: (cause) =>
+            new ProviderAdapterProcessError({
+              provider: PROVIDER,
+              threadId,
+              detail: "Failed to start Claude runtime session.",
+              cause,
+            }),
+        }).pipe(
+          Effect.tap((runtime) =>
+            restore(
+              Effect.gen(function* () {
+                if (mcpServers === undefined) return;
+                // The SDK puts inline MCP configs in argv. Register through its stdin control channel
+                // before accepting turns, keeping header credentials out of child arguments and env.
+                const failed = yield* Effect.tryPromise(() =>
+                  runtime.setMcpServers(mcpServers),
+                ).pipe(
+                  Effect.map((result) => Object.keys(result.errors)),
+                  Effect.catch(() => Effect.succeed(Object.keys(mcpServers))),
+                  Effect.timeoutOrElse({
+                    duration: "90 seconds",
+                    orElse: () =>
+                      Effect.fail(
+                        new ProviderAdapterProcessError({
+                          provider: PROVIDER,
+                          threadId,
+                          detail: "Claude Code did not answer the MCP server registration.",
+                        }),
+                      ),
+                  }),
+                );
+                if (failed.length > 0)
+                  yield* Effect.logWarning("Claude MCP servers unavailable", {
+                    threadId,
+                    servers: failed,
+                  });
+              }),
+            ).pipe(
+              Effect.onError(() =>
+                Effect.try(() => runtime.close()).pipe(
+                  Effect.ensuring(Queue.shutdown(promptQueue)),
+                  Effect.ignore,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
 
       const session: ProviderSession = {
         threadId,
@@ -5030,6 +5224,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         pendingTaskModels,
         subagentToolParents,
         workflowMemberFingerprints,
+        workflowMembers: new Map(),
         liveTaskIds,
         turnState: undefined,
         lastKnownContextWindow: initialContextWindow,
@@ -5282,7 +5477,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     context: ClaudeSessionContext,
     taskId: string,
   ) {
-    if (!context.query.stopTask) {
+    if (!context.query.stopTask || !context.liveTaskIds.has(taskId)) {
       return false;
     }
     const stopAcknowledged = yield* Effect.tryPromise({

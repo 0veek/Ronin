@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import type {
   OrchestrationV2AppThread,
   OrchestrationV2ProviderCapabilities,
@@ -404,13 +405,18 @@ function makeProviderAdapter(
     readonly spawnBeforeOpen?: boolean;
     /** Completed when a hanging scope close reaches its wedged finalizer. */
     readonly scopeCloseReached?: Deferred.Deferred<void>;
+    readonly closeReceipt?: Deferred.Deferred<void>;
   } = {},
 ): ProviderAdapterV2Shape {
   const countClose = Effect.addFinalizer(() =>
     Ref.update(state, (current) => ({
       ...current,
       closeCount: current.closeCount + 1,
-    })),
+    })).pipe(
+      Effect.andThen(
+        options.closeReceipt ? Deferred.succeed(options.closeReceipt, undefined) : Effect.void,
+      ),
+    ),
   );
   // Registered after countClose so it runs first on scope close, wedging the
   // close before the closeCount finalizer, like a provider process that never
@@ -546,6 +552,7 @@ function layerTest(input: {
   readonly beforeUnload?: Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
   readonly scopeCloseReached?: Deferred.Deferred<void>;
+  readonly closeReceipt?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
 }) {
   const layerConfiguredEventSink =
@@ -557,6 +564,7 @@ function layerTest(input: {
           ? layerFailingReleaseEventSink
           : layerTestEventSink;
   const adapter = makeProviderAdapter(input.state, {
+    ...(input.closeReceipt ? { closeReceipt: input.closeReceipt } : {}),
     failEventStream: input.failEventStream ?? false,
     ...(input.capabilities === undefined ? {} : { capabilities: input.capabilities }),
     ...(input.mcpConfigs === undefined ? {} : { mcpConfigs: input.mcpConfigs }),
@@ -884,4 +892,118 @@ it.effect("ProviderSessionManagerV2 releases an idle session whose turn start wa
       ),
     );
   }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 starts a thread's session without its last agent's OOM kill",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const owner = ThreadId.make("thread-provider-session-manager-oom-owner");
+      const joiner = ThreadId.make("thread-provider-session-manager-oom-joiner");
+      // Both threads' previous agents were OOM-killed. A new session may run
+      // without a scope (Cursor, OpenCode, a shared Codex session), so it must
+      // not inherit that answer.
+      const oomKilledThreads = new Set<string>([owner, joiner]);
+      const agentScope = {
+        ...AgentScope.defaultValue(),
+        oomKilled: (id: string) => Effect.sync(() => oomKilledThreads.has(id)),
+        clear: (id: string) => Effect.sync(() => void oomKilledThreads.delete(id)),
+      };
+
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId: owner,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: owner, now }),
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: joiner, now }),
+          ],
+        });
+        yield* manager.open({ threadId: owner, providerSessionId, modelSelection, runtimePolicy });
+        assert.isFalse(yield* agentScope.oomKilled(owner));
+
+        yield* manager.open({ threadId: joiner, providerSessionId, modelSelection, runtimePolicy });
+        assert.isFalse(yield* agentScope.oomKilled(joiner));
+
+        // Reopening a session the thread already uses keeps its answer.
+        oomKilledThreads.add(owner);
+        yield* manager.open({ threadId: owner, providerSessionId, modelSelection, runtimePolicy });
+        assert.isTrue(yield* agentScope.oomKilled(owner));
+        assert.equal((yield* Ref.get(state)).openCount, 1);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })),
+        Effect.provideService(AgentScope, agentScope),
+      );
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 renews background pins on native progress and releases silent work",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const probes = yield* Queue.unbounded<void>();
+      const processed = yield* Queue.unbounded<void>();
+      const closed = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const sink = yield* EventSink.EventSinkV2;
+        const ids = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("pin-progress");
+        const providerSessionId = yield* ids.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* sink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator: ids, threadId, now })],
+        });
+        const runtime = yield* manager.open({
+          threadId,
+          providerSessionId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const subscription = yield* runtime.subscribeEvents!;
+        yield* subscription.events.pipe(
+          Stream.runForEach(() => Queue.offer(processed, undefined)),
+          Effect.ignoreCause,
+          Effect.forkChild,
+        );
+        const input = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!;
+        for (let tick = 0; tick < 12; tick++) {
+          yield* TestClock.adjust("1500 millis");
+          yield* Queue.take(probes);
+          yield* Queue.offer(input, {
+            type: "provider_session.updated",
+            driver: CODEX_DRIVER,
+            providerSession: runtime.providerSession,
+          });
+          yield* Queue.take(processed);
+          assert.equal((yield* Ref.get(state)).closeCount, 0);
+        }
+        yield* TestClock.adjust("6 seconds");
+        yield* Deferred.await(closed);
+        assert.equal((yield* Ref.get(state)).closeCount, 1);
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 1000,
+            maxIdlePinMs: 3000,
+            closeReceipt: closed,
+            hasPendingBackgroundWork: Queue.offer(probes, undefined).pipe(Effect.as(true)),
+          }),
+        ),
+      );
+    }),
 );

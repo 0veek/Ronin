@@ -4,9 +4,20 @@ import {
   shouldClearTerminalSelectionAction,
   shouldHandleTerminalExit,
   terminalSelectionLineRange,
+  terminalContextMenuItems,
 } from "./ThreadTerminalDrawer";
 
 describe("terminal selection actions", () => {
+  it("keeps local viewing actions available to a read-only observer", () => {
+    const items = terminalContextMenuItems({ hasSelection: false, readOnly: true });
+    expect(items.filter((item) => !item.disabled).map((item) => item.id)).toEqual([
+      "select-all",
+      "scroll-to-bottom",
+    ]);
+    expect(
+      terminalContextMenuItems({ hasSelection: true, canAddToChat: false }).map((item) => item.id),
+    ).toEqual(["copy", "paste", "select-all", "scroll-to-bottom"]);
+  });
   it("clears a pending or currently owned menu when the selection disappears", () => {
     expect(
       shouldClearTerminalSelectionAction({

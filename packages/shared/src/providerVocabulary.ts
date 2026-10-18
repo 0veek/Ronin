@@ -29,6 +29,7 @@ export const PROVIDER_ORDER: readonly UsageProviderKind[] = [
   "cursor",
   "opencode",
   "antigravity",
+  "pi",
 ];
 
 /**
@@ -43,6 +44,7 @@ export const PROVIDER_LABEL: Record<UsageProviderKind, string> = {
   cursor: "Cursor",
   opencode: "OpenCode",
   antigravity: "Antigravity",
+  pi: "Pi",
 };
 
 /**
@@ -64,6 +66,7 @@ export const PROVIDER_SHORT_LABEL: Record<UsageProviderKind, string> = {
   cursor: "Cursor",
   opencode: "OpenCode",
   antigravity: "Antigravity",
+  pi: "Pi",
 };
 
 /**
@@ -87,6 +90,7 @@ export const DRIVER_LABEL = {
   kilo: "Kilo",
   opencode: "OpenCode",
   pi: "Pi",
+  muse: "Muse Code",
 } as const satisfies Record<string, string>;
 
 /**

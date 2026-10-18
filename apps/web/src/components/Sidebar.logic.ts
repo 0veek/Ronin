@@ -1,3 +1,4 @@
+import { normalizeSearchText } from "../lib/utils";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
 import { defaultAnimateLayoutChanges, type AnimateLayoutChanges } from "@dnd-kit/sortable";
@@ -1203,6 +1204,16 @@ export function searchSidebarThreads<
       term.toLowerCase().includes(normalizedQuery),
     ),
   );
+}
+
+export function pullRequestMatchesSearchQuery(
+  pullRequest: Parameters<typeof threadPullRequestSearchTerms>[0],
+  query: string,
+): boolean {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return false;
+  const terms = normalizeSearchText(threadPullRequestSearchTerms(pullRequest).join(" "));
+  return normalized.split(" ").every((token) => terms.includes(token));
 }
 
 export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {

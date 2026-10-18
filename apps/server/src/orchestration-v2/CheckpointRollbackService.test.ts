@@ -11,6 +11,8 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as KeyedLock from "@t3tools/shared/KeyedLock";
+import { ThreadCommandExecutor } from "./ThreadCommandExecutor.ts";
 
 import {
   CheckpointServiceV2,
@@ -111,7 +113,9 @@ for (const failure of ["prepare-write", "restore", "delete-refs", "result-write"
         let nativeTurns = [1, 2, 3].map((n) => TurnId.make(`native-${n}`));
         let failed = false;
         let preparations = 0;
+        const threadCommands = yield* KeyedLock.make<ThreadId>();
         const deps = Layer.mergeAll(
+          Layer.succeed(ThreadCommandExecutor, threadCommands),
           Layer.mock(CheckpointServiceV2)({
             restore: () =>
               Effect.suspend(() => {
@@ -140,7 +144,15 @@ for (const failure of ["prepare-write", "restore", "delete-refs", "result-write"
           }),
           Layer.mock(EventSinkV2)({
             write: ({ events }) =>
-              Effect.suspend(() => {
+              Effect.flatMap(threadCommands.activeKeys, (locked) => {
+                if (
+                  events.some(
+                    (event) =>
+                      event.type === "run.updated" && event.payload.status === "rolled_back",
+                  )
+                ) {
+                  assert.include(locked, input.threadId);
+                }
                 const preparing =
                   events[0]?.type === "checkpoint.captured" &&
                   events[0].payload.id === input.checkpointId;

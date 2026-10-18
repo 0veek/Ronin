@@ -1,8 +1,12 @@
 import type { AssistantCitation } from "@t3tools/contracts";
-import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { PencilIcon, QuoteIcon } from "lucide-react";
 import {
+  assistantCitationLabel,
+  serializeAssistantCitation,
+} from "@t3tools/shared/assistantCitations";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ArrowUpRightIcon, PencilIcon, QuoteIcon } from "lucide-react";
+import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useRef,
@@ -26,8 +30,9 @@ import {
   COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
   CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES,
 } from "../composerInlineChip";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { ContextChipPopover } from "../contextChipParts";
+import { Button } from "../ui/button";
+import { Popover, PopoverClose, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { AssistantCitationCommentEditor } from "./AssistantCitationCommentEditor";
 import { resolveAssistantCitationCommentDismissal } from "./assistantCitationCommentDismissal";
 import { observeAssistantCitationCommentSource } from "./AssistantCitationSource";
@@ -104,8 +109,7 @@ export function AssistantCitationChip({
         },
       }
     : undefined;
-  const preview = (citation.comment?.trim() || citation.text).replace(/\s+/g, " ");
-  const label = preview.length > 64 ? `${preview.slice(0, 64)}…` : preview;
+  const label = assistantCitationLabel(citation);
   const sourceLinkProps = {
     to: "/$environmentId/$threadId" as const,
     params: { environmentId: citation.environmentId, threadId: citation.threadId },
@@ -130,16 +134,43 @@ export function AssistantCitationChip({
       <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "max-w-[16em]")}>{label}</span>
     </Link>
   );
-  const chatSourceLink = (
-    <Link
-      {...sourceLinkProps}
-      className="inline-flex h-full min-w-0 items-center gap-[0.33em] rounded-sm text-inherit no-underline hover:bg-[color-mix(in_oklab,var(--context-chip-accent)_17%,transparent)] focus-visible:outline-2 focus-visible:outline-[var(--contrast-foreground)]"
-      aria-label={`View cited assistant text: ${label}`}
-    >
-      <QuoteIcon aria-hidden="true" className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME} />
-      <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "max-w-[16em]")}>{label}</span>
-    </Link>
-  );
+  if (!composer) {
+    return (
+      <ContextChipPopover
+        accessibleLabel={`Quoted assistant text: ${label}`}
+        copyMarkdown={serializeAssistantCitation(citation)}
+        chip={
+          <span
+            className={cn(
+              CHAT_INLINE_CHIP_CLASS_NAME,
+              CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.citation,
+            )}
+            data-assistant-citation-chip="true"
+          >
+            <QuoteIcon aria-hidden="true" className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME} />
+            <span className={cn(COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME, "max-w-[16em]")}>
+              {label}
+            </span>
+          </span>
+        }
+      >
+        <div className="flex max-h-[calc(var(--available-height)_-_1rem_-_2px)] flex-col items-start gap-3 p-1 text-sm">
+          <div className="max-h-64 min-h-0 space-y-3 self-stretch overflow-y-auto whitespace-pre-wrap wrap-break-word">
+            <blockquote className="border-l-2 border-border pl-3 text-muted-foreground">
+              {citation.text}
+            </blockquote>
+            {citation.comment ? <p>{citation.comment}</p> : null}
+          </div>
+          <PopoverClose
+            render={<Button variant="outline" size="sm" render={<Link {...sourceLinkProps} />} />}
+          >
+            <ArrowUpRightIcon aria-hidden="true" />
+            Go to source
+          </PopoverClose>
+        </div>
+      </ContextChipPopover>
+    );
+  }
   return (
     <span
       className={cn(
@@ -150,14 +181,7 @@ export function AssistantCitationChip({
       data-assistant-citation-chip="true"
       data-markdown-copy={serializeAssistantCitation(citation)}
     >
-      {composer ? (
-        composerSourceLink
-      ) : (
-        <Tooltip>
-          <TooltipTrigger render={chatSourceLink} />
-          <TooltipPopup side="top">View source</TooltipPopup>
-        </Tooltip>
-      )}
+      {composerSourceLink}
       {commentEditor ? (
         <Popover
           open={commentEditor.open}

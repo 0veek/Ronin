@@ -24,9 +24,67 @@ import {
   openCodexThread,
   readCodexThread,
   rollbackCodexThread,
+  requestCodexMcpApp,
   toMcpElicitationResponse,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
+
+describe("Codex MCP app connection ownership", () => {
+  it.effect("uses the native thread and MCP server for tools, resources and discovery", () =>
+    Effect.gen(function* () {
+      const requests: Array<{ method: string; payload: unknown }> = [];
+      const client = {
+        request: (method: string, payload?: unknown) =>
+          Effect.sync(() => {
+            requests.push({ method, payload });
+            return { content: [] };
+          }),
+      };
+      const scope = {
+        nativeThreadId: "native-app",
+        providerInstanceId: "codex",
+        server: "weather",
+      };
+      yield* requestCodexMcpApp(client, "native-app", { ...scope, operation: "listTools" });
+      yield* requestCodexMcpApp(client, "native-app", {
+        ...scope,
+        operation: "callTool",
+        tool: "refresh",
+        arguments: { city: "Pune" },
+      });
+      yield* requestCodexMcpApp(client, "native-app", {
+        ...scope,
+        operation: "readResource",
+        uri: "ui://weather/data",
+      });
+      NodeAssert.deepEqual(requests, [
+        {
+          method: "mcpServerStatus/list",
+          payload: { threadId: "native-app", serverName: "weather", detail: "toolsAndAuthOnly" },
+        },
+        {
+          method: "mcpServer/tool/call",
+          payload: {
+            threadId: "native-app",
+            server: "weather",
+            tool: "refresh",
+            arguments: { city: "Pune" },
+          },
+        },
+        {
+          method: "mcpServer/resource/read",
+          payload: { threadId: "native-app", server: "weather", uri: "ui://weather/data" },
+        },
+      ]);
+      const changed = yield* requestCodexMcpApp(client, "replacement-native-thread", {
+        ...scope,
+        operation: "listTools",
+      }).pipe(Effect.match({ onFailure: (error) => error, onSuccess: () => null }));
+      NodeAssert.ok(isCodexAppServerRequestError(changed));
+      NodeAssert.equal(requests.length, 3);
+    }),
+  );
+});
 
 describe("Codex thread history", () => {
   for (const numTurns of [1, 2, 3, 5]) {

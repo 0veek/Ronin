@@ -10,6 +10,7 @@
  */
 import { PiSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
+import * as Cache from "effect/Cache";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -26,6 +27,7 @@ import { makePiAdapter } from "../Layers/PiAdapter.ts";
 import {
   buildInitialPiProviderSnapshot,
   checkPiProviderStatus,
+  discoverPiSkills,
   enrichPiSnapshot,
 } from "../Layers/PiProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
@@ -160,6 +162,11 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         ),
       );
 
+      const workspaceSkills = yield* Cache.make({
+        capacity: 64,
+        timeToLive: "30 seconds",
+        lookup: (cwd: string) => discoverPiSkills(effectiveConfig, processEnv, cwd),
+      });
       return {
         instanceId,
         driverKind: DRIVER_KIND,
@@ -168,6 +175,13 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        snapshotForCwd: (cwd) =>
+          !effectiveConfig.enabled
+            ? snapshot.getSnapshot
+            : Effect.all([snapshot.getSnapshot, Cache.get(workspaceSkills, cwd)]).pipe(
+                Effect.map(([current, skills]) => ({ ...current, skills })),
+              ),
+        invalidateCaches: Cache.invalidateAll(workspaceSkills),
         adapter,
         textGeneration,
       } satisfies ProviderInstance;

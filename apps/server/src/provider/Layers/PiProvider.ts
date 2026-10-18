@@ -95,7 +95,7 @@ export function buildInitialPiProviderSnapshot(
  * Skills Pi loads for itself, so the reactor stops inlining them into the
  * prompt on top of what the agent already read from `~/.pi/agent/skills`.
  */
-const discoverPiSkills = (
+export const discoverPiSkills = (
   settings: PiSettings,
   environment: NodeJS.ProcessEnv,
   cwd: string | undefined,

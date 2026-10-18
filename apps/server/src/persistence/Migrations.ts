@@ -11,6 +11,10 @@
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import Migration0065 from "./Migrations/065_McpAppModelContext.ts";
+import Migration0066 from "./Migrations/066_ThreadSnapshotWindowIndexes.ts";
+import Migration0067 from "./Migrations/067_ThreadSnoozeWake.ts";
+import Migration0068 from "./Migrations/068_PullRequestReviewGuides.ts";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -153,6 +157,10 @@ export const migrationEntries = [
   [62, "OrchestrationV2", Migration0062],
   [63, "ProjectionThreadSessionGoal", Migration0063],
   [64, "AutomationWebhooks", Migration0064],
+  [65, "McpAppModelContext", Migration0065],
+  [66, "ThreadSnapshotWindowIndexes", Migration0066],
+  [67, "ThreadSnoozeWake", Migration0067],
+  [68, "PullRequestReviewGuides", Migration0068],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -70,7 +70,7 @@ export type ScanCache = Map<string, CachedFile>;
  * Providers a serialised entry may claim. Listed rather than derived from the
  * contract's schema so a decode stays a plain predicate on cold start.
  */
-const CACHEABLE_PROVIDERS = new Set<string>(["claude", "codex", "grok", "antigravity"]);
+const CACHEABLE_PROVIDERS = new Set<string>(["claude", "codex", "grok", "antigravity", "pi"]);
 
 /**
  * Row layout for the serialised form. Positional and interned rather than
@@ -89,6 +89,8 @@ type SerializedRecord = readonly [
   dedupeKey: string | null,
   reportedCostUsd: number | null,
   speed: number,
+  /** Optional trailing field keeps existing cache rows readable. */
+  rateModelIndex?: number | null,
 ];
 
 interface SerializedFile {
@@ -104,6 +106,7 @@ interface SerializedFile {
   readonly gh: number;
   /** Codex reducer state at `o`; `null` for stateless providers. */
   readonly cs: CodexScanState | null;
+  readonly ps?: { readonly sessionId: string };
 }
 
 interface SerializedCache {
@@ -147,6 +150,9 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     record.dedupeKey,
     record.reportedCostUsd,
     SPEEDS.indexOf(record.speed),
+    record.rateModel === undefined
+      ? null
+      : intern(tables.models, tables.modelIndex, record.rateModel),
   ];
   return {
     s: entry.size,
@@ -158,6 +164,7 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     gl: entry.position.guardLength,
     gh: entry.position.guardHash,
     cs: entry.position.codexState,
+    ...(entry.position.piState ? { ps: entry.position.piState } : {}),
   };
 }
 
@@ -268,14 +275,17 @@ export function decodeScanCache(document: unknown): ScanCache {
         dedupeKey,
         reportedCostUsd,
         speedIndex,
+        rateModelIndex,
       ] = row as SerializedRecord;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
+      const rateModel = typeof rateModelIndex === "number" ? models[rateModelIndex] : undefined;
       if (
         typeof timestampMs !== "number" ||
         !Number.isFinite(timestampMs) ||
         model === undefined ||
+        (rateModelIndex != null && rateModel === undefined) ||
         !Number.isFinite(uncached) ||
         !Number.isFinite(cached) ||
         !Number.isFinite(cacheCreation) ||
@@ -290,6 +300,7 @@ export function decodeScanCache(document: unknown): ScanCache {
         provider,
         timestampMs,
         model,
+        ...(rateModel === undefined ? {} : { rateModel }),
         sessionId: (typeof sessionIndex === "number" ? sessions[sessionIndex] : undefined) ?? "",
         totals: {
           uncachedInputTokens: uncached,
@@ -337,6 +348,11 @@ export function decodeScanCache(document: unknown): ScanCache {
     const codexState = legacyCodex ? null : decodeCodexState(entry.cs);
     if (codexState === undefined) continue;
 
+    if (
+      entry.p === "pi" &&
+      (typeof entry.ps !== "object" || entry.ps === null || typeof entry.ps.sessionId !== "string")
+    )
+      continue;
     const provider: UsageProviderKind = entry.p;
     const records = decodeRecords(entry.r, provider);
     const tailRecords = decodeRecords(entry.t, provider);
@@ -350,7 +366,13 @@ export function decodeScanCache(document: unknown): ScanCache {
       tailRecords,
       position: legacyCodex
         ? { resumeOffset: 0, guardLength: 0, guardHash: 0, codexState: null }
-        : { resumeOffset: entry.o, guardLength: entry.gl, guardHash: entry.gh, codexState },
+        : {
+            resumeOffset: entry.o,
+            guardLength: entry.gl,
+            guardHash: entry.gh,
+            codexState,
+            ...(entry.p === "pi" && entry.ps ? { piState: { sessionId: entry.ps.sessionId } } : {}),
+          },
     });
   }
 

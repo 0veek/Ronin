@@ -12,10 +12,13 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   HammerIcon,
+  ListFilterIcon,
   PencilIcon,
   TagIcon,
   UsersIcon,
 } from "lucide-react";
+import * as Schema from "effect/Schema";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useRef, useState, type ReactNode } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -25,6 +28,14 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import {
+  Menu,
+  MenuCheckboxItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuPopup,
+  MenuTrigger,
+} from "../ui/menu";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
@@ -308,7 +319,17 @@ function Section({
  */
 const COMMENT_PAGE = 30;
 
+/**
+ * Which kinds of comment the conversation shows. Kept per browser rather than per pull request:
+ * whether a reader wants bot reports and finished threads in front of them is a habit, not a
+ * property of one change.
+ */
+const COMMENT_FILTER_STORAGE_KEY = "t3code:pull-request-comment-filter:v1";
+const CommentFilterSchema = Schema.Struct({ bots: Schema.Boolean, resolved: Schema.Boolean });
+const DEFAULT_COMMENT_FILTER: typeof CommentFilterSchema.Type = { bots: false, resolved: false };
+
 export function PullRequestSummaryTab({
+  scrollerRef,
   environmentId,
   threadRef,
   reference,
@@ -323,6 +344,7 @@ export function PullRequestSummaryTab({
   onRefresh,
   onRefreshChecks = onRefresh,
 }: {
+  scrollerRef?: (node: HTMLDivElement | null) => void;
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
@@ -342,10 +364,38 @@ export function PullRequestSummaryTab({
   // rather than wherever the last one had been read back to.
   const [shown, setShown] = useState({ url: detail.url, count: COMMENT_PAGE });
   const shownComments = shown.url === detail.url ? shown.count : COMMENT_PAGE;
+  const [commentFilter, setCommentFilter] = useLocalStorage(
+    COMMENT_FILTER_STORAGE_KEY,
+    DEFAULT_COMMENT_FILTER,
+    CommentFilterSchema,
+  );
+  // A comment that already lives on a review thread is that thread: the thread carries the line
+  // and side the bare comment has lost, and a resolved one is finished work nobody should be
+  // invited to fix again — the same call the whole-review hand-off makes.
+  const threadByCommentId = new Map(
+    detail.reviewThreads.flatMap((thread) =>
+      thread.comments.map((comment) => [comment.id, thread] as const),
+    ),
+  );
+
+  const isFinished = (comment: PullRequestComment) =>
+    threadByCommentId.get(comment.id)?.isResolved === true ||
+    pullRequestReviewOutcome(comment.reviewState) === "dismissed";
+  const isBot = (comment: PullRequestComment) =>
+    comment.author?.isBot === true || comment.author?.login.endsWith("[bot]") === true;
+  const filteredComments = detail.comments.filter(
+    (comment) =>
+      (commentFilter.bots || !isBot(comment)) && (commentFilter.resolved || !isFinished(comment)),
+  );
+  // The one count the filter shows. Per-kind counts would overlap, since a resolved bot comment
+  // is both kinds and needs both shown.
+  const filteredOutCount = detail.comments.length - filteredComments.length;
   // Windowed by recency regardless of display order: expanding always reaches further back in
   // time, whether the newest comment currently reads first or last.
-  const recentComments = detail.comments.slice(Math.max(0, detail.comments.length - shownComments));
-  const hiddenCommentCount = detail.comments.length - recentComments.length;
+  const recentComments = filteredComments.slice(
+    Math.max(0, filteredComments.length - shownComments),
+  );
+  const hiddenCommentCount = filteredComments.length - recentComments.length;
   const [commentOrder, setCommentOrder] = useState<"newest" | "oldest">("newest");
   const visibleComments = orderPullRequestComments(recentComments, commentOrder);
   const showOldestCommentsButton =
@@ -396,15 +446,6 @@ export function PullRequestSummaryTab({
         stale: entry.stale,
       })),
   ];
-
-  // A comment that already lives on a review thread is that thread: the thread carries the line
-  // and side the bare comment has lost, and a resolved one is finished work nobody should be
-  // invited to fix again — the same call the whole-review hand-off makes.
-  const threadByCommentId = new Map(
-    detail.reviewThreads.flatMap((thread) =>
-      thread.comments.map((comment) => [comment.id, thread] as const),
-    ),
-  );
 
   const openLink = useOpenLink(threadRef);
   const openCheck = (url: string) => {
@@ -475,7 +516,7 @@ export function PullRequestSummaryTab({
   };
 
   return (
-    <div className="h-full overflow-y-auto" data-pull-request-summary-scroll>
+    <div ref={scrollerRef} className="h-full overflow-y-auto" data-pull-request-summary-scroll>
       <section className="px-4 pt-2.5 pb-1">
         <div className="space-y-2">
           <MetaRow icon={<UsersIcon className="size-3.5" />} label="Reviewers">
@@ -700,20 +741,51 @@ export function PullRequestSummaryTab({
       <Section
         title="Comments"
         actions={
-          <Button
-            size="xs"
-            variant="ghost"
-            className="h-7 shrink-0 px-2 text-3xs text-muted-foreground"
-            aria-label={
-              commentOrder === "newest"
-                ? "Show oldest comments first"
-                : "Show newest comments first"
-            }
-            onClick={() => setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))}
-          >
-            <ArrowDownUpIcon aria-hidden className="size-3" />
-            {commentOrder === "newest" ? "Newest first" : "Oldest first"}
-          </Button>
+          <div className="flex shrink-0 items-center gap-1">
+            <Menu>
+              <MenuTrigger
+                render={<Button size="xs" variant="ghost" />}
+                aria-label="Filter comments"
+              >
+                <ListFilterIcon aria-hidden className="size-3" />
+                {filteredOutCount > 0 ? `${filteredOutCount} hidden` : "Filter"}
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuGroup>
+                  <MenuGroupLabel>Show</MenuGroupLabel>
+                  <MenuCheckboxItem
+                    checked={commentFilter.bots}
+                    closeOnClick={false}
+                    onCheckedChange={(bots) => setCommentFilter((value) => ({ ...value, bots }))}
+                  >
+                    Bot comments
+                  </MenuCheckboxItem>
+                  <MenuCheckboxItem
+                    checked={commentFilter.resolved}
+                    closeOnClick={false}
+                    onCheckedChange={(resolved) =>
+                      setCommentFilter((value) => ({ ...value, resolved }))
+                    }
+                  >
+                    Resolved or dismissed
+                  </MenuCheckboxItem>
+                </MenuGroup>
+              </MenuPopup>
+            </Menu>
+            <Button
+              size="xs"
+              variant="ghost"
+              aria-label={
+                commentOrder === "newest"
+                  ? "Show oldest comments first"
+                  : "Show newest comments first"
+              }
+              onClick={() => setCommentOrder((value) => (value === "newest" ? "oldest" : "newest"))}
+            >
+              <ArrowDownUpIcon aria-hidden className="size-3" />
+              {commentOrder === "newest" ? "Newest first" : "Oldest first"}
+            </Button>
+          </div>
         }
       >
         {activityPending ? (
@@ -730,6 +802,12 @@ export function PullRequestSummaryTab({
             ) : null}
             {detail.comments.length === 0 ? (
               <p className="py-2 text-xs text-muted-foreground">No comments yet.</p>
+            ) : filteredComments.length === 0 ? (
+              <p className="py-2 text-xs text-muted-foreground">
+                {filteredOutCount === 1
+                  ? "The only comment is hidden by the filter."
+                  : `All ${filteredOutCount} comments are hidden by the filter.`}
+              </p>
             ) : (
               <div className="space-y-3">
                 {commentOrder === "oldest" ? showOldestCommentsButton : null}

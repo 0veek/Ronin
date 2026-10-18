@@ -630,3 +630,8 @@ describe("gitLabAwardName", () => {
     expect(gitLabAwardName("hooray")).toBe("tada");
   });
 });
+
+it("preserves the host-reported head for a pinned review guide", () => {
+  const result = expectSuccess(decodeMergeRequestDetailJson(detailJson({ sha: "a".repeat(40) })));
+  expect(result.headSha).toBe("a".repeat(40));
+});

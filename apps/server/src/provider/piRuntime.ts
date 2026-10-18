@@ -14,7 +14,9 @@ export interface PiAgentSession {
   prompt: (input: string) => Promise<unknown>;
   abort?: () => Promise<unknown> | unknown;
   dispose?: () => Promise<unknown> | unknown;
-  subscribe?: (listener: (event: { type?: string; text?: string }) => void) => () => void;
+  subscribe?: (
+    listener: (event: { type?: string; text?: string; aborted?: boolean }) => void,
+  ) => () => void;
   sessionFile?: string;
   sessionManager?: { getSessionFile?: () => string | undefined };
 }

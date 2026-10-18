@@ -13,7 +13,10 @@ if (permissionIndex === -1 || argv[permissionIndex + 1] !== "dontAsk") {
   fail("text generation must deny permission prompts", 12);
 }
 const toolsIndex = argv.indexOf("--tools");
-if (toolsIndex === -1 || argv[toolsIndex + 1] !== "") {
+if (
+  toolsIndex === -1 ||
+  (argv[toolsIndex + 1] !== "" && argv[toolsIndex + 1] !== "Read,Grep,Glob,Bash")
+) {
   fail("text generation must receive an explicit empty tool set", 6);
 }
 if (argv.includes("--dangerously-skip-permissions")) {

@@ -90,6 +90,7 @@ function toChangeRequest(pullRequest: BitbucketPullRequest): ProviderChangeReque
     url: pullRequest.url,
     author: pullRequest.author,
     headBranch: pullRequest.headBranch,
+    ...(pullRequest.headSha === undefined ? {} : { headSha: pullRequest.headSha }),
     ...(pullRequest.headRepositoryNameWithOwner
       ? { headRepositoryNameWithOwner: pullRequest.headRepositoryNameWithOwner }
       : {}),

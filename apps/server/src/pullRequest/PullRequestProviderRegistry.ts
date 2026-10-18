@@ -7,7 +7,7 @@ import * as AzureDevOpsCli from "../sourceControl/AzureDevOpsCli.ts";
 import * as BitbucketApi from "../sourceControl/BitbucketApi.ts";
 import * as GitHubApi from "../sourceControl/GitHubApi.ts";
 import * as GitHubCredentials from "../sourceControl/GitHubCredentials.ts";
-import * as GitHubGraphQlBudget from "../sourceControl/githubGraphQlBudget.ts";
+import * as GitHubQuota from "../sourceControl/githubQuota.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
 import * as ForgejoCli from "../sourceControl/ForgejoCli.ts";
@@ -64,7 +64,7 @@ export const layer = Layer.effect(PullRequestProviderRegistry, make).pipe(
         GitHubApi.layer.pipe(
           Layer.provide(GitHubCredentials.layer),
           // The same layers GitHubCli merges, so both share one budget and one pause per host.
-          Layer.provide(GitHubGraphQlBudget.layer),
+          Layer.provide(GitHubQuota.layer),
           Layer.provide(SourceControlRateLimit.layer),
         ),
       ),

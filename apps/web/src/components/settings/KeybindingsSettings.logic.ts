@@ -372,6 +372,7 @@ export function buildKeybindingCommandOptions(
 export function commandLabel(command: KeybindingCommand): string {
   if (command === "composer.cycleHost") return "Composer: Next Machine";
   if (command === "composer.sendAndNewThread") return "Composer: Send and Start New Thread";
+  if (command === "chat.find") return "Chat: Find in Thread";
   if (command === "thread.copyReference") return "Pull Request: Copy Link or Thread ID";
   if (command === "view.reopenClosed") return "Reopen Closed Tab";
   const raw = String(command);

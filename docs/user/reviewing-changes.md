@@ -47,3 +47,15 @@ tree — the same thing `git commit` does in a terminal. The commit dialog says 
 
 If nothing is staged, committing takes everything, which is the usual case. Picking specific files
 in the commit dialog still overrides both: those files are what gets committed.
+
+## Arrange the side panel
+
+Drag side-panel tabs to change their order. The selected tab stays selected. Maximizing the
+panel is remembered for each thread, so it returns to the same size when you switch back.
+Closing the panel clears its maximized state.
+
+## Confirm pull request actions
+
+Merge, close, revert, auto-merge, and workflow approval controls ask for a second activation
+in place. Select the highlighted control again within three seconds to confirm. Press Escape,
+click elsewhere, or leave the control to cancel.

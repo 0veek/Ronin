@@ -243,3 +243,40 @@ it.effect("does not continue a failed run that lost background work", () =>
     assert.lengthOf(commands, 0);
   }),
 );
+
+it.effect("dispatches a restart notice with the prompt preserved as its detail", () =>
+  Effect.gen(function* () {
+    const base = makeProjection();
+    const projection = { ...base, runs: [{ ...base.runs[0]!, status: "cancelled" as const }] };
+    const commands: Parameters<
+      ThreadManagementService.ThreadManagementService["Service"]["dispatch"]
+    >[0][] = [];
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(
+        Layer.merge(
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            getThreadRecords: () => Effect.succeed(projection),
+            recoverDelegatedTask: () => Effect.void,
+            dispatch: (command) => {
+              commands.push(command);
+              return Effect.succeed({} as never);
+            },
+          }),
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+        ),
+      ),
+    );
+    assert.lengthOf(commands, 1);
+    const command = commands[0]!;
+    assert.equal(command.type, "message.dispatch");
+    if (command.type === "message.dispatch") {
+      assert.deepEqual(command.notification, {
+        source: { kind: "system" },
+        outcome: "updated",
+        summary: "Ronin restarted and resumed this turn",
+        detail: command.text,
+      });
+      assert.equal(command.text, "Continue where you left off.");
+    }
+  }),
+);

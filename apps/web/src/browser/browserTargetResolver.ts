@@ -7,6 +7,7 @@ import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
 import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
 
 import { readPreparedConnection } from "~/state/session";
+import { isElectron } from "~/env";
 
 export {
   normalizeHostname,
@@ -80,6 +81,14 @@ export function resolveDiscoveredServerUrl(environmentId: EnvironmentId, rawUrl:
     const normalizedUrl = normalizePreviewUrl(rawUrl);
     const parsed = new URL(normalizedUrl);
     if (!isLoopbackHost(parsed.hostname)) return normalizedUrl;
+    // The desktop's primary backend shares this computer's loopback network.
+    // Its advertised LAN address may not reach a loopback-only dev server.
+    if (
+      isElectron &&
+      readPreparedConnection(environmentId)?.target?._tag === "PrimaryConnectionTarget"
+    ) {
+      return normalizedUrl;
+    }
     return resolveEnvironmentPortTarget(
       environmentId,
       {

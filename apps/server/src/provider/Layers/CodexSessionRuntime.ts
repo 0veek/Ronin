@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import {
   ApprovalRequestId,
   DEFAULT_MODEL,
@@ -28,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
+import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
@@ -38,7 +40,11 @@ import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexRpc from "effect-codex-app-server/rpc";
 import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
-import { buildCodexInitializeParams, registerCodexSkillRoots } from "./CodexProvider.ts";
+import {
+  buildCodexInitializeParams,
+  codexAppServerEnvironment,
+  registerCodexSkillRoots,
+} from "./CodexProvider.ts";
 import { codexSessionAppServerArgs } from "./codexLaunchArgs.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import {
@@ -49,6 +55,8 @@ import {
 import { toNativeInteractionMode } from "../DebugModeInstructions.ts";
 import { providerGoalFromCodex } from "../nativeGoals.ts";
 import { makeCodexGoalController } from "./CodexGoals.ts";
+import { MCP_APP_EXTENSION_ID, MCP_APP_MIME_TYPE } from "@t3tools/shared/mcpApp";
+import type { McpAppProviderRequest } from "../../mcpApps/McpAppProvider.ts";
 const decodeV2TurnStartResponse = Schema.decodeUnknownEffect(EffectCodexSchema.V2TurnStartResponse);
 
 const PROVIDER = ProviderDriverKind.make("codex");
@@ -210,6 +218,7 @@ export interface CodexSessionRuntimeOptions {
 }
 
 export interface CodexSessionRuntimeSendTurnInput {
+  readonly appContext?: ReadonlyArray<{ readonly key: string; readonly text: string }>;
   readonly input?: string;
   readonly attachments?: ReadonlyArray<{
     readonly type: "image";
@@ -232,6 +241,9 @@ export interface CodexThreadSnapshot {
 }
 
 export interface CodexSessionRuntimeShape {
+  readonly mcpAppRequest?: (
+    input: McpAppProviderRequest,
+  ) => Effect.Effect<unknown, CodexSessionRuntimeError>;
   readonly start: () => Effect.Effect<ProviderSession, CodexSessionRuntimeError>;
   readonly getSession: Effect.Effect<ProviderSession>;
   readonly sendTurn: (
@@ -305,6 +317,49 @@ export class CodexSessionRuntimeThreadIdMissingError extends Schema.TaggedErrorC
     return `Codex session is missing a provider thread id for ${this.threadId}`;
   }
 }
+
+/** Uses the existing MCP connection, and refuses a different native session. */
+export const requestCodexMcpApp = Effect.fn("requestCodexMcpApp")(function* (
+  client: {
+    readonly request: (
+      method: string,
+      payload?: unknown,
+    ) => Effect.Effect<unknown, CodexErrors.CodexAppServerError>;
+  },
+  threadId: string,
+  input: McpAppProviderRequest,
+) {
+  if (threadId !== input.nativeThreadId) {
+    return yield* CodexErrors.CodexAppServerRequestError.invalidParams(
+      "The app's provider session is no longer active.",
+    );
+  }
+  const method =
+    input.operation === "callTool"
+      ? "mcpServer/tool/call"
+      : input.operation === "readResource"
+        ? "mcpServer/resource/read"
+        : "mcpServerStatus/list";
+  return yield* client
+    .request(method, {
+      threadId,
+      ...(input.operation === "listTools"
+        ? { serverName: input.server, detail: "toolsAndAuthOnly" }
+        : { server: input.server }),
+      ...(input.operation === "callTool" ? { tool: input.tool, arguments: input.arguments } : {}),
+      ...(input.operation === "readResource" ? { uri: input.uri } : {}),
+    })
+    .pipe(
+      Effect.timeoutOption("30 seconds"),
+      Effect.flatMap((result) =>
+        Option.isSome(result)
+          ? Effect.succeed(result.value)
+          : Effect.fail(
+              CodexErrors.CodexAppServerRequestError.invalidParams("The MCP request timed out."),
+            ),
+      ),
+    );
+});
 
 interface PendingApproval {
   readonly requestId: ApprovalRequestId;
@@ -1356,12 +1411,19 @@ export const makeCodexSessionRuntime = (
     // `CODEX_HOME=~/.codex_work` reach codex as an absolute path.
     const resolvedHomePath = options.homePath ? expandHomePath(options.homePath) : undefined;
     const env = {
-      ...options.environment,
+      ...codexAppServerEnvironment(options.environment),
       ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
     };
     const extendEnv = options.environment === undefined;
     const appServerArgs = codexSessionAppServerArgs(options.appServerArgs, options.launchArgs);
-    const spawnCommand = yield* resolveSpawnCommand(options.binaryPath, appServerArgs, {
+    const launch = yield* (yield* AgentScope).wrap({
+      command: options.binaryPath,
+      args: appServerArgs,
+      name: "codex",
+      threadId: options.threadId,
+      env,
+    });
+    const spawnCommand = yield* resolveSpawnCommand(launch.command, launch.args, {
       env,
       extendEnv,
     });
@@ -1932,8 +1994,16 @@ export const makeCodexSessionRuntime = (
           threadId,
           items: Object.entries(context).map(([key, entry]) => ({
             type: "message",
-            role: "developer",
-            content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
+            role: entry.kind === "untrusted" ? "user" : "developer",
+            content: [
+              {
+                type: "input_text",
+                text:
+                  entry.kind === "untrusted"
+                    ? `<external_${key}>${entry.value}</external_${key}>`
+                    : `<${key}>${entry.value}</${key}>`,
+              },
+            ],
           })),
         });
       }).pipe(
@@ -2468,7 +2538,14 @@ export const makeCodexSessionRuntime = (
 
     const start = Effect.fn("CodexSessionRuntime.start")(function* () {
       yield* emitSessionEvent("session/connecting", "Starting Codex App Server session.");
-      yield* client.request("initialize", buildCodexInitializeParams());
+      const initialize = buildCodexInitializeParams();
+      yield* client.raw.request("initialize", {
+        ...initialize,
+        capabilities: {
+          ...initialize.capabilities,
+          extensions: { [MCP_APP_EXTENSION_ID]: { mimeTypes: [MCP_APP_MIME_TYPE] } },
+        },
+      });
       yield* client.notify("initialized", undefined);
       yield* registerCodexSkillRoots(client, NodeOS.homedir());
 
@@ -2564,8 +2641,22 @@ export const makeCodexSessionRuntime = (
             options.mcpCapabilities,
           ),
         });
-        yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
-        const rawResponse = yield* client.raw.request("turn/start", params);
+        const turnParams = input.appContext?.length
+          ? {
+              ...params,
+              additionalContext: {
+                ...params.additionalContext,
+                ...Object.fromEntries(
+                  input.appContext.map((entry) => [
+                    entry.key,
+                    { kind: "untrusted" as const, value: entry.text },
+                  ]),
+                ),
+              },
+            }
+          : params;
+        yield* Ref.set(lastAdditionalContextRef, turnParams.additionalContext);
+        const rawResponse = yield* client.raw.request("turn/start", turnParams);
         const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
           Effect.mapError((error) =>
             CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
@@ -2647,6 +2738,11 @@ export const makeCodexSessionRuntime = (
 
     return {
       start,
+      mcpAppRequest: (input) =>
+        Effect.gen(function* () {
+          const threadId = yield* readProviderThreadId;
+          return yield* requestCodexMcpApp(client.raw, threadId, input);
+        }),
       getSession: Ref.get(sessionRef),
       compactThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;

@@ -49,6 +49,7 @@ import {
   stageLinuxIconSize,
   stageResourceMonitor,
   WINDOWS_NATIVE_ASAR_UNPACK_GLOB,
+  resolveWindowsNativeAsarUnpack,
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
@@ -94,6 +95,32 @@ function iconResizeSpawnerLayer(
 }
 
 it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
+  it.effect("unpacks only PE addons and handles pnpm hoisting for Windows signing", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "ronin-win-addons-" });
+      const files = [
+        ["node_modules/node-pty/prebuilds/win32-x64/pty.node", "MZ Windows"],
+        ["node_modules/node-pty/prebuilds/linux-x64/pty.node", "\x7fELF"],
+        ["node_modules/node-pty/prebuilds/darwin-arm64/pty.node", "MachO"],
+        ["node_modules/.pnpm/addon@1/node_modules/addon/binding.node", "MZ Windows"],
+      ];
+      for (const [file, bytes] of files) {
+        const target = path.join(dir, file!);
+        yield* fs.makeDirectory(path.dirname(target), { recursive: true });
+        yield* fs.writeFileString(target, bytes!);
+      }
+      const globs = yield* resolveWindowsNativeAsarUnpack(dir);
+      const unpacks = (file: string) => globs.some((glob) => NodePath.matchesGlob(file, glob));
+      assert.isTrue(unpacks("node_modules/node-pty/prebuilds/win32-x64/pty.node"));
+      assert.isTrue(unpacks("node_modules/addon/binding.node"));
+      assert.isFalse(unpacks("node_modules/node-pty/prebuilds/linux-x64/pty.node"));
+      assert.isFalse(unpacks("node_modules/node-pty/prebuilds/darwin-arm64/pty.node"));
+      assert.isFalse(unpacks("node_modules/addon/index.js"));
+    }).pipe(Effect.scoped),
+  );
+
   it("resolves the dedicated nightly updater channel from nightly versions", () => {
     assert.equal(resolveDesktopUpdateChannel("0.0.17-nightly.20260413.42"), "nightly");
     assert.equal(resolveDesktopUpdateChannel("0.0.17"), "latest");
@@ -346,6 +373,11 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.notProperty(win, "toolsets");
       assert.deepStrictEqual(mac.files, [...DESKTOP_FILE_EXCLUSIONS, ...MAC_FILE_EXCLUSIONS]);
       assert.notProperty(mac.mac as Record<string, unknown>, "sign");
+      assert.propertyVal(
+        (mac.mac as { extendInfo: Record<string, unknown> }).extendInfo,
+        "NSLocalNetworkUsageDescription",
+        "Ronin connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
+      );
       assert.deepStrictEqual(linux.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
       assert.deepStrictEqual(linux.files, [...DESKTOP_FILE_EXCLUSIONS, ...LINUX_FILE_EXCLUSIONS]);
       assert.deepStrictEqual(win.electronLanguages, DESKTOP_ELECTRON_LANGUAGES);
@@ -461,6 +493,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
       const win = config.win as Record<string, unknown>;
       assert.equal(win.icon, "icon.ico");
+      assert.deepStrictEqual(win.signExts, [".node", ".dll"]);
       assert.equal(win.signAndEditExecutable, true);
       assert.notProperty(win, "azureSignOptions");
       assert.deepStrictEqual(win.protocols, [{ name: "Ronin", schemes: ["t3code"] }]);

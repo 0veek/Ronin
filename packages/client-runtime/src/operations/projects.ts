@@ -1,3 +1,4 @@
+import type { SourceControlProviderKind } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 import type {
   CommandId,
@@ -6,7 +7,6 @@ import type {
   ProjectId,
   ServerConfig,
   SourceControlDiscoveryResult,
-  SourceControlProviderKind,
   SourceControlRepositoryInfo,
 } from "@t3tools/contracts";
 import { newProjectFolderName } from "@t3tools/shared/path";
@@ -25,10 +25,12 @@ import {
 } from "../state/projects.ts";
 import type { EnvironmentProject } from "../state/models.ts";
 
-export type AddProjectRemoteProviderKind = Extract<
-  SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
->;
+export type AddProjectRemoteProviderKind =
+  | "github"
+  | "gitlab"
+  | "forgejo"
+  | "bitbucket"
+  | "azure-devops";
 export type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
 export function canCreateProjectInEnvironment(
@@ -366,4 +368,41 @@ export function buildProjectCreateCommand(input: {
     defaultModelSelection: null,
     createdAt: input.createdAt,
   };
+}
+
+/** A ready host that can place a new repository without another workspace or project choice. */
+export interface NewProjectPublishTarget {
+  readonly definition: { readonly kind: AddProjectRemoteProviderKind; readonly label: string };
+  readonly owner: string | null;
+}
+export function getNewProjectPublishTargets(
+  discovery: SourceControlDiscoveryResult | null,
+): ReadonlyArray<NewProjectPublishTarget> {
+  const readiness = buildAddProjectRemoteSourceReadiness(discovery);
+  const definitions = [
+    { kind: "github", label: "GitHub" },
+    { kind: "gitlab", label: "GitLab" },
+    { kind: "forgejo", label: "Forgejo" },
+  ] as const;
+  return definitions.flatMap((definition) => {
+    if (!readiness[definition.kind].ready) return [];
+    const provider = discovery?.sourceControlProviders.find(
+      (provider) => provider.kind === definition.kind,
+    );
+    const owner = provider ? Option.getOrNull(provider.auth.account) : null;
+    if (definition.kind === "forgejo" && !owner) return [];
+    return [{ definition, owner }];
+  });
+}
+export function getNewProjectPublishTarget(
+  targets: ReadonlyArray<NewProjectPublishTarget>,
+  kind: SourceControlProviderKind | null,
+): NewProjectPublishTarget | null {
+  return targets.find((target) => target.definition.kind === kind) ?? targets[0] ?? null;
+}
+export function getNewProjectRepository(
+  target: Pick<NewProjectPublishTarget, "owner">,
+  workspaceRoot: string,
+): string {
+  return getNewProjectGitHubRepository({ account: target.owner }, workspaceRoot);
 }

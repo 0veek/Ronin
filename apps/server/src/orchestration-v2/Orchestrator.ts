@@ -112,6 +112,8 @@ import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
 import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
 import { RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import {
+  endOrphanedNativeSubagent,
+  endRunlessRootTurns,
   makeSubagentChildThread,
   subagentResultForRun,
   delegatedTaskProgress,
@@ -2514,10 +2516,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const automaticQueuedRuns = projection.runs.filter(
         (run) => run.status === "queued" && automaticMessageIds.has(run.userMessageId),
       );
-      const activeRunExists = projection.runs.some(
-        (run) =>
-          ["preparing", "queued", "starting", "running", "waiting"].includes(run.status) &&
-          !automaticQueuedRuns.includes(run),
+      const runningRunExists = projection.runs.some((run) =>
+        ["preparing", "starting", "running", "waiting"].includes(run.status),
+      );
+      // Includes a queue held after a Stop, which otherwise shows no activity.
+      const queuedMessageExists = projection.runs.some(
+        (run) => run.status === "queued" && !automaticQueuedRuns.includes(run),
       );
       const pendingRequests = projection.runtimeRequests.filter(
         (request) => request.status === "pending",
@@ -2525,11 +2529,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const blockingRequestExists = pendingRequests.some(
         (request) => request.kind !== "user_input" || request.responseCapability.type !== "message",
       );
-      if (activeRunExists || blockingRequestExists) {
+      // The reason is shown to the user, so it names what to clear first.
+      const blocker = blockingRequestExists
+        ? "is waiting on an approval or question. Answer it before settling."
+        : runningRunExists
+          ? "is still running. Stop it before settling."
+          : queuedMessageExists
+            ? "has a queued message. Send it or remove it from the queue before settling."
+            : null;
+      if (blocker !== null) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: `Thread ${command.threadId} has active or blocked work and cannot be settled.`,
+          cause: `Thread ${command.threadId} ${blocker}`,
         });
       }
 
@@ -2735,6 +2747,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             snoozedUntil: null,
             snoozedAt: null,
+            lastSnoozeWakeAt: alreadyAwake ? thread.lastSnoozeWakeAt : now,
             updatedAt: alreadyAwake ? thread.updatedAt : now,
           };
         }
@@ -2766,6 +2779,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             settledAt: thread.settledOverride === "settled" ? null : thread.settledAt,
             snoozedUntil: null,
             snoozedAt: null,
+            lastSnoozeWakeAt: thread.snoozedUntil == null ? thread.lastSnoozeWakeAt : now,
             updatedAt: alreadyPinned && !promotes ? thread.updatedAt : now,
           };
         }
@@ -2837,7 +2851,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   thread.snoozedUntil != null &&
                   DateTime.toEpochMillis(thread.snoozedUntil) ===
                     Date.parse(thread.limitRecovery.resetAt)
-                ? { snoozedUntil: null, snoozedAt: null }
+                ? { snoozedUntil: null, snoozedAt: null, lastSnoozeWakeAt: now }
                 : {}),
             ...(command.branch === undefined ? {} : { branch: command.branch }),
             ...(command.worktreePath === undefined ? {} : { worktreePath: command.worktreePath }),
@@ -4535,11 +4549,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           dispatchMode = { type: "start_immediately" };
         }
       }
+      // A restart continuation resumes the interrupted turn, so it starts
+      // immediately rather than queueing like other wakes.
       if (
         command.notification !== undefined &&
         (command.createdBy !== "agent" ||
           (command.creationSource !== "server" && command.creationSource !== "provider") ||
-          dispatchMode.type !== "queue_after_active")
+          (dispatchMode.type !== "queue_after_active" &&
+            !(
+              command.restartContinuationOfRunId !== undefined &&
+              dispatchMode.type === "start_immediately"
+            )))
       ) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
@@ -8050,7 +8070,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly events: Ref.Ref<Array<OrchestrationV2DomainEvent>>;
     readonly projection: Pick<
       OrchestrationV2ThreadProjection,
-      "runs" | "turnItems" | "providerThreads"
+      "runs" | "nodes" | "subagents" | "turnItems" | "providerThreads"
     >;
     readonly stoppedProviderThreadId: OrchestrationV2ProviderThread["id"] | null;
     readonly throughRunOrdinal: number;
@@ -8059,6 +8079,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     Effect.gen(function* () {
       const emitEvent = emit(input.events, input.command);
       const runOrdinals = new Map(input.projection.runs.map((run) => [run.id, run.ordinal]));
+      const allocateEventId = () =>
+        idAllocator.allocate.event({
+          threadId: input.command.threadId,
+          commandId: input.command.commandId,
+        });
+      const childThreadIds = new Set<ThreadId>();
       const liveness = new Map<string, boolean>();
       const hasLiveSession = (providerThreadId: OrchestrationV2ProviderThread["id"]) =>
         Effect.gen(function* () {
@@ -8108,6 +8134,61 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: input.now,
           },
         });
+        if (item.type !== "subagent") continue;
+        // A native subagent died with the process too: end its record, its own
+        // thread's runless root turn, and the subagents it started there, which
+        // a provider can record on that thread rather than this one.
+        const dying: Array<{
+          readonly projection: Pick<
+            OrchestrationV2ThreadProjection,
+            "nodes" | "subagents" | "turnItems"
+          >;
+          readonly subagent: Extract<OrchestrationV2TurnItem, { readonly type: "subagent" }>;
+        }> = [{ projection: input.projection, subagent: item }];
+        for (const { projection, subagent } of dying) {
+          const ended = yield* endOrphanedNativeSubagent({
+            projection,
+            subagentId: subagent.subagentId,
+            status: "interrupted",
+            now: input.now,
+            emitted: yield* Ref.get(input.events),
+            allocateEventId,
+          }).pipe(mapDispatchError(input.command));
+          yield* Ref.update(input.events, (events) => [...events, ...ended]);
+          const childThreadId = subagent.childThreadId;
+          if (
+            subagent.origin !== "provider_native" ||
+            childThreadId === null ||
+            childThreadIds.has(childThreadId)
+          ) {
+            continue;
+          }
+          childThreadIds.add(childThreadId);
+          const child = yield* projectionStore
+            .getThreadRecords(childThreadId, ["nodes", "subagents", "turnItems"], {
+              // Runless items are the subagent's; any run there is the user's own.
+              turnItemRunIds: [null],
+              turnItemStatuses: ["pending", "running", "waiting"],
+            })
+            .pipe(
+              Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+              mapDispatchError(input.command),
+            );
+          if (child === null) continue;
+          const childEnded = yield* endRunlessRootTurns({
+            threadId: childThreadId,
+            providerInstanceId: subagent.providerInstanceId,
+            projection: child,
+            status: "interrupted",
+            now: input.now,
+            emitted: yield* Ref.get(input.events),
+            allocateEventId,
+          }).pipe(mapDispatchError(input.command));
+          yield* Ref.update(input.events, (events) => [...events, ...childEnded]);
+          for (const nested of child.turnItems) {
+            if (nested.type === "subagent") dying.push({ projection: child, subagent: nested });
+          }
+        }
       }
       for (const providerThread of input.projection.providerThreads) {
         // A live process owns its roster and reports clearing it.
@@ -10378,25 +10459,33 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       // while holding the parent lock, so nesting the parent lock inside the
       // child lock here would invert that order, and the keyed executor's
       // semaphores are neither reentrant nor deadlock-aware.
-      const parentThreadId = yield* appOwnedSubagentParentThreadId(threadId);
-      if (parentThreadId !== undefined) {
-        yield* threadDispatch.withLock(parentThreadId, finalizeAppOwnedSubagent(threadId));
-      }
       if (stored.event.type === "run.updated") {
         yield* threadDispatch.withLock(
           threadId,
           finalizeDelegatedCompletionDelivery(threadId, stored.event.payload.id),
         );
       }
-      yield* threadDispatch.withLock(
-        threadId,
-        startNextQueuedRun(
+      yield* threadDispatch
+        .withLock(
           threadId,
-          stored.event.type === "run.updated" && stored.event.payload.status === "failed"
-            ? { failedRunId: stored.event.payload.id }
-            : undefined,
-        ),
-      );
+          startNextQueuedRun(
+            threadId,
+            stored.event.type === "run.updated" && stored.event.payload.status === "failed"
+              ? { failedRunId: stored.event.payload.id }
+              : undefined,
+          ),
+        )
+        .pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Failed to start the next queued V2 run", { threadId, cause }),
+          ),
+        );
+      // After the queue decision: a provider failure holds the child's queued
+      // wakes, and only then is the failed run the task's result.
+      const parentThreadId = yield* appOwnedSubagentParentThreadId(threadId);
+      if (parentThreadId !== undefined) {
+        yield* threadDispatch.withLock(parentThreadId, finalizeAppOwnedSubagent(threadId));
+      }
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("Failed to react to terminal V2 run", {

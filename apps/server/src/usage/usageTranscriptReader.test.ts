@@ -7,11 +7,13 @@ import * as NodePath from "node:path";
 import * as NodeSqlite from "node:sqlite";
 
 import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 
+import { encodeScanCache, decodeScanCache } from "./usageScanCache.ts";
 import { readTranscriptRecords } from "./usageTranscriptReader.ts";
 import { readOpenCodeUsage } from "./opencodeUsageReader.ts";
 import { readCursorAccountUsage } from "./cursorUsageReader.ts";
-import { readAntigravityUsage } from "./antigravityUsageReader.ts";
+import { makeAntigravityUsageCache, readAntigravityUsage } from "./antigravityUsageReader.ts";
 
 let dir: string;
 
@@ -96,6 +98,50 @@ function codexUsageLine(outputTokens: number, secondsOffset: number): string {
 }
 
 describe("readTranscriptRecords resume", () => {
+  it("keeps Pi session identity and pricing keys across large lines, appends and cache reloads", async () => {
+    const file = NodePath.join(dir, "pi.jsonl");
+    const usage = (id: string, content = "") =>
+      JSON.stringify({
+        type: "message",
+        id,
+        timestamp: "2026-08-01T10:00:00Z",
+        message: {
+          role: "assistant",
+          provider: "anthropic",
+          model: "requested",
+          responseModel: "actual",
+          content: [{ type: "text", text: content }],
+          usage: { input: 100, output: 20, cost: { total: 0.25 } },
+        },
+      });
+    await NodeFSP.writeFile(
+      file,
+      JSON.stringify({ type: "session", id: "pi-session" }) +
+        "\n" +
+        usage("one", "x".repeat(3 * 1024 * 1024)) +
+        "\n",
+    );
+    const first = await readTranscriptRecords(file, "pi");
+    assert.isNotNull(first);
+    const cache = new Map([
+      [
+        file,
+        { size: (await NodeFSP.stat(file)).size, mtimeMs: 1, provider: "pi" as const, ...first },
+      ],
+    ]);
+    const saved = decodeScanCache(JSON.parse(JSON.stringify(encodeScanCache(cache))));
+    assert.deepEqual(saved.get(file)?.records, first.records);
+    assert.deepEqual(saved.get(file)?.position.piState, { sessionId: "pi-session" });
+    await NodeFSP.appendFile(file, usage("two") + "\n");
+    const second = await readTranscriptRecords(file, "pi", saved.get(file)?.position);
+    assert.isNotNull(second);
+    assert.isTrue(second.resumed);
+    assert.strictEqual(second.records.length, 1);
+    assert.strictEqual(second.records[0]?.sessionId, "pi-session");
+    assert.strictEqual(second.records[0]?.model, "anthropic/actual");
+    assert.strictEqual(second.records[0]?.rateModel, "actual");
+  });
+
   it("parses only appended lines when resuming a grown file", async () => {
     const path = NodePath.join(dir, "claude.jsonl");
     await NodeFSP.writeFile(path, claudeLine(1, 5) + claudeLine(2, 7));
@@ -479,6 +525,114 @@ describe("SQLite usage readers", () => {
     assert.isFalse(requested);
   });
 
+  it("bounds raw OpenCode history allocations across sparse row IDs", async () => {
+    const db = new NodeSqlite.DatabaseSync(NodePath.join(dir, "opencode.db"));
+    db.exec("CREATE TABLE message (id TEXT, session_id TEXT, data TEXT, time_created INTEGER)");
+    const sinceMs = 1780000000000;
+    const message = {
+      role: "assistant",
+      modelID: "claude-sonnet-4-5",
+      time: { created: sinceMs },
+      tokens: { input: 100, output: 20 },
+      body: "x".repeat(64 * 1024),
+    };
+    const data = JSON.stringify(message);
+    const insert = db.prepare(
+      "INSERT INTO message (rowid, id, session_id, data, time_created) VALUES (?, ?, ?, ?, ?)",
+    );
+    for (let index = 0; index < 130; index++)
+      insert.run(index * 2 - 10, `msg-${index}`, "session-1", data, sinceMs);
+    insert.run(300, "old", "session-1", data, sinceMs - 1);
+    insert.run(301, "user", "session-1", JSON.stringify({ ...message, role: "user" }), sinceMs);
+    insert.run(302, "invalid", "session-1", "{invalid", sinceMs);
+    insert.run(303, "msg-0", "session-1", data, sinceMs);
+    db.close();
+    let largestRawResult = 0;
+    const originalAll = NodeSqlite.StatementSync.prototype.all;
+    const spy = vi.spyOn(NodeSqlite.StatementSync.prototype, "all").mockImplementation(function (
+      this: NodeSqlite.StatementSync,
+      ...params
+    ) {
+      const rows = originalAll.apply(this, params);
+      largestRawResult = Math.max(
+        largestRawResult,
+        rows.reduce((size, row) => size + (typeof row.data === "string" ? row.data.length : 0), 0),
+      );
+      return rows;
+    });
+    try {
+      const result = await readOpenCodeUsage(dir, sinceMs);
+      assert.isFalse(result.error);
+      const records = result.files.flatMap((file) => file.records);
+      assert.deepStrictEqual(
+        records.map((record) => record.dedupeKey),
+        Array.from({ length: 130 }, (_, index) => `opencode:msg-${index}`),
+      );
+      assert.strictEqual(
+        records.reduce((sum, record) => sum + record.totals.uncachedInputTokens, 0),
+        13000,
+      );
+      assert.isBelow(largestRawResult, 6 * 1024 * 1024);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("skips stale legacy OpenCode messages and never follows store symlinks", async () => {
+    const sinceMs = 1780000000000;
+    const store = NodePath.join(dir, "storage", "message");
+    const session = NodePath.join(store, "session-1");
+    const outside = NodePath.join(dir, "outside");
+    await NodeFSP.mkdir(session, { recursive: true });
+    await NodeFSP.mkdir(outside);
+    const write = async (directory: string, id: string, mtimeMs: number) => {
+      const path = NodePath.join(directory, `${id}.json`);
+      await NodeFSP.writeFile(
+        path,
+        JSON.stringify({
+          id,
+          role: "assistant",
+          modelID: "test",
+          time: { created: sinceMs + 1000 },
+          tokens: { input: 100, output: 20 },
+        }),
+      );
+      await NodeFSP.utimes(path, mtimeMs / 1000, mtimeMs / 1000);
+      return path;
+    };
+    const target = await write(outside, "linked", sinceMs + 60_000);
+    await NodeFSP.symlink(target, NodePath.join(session, "linked.json"));
+    await NodeFSP.symlink(outside, NodePath.join(store, "linked-session"));
+    await NodeFSP.symlink(store, NodePath.join(session, "cycle"));
+    await NodeFSP.symlink(
+      NodePath.join(outside, "missing.json"),
+      NodePath.join(session, "missing.json"),
+    );
+    await NodeFSP.symlink(NodePath.join(session, "loop.json"), NodePath.join(session, "loop.json"));
+    assert.deepStrictEqual(await readOpenCodeUsage(dir, sinceMs), {
+      files: [],
+      missing: true,
+      error: false,
+    });
+    await write(session, "old", sinceMs - 60_000);
+    assert.deepStrictEqual(await readOpenCodeUsage(dir, sinceMs), {
+      files: [],
+      missing: false,
+      error: false,
+    });
+    const recent = await write(session, "new", sinceMs + 60_000);
+    const result = await readOpenCodeUsage(dir, sinceMs);
+    assert.isFalse(result.error);
+    assert.deepStrictEqual(
+      result.files.map((file) => file.path),
+      [recent],
+    );
+    assert.deepStrictEqual(
+      result.files.flatMap((file) => file.records).map((record) => record.dedupeKey),
+      ["opencode:new"],
+    );
+  });
+
   it("counts migrated OpenCode messages once and sees subsequent WAL writes", async () => {
     const db = new NodeSqlite.DatabaseSync(NodePath.join(dir, "opencode.db"));
     try {
@@ -736,6 +890,73 @@ describe("SQLite usage readers", () => {
       records.map((record) => record.timestampMs),
       [1780000200000, 1780000200000],
     );
+  });
+
+  const antigravityGeneration = (responseId: string) =>
+    new Uint8Array(
+      protoBytes(1, [
+        ...protoBytes(4, [
+          ...protoNumber(2, 100),
+          ...protoNumber(3, 40),
+          ...protoText(11, responseId),
+        ]),
+        ...protoText(19, "Gemini 3 Pro"),
+        ...protoBytes(9, protoBytes(4, protoNumber(1, 1780000000))),
+      ]),
+    );
+
+  it("reuses an unchanged Antigravity database instead of decoding it again", async () => {
+    const path = NodePath.join(dir, "session-1.db");
+    const db = new NodeSqlite.DatabaseSync(path);
+    try {
+      db.exec("CREATE TABLE gen_metadata (idx INTEGER, data BLOB)");
+      db.prepare("INSERT INTO gen_metadata VALUES (?, ?)").run(0, antigravityGeneration("r-1"));
+      const cache = makeAntigravityUsageCache();
+      assert.deepStrictEqual((await readAntigravityUsage(dir, 0, cache)).errors, []);
+
+      // An exclusive lock makes a fresh read fail without touching the file, so
+      // only a cache hit can still return the earlier records.
+      db.exec("BEGIN EXCLUSIVE");
+      assert.strictEqual((await readAntigravityUsage(dir, 0)).errors.length, 1);
+      const cached = await readAntigravityUsage(dir, 0, cache);
+      assert.deepStrictEqual(cached.errors, []);
+      assert.deepStrictEqual(
+        cached.files.flatMap((file) => file.records).map((record) => record.dedupeKey),
+        ["antigravity:11:r-1"],
+      );
+      db.exec("ROLLBACK");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rereads an Antigravity database when only its WAL changed", async () => {
+    const path = NodePath.join(dir, "session-1.db");
+    const db = new NodeSqlite.DatabaseSync(path);
+    try {
+      db.exec(
+        "PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0; CREATE TABLE gen_metadata (idx INTEGER, data BLOB)",
+      );
+      const insert = db.prepare("INSERT INTO gen_metadata VALUES (?, ?)");
+      insert.run(0, antigravityGeneration("r-1"));
+      const cache = makeAntigravityUsageCache();
+      const first = await readAntigravityUsage(dir, 0, cache);
+      assert.strictEqual(first.files.flatMap((file) => file.records).length, 1);
+
+      const before = await NodeFSP.stat(path);
+      insert.run(1, antigravityGeneration("r-2"));
+      const after = await NodeFSP.stat(path);
+      assert.strictEqual(after.size, before.size);
+      assert.strictEqual(after.mtimeMs, before.mtimeMs);
+
+      const next = await readAntigravityUsage(dir, 0, cache);
+      assert.deepStrictEqual(
+        next.files.flatMap((file) => file.records).map((record) => record.dedupeKey),
+        ["antigravity:11:r-1", "antigravity:11:r-2"],
+      );
+    } finally {
+      db.close();
+    }
   });
 
   it("reads Antigravity step-only stores and reports malformed databases", async () => {

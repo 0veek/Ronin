@@ -41,8 +41,12 @@ In Settings, open your Claude provider and set **Auto-compact after** to a token
 reaches about 300,000 tokens, without changing the model's context window. Leave the field
 empty to keep Claude Code's default behavior.
 
-When you return to an older Claude thread with a large context, Ronin offers to compact the
-conversation before you continue. You can also select **Compact context** from the context meter,
+When you return to a large Claude thread after its prompt cache expires, a **Compact** chip next to Send
+shows its token count. Enter compacts first while the chip is on. Click it to switch to **Full**
+and keep the full history for that message. A successful send resets the choice.
+Ronin uses the cache lifetime Claude reports: about an hour for subscription usage within its limits,
+or five minutes for API keys, Bedrock, Vertex, and extra usage.
+You can also select **Compact context** from the context meter,
 or enter `/compact` in the message composer. Claude can show its own resume prompt when you
 continue an old session.
 
@@ -273,3 +277,15 @@ Ronin uses the Claude configuration on the connected server.
 For an eligible older conversation with substantial context, the send button offers **Compact and
 send**. Ronin asks Claude to summarize the history, then queues your message until compaction
 finishes. Select **Send with full history** from the send menu to skip compaction for that message.
+
+## Workflow conversations and controls
+
+Open the **Agents** panel to follow a Claude workflow’s phases and members. Select a member’s
+name to read its prompt and answers. Conversations load from the connected environment when opened,
+including after a workflow finishes; opening one does not start Claude. Use **Refresh** to pick up
+an answer that has just finished writing. If only a progress excerpt is available, Ronin labels it.
+Very large conversations show their latest part.
+
+Each running workflow has its own **Stop** control. It stops that workflow’s phases and members
+while leaving the parent conversation and other workflows running. Individual workflow members
+cannot be stopped separately. Retried members show the current attempt’s conversation.

@@ -20,6 +20,7 @@ import * as NodePath from "node:path";
 
 import type { UsageProviderKind } from "@t3tools/contracts";
 
+import { parsePiLine, type PiScanState } from "./piTranscripts.ts";
 import { type AntigravityStepRow, parseAntigravityConversation } from "./antigravityTranscripts.ts";
 import {
   initialCodexScanState,
@@ -57,6 +58,7 @@ export interface TranscriptParsePosition {
   readonly guardHash: number;
   /** Codex reducer state as of `resumeOffset`; `null` for stateless providers. */
   readonly codexState: CodexScanState | null;
+  readonly piState?: typeof PiScanState.Type;
 }
 
 export interface TranscriptParseResult {
@@ -108,9 +110,8 @@ function fnv1a(buffer: Buffer): number {
  * scan would also stream the chat history, which is the bulk of the bytes and
  * none of the answer.
  *
- * Errors on individual entries are swallowed: session files rotate and get
- * removed while the walk is in flight, and a partial listing is far better than
- * failing the page.
+ * Unreadable paths are counted so the source can report incomplete usage.
+ * Files that vanish between listing and stat are ordinary rotation.
  *
  * `fileName` restricts the walk to a single basename (Grok's `updates.jsonl`).
  * Grok sessions also ship multi-megabyte `chat_history` and `events` logs that
@@ -125,13 +126,15 @@ export async function listTranscriptFiles(
   root: string,
   sinceMs: number,
   fileName?: string,
-): Promise<readonly TranscriptFile[]> {
+): Promise<{ readonly files: readonly TranscriptFile[]; readonly failedPaths: number }> {
   const candidates: string[] = [];
+  let failedPaths = 0;
   const walk = async (dir: string): Promise<void> => {
     let entries;
     try {
       entries = await NodeFSP.readdir(dir, { withFileTypes: true });
     } catch {
+      failedPaths += 1;
       return;
     }
     for (const entry of entries) {
@@ -154,15 +157,16 @@ export async function listTranscriptFiles(
         if (stats.mtimeMs >= sinceMs) {
           found[index] = { path, size: stats.size, mtimeMs: stats.mtimeMs };
         }
-      } catch {
-        // Vanished between readdir and stat.
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+          failedPaths += 1;
       }
     }
   };
   await Promise.all(
     Array.from({ length: Math.min(STAT_CONCURRENCY, candidates.length) }, statQueued),
   );
-  return found.filter((file) => file !== undefined);
+  return { files: found.filter((file) => file !== undefined), failedPaths };
 }
 
 /**
@@ -382,20 +386,32 @@ export async function readTranscriptRecords(
 
   try {
     let codexState = initialCodexScanState();
+    let piState = { sessionId: "" };
     let resumed = false;
     let start = 0;
     if (
       resumeFrom !== undefined &&
       resumeFrom.resumeOffset > 0 &&
       (provider !== "codex" || resumeFrom.codexState !== null) &&
+      (provider !== "pi" || resumeFrom.piState !== undefined) &&
       (await guardMatches(handle, resumeFrom))
     ) {
       if (resumeFrom.codexState !== null) codexState = { ...resumeFrom.codexState };
+      if (resumeFrom.piState) piState = { ...resumeFrom.piState };
       start = resumeFrom.resumeOffset;
       resumed = true;
     }
 
-    const parseLine = (line: string, state: CodexScanState, out: UsageRecord[]): void => {
+    const parseLine = (
+      line: string,
+      state: CodexScanState,
+      out: UsageRecord[],
+      pi = piState,
+    ): void => {
+      if (provider === "pi") {
+        if (mightCarryUsage(line, provider)) out.push(...parsePiLine(line, pi));
+        return;
+      }
       if (provider === "codex") {
         if (
           !mightCarryUsage(line, provider) &&
@@ -462,7 +478,8 @@ export async function readTranscriptRecords(
     const tailRecords: UsageRecord[] = [];
     if (pendingChunks.length > 0) {
       const pending = pendingChunks.length === 1 ? pendingChunks[0]! : Buffer.concat(pendingChunks);
-      if (pending.length > 0) parseLine(toLineString(pending), { ...codexState }, tailRecords);
+      if (pending.length > 0)
+        parseLine(toLineString(pending), { ...codexState }, tailRecords, { ...piState });
     }
 
     const guardLength = Math.min(GUARD_LENGTH, resumeOffset);
@@ -481,6 +498,7 @@ export async function readTranscriptRecords(
         guardLength,
         guardHash,
         codexState: provider === "codex" ? codexState : null,
+        ...(provider === "pi" ? { piState } : {}),
       },
       resumed,
     };

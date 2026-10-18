@@ -342,8 +342,8 @@ export default function DiffPanel({
     },
     { enabled: isGitRepo && selectedTurn !== undefined },
   );
-  const primaryBranchDiffPreview = useEnvironmentQuery(
-    selectedTurnId === null && activeThread && activeCwd
+  const branchDiffPreview = useEnvironmentQuery(
+    canReadFiles && selectedTurnId === null && activeThread && activeCwd
       ? reviewEnvironment.diffPreview({
           environmentId: activeThread.environmentId,
           input: {
@@ -354,26 +354,6 @@ export default function DiffPanel({
         })
       : null,
   );
-  const shouldRetryBranchDiffAtEnvironmentCwd =
-    selectedTurnId === null &&
-    primaryBranchDiffPreview.error?.includes("configured workspace root") === true &&
-    serverConfig?.cwd !== undefined &&
-    serverConfig.cwd !== activeCwd;
-  const fallbackBranchDiffPreview = useEnvironmentQuery(
-    canReadFiles && shouldRetryBranchDiffAtEnvironmentCwd && activeThread && serverConfig
-      ? reviewEnvironment.diffPreview({
-          environmentId: activeThread.environmentId,
-          input: {
-            cwd: serverConfig.cwd,
-            ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
-            ignoreWhitespace: diffIgnoreWhitespace,
-          },
-        })
-      : null,
-  );
-  const branchDiffPreview = shouldRetryBranchDiffAtEnvironmentCwd
-    ? fallbackBranchDiffPreview
-    : primaryBranchDiffPreview;
   const refreshBranchDiffPreview = branchDiffPreview.refresh;
   const canRefreshGitDiff =
     isGitRepo && selectedTurnId === null && activeThread != null && activeCwd != null;
@@ -797,6 +777,18 @@ export default function DiffPanel({
     }),
     [diffLayout, wordWrap, resolvedTheme, hasLoadDiffFiles, loadDiffFiles],
   );
+
+  const unfoldDiffFile = useCallback((fileKey: string) => {
+    const { collapseScopeKey, defaultCollapsedDiffFileKeys } = collapseDefaultsRef.current;
+    setCollapsedDiffFiles((current) => {
+      const fileKeys =
+        current.scopeKey === collapseScopeKey ? current.fileKeys : defaultCollapsedDiffFileKeys;
+      if (!fileKeys.has(fileKey)) return current;
+      const next = new Set(fileKeys);
+      next.delete(fileKey);
+      return { scopeKey: collapseScopeKey, fileKeys: next };
+    });
+  }, []);
 
   const toggleDiffFileCollapse = useCallback(() => {
     setCodeViewRevision((current) => current + 1);
@@ -1269,6 +1261,7 @@ export default function DiffPanel({
                   <AnnotatableCodeView
                     key={collapseScopeKey ?? reviewSectionId}
                     viewerRef={setCodeView}
+                    onRevealSearchMatch={unfoldDiffFile}
                     codeViewKey={codeViewMountKey}
                     className="h-full min-h-0 overflow-auto"
                     files={codeViewFiles}

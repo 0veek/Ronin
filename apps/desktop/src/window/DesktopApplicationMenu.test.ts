@@ -81,6 +81,8 @@ const makeDesktopWindowLayer = (selectedAction: Deferred.Deferred<string>) =>
     openDesktopUrl: () => Effect.void,
     zoomMain: (direction) =>
       Deferred.succeed(selectedAction, `zoom-${direction}`).pipe(Effect.asVoid),
+    runMainContentsCommand: (command) =>
+      Deferred.succeed(selectedAction, `main-${command}`).pipe(Effect.asVoid),
     syncAppearance: Effect.void,
   } satisfies DesktopWindow.DesktopWindow["Service"]);
 
@@ -98,6 +100,8 @@ const configureMenu = (
   selectedAction: Deferred.Deferred<string>,
   applicationMenuTemplate: Deferred.Deferred<readonly Electron.MenuItemConstructorOptions[]>,
   openedUrl?: Deferred.Deferred<string>,
+  environment: Partial<DesktopEnvironment.MakeDesktopEnvironmentInput> = {},
+  configEnv: Readonly<Record<string, string>> = {},
 ) =>
   Effect.gen(function* () {
     const menu = yield* DesktopApplicationMenu.DesktopApplicationMenu;
@@ -111,8 +115,8 @@ const configureMenu = (
         Layer.provideMerge(electronDialogLayer),
         Layer.provideMerge(electronAppLayer),
         Layer.provideMerge(
-          DesktopEnvironment.layer(environmentInput).pipe(
-            Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest({}))),
+          DesktopEnvironment.layer({ ...environmentInput, ...environment }).pipe(
+            Layer.provide(Layer.mergeAll(NodeServices.layer, DesktopConfig.layerTest(configEnv))),
           ),
         ),
       ),
@@ -120,6 +124,39 @@ const configureMenu = (
   );
 
 describe("DesktopApplicationMenu", () => {
+  it.effect("keeps display branding in the macOS application menu", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(selectedAction, applicationMenuTemplate, undefined, {
+        platform: "darwin",
+        appVersion: "0.0.43-nightly.20260929.2428",
+      });
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const applicationMenu = template[0];
+      assert.isDefined(applicationMenu);
+      assert.equal(applicationMenu.label, "Ronin (Nightly)");
+      if (!Array.isArray(applicationMenu.submenu)) {
+        throw new Error("Expected application menu submenu to be an array.");
+      }
+      assert.equal(
+        applicationMenu.submenu.find((item) => item.role === "about")?.label,
+        "About Ronin (Nightly)",
+      );
+      assert.equal(
+        applicationMenu.submenu.find((item) => item.role === "hide")?.label,
+        "Hide Ronin (Nightly)",
+      );
+      assert.equal(
+        applicationMenu.submenu.find((item) => item.role === "quit")?.label,
+        "Quit Ronin (Nightly)",
+      );
+    }),
+  );
+
   it.effect("installs the native menu and routes Settings through DesktopWindow", () =>
     Effect.gen(function* () {
       const selectedAction = yield* Deferred.make<string>();
@@ -274,7 +311,13 @@ describe("DesktopApplicationMenu", () => {
       const applicationMenuTemplate =
         yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
 
-      yield* configureMenu(selectedAction, applicationMenuTemplate);
+      yield* configureMenu(
+        selectedAction,
+        applicationMenuTemplate,
+        undefined,
+        {},
+        { VITE_DEV_SERVER_URL: "http://localhost:5173" },
+      );
 
       const template = yield* Deferred.await(applicationMenuTemplate);
       const viewMenu = template.find((item) => item.label === "View");
@@ -284,7 +327,9 @@ describe("DesktopApplicationMenu", () => {
       }
 
       assert.isUndefined(
-        viewMenu.submenu.find((item) => item.role?.toLowerCase().includes("zoom")),
+        viewMenu.submenu.find((item) =>
+          ["zoom", "reload", "devtools"].some((role) => item.role?.toLowerCase().includes(role)),
+        ),
       );
 
       const zoomIn = viewMenu.submenu.find((item) => item.label === "Zoom In");
@@ -296,6 +341,38 @@ describe("DesktopApplicationMenu", () => {
 
       zoomIn.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
       assert.equal(yield* Deferred.await(selectedAction), "zoom-in");
+    }),
+  );
+
+  it.effect("reloads the main window even while a browser page has focus", () =>
+    Effect.gen(function* () {
+      const selectedAction = yield* Deferred.make<string>();
+      const applicationMenuTemplate =
+        yield* Deferred.make<readonly Electron.MenuItemConstructorOptions[]>();
+
+      yield* configureMenu(
+        selectedAction,
+        applicationMenuTemplate,
+        undefined,
+        {},
+        {
+          VITE_DEV_SERVER_URL: "http://localhost:5173",
+        },
+      );
+
+      const template = yield* Deferred.await(applicationMenuTemplate);
+      const viewMenu = template.find((item) => item.label === "View");
+      if (!Array.isArray(viewMenu?.submenu)) {
+        throw new Error("Expected View menu submenu to be an array.");
+      }
+      const reload = viewMenu.submenu.find((item) => item.label === "Reload");
+      assert.equal(reload?.accelerator, "CmdOrCtrl+R");
+      if (typeof reload?.click !== "function") {
+        throw new Error("Expected Reload menu item to have a click handler.");
+      }
+
+      reload.click({} as Electron.MenuItem, {} as Electron.BrowserWindow, {} as KeyboardEvent);
+      assert.equal(yield* Deferred.await(selectedAction), "main-reload");
     }),
   );
 });

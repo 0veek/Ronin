@@ -259,7 +259,24 @@ export const makeDiscovery = Effect.gen(function* () {
         },
       } satisfies SourceControlProviderDiscoveryItem;
     }),
-    refineUnknownRemote: () => Effect.succeed(null),
+    refineUnknownRemote: ({ context }) => {
+      const url = URL.parse(context.provider.baseUrl);
+      if (!url?.host) return Effect.succeed(null);
+      return api.credential(url.host).pipe(
+        Effect.as(true),
+        Effect.catchTags({ GitHubHostDisabledError: () => Effect.succeed(true) }),
+        Effect.orElseSucceed(() => false),
+        Effect.map((known) =>
+          known
+            ? {
+                kind: "github" as const,
+                name: "GitHub Self-Hosted",
+                baseUrl: context.provider.baseUrl,
+              }
+            : null,
+        ),
+      );
+    },
   } satisfies SourceControlManagedCliDiscoverySpec;
 });
 
@@ -274,6 +291,7 @@ export const make = Effect.gen(function* () {
           .listOpenPullRequests({
             cwd: input.cwd,
             headSelector: input.headSelector,
+            ...(input.context === undefined ? {} : { context: input.context }),
             ...(input.context === undefined
               ? {}
               : { rateLimitHost: new URL(input.context.provider.baseUrl).host }),
@@ -302,6 +320,7 @@ export const make = Effect.gen(function* () {
         .listPullRequestsByHead({
           cwd: input.cwd,
           headSelector: input.headSelector,
+          ...(input.context === undefined ? {} : { context: input.context }),
           state: input.state,
           limit: input.limit ?? 20,
           ...(input.context === undefined
@@ -421,6 +440,7 @@ export const make = Effect.gen(function* () {
           headSelector: input.headSelector,
           title: input.title,
           bodyFile: input.bodyFile,
+          ...(input.context === undefined ? {} : { context: input.context }),
         })
         .pipe(
           Effect.mapError(

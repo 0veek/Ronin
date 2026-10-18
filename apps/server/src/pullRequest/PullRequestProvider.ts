@@ -73,6 +73,7 @@ export interface PullRequestProviderFailure {
 
 /** A change request as the provider sees it, before the service attaches project context. */
 export interface ProviderChangeRequest {
+  readonly headSha?: string | null;
   readonly stack?: PullRequestStackMembership;
   readonly number: number;
   readonly title: string;

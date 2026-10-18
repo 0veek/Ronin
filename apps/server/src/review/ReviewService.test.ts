@@ -4,6 +4,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import { ProjectId } from "@t3tools/contracts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -12,13 +14,35 @@ import * as ReviewService from "./ReviewService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 function makeLayer(input: {
+  readonly projectRoots?: ReadonlyArray<string> | "unavailable";
   readonly workspaceRoot: string;
   readonly baseDir: string;
   readonly worktreesDirectory?: string;
   readonly previousWorktreesDirectories?: ReadonlyArray<string>;
   readonly detectCalls?: Array<{ readonly cwd: string }>;
 }) {
+  const projectRoots = input.projectRoots ?? [];
   return ReviewService.layer.pipe(
+    Layer.provide(
+      Layer.mock(ProjectStore.ProjectStoreV2)({
+        listShells: () =>
+          projectRoots === "unavailable"
+            ? Effect.fail(
+                new ProjectStore.ProjectStoreV2Error({ operation: "list", cause: "offline" }),
+              )
+            : Effect.succeed(
+                projectRoots.map((workspaceRoot, index) => ({
+                  id: ProjectId.make(`project-${index}`),
+                  title: `Project ${index}`,
+                  workspaceRoot,
+                  defaultModelSelection: null,
+                  scripts: [],
+                  createdAt: "2026-01-01T00:00:00.000Z",
+                  updatedAt: "2026-01-01T00:00:00.000Z",
+                })),
+              ),
+      }),
+    ),
     Layer.provide(
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
         get: () => Effect.die("unexpected VCS registry get"),
@@ -43,6 +67,38 @@ function makeLayer(input: {
 }
 
 describe("ReviewService", () => {
+  it.effect("allows registered project roots outside the server cwd", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      // Stands in for a project on another drive than the server's home cwd.
+      const projectRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-project-" });
+      const projectChild = `${projectRoot}/packages/app`;
+      yield* fs.makeDirectory(projectChild, { recursive: true });
+      const sibling = `${projectRoot}-sibling`;
+      yield* fs.makeDirectory(sibling);
+      yield* Effect.addFinalizer(() => fs.remove(sibling, { recursive: true }).pipe(Effect.ignore));
+
+      const review = (cwd: string, projectRoots: ReadonlyArray<string> | "unavailable") =>
+        Effect.gen(function* () {
+          const service = yield* ReviewService.ReviewService;
+          return yield* service.getDiffPreview({ cwd });
+        }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, projectRoots })));
+
+      assert.strictEqual((yield* review(projectRoot, [projectRoot])).cwd, projectRoot);
+      assert.strictEqual((yield* review(projectChild, [projectRoot])).cwd, projectChild);
+      for (const [cwd, projectRoots] of [
+        [sibling, [projectRoot]],
+        [projectRoot, []],
+        [projectRoot, "unavailable"],
+      ] as const) {
+        const error = yield* review(cwd, projectRoots).pipe(Effect.flip);
+        assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      }
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("allows previous custom worktree locations but never a filesystem root", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

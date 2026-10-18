@@ -1,3 +1,5 @@
+import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as AgentScopeLive from "./process/agentScope.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 
@@ -32,6 +34,8 @@ import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import { pullRequestHttpApiLayer } from "./pullRequest/http.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
+import * as PullRequestReviewGuides from "./persistence/PullRequestReviewGuides.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import { ProjectionThreadActivityRepositoryLive } from "./persistence/Layers/ProjectionThreadActivities.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -41,7 +45,8 @@ import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
-import { ProviderServiceLive } from "./provider/Layers/ProviderService.ts";
+import { makeProviderServiceLive } from "./provider/Layers/ProviderService.ts";
+import { makeMcpAppModelContext } from "./mcpApps/McpAppModelContext.ts";
 import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
 import * as OpenCodeRuntime from "./provider/opencodeRuntime.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
@@ -129,6 +134,7 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as RateLimitService from "./rateLimits/RateLimitService.ts";
 import * as SpeechToTextService from "./speechToText/SpeechToTextService.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import * as CursorUsageReader from "./usage/cursorUsageReader.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import { RoninOrchestrationLayerLive } from "./orchestration-v2/runtimeLayer.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
@@ -190,7 +196,10 @@ const BackgroundLayerLive = BackgroundPolicy.layer.pipe(
   Layer.provideMerge(ServerSettingsLayerLive),
 );
 
-const UsageLayerLive = UsageService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
+const UsageLayerLive = UsageService.layer.pipe(
+  Layer.provide(ServerSettingsLayerLive),
+  Layer.provide(CursorUsageReader.layer),
+);
 
 const RateLimitLayerLive = RateLimitService.layer.pipe(Layer.provide(ServerSettingsLayerLive));
 
@@ -264,7 +273,23 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 // `create()`; `ProviderEventLoggers.layer` owns the shared native/canonical
 // NDJSON writers and is provided at the outer runtime layer so both
 // `ProviderService` and the per-instance drivers read the same logger pair.
-const ProviderLayerLive = ProviderServiceLive.pipe(
+const ProviderLayerLive = Layer.unwrap(
+  Effect.gen(function* () {
+    const context = yield* makeMcpAppModelContext();
+    return makeProviderServiceLive({
+      readMcpAppContext: (threadId) =>
+        context
+          .forThread(threadId)
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Failed to read MCP app model context.", { cause }).pipe(
+                Effect.as([]),
+              ),
+            ),
+          ),
+    });
+  }),
+).pipe(
   Layer.provide(ProviderAdapterRegistryLive),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
@@ -364,6 +389,7 @@ const ProjectCloneTrackerLayerLive = ProjectCloneTracker.layer.pipe(
 );
 
 const ReviewLayerLive = ReviewService.layer.pipe(
+  Layer.provide(ProjectStore.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(VcsDriverRegistryLayerLive),
 );
@@ -530,6 +556,14 @@ export const makeRoutesLayer = Layer.mergeAll(
 ).pipe(
   // Both transports consume the same service instance, so caches single-flight across clients
   // and mutations observed on WebSocket invalidate patches subsequently read over HTTP.
+  Layer.provide(
+    PullRequestReviewGuideService.layer.pipe(
+      Layer.provide(PullRequestReviewGuides.layer),
+      Layer.provide(
+        TextGeneration.layer.pipe(Layer.provide(SourceControlProviderRegistryLayerLive)),
+      ),
+    ),
+  ),
   Layer.provide(PullRequestServiceLive),
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer),
@@ -550,7 +584,7 @@ export const makeServerLayer = Layer.unwrap(
     const routesReady = yield* Deferred.make<void>();
     const launcherLayer = ServiceLauncherClient.layer;
 
-    yield* fixPath();
+    yield* fixPath({ shellEnvironmentPrepared: config.shellEnvironmentPrepared });
 
     const httpListeningLayer = Layer.effectDiscard(
       Effect.gen(function* () {
@@ -680,6 +714,7 @@ export const makeServerLayer = Layer.unwrap(
       Layer.provideMerge(FetchHttpClient.layer),
       // PR reads, Git operations, and WebSocket discovery share one process limiter.
       Layer.provide(VcsProcess.layer),
+      Layer.provideMerge(AgentScopeLive.layer),
       Layer.provideMerge(PlatformServicesLive),
     );
   }),

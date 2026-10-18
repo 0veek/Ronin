@@ -1,8 +1,11 @@
-"use client";
+import { previewEnvironment } from "~/state/preview";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { openUrlInPreview } from "./openFileInPreview";
+("use client");
 
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { AuthPreviewOperateScope, FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
-import { type ComponentProps, useEffect, useMemo } from "react";
+import { type ComponentProps, useEffect, useEffectEvent, useMemo } from "react";
 
 import { useEnvironmentScope } from "~/state/session";
 import { isElectron } from "~/env";
@@ -79,6 +82,22 @@ export function ElectronBrowserHost() {
       useBrowserPointerStore.getState().apply(event);
     });
   }, []);
+
+  const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: true });
+  const openLink = useEffectEvent(
+    ({ tabId, url, background }: import("@t3tools/contracts").DesktopPreviewOpenLinkEvent) => {
+      const source = sessions.find((session) => session.runtimeTabId === tabId);
+      if (!source) return;
+      void openUrlInPreview({
+        threadRef: source.threadRef,
+        url,
+        openPreview,
+        profileId: source.snapshot.profileId,
+        background,
+      });
+    },
+  );
+  useEffect(() => window.desktopBridge?.preview?.onOpenLink?.(openLink), []);
 
   if (!isElectron) return null;
   return (

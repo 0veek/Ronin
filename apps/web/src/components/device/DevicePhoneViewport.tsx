@@ -1,3 +1,4 @@
+import { observeResize } from "~/lib/observeResize";
 import { useEffect, useRef, type RefObject } from "react";
 import type { PhoneViewer } from "@t3tools/client-runtime/device/phone-viewer";
 import type {
@@ -64,8 +65,7 @@ export function DevicePhoneViewport(props: {
       const { width, height } = host.getBoundingClientRect();
       viewerRef.current?.resize(width, height, window.devicePixelRatio);
     };
-    const observer = new ResizeObserver(resize);
-    observer.observe(host);
+    const stopObserving = observeResize(host, resize);
     const blur = () => {
       interactionRef.current?.end();
       trackpad?.cancel();
@@ -113,7 +113,7 @@ export function DevicePhoneViewport(props: {
       onInputCancel(null);
       onResetReady(null);
       onFrameListener(null);
-      observer.disconnect();
+      stopObserving();
       window.removeEventListener("blur", blur);
       viewerRef.current?.dispose();
       viewerRef.current = null;

@@ -1,3 +1,4 @@
+import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Crypto from "effect/Crypto";
@@ -21,7 +22,12 @@ const { fromPartition, sessions } = vi.hoisted(() => ({
   >(),
 }));
 
+const { fromWebContents } = vi.hoisted(() => ({
+  fromWebContents: vi.fn<(webContents: unknown) => unknown>(() => null),
+}));
+
 vi.mock("electron", () => ({
+  BrowserWindow: { fromWebContents },
   session: {
     fromPartition,
   },
@@ -29,7 +35,21 @@ vi.mock("electron", () => ({
 
 import * as BrowserSession from "./BrowserSession.ts";
 
-const layer = BrowserSession.layer.pipe(Layer.provide(NodeServices.layer));
+const { showMessageBox } = vi.hoisted(() => ({
+  showMessageBox: vi.fn<
+    (options: Electron.MessageBoxOptions, owner?: Electron.BrowserWindow) => number
+  >(() => 1),
+}));
+const layerDialog = Layer.succeed(ElectronDialog.ElectronDialog, {
+  pickFolder: () => Effect.die("unused"),
+  pickFiles: () => Effect.die("unused"),
+  showMessageBox: (options, owner) =>
+    Effect.sync(() => ({ response: showMessageBox(options, owner), checkboxChecked: false })),
+  showErrorBox: () => Effect.void,
+});
+const layer = BrowserSession.layer.pipe(
+  Layer.provide(Layer.merge(NodeServices.layer, layerDialog)),
+);
 
 describe("BrowserSession", () => {
   beforeEach(() => {
@@ -140,49 +160,120 @@ describe("BrowserSession", () => {
     }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("only grants sanitized clipboard writes to untrusted preview content", () =>
+  it.effect(
+    "grants clipboard writes and fullscreen while denying unrelated preview permissions",
+    () =>
+      Effect.gen(function* () {
+        const browserSessions = yield* BrowserSession.BrowserSession;
+        const partition = yield* browserSessions.getPartition("scope-a");
+        yield* browserSessions.getSession("scope-a");
+
+        const browserSession = sessions.get(partition);
+        assert.isDefined(browserSession);
+
+        const requestHandler = browserSession.setPermissionRequestHandler.mock.calls[0]?.[0];
+        const checkHandler = browserSession.setPermissionCheckHandler.mock.calls[0]?.[0];
+        assert.isFunction(requestHandler);
+        assert.isFunction(checkHandler);
+
+        const requestAllows = (permission: string): boolean => {
+          let granted: boolean | undefined;
+          requestHandler(null, permission, (value: boolean) => {
+            granted = value;
+          });
+          assert.isDefined(granted);
+          return granted;
+        };
+
+        assert.isTrue(requestAllows("fullscreen"));
+        assert.isTrue(checkHandler(null, "fullscreen") as boolean);
+        assert.isTrue(requestAllows("clipboard-sanitized-write"));
+        assert.isTrue(checkHandler(null, "clipboard-sanitized-write") as boolean);
+
+        // `clipboard-write` is not a real Electron permission — the async write API
+        // uses `clipboard-sanitized-write` — so the stale name must not be granted.
+        // Sensitive read, location, and notification capabilities also stay denied
+        // because previews intentionally host arbitrary web content.
+        for (const permission of [
+          "clipboard-read",
+          "clipboard-write",
+          "notifications",
+          "geolocation",
+          "midi",
+        ]) {
+          assert.isFalse(requestAllows(permission), `request handler should deny ${permission}`);
+          assert.isFalse(
+            checkHandler(null, permission) as boolean,
+            `check handler should deny ${permission}`,
+          );
+        }
+      }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("opens custom-scheme links externally only after the user confirms", () =>
     Effect.gen(function* () {
       const browserSessions = yield* BrowserSession.BrowserSession;
       const partition = yield* browserSessions.getPartition("scope-a");
       yield* browserSessions.getSession("scope-a");
-
-      const browserSession = sessions.get(partition);
-      assert.isDefined(browserSession);
-
-      const requestHandler = browserSession.setPermissionRequestHandler.mock.calls[0]?.[0];
-      const checkHandler = browserSession.setPermissionCheckHandler.mock.calls[0]?.[0];
+      const requestHandler =
+        sessions.get(partition)?.setPermissionRequestHandler.mock.calls[0]?.[0];
       assert.isFunction(requestHandler);
-      assert.isFunction(checkHandler);
 
-      const requestAllows = (permission: string): boolean => {
-        let granted: boolean | undefined;
-        requestHandler(null, permission, (value: boolean) => {
-          granted = value;
+      const request = (externalURL: string) =>
+        Effect.callback<boolean>((resume) => {
+          requestHandler(
+            null,
+            "openExternal",
+            (granted: boolean) => resume(Effect.succeed(granted)),
+            { externalURL },
+          );
         });
-        assert.isDefined(granted);
-        return granted;
-      };
 
-      assert.isTrue(requestAllows("clipboard-sanitized-write"));
-      assert.isTrue(checkHandler(null, "clipboard-sanitized-write") as boolean);
+      showMessageBox.mockReset();
+      showMessageBox.mockReturnValueOnce(0).mockReturnValueOnce(1);
+      assert.isTrue(yield* request("slack://open?team=T1"));
+      assert.isFalse(yield* request("zoommtg://zoom.us/join"));
+      assert.strictEqual(showMessageBox.mock.calls.length, 2);
 
-      // `clipboard-write` is not a real Electron permission — the async write API
-      // uses `clipboard-sanitized-write` — so the stale name must not be granted.
-      // Sensitive read, location, and notification capabilities also stay denied
-      // because previews intentionally host arbitrary web content.
-      for (const permission of [
-        "clipboard-read",
-        "clipboard-write",
-        "notifications",
-        "geolocation",
-        "midi",
-      ]) {
-        assert.isFalse(requestAllows(permission), `request handler should deny ${permission}`);
-        assert.isFalse(
-          checkHandler(null, permission) as boolean,
-          `check handler should deny ${permission}`,
-        );
+      for (const url of ["file:///etc/passwd", "javascript:alert(1)", "data:text/html,x"]) {
+        assert.isFalse(yield* request(url), `${url} must never open externally`);
       }
+      assert.strictEqual(showMessageBox.mock.calls.length, 2);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  // A prompt without an owner can open behind the app window, leaving the one
+  // prompt slot taken and every later link silently denied.
+  it.effect("attaches the open-externally prompt to the window hosting the preview", () =>
+    Effect.gen(function* () {
+      const browserSessions = yield* BrowserSession.BrowserSession;
+      const partition = yield* browserSessions.getPartition("scope-a");
+      yield* browserSessions.getSession("scope-a");
+      const requestHandler =
+        sessions.get(partition)?.setPermissionRequestHandler.mock.calls[0]?.[0];
+      assert.isFunction(requestHandler);
+
+      const hostWindow = { id: 7 } as unknown as Electron.BrowserWindow;
+      const host = { isDestroyed: () => false };
+      const guest = { isDestroyed: () => false, hostWebContents: host };
+      fromWebContents.mockImplementation((webContents) =>
+        webContents === host ? hostWindow : null,
+      );
+      showMessageBox.mockReset();
+      showMessageBox.mockReturnValueOnce(1);
+
+      yield* Effect.callback<boolean>((resume) => {
+        requestHandler(
+          guest,
+          "openExternal",
+          (granted: boolean) => resume(Effect.succeed(granted)),
+          {
+            externalURL: "slack://open?team=T1",
+          },
+        );
+      });
+
+      assert.strictEqual(showMessageBox.mock.calls[0]?.[1], hostWindow);
     }).pipe(Effect.provide(layer)),
   );
 
@@ -217,7 +308,11 @@ describe("BrowserSession", () => {
         "Failed to derive a desktop preview browser partition for scope environment-a.",
       );
       assert.notInclude(error.message, nativeCause.message);
-    }).pipe(Effect.provide(BrowserSession.layer.pipe(Layer.provide(failingCryptoLayer))));
+    }).pipe(
+      Effect.provide(
+        BrowserSession.layer.pipe(Layer.provide(Layer.merge(failingCryptoLayer, layerDialog))),
+      ),
+    );
   });
 
   it.effect("preserves session scope, partition, and the Electron failure", () =>

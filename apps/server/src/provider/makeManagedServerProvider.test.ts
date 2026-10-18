@@ -389,6 +389,29 @@ describe("makeManagedServerProvider", () => {
     ).pipe(Effect.provide(AlwaysRunTestLayer)),
   );
 
+  it.effect("does not enrich a disabled provider snapshot", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let enrichmentCalls = 0;
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          maintenanceCapabilities,
+          getSettings: Effect.succeed({ enabled: false }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          refreshOnInterval: false,
+          initialSnapshot: () => Effect.succeed({ ...initialSnapshot, enabled: false }),
+          checkProvider: Effect.succeed({ ...refreshedSnapshot, enabled: false }),
+          enrichSnapshot: () => {
+            enrichmentCalls++;
+            return Effect.void;
+          },
+        });
+        yield* provider.refresh;
+        assert.equal(enrichmentCalls, 0);
+      }),
+    ).pipe(Effect.provide(AlwaysRunTestLayer)),
+  );
+
   it.effect("can update settings and disable periodic checks without probing again", () =>
     Effect.scoped(
       Effect.gen(function* () {

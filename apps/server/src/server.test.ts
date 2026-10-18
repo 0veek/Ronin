@@ -1,3 +1,5 @@
+import * as PlatformError from "effect/PlatformError";
+import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { SecretRequests } from "./secrets/SecretRequests.ts";
 import { AutomationWebhooks } from "./automation/AutomationWebhooks.ts";
@@ -20,6 +22,7 @@ import {
   EnvironmentId,
   EventId,
   GitCommandError,
+  VcsProcessSpawnError,
   KeybindingRule,
   MessageId,
   ExternalLauncherCommandNotFoundError,
@@ -125,6 +128,8 @@ import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionRe
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { ProjectionThreadActivityRepositoryLive } from "./persistence/Layers/ProjectionThreadActivities.ts";
+import { ProjectionThreadRepositoryLive } from "./persistence/Layers/ProjectionThreads.ts";
+import { ProviderService } from "./provider/Services/ProviderService.ts";
 import { ProjectionThreadActivityRepository } from "./persistence/Services/ProjectionThreadActivities.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
@@ -675,6 +680,7 @@ const buildAppUnderTest = (options?: {
           ...options.layers.reviewService,
         })
       : ReviewService.layer.pipe(
+          Layer.provide(ProjectStore.layer),
           Layer.provideMerge(gitVcsDriverLayer),
           Layer.provide(vcsDriverRegistryLayer),
           Layer.provide(serverSettingsLayer),
@@ -908,6 +914,7 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+          getTaskActivity: () => Effect.die("unused task activity query"),
           getUserInputActivity: () => Effect.die("unused"),
           getCommandReadModel: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
           getSnapshot: () => Effect.succeed(makeDefaultOrchestrationReadModel()),
@@ -924,6 +931,14 @@ const buildAppUnderTest = (options?: {
               projects: [],
               threads: [],
               updatedAt: "1970-01-01T00:00:00.000Z",
+            }),
+          searchThread: () =>
+            Effect.succeed({
+              snapshotSequence: 0,
+              totalMatches: 0,
+              activeIndex: 0,
+              navigation: [],
+              match: null,
             }),
           searchThreads: () => Effect.succeed({ matches: [] }),
           getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
@@ -967,6 +982,12 @@ const buildAppUnderTest = (options?: {
 
     const appLayer = servedRoutesLayer
       .pipe(
+        Layer.provide(ProjectionThreadRepositoryLive),
+        Layer.provide(
+          Layer.mock(ProviderService)({
+            mcpAppRequest: () => Effect.die("No live MCP app session in the HTTP fixture"),
+          }),
+        ),
         Layer.provide(
           options?.layers?.threadActivities
             ? Layer.mock(ProjectionThreadActivityRepository)(options.layers.threadActivities)
@@ -4614,6 +4635,39 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("offers Scratch when Git is not installed", () =>
+    Effect.gen(function* () {
+      yield* buildAppUnderTest({
+        layers: {
+          vcsDriverRegistry: {
+            detect: ({ cwd }) =>
+              Effect.fail(
+                new VcsProcessSpawnError({
+                  operation: "GitVcsDriver.isInsideWorkTree",
+                  command: "git",
+                  cwd,
+                  cause: PlatformError.systemError({
+                    _tag: "NotFound",
+                    module: "ChildProcess",
+                    method: "spawn",
+                    syscall: "spawn git",
+                  }),
+                }),
+              ),
+          },
+        },
+      });
+      yield* Effect.scoped(
+        withWsRpcClient(yield* getWsServerUrl("/ws"), (client) =>
+          Effect.gen(function* () {
+            const config = yield* client[WS_METHODS.serverGetConfig]({});
+            assert.isTrue(config.scratchWorkspaceRoot?.endsWith("scratch") === true);
+          }),
+        ),
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("withholds Scratch when the data dir sits inside a work tree", () =>
     Effect.gen(function* () {
       yield* buildAppUnderTest({
@@ -6008,6 +6062,14 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           projectionSnapshotQuery: {
             getSnapshot: () => Effect.succeed(snapshot),
+            searchThread: () =>
+              Effect.succeed({
+                snapshotSequence: 0,
+                totalMatches: 0,
+                activeIndex: 0,
+                navigation: [],
+                match: null,
+              }),
             searchThreads: () =>
               Effect.succeed({
                 matches: [

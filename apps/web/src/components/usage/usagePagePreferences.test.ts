@@ -41,6 +41,13 @@ afterEach(() => {
 });
 
 describe("Usage page preferences", () => {
+  it("keeps hidden providers and reads older preferences", async () => {
+    const { readUsagePagePreferences, saveUsagePagePreferences } = await loadPreferences();
+    saveUsagePagePreferences({ metric: "cost", windowDays: 7, hiddenProviders: ["codex"] });
+    expect(readUsagePagePreferences().hiddenProviders).toEqual(["codex"]);
+    values.set(key, '{"metric":"tokens","windowDays":30}');
+    expect(readUsagePagePreferences()).toEqual({ metric: "tokens", windowDays: 30 });
+  });
   it("uses defaults when no preference has been saved", async () => {
     const { readUsagePagePreferences } = await loadPreferences();
     expect(readUsagePagePreferences()).toEqual(defaults);

@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { resolveProjectSettings } from "./compat/projectSettings.ts";
 import {
@@ -318,6 +319,7 @@ export const layerWithOptions = (
     ProviderSessionManagerV2,
     Effect.gen(function* () {
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
+      const agentScope = yield* AgentScope;
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
       /**
@@ -1095,7 +1097,11 @@ export const layerWithOptions = (
           ),
         );
 
-      const scheduleIdleReleaseInternal = (providerSessionId: ProviderSessionId) =>
+      // Native progress renews a background-work pin; client reads do not.
+      const scheduleIdleReleaseInternal = (
+        providerSessionId: ProviderSessionId,
+        options?: { readonly providerActivity?: boolean },
+      ) =>
         Effect.gen(function* () {
           const key = sessionKey(providerSessionId);
           const current = yield* Ref.get(sessions);
@@ -1122,6 +1128,7 @@ export const layerWithOptions = (
               idleGeneration: generation,
               idleFiber,
               lastActivityAtMs,
+              ...(options?.providerActivity === true ? { pinnedSinceMs: null } : {}),
             });
             return updated;
           });
@@ -1130,7 +1137,10 @@ export const layerWithOptions = (
       const scheduleIdleRelease = (providerSessionId: ProviderSessionId) =>
         withActivityError(providerSessionId, scheduleIdleReleaseInternal(providerSessionId));
 
-      const touchActivity = (providerSessionId: ProviderSessionId) =>
+      const touchActivity = (
+        providerSessionId: ProviderSessionId,
+        options?: { readonly providerActivity?: boolean },
+      ) =>
         withActivityError(
           providerSessionId,
           Effect.gen(function* () {
@@ -1147,7 +1157,7 @@ export const layerWithOptions = (
               });
               return updated;
             });
-            yield* scheduleIdleReleaseInternal(providerSessionId);
+            yield* scheduleIdleReleaseInternal(providerSessionId, options);
           }),
         );
 
@@ -1643,7 +1653,7 @@ export const layerWithOptions = (
                     entry.runtime.providerSessionId,
                     busyTurnKey(event.providerThreadId, event.runOrdinal),
                   )
-                : touchActivity(entry.runtime.providerSessionId),
+                : touchActivity(entry.runtime.providerSessionId, { providerActivity: true }),
             ).pipe(
               Effect.andThen(
                 event.type === "provider_session.updated"
@@ -1795,6 +1805,8 @@ export const layerWithOptions = (
                     cause: `Provider ${existing.runtime.driver} does not support attaching multiple app threads to one session.`,
                   });
                 }
+                if (!existing.attachedThreadIds.has(input.threadId))
+                  yield* agentScope.clear(input.threadId);
                 yield* ensureThreadAttached({
                   providerSessionId: input.providerSessionId,
                   threadId: input.threadId,
@@ -1831,6 +1843,7 @@ export const layerWithOptions = (
                 }
               });
               const sessionScope = yield* Scope.fork(sessionScopes);
+              yield* agentScope.clear(input.threadId);
               const runtime = yield* adapter
                 .openSession({
                   threadId: input.threadId,

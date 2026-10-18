@@ -1,3 +1,4 @@
+import { codexModelFamily } from "@t3tools/shared/model";
 /**
  * ProviderRegistryLive — aggregates per-instance snapshot streams into a
  * single materialized list.
@@ -120,7 +121,13 @@ const mergeProviderModels = (
   // Custom rows are derived from settings and every snapshot carries the full
   // current list, so a custom model missing from `nextModels` was removed by
   // the user and must not be resurrected from the previous snapshot.
-  const retainablePreviousModels = previousModels.filter((model) => !model.isCustom);
+  const modelKey = (slug: string) => (provider.driver === "codex" ? codexModelFamily(slug) : slug);
+  const updateRequiredSlugs = new Set(
+    provider.updateRequiredModels?.map((model) => modelKey(model.slug)),
+  );
+  const retainablePreviousModels = previousModels.filter(
+    (model) => !model.isCustom && !updateRequiredSlugs.has(modelKey(model.slug)),
+  );
 
   if (shouldRetainMissingModels && nextModels.length === 0 && retainablePreviousModels.length > 0) {
     return retainablePreviousModels;
@@ -600,6 +607,8 @@ export const ProviderRegistryLive = Layer.effect(
       const instance = Array.from((yield* Ref.get(liveSubsRef)).values()).find(
         (candidate) => candidate.instanceId === instanceId,
       );
+      if (instance?.snapshot.resolveMaintenance)
+        return yield* instance.snapshot.resolveMaintenance();
       return (
         instance?.snapshot.maintenanceCapabilities ??
         makeManualProviderMaintenanceCapabilities(provider)

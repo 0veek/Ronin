@@ -297,7 +297,7 @@
     animation: settings-search-target-pulse var(--duration-slow) var(--ease-in-out) 2;
     border-radius: var(--radius);
     outline: 1px solid var(--ring);
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
 
   .settings-page-scroll-fade .settings-search-target-pulse:focus {
@@ -740,12 +740,12 @@
 
   .settings-slider:focus-visible::-webkit-slider-thumb {
     outline: 2px solid var(--ring);
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
 
   .settings-slider:focus-visible::-moz-range-thumb {
     outline: 2px solid var(--ring);
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
 
   @media (forced-colors: active) {

@@ -433,7 +433,30 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
           FROM projection_threads WHERE thread_id = 'thread-1'
         `;
         assert.deepEqual(rows, [{ activeOrderKey: "gm", updatedAt: orderUpdatedAt }]);
+        const wakeRows = yield* sql<{
+          readonly wakeAt: string | null;
+        }>`SELECT last_snooze_wake_at AS "wakeAt" FROM projection_threads WHERE thread_id = 'thread-1'`;
+        assert.deepEqual(wakeRows, [{ wakeAt: index >= 3 ? orderUpdatedAt : null }]);
       }
+
+      // Re-emitting wake for an awake thread must not restart inactivity again.
+      yield* eventStore.append({
+        type: "thread.unsnoozed",
+        eventId: EventId.make("evt-idempotent-wake"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        occurredAt: "2026-01-01T00:00:00.700Z",
+        commandId: CommandId.make("cmd-idempotent-wake"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        payload: { threadId: ThreadId.make("thread-1"), reason: "user", updatedAt: orderUpdatedAt },
+      });
+      yield* projectionPipeline.bootstrap;
+      const repeatedWake = yield* sql<{ readonly wakeAt: string | null }>`
+        SELECT last_snooze_wake_at AS "wakeAt" FROM projection_threads WHERE thread_id = 'thread-1'
+      `;
+      assert.deepEqual(repeatedWake, [{ wakeAt: orderUpdatedAt }]);
 
       // Settled lifecycle through the DB pipeline: thread.settled writes the
       // override + timestamp, thread.unsettled(user) flips to the active pin.

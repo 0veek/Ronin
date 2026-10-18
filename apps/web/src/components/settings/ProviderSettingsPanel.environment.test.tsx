@@ -67,6 +67,8 @@ vi.mock("../../state/use-atom-command", () => ({
 }));
 
 vi.mock("../../hooks/useSettings", () => ({
+  useUpdateEnvironmentModelPreferences: () => settingsState.updateSettings,
+  useToggleEnvironmentModelFavorite: () => () => undefined,
   useEnvironmentSettings: (environmentId: EnvironmentId) => {
     settingsState.readEnvironmentIds.push(environmentId);
     return settingsState.value;
@@ -82,6 +84,8 @@ vi.mock("../../environments/primary", () => ({
 }));
 
 vi.mock("../../state/session", () => ({
+  useEnvironmentScope: () => true,
+  readEnvironmentScope: () => true,
   useEnvironmentSessionState: () => ({ data: null, hasError: false, isPending: true }),
 }));
 
@@ -302,4 +306,39 @@ describe("EnvironmentProviderSettings routing", () => {
     expect(resetPatch).not.toHaveProperty("favorites");
     expect(resetPatch).not.toHaveProperty("providerModelPreferences");
   });
+});
+
+it.each([
+  [
+    "onFavoriteModelsChange",
+    {
+      setModelFavorites: [
+        { provider: ProviderInstanceId.make("codex"), model: "chosen", favorite: true },
+      ],
+    },
+  ],
+  [
+    "onHiddenModelsChange",
+    {
+      setModelsHidden: [
+        { provider: ProviderInstanceId.make("codex"), model: "chosen", hidden: true },
+      ],
+    },
+  ],
+  [
+    "onModelOrderChange",
+    {
+      setProviderModelOrder: { provider: ProviderInstanceId.make("codex"), modelOrder: ["chosen"] },
+    },
+  ],
+] as const)("saves %s as an environment model preference intent", (action, expected) => {
+  atoms.providers = [provider()];
+  const panel = renderPanel();
+  const editor = visitElements(
+    panel,
+    (element) => element.props.instanceId === codexId && element.props.mode === "editor",
+  );
+  expect(editor).not.toBeNull();
+  (editor!.props[action] as (models: string[]) => void)(["chosen"]);
+  expect(settingsState.updateSettings).toHaveBeenCalledExactlyOnceWith(expected);
 });

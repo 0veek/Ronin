@@ -1,3 +1,4 @@
+import { AgentScope } from "@t3tools/shared/AgentScope";
 import * as NodeURL from "node:url";
 
 import type { ChatAttachment, ProviderApprovalDecision, RuntimeMode } from "@t3tools/contracts";
@@ -248,14 +249,13 @@ export type OpenCodeSlashCommand = Pick<Command, "name" | "description" | "sourc
 /** Command templates stay in OpenCode, which expands arguments and runs MCP prompts. */
 export const loadOpenCodeCommands = (client: OpencodeClient) =>
   runOpenCodeSdk("command.list", (signal) => client.command.list(undefined, { signal })).pipe(
-    Effect.map(
-      (result): ReadonlyArray<OpenCodeSlashCommand> =>
-        (result.data ?? []).map(({ name, description, source, hints }) => ({
-          name,
-          ...(description === undefined ? {} : { description }),
-          ...(source === undefined ? {} : { source }),
-          hints,
-        })),
+    Effect.map((result): ReadonlyArray<OpenCodeSlashCommand> =>
+      (result.data ?? []).map(({ name, description, source, hints }) => ({
+        name,
+        ...(description === undefined ? {} : { description }),
+        ...(source === undefined ? {} : { source }),
+        hints,
+      })),
     ),
   );
 
@@ -635,6 +635,7 @@ function ensureRuntimeError(
 }
 
 const makeOpenCodeRuntime = Effect.gen(function* () {
+  const agentScope = yield* AgentScope;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const netService = yield* NetService.NetService;
   const hostPlatform = yield* HostProcessPlatform;
@@ -733,7 +734,13 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
       const timeoutMs = input.timeoutMs ?? DEFAULT_OPENCODE_SERVER_TIMEOUT_MS;
       const cliSpec = input.cliSpec ?? OPENCODE_CLI_SPEC;
       const args = ["serve", `--hostname=${hostname}`, `--port=${port}`];
-      const spawnCommand = yield* resolveCommand(input.binaryPath, args, input.environment);
+      const launch = yield* agentScope.wrap({
+        command: input.binaryPath,
+        args,
+        name: cliSpec.defaultBinaryPath,
+        env: input.environment,
+      });
+      const spawnCommand = yield* resolveCommand(launch.command, launch.args, input.environment);
       const serverPassword = resolveOpenCodeServerPassword({
         external: false,
         ...(input.serverPassword !== undefined ? { serverPassword: input.serverPassword } : {}),

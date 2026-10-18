@@ -309,5 +309,13 @@ export const makeAntigravityTextGeneration = Effect.fn("makeAntigravityTextGener
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    generateReviewGuide: () =>
+      Effect.fail(
+        new TextGenerationError({
+          operation: "generateReviewGuide",
+          detail:
+            "Antigravity cannot investigate a checkout read-only. Choose Claude or Codex as the review guide model.",
+        }),
+      ),
   } satisfies TextGeneration.TextGeneration["Service"];
 });

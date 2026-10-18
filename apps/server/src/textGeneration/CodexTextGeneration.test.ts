@@ -684,4 +684,27 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
         }),
     ),
   );
+  it.effect("investigates a review guide using read-only CLI tools", () =>
+    withFakeCodexEnv(
+      {
+        output: JSON.stringify({ stops: [] }),
+        requireArg: "read-only",
+        stdinMustContain: "Investigate before you answer, read-only",
+      },
+      (generation) =>
+        Effect.gen(function* () {
+          const result = yield* generation.generateReviewGuide({
+            cwd: process.cwd(),
+            number: 7,
+            title: "The change",
+            description: "",
+            baseBranch: "main",
+            baseCommit: "abc123",
+            settledReview: "",
+            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
+          });
+          expect(result).toEqual({ stops: [] });
+        }),
+    ),
+  );
 });

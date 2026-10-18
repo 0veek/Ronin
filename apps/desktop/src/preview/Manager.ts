@@ -16,6 +16,7 @@ import type {
   DesktopPreviewColorScheme,
   DesktopPreviewFavicon,
   DesktopPreviewPointerEvent,
+  DesktopPreviewOpenLinkEvent,
   DesktopPreviewRecordingInputEvent,
   PreviewAnnotationSubmissionResult,
   DesktopPreviewRecordingArtifact,
@@ -340,6 +341,8 @@ interface BrowserDiagnostics {
   readonly requests: ReadonlyMap<string, { url: string; method: string }>;
 }
 
+type OpenLinkListener = (event: DesktopPreviewOpenLinkEvent) => Effect.Effect<void>;
+
 type PointerEventListener = (event: DesktopPreviewPointerEvent) => Effect.Effect<void>;
 
 const isRecordingInput = Schema.is(DesktopPreviewRecordingInputSchema);
@@ -415,14 +418,29 @@ const POPUP_WINDOW_OPTIONS = {
  * navigating the preview tab instead destroys the opener the popup has to
  * `postMessage` its result back to.
  *
- * `target="_blank"` links arrive as a tab disposition and keep loading in the
- * preview tab, which is what people expect from a link inside a preview.
+ * `"new-tab"` hands a `target="_blank"` link (a tab disposition) to the web
+ * app, which opens it as another preview tab so the page that held the link
+ * stays put. Schemes a popup cannot be hardened for keep loading in place, and
+ * so does a form POST with a body, which a new tab could only reopen as a GET.
+ *
+ * `"deny"` is for a blank window (`""` or `about:blank`). It cannot get a real
+ * window (see `POPUP_PROTOCOLS`), and loading it into the preview tab would
+ * replace the opener with an empty page. Denying makes `window.open()` return
+ * `null`, which SDKs such as MSAL treat as a blocked popup and fall back from.
  */
 export const previewWindowOpenAction = (details: {
   readonly url: string;
   readonly disposition: Electron.HandlerDetails["disposition"];
-}): "popup" | "navigate" =>
-  details.disposition === "new-window" && isPopupUrl(details.url) ? "popup" : "navigate";
+  readonly postBody?: Electron.PostBody;
+}): "popup" | "new-tab" | "navigate" | "deny" => {
+  if (details.url === "" || details.url === "about:blank") return "deny";
+  if (!isPopupUrl(details.url)) return "navigate";
+  if (details.disposition === "new-window") return "popup";
+  return !details.postBody &&
+    (details.disposition === "foreground-tab" || details.disposition === "background-tab")
+    ? "new-tab"
+    : "navigate";
+};
 
 export type PreviewOwnedShortcutAction =
   | "refresh"
@@ -531,6 +549,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const tabsRef = yield* SynchronizedRef.make<ReadonlyMap<string, PreviewTabState>>(new Map());
   const attachedRef = yield* Ref.make<ReadonlyMap<number, ManagedListeners>>(new Map());
   const listenersRef = yield* Ref.make<ReadonlySet<Listener>>(new Set());
+  const openLinkListenersRef = yield* Ref.make<ReadonlySet<OpenLinkListener>>(new Set());
   const pointerEventListenersRef = yield* Ref.make<ReadonlySet<PointerEventListener>>(new Set());
   const recordingInputListenersRef = yield* Ref.make<ReadonlySet<RecordingInputListener>>(
     new Set(),
@@ -806,7 +825,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   });
 
   const deliverEvent = (
-    eventKind: "state-change" | "recording-input" | "pointer-event",
+    eventKind: "state-change" | "recording-input" | "pointer-event" | "open-link",
     tabId: string,
     delivery: () => Effect.Effect<void>,
   ) =>
@@ -1607,7 +1626,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     const url = wc.getURL();
     const title = wc.getTitle();
     if (url === "" || url === "about:blank") return { kind: "Idle" };
-    if (wc.isLoading()) return { kind: "Loading", url, title };
+    if (wc.isLoadingMainFrame()) return { kind: "Loading", url, title };
     return { kind: "Success", url, title };
   };
 
@@ -2054,8 +2073,20 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.ipc.on(RECORDING_INPUT_CHANNEL, recordingInput);
         wc.ipc.on(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
         wc.setWindowOpenHandler((details) => {
-          if (previewWindowOpenAction(details) === "popup") {
+          const action = previewWindowOpenAction(details);
+          if (action === "popup") {
             return { action: "allow", overrideBrowserWindowOptions: POPUP_WINDOW_OPTIONS };
+          }
+          if (action === "deny") return { action: "deny" };
+          if (action === "new-tab") {
+            runFork(
+              emitOpenLink({
+                tabId,
+                url: details.url,
+                background: details.disposition === "background-tab",
+              }),
+            );
+            return { action: "deny" };
           }
           runFork(
             attempt({ operation: "openPreviewWindow.normalizeUrl", tabId }, () =>
@@ -3998,6 +4029,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     );
   });
 
+  const emitOpenLink = Effect.fn("PreviewManager.emitOpenLink")(function* (
+    event: DesktopPreviewOpenLinkEvent,
+  ) {
+    const listeners = yield* Ref.get(openLinkListenersRef);
+    yield* Effect.forEach(
+      listeners,
+      (listener) => deliverEvent("open-link", event.tabId, () => listener(event)),
+      { discard: true },
+    );
+  });
   const subscribe = <A>(
     ref: Ref.Ref<ReadonlySet<A>>,
     listener: A,
@@ -4020,6 +4061,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         Ref.set(listenersRef, new Set()),
         Ref.set(expectedAgentInputsRef, new Map()),
         Ref.set(pointerEventListenersRef, new Set()),
+        Ref.set(openLinkListenersRef, new Set()),
         Ref.set(recordingInputListenersRef, new Set()),
       ],
       { discard: true },
@@ -4068,6 +4110,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     startRecording,
     closePictureInPicture,
     stopRecording,
+    subscribeOpenLinks: (listener: OpenLinkListener) => subscribe(openLinkListenersRef, listener),
     subscribePointerEvents: (listener: PointerEventListener) =>
       subscribe(pointerEventListenersRef, listener),
     subscribeRecordingInputs: (listener: RecordingInputListener) =>
@@ -4482,6 +4525,9 @@ export class PreviewManager extends Context.Service<
       input: PreviewAutomationWaitForInput,
     ) => Effect.Effect<void, PreviewManagerError>;
     readonly subscribeStateChanges: (listener: Listener) => Effect.Effect<void, never, Scope.Scope>;
+    readonly subscribeOpenLinks: (
+      listener: OpenLinkListener,
+    ) => Effect.Effect<void, never, Scope.Scope>;
     readonly subscribePointerEvents: (
       listener: PointerEventListener,
     ) => Effect.Effect<void, never, Scope.Scope>;
@@ -4577,6 +4623,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
     automationWaitFor: operations.automationWaitFor,
     subscribeStateChanges: operations.subscribeStateChanges,
     subscribePointerEvents: operations.subscribePointerEvents,
+    subscribeOpenLinks: operations.subscribeOpenLinks,
     subscribeRecordingInputs: operations.subscribeRecordingInputs,
   });
 }).pipe(Effect.withSpan("PreviewManager.make"));

@@ -1,13 +1,19 @@
 # Review usage
 
-The Stats page combines Codex, Claude Code, Grok, OpenCode, Antigravity, and Cursor activity from your connected
+The Stats page combines Codex, Claude Code, Grok, OpenCode, Antigravity, Pi, and Cursor activity from your connected
 environments. It reads the providers' local session history, so turns you ran outside Ronin are
 counted too. It shows API-equivalent token cost, processed tokens, cache savings, provider shares,
 and model breakdowns. Subscription billing is separate from the raw token cost shown here.
 
+Local totals appear while slower sources finish. Cursor shows its saved account totals first,
+then updates them when its account API responds. Figures that are still updating are dimmed.
+
 Use **24h** for an hourly chart covering the exact rolling 24-hour period. The **7 days**, **30
 days**, and **90 days** ranges use daily resolution. Cost and token toggles update both the headline
 and chart, and refreshing rescans every connected environment.
+Use the provider menu in the header to choose which providers appear. The choice is saved and
+applies to totals, session counts, charts, notices, and model breakdowns. Choose **All providers**
+to restore the full view.
 
 On the Stats page, press **C** for cost or **T** for tokens. Use **Mod+Shift+1** through
 **Mod+Shift+4** for 24 hours, 7 days, 30 days, and 90 days. These shortcuts can be changed in
@@ -45,13 +51,26 @@ the account's home setting or its `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, or `GROK_HO
 variable. Use absolute paths or `~/` paths in account environment settings; accounts that share a
 history directory are counted once.
 
+Pi reads the sessions directory under its configured agent directory, `PI_CODING_AGENT_DIR`, or
+`~/.pi/agent`. `PI_CODING_AGENT_SESSION_DIR` overrides the session directory, including sessions
+saved elsewhere with Pi's `--session-dir` or `sessionDir` setting. Forked sessions count copied
+entries once. Recorded tool and summary costs appear as **Tools/summaries**.
+
 Where a cost figure comes from depends on the provider: Grok records the exact cost of each turn and
 that figure is used as-is, while Codex, Claude Code, OpenCode, Cursor, and Antigravity totals are priced from a
 published rate table. Models with no published rate still count their tokens; their cost is reported
 as zero and the share of records that affects is printed under the breakdown.
+
+Pi keeps positive costs recorded in its sessions. When a session has no positive cost estimate,
+Ronin uses the model's published rates when available.
 
 Antigravity runs some generations for itself — the checkpoint that closes a turn, for instance — and
 records those under a placeholder model name rather than a real one. Their tokens are counted like
 any other, but because the name identifies a selection rule instead of a model, they have no rate to
 price against and land in that unpriced share. They are a small fraction of tokens and a larger
 fraction of records, so the unpriced figure reads higher than the cost it withholds.
+
+OpenCode Go allowance limits require a Go API key. A Console sign-in alone does not provide them.
+Set `OPENCODE_API_KEY` in the OpenCode account’s **Environment variables**, then refresh provider
+status. Limits are available only when OpenCode runs in the connected environment, since an
+external OpenCode server owns its credentials.

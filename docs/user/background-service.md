@@ -85,3 +85,17 @@ A few more macOS notes:
   on.
 
 **Windows** is not supported yet.
+
+## Memory pressure on Linux
+
+When a systemd user manager is available, Ronin starts provider processes and terminals in
+separate scopes. This lets Linux stop a memory-hungry agent while keeping the environment
+server and remote connections available. The scopes share a memory budget: throttling starts
+at the larger of half of system RAM or RAM minus 6 GiB; the hard limit is the larger of
+three quarters of RAM or RAM minus 4 GiB. For example, an 8 GiB machine throttles above
+4 GiB and caps these processes at 6 GiB.
+
+Without a systemd user manager, provider processes and terminals still receive a higher OOM
+score so the kernel prefers them over the server, but there is no shared memory cap.
+Pi runs inside the server and is outside this isolation. Externally managed OpenCode and
+Kilo servers keep their own resource policy. macOS and Windows retain their usual behavior.

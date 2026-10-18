@@ -76,6 +76,8 @@ export function deriveLatestContextWindowSnapshot(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): ContextWindowSnapshot | null {
   const providerSwitchedAt = latestProviderSwitchAt(activities);
+  let latest: ContextWindowSnapshot | null = null;
+  let latestAt = -Infinity;
 
   for (let index = activities.length - 1; index >= 0; index -= 1) {
     const activity = activities[index];
@@ -100,6 +102,9 @@ export function deriveLatestContextWindowSnapshot(
       continue;
     }
 
+    const at = activityTimestamp(activity) ?? -Infinity;
+    if (latest !== null && at <= latestAt) continue;
+    latestAt = at;
     const maxTokens = asFiniteNumber(payload?.maxTokens);
     const usedPercentage =
       maxTokens !== null && maxTokens > 0 ? Math.min(100, (usedTokens / maxTokens) * 100) : null;
@@ -107,7 +112,7 @@ export function deriveLatestContextWindowSnapshot(
       maxTokens !== null ? Math.max(0, Math.round(maxTokens - usedTokens)) : null;
     const remainingPercentage = usedPercentage !== null ? Math.max(0, 100 - usedPercentage) : null;
 
-    return {
+    latest = {
       usedTokens,
       totalProcessedTokens: asFiniteNumber(payload?.totalProcessedTokens),
       maxTokens,
@@ -118,6 +123,7 @@ export function deriveLatestContextWindowSnapshot(
       cachedInputTokens: asFiniteNumber(payload?.cachedInputTokens),
       outputTokens: asFiniteNumber(payload?.outputTokens),
       reasoningOutputTokens: asFiniteNumber(payload?.reasoningOutputTokens),
+      promptCacheTtlMs: asFiniteNumber(payload?.promptCacheTtlMs),
       lastUsedTokens: asFiniteNumber(payload?.lastUsedTokens),
       lastInputTokens: asFiniteNumber(payload?.lastInputTokens),
       lastCachedInputTokens: asFiniteNumber(payload?.lastCachedInputTokens),
@@ -131,7 +137,7 @@ export function deriveLatestContextWindowSnapshot(
     };
   }
 
-  return null;
+  return latest;
 }
 
 export function formatContextWindowTokens(value: number | null): string {

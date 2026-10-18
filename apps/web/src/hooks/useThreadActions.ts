@@ -1,3 +1,4 @@
+import { removePreviewThread } from "../previewStateStore";
 import {
   parseScopedThreadKey,
   scopeProjectRef,
@@ -389,6 +390,7 @@ export function useThreadActions() {
         });
         if (result._tag === "Success") {
           refreshArchivedThreadsForEnvironment(target.environmentId);
+          removePreviewThread(target);
         }
         return result;
       }
@@ -482,6 +484,7 @@ export function useThreadActions() {
         threadRef,
       );
       clearTerminalUiState(threadRef);
+      removePreviewThread(threadRef);
 
       if (shouldNavigateToFallback) {
         const fallbackThread = fallbackThreadId

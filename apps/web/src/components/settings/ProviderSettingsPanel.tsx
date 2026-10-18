@@ -35,7 +35,12 @@ import { ChevronDownIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { isDesktopLocalConnectionTarget } from "../../connection/desktopLocal";
-import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
+import {
+  useEnvironmentSettings,
+  useUpdateEnvironmentSettings,
+  useUpdateEnvironmentModelPreferences,
+  useToggleEnvironmentModelFavorite,
+} from "../../hooks/useSettings";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
@@ -112,11 +117,12 @@ function withoutProviderInstanceKey<V>(
   return next;
 }
 
-function withoutProviderInstanceFavorites(
-  favorites: ReadonlyArray<{ readonly provider: ProviderInstanceId; readonly model: string }>,
-  instanceId: ProviderInstanceId,
-) {
-  return favorites.filter((favorite) => favorite.provider !== instanceId);
+function modelListChanges(current: ReadonlyArray<string>, next: ReadonlyArray<string>) {
+  const currentSet = new Set(current);
+  const nextSet = new Set(next.map((model) => model.trim()).filter(Boolean));
+  return [...new Set([...currentSet, ...nextSet])]
+    .filter((model) => currentSet.has(model) !== nextSet.has(model))
+    .map((model) => ({ model, selected: nextSet.has(model) }));
 }
 
 const PROVIDER_SETTINGS = DRIVER_OPTIONS.map((definition) => ({
@@ -374,6 +380,8 @@ export function EnvironmentProviderSettings({
   const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const settings = useEnvironmentSettings(environmentId);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const updateModelPreferences = useUpdateEnvironmentModelPreferences(environmentId);
+  const toggleModelFavorite = useToggleEnvironmentModelFavorite(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
@@ -622,50 +630,6 @@ export function EnvironmentProviderSettings({
     });
   };
 
-  const updateProviderModelPreferences = (
-    instanceId: ProviderInstanceId,
-    next: {
-      readonly hiddenModels: ReadonlyArray<string>;
-      readonly modelOrder: ReadonlyArray<string>;
-    },
-  ) => {
-    const hiddenModels = [...new Set(next.hiddenModels.filter((slug) => slug.trim().length > 0))];
-    const modelOrder = [...new Set(next.modelOrder.filter((slug) => slug.trim().length > 0))];
-    const rest = withoutProviderInstanceKey(settings.providerModelPreferences, instanceId);
-    updateSettings({
-      providerModelPreferences:
-        hiddenModels.length === 0 && modelOrder.length === 0
-          ? rest
-          : {
-              ...rest,
-              [instanceId]: {
-                hiddenModels,
-                modelOrder,
-              },
-            },
-    });
-  };
-
-  const updateProviderFavoriteModels = (
-    instanceId: ProviderInstanceId,
-    nextFavoriteModels: ReadonlyArray<string>,
-  ) => {
-    const favoriteModels = [
-      ...new Set(
-        Arr.filterMap(nextFavoriteModels, (slug) => {
-          const trimmedSlug = slug.trim();
-          return trimmedSlug.length > 0 ? Result.succeed(trimmedSlug) : Result.failVoid;
-        }),
-      ),
-    ];
-    updateSettings({
-      favorites: [
-        ...withoutProviderInstanceFavorites(settings.favorites ?? [], instanceId),
-        ...favoriteModels.map((model) => ({ provider: instanceId, model })),
-      ],
-    });
-  };
-
   const resetDefaultInstance = (driverKind: ProviderDriverKind) => {
     type LegacyProviderSettings = (typeof settings.providers)[keyof typeof settings.providers];
     const defaultLegacyProviders = DEFAULT_UNIFIED_SETTINGS.providers as Record<
@@ -759,19 +723,34 @@ export function EnvironmentProviderSettings({
         hiddenModels={modelPreferences.hiddenModels}
         favoriteModels={favoriteModels}
         modelOrder={modelPreferences.modelOrder}
-        onHiddenModelsChange={(hiddenModels) =>
-          updateProviderModelPreferences(row.instanceId, {
-            ...modelPreferences,
-            hiddenModels,
-          })
-        }
-        onFavoriteModelsChange={(next) => updateProviderFavoriteModels(row.instanceId, next)}
-        onModelOrderChange={(modelOrder) =>
-          updateProviderModelPreferences(row.instanceId, {
-            ...modelPreferences,
-            modelOrder,
-          })
-        }
+        onHiddenModelsChange={(next, affectedModels) => {
+          const hidden = new Set(next);
+          const models =
+            affectedModels ??
+            modelListChanges(modelPreferences.hiddenModels, next).map((change) => change.model);
+          void updateModelPreferences({
+            setModelsHidden: models.map((model) => ({
+              provider: row.instanceId,
+              model,
+              hidden: hidden.has(model),
+            })),
+          });
+        }}
+        onToggleFavorite={(model) => {
+          void toggleModelFavorite(row.instanceId, model);
+        }}
+        onFavoriteModelsChange={(next) => {
+          void updateModelPreferences({
+            setModelFavorites: modelListChanges(favoriteModels, next).map(
+              ({ model, selected }) => ({ provider: row.instanceId, model, favorite: selected }),
+            ),
+          });
+        }}
+        onModelOrderChange={(modelOrder) => {
+          void updateModelPreferences({
+            setProviderModelOrder: { provider: row.instanceId, modelOrder },
+          });
+        }}
         onRunUpdate={
           !readOnly && showInlineUpdateButton && updateCandidate
             ? () => {
@@ -874,6 +853,16 @@ export function EnvironmentProviderSettings({
                       {renderProviderInstance(row, "list")}
                     </div>
                   ))}
+                  {!readOnly ? (
+                    <button
+                      type="button"
+                      className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left text-sm text-muted-foreground outline-none transition-colors hover:bg-muted/25 hover:text-foreground focus-visible:bg-muted/25 focus-visible:text-foreground sm:px-4"
+                      onClick={() => setIsAddInstanceDialogOpen(true)}
+                    >
+                      <PlusIcon className="size-4 shrink-0" />
+                      Add provider
+                    </button>
+                  ) : null}
                 </div>
               </ScrollArea>
             </div>

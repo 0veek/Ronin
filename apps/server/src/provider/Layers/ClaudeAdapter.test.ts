@@ -1,3 +1,5 @@
+import * as Exit from "effect/Exit";
+import { classifyQuotaFailure } from "../../quotaResume/quotaFailureClassification.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
@@ -14,6 +16,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import {
   ApprovalRequestId,
+  EnvironmentId,
   ClaudeSettings,
   ProviderDriverKind,
   ProviderItemId,
@@ -49,6 +52,7 @@ import {
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { CLAUDE_PRESENTATION } from "./ClaudeProvider.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -71,6 +75,15 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
   public readonly setModelCalls: Array<string | undefined> = [];
   public readonly setPermissionModeCalls: Array<string> = [];
   public readonly setMaxThinkingTokensCalls: Array<number | null> = [];
+  public readonly mcpServerCalls: unknown[] = [];
+  setMcpServers = async (servers: NonNullable<ClaudeQueryOptions["mcpServers"]>) => {
+    this.mcpServerCalls.push(servers);
+    return {
+      added: Object.keys(servers),
+      removed: [] as string[],
+      errors: {} as Record<string, string>,
+    };
+  };
   public closeCalls = 0;
   public closeError: unknown | undefined;
   /** Set by tests that exercise Claude's graceful interrupt. */
@@ -617,6 +630,102 @@ describe("ClaudeAdapterLive", () => {
       Effect.provide(harness.layer),
     );
   });
+
+  it.effect(
+    "registers MCP credentials through the control channel, outside process arguments and environment",
+    () => {
+      const harness = makeHarness({ environment: { RONIN_MCP_AUTHORIZATION: "stale-token" } });
+      return Effect.gen(function* () {
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            McpProviderSession.setMcpProviderSession({
+              environmentId: EnvironmentId.make("test-environment"),
+              threadId: THREAD_ID,
+              providerSessionId: "claude-mcp-session",
+              providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+              endpoint: "http://127.0.0.1:43123/mcp",
+              authorizationHeader: "Bearer secret-claude-token",
+              capabilities: new Set(["preview"]),
+              agentDeviceEnvironment: { DEVICE_TEST: "available" },
+            }),
+          ),
+          () => Effect.sync(() => McpProviderSession.clearMcpProviderSession(THREAD_ID)),
+        );
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        const options = harness.getLastCreateQueryInput()?.options;
+        assert.equal(options?.mcpServers, undefined);
+        assert.deepEqual(harness.query.mcpServerCalls, [
+          {
+            ronin: {
+              type: "http",
+              url: "http://127.0.0.1:43123/mcp",
+              headers: { Authorization: "Bearer secret-claude-token" },
+            },
+          },
+        ]);
+        assert.notInclude(encodeUnknownJsonString(options), "secret-claude-token");
+        assert.equal(options?.env?.RONIN_MCP_AUTHORIZATION, undefined);
+        assert.equal(options?.env?.DEVICE_TEST, "available");
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect.each(["timeout", "interrupt"] as const)(
+    "closes Claude if MCP registration ends by %s",
+    (mode) => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            McpProviderSession.setMcpProviderSession({
+              environmentId: EnvironmentId.make("test-environment"),
+              threadId: THREAD_ID,
+              providerSessionId: "claude-mcp-session",
+              providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+              endpoint: "http://127.0.0.1:43123/mcp",
+              authorizationHeader: "Bearer dummy-mcp-token",
+              capabilities: new Set(["preview"]),
+              agentDeviceEnvironment: {},
+            }),
+          ),
+          () => Effect.sync(() => McpProviderSession.clearMcpProviderSession(THREAD_ID)),
+        );
+        const registering = yield* Deferred.make<void>();
+        harness.query.setMcpServers = () => {
+          Deferred.doneUnsafe(registering, Effect.void);
+          return new Promise(() => {});
+        };
+        const adapter = yield* ClaudeAdapter;
+        const opening = yield* adapter
+          .startSession({
+            threadId: THREAD_ID,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            runtimeMode: "full-access",
+          })
+          .pipe(Effect.exit, Effect.forkChild);
+        yield* Deferred.await(registering);
+        if (mode === "timeout") {
+          yield* TestClock.adjust("90 seconds");
+          assert.isTrue(Exit.isFailure(yield* Fiber.join(opening)));
+        } else {
+          yield* Fiber.interrupt(opening);
+        }
+        assert.equal(harness.query.closeCalls, 1);
+        assert.deepEqual(yield* adapter.listSessions(), []);
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
 
   it.effect("passes the configured auto-compaction window to Claude", () => {
     const harness = makeHarness({ claudeConfig: { autoCompactWindow: "300000" } });
@@ -2044,6 +2153,129 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect.each([
+    "deleted",
+    "empty list",
+    "failed",
+    "error",
+    "unknown",
+    "child",
+    "ambiguous",
+  ] as const)("projects Claude task tools across turns, including %s results", (scenario) => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      let sequence = 0;
+      const call = (
+        name: string,
+        input: Record<string, unknown>,
+        output: Record<string, unknown>,
+        options?: { parent?: string; error?: boolean; ambiguous?: boolean },
+      ) => {
+        const id = `task-tool-${++sequence}`;
+        harness.query.emit({
+          type: "stream_event",
+          session_id: CLAUDE_ORIGINAL_SESSION_ID,
+          uuid: `start-${id}`,
+          parent_tool_use_id: options?.parent ?? null,
+          event: {
+            type: "content_block_start",
+            index: sequence,
+            content_block: { type: "tool_use", id, name, input },
+          },
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "user",
+          session_id: CLAUDE_ORIGINAL_SESSION_ID,
+          uuid: `result-${id}`,
+          parent_tool_use_id: options?.parent ?? null,
+          tool_use_result: output,
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: id,
+                content: "Done",
+                is_error: options?.error ?? false,
+              },
+              ...(options?.ambiguous
+                ? [{ type: "tool_result", tool_use_id: "unrelated", content: "Done" }]
+                : []),
+            ],
+          },
+        } as unknown as SDKMessage);
+      };
+      const runTurn = Effect.fnUntraced(function* (emit: () => void) {
+        const events = yield* adapter.streamEvents.pipe(
+          Stream.takeUntil((event) => event.type === "turn.completed"),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* adapter.sendTurn({ threadId: THREAD_ID, input: "Track work", attachments: [] });
+        emit();
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          errors: [],
+          session_id: CLAUDE_ORIGINAL_SESSION_ID,
+          uuid: `finished-${sequence}`,
+        } as unknown as SDKMessage);
+        return Array.from(yield* Fiber.join(events)).flatMap((event) =>
+          event.type === "turn.plan.updated" ? [event.payload.plan] : [],
+        );
+      });
+      const first = yield* runTurn(() => {
+        call(
+          "TaskCreate",
+          { subject: "Requested task" },
+          { task: { id: "1", subject: "Inspect" } },
+        );
+        call("TaskUpdate", { taskId: "1", status: "in_progress" }, { success: true });
+      });
+      assert.deepEqual(first, [
+        [{ step: "Inspect", status: "pending" }],
+        [{ step: "Inspect", status: "inProgress" }],
+      ]);
+      const later = yield* runTurn(() => {
+        switch (scenario) {
+          case "deleted":
+            call("TaskUpdate", { taskId: "1", status: "deleted" }, { success: true });
+            call("TaskUpdate", { taskId: "1", status: "pending" }, { success: true });
+            break;
+          case "empty list":
+            call("TaskList", {}, { tasks: [] });
+            call("TaskUpdate", { taskId: "1", status: "pending" }, { success: true });
+            break;
+          default:
+            call(
+              "TaskUpdate",
+              { taskId: scenario === "unknown" ? "missing" : "1", status: "completed" },
+              { success: scenario !== "failed" },
+              {
+                ...(scenario === "child" ? { parent: "parent-agent-tool" } : {}),
+                error: scenario === "error",
+                ambiguous: scenario === "ambiguous",
+              },
+            );
+            call("TaskUpdate", { taskId: "1", subject: "Inspected" }, { success: true });
+        }
+      });
+      assert.deepEqual(
+        later,
+        scenario === "deleted" || scenario === "empty list"
+          ? [[]]
+          : [[{ step: "Inspected", status: "inProgress" }]],
+      );
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("classifies Claude Task tool invocations as collaboration agent work", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -2442,6 +2674,53 @@ describe("ClaudeAdapterLive", () => {
       );
     },
   );
+
+  it.effect.each([
+    { status: 503, cooldown: "4m 6s", seconds: 246 },
+    { status: 503, cooldown: "1h 2m 3s", seconds: 3723 },
+    { status: 503, cooldown: "7s", seconds: 7 },
+    { status: 503, cooldown: "0s", seconds: 0 },
+    { status: 503, cooldown: "unknown", seconds: 0 },
+    { status: 503, cooldown: "999999999999999999999999h", seconds: 0 },
+    { status: 503, cooldown: "4m 6s", seconds: 0, errorType: "overloaded_error" },
+    { status: 401, cooldown: "4m 6s", seconds: 0 },
+  ])("recovers wrapped gateway limit $status with cooldown $cooldown", (input) => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const events = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil((event) => event.type === "turn.completed"),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId: THREAD_ID, input: "hello", attachments: [] });
+      const nowMs = yield* Clock.currentTimeMillis;
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        terminal_reason: "api_error",
+        api_error_status: input.status,
+        result: `API Error: ${input.status} [claude/claude-opus-5-5] [429]: {"type":"error","error":{"type":"${input.errorType ?? "rate_limit_error"}","message":"Please try again later."}} (reset after ${input.cooldown}).`,
+        session_id: "sdk-gateway",
+        uuid: "result-gateway",
+      } as unknown as SDKMessage);
+      const payload = completedTurn(Array.from(yield* Fiber.join(events)));
+      assert.equal(payload.state, "failed");
+      const quota = classifyQuotaFailure({ message: payload.errorMessage, nowMs });
+      if (input.seconds > 0)
+        assert.equal(Date.parse(quota?.explicitResetAt ?? "") - nowMs, input.seconds * 1000);
+      else assert.isNull(quota);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
 
   it.effect("fails a usage-limited turn with the limit it parked on", () => {
     const harness = makeHarness();
@@ -2913,76 +3192,147 @@ describe("ClaudeAdapterLive", () => {
     }).pipe(Effect.provide(makeHarness().layer)),
   );
 
-  it.effect("stopAgent stops one task and leaves the turn running", () => {
+  it.effect.each(["local_agent", "local_workflow"] as const)(
+    "stopAgent stops one %s and leaves its siblings running",
+    (taskType) => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+
+        const taskEventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.type.startsWith("task.")),
+          Stream.take(2),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "spawn agents",
+          attachments: [],
+        });
+
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: "task-doomed",
+          description: "Agent A",
+          task_type: taskType,
+          uuid: "task-doomed-uuid",
+          session_id: "sdk-session",
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: "task-spared",
+          description: "Agent B",
+          task_type: "local_agent",
+          uuid: "task-spared-uuid",
+          session_id: "sdk-session",
+        } as unknown as SDKMessage);
+
+        yield* Fiber.join(taskEventsFiber);
+        if (taskType === "local_workflow") {
+          const completed = yield* adapter.streamEvents.pipe(
+            Stream.filter((event) => event.type === "turn.completed"),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkChild,
+          );
+          harness.query.emit({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            result: "Workflow is running in the background.",
+            usage: {},
+            modelUsage: {},
+            session_id: "sdk-session",
+            uuid: "parent-done",
+          } as unknown as SDKMessage);
+          yield* Fiber.join(completed);
+        }
+
+        const stoppedTaskEventFiber = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.type === "task.completed"),
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+
+        yield* adapter.stopAgent!(session.threadId, RuntimeTaskId.make("task-doomed"));
+
+        // The sibling keeps running and the parent turn is never interrupted —
+        // that is the whole difference from interruptTurn.
+        assert.deepEqual(harness.query.stopTaskCalls, ["task-doomed"]);
+        assert.equal(harness.query.closeCalls, 0);
+
+        const stoppedTaskEvents = Array.from(yield* Fiber.join(stoppedTaskEventFiber));
+        const stoppedTaskEvent = stoppedTaskEvents[0];
+        assert.equal(stoppedTaskEvent?.type, "task.completed");
+        if (stoppedTaskEvent?.type === "task.completed") {
+          assert.equal(String(stoppedTaskEvent.payload.taskId), "task-doomed");
+          assert.equal(stoppedTaskEvent.payload.status, "stopped");
+          assert.equal(stoppedTaskEvent.payload.title, "Agent A");
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
+
+  it.effect("a failed turn stops only workflows that it launched", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
-
-      const taskEventsFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.type.startsWith("task.")),
-        Stream.take(2),
-        Stream.runCollect,
-        Effect.forkChild,
-      );
-
       const session = yield* adapter.startSession({
         threadId: THREAD_ID,
         provider: ProviderDriverKind.make("claudeAgent"),
         runtimeMode: "full-access",
       });
-      yield* adapter.sendTurn({
-        threadId: session.threadId,
-        input: "spawn agents",
-        attachments: [],
+      const launch = Effect.fn("test.launchWorkflow")(function* (taskId: string, fail: boolean) {
+        yield* adapter.sendTurn({ threadId: session.threadId, input: taskId, attachments: [] });
+        const terminal = yield* adapter.streamEvents.pipe(
+          Stream.filter((event) => event.type === "turn.completed"),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkChild,
+        );
+        harness.query.emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: taskId,
+          task_type: "local_workflow",
+          description: taskId,
+          session_id: "sdk-session",
+          uuid: taskId,
+        } as unknown as SDKMessage);
+        harness.query.emit({
+          type: "result",
+          subtype: fail ? "error_during_execution" : "success",
+          is_error: fail,
+          result: "Done",
+          errors: fail ? ["Failed"] : [],
+          usage: {},
+          modelUsage: {},
+          session_id: "sdk-session",
+          uuid: `${taskId}-terminal`,
+        } as unknown as SDKMessage);
+        yield* Fiber.join(terminal);
       });
-
-      harness.query.emit({
-        type: "system",
-        subtype: "task_started",
-        task_id: "task-doomed",
-        description: "Agent A",
-        task_type: "local_agent",
-        uuid: "task-doomed-uuid",
-        session_id: "sdk-session",
-      } as unknown as SDKMessage);
-      harness.query.emit({
-        type: "system",
-        subtype: "task_started",
-        task_id: "task-spared",
-        description: "Agent B",
-        task_type: "local_agent",
-        uuid: "task-spared-uuid",
-        session_id: "sdk-session",
-      } as unknown as SDKMessage);
-
-      yield* Fiber.join(taskEventsFiber);
-
-      const stoppedTaskEventFiber = yield* adapter.streamEvents.pipe(
-        Stream.filter((event) => event.type === "task.completed"),
-        Stream.take(1),
-        Stream.runCollect,
-        Effect.forkChild,
-      );
-
-      yield* adapter.stopAgent!(session.threadId, RuntimeTaskId.make("task-doomed"));
-
-      // The sibling keeps running and the parent turn is never interrupted —
-      // that is the whole difference from interruptTurn.
-      assert.deepEqual(harness.query.stopTaskCalls, ["task-doomed"]);
+      yield* launch("earlier-workflow", false);
+      assert.deepEqual(harness.query.stopTaskCalls, []);
+      yield* launch("failed-turn-workflow", true);
+      assert.deepEqual(harness.query.stopTaskCalls, ["failed-turn-workflow"]);
+      yield* adapter.stopAgent!(session.threadId, RuntimeTaskId.make("earlier-workflow"));
+      assert.deepEqual(harness.query.stopTaskCalls, ["failed-turn-workflow", "earlier-workflow"]);
       assert.equal(harness.query.closeCalls, 0);
-
-      const stoppedTaskEvents = Array.from(yield* Fiber.join(stoppedTaskEventFiber));
-      const stoppedTaskEvent = stoppedTaskEvents[0];
-      assert.equal(stoppedTaskEvent?.type, "task.completed");
-      if (stoppedTaskEvent?.type === "task.completed") {
-        assert.equal(String(stoppedTaskEvent.payload.taskId), "task-doomed");
-        assert.equal(stoppedTaskEvent.payload.status, "stopped");
-        assert.equal(stoppedTaskEvent.payload.title, "Agent A");
-      }
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
+    }).pipe(Effect.provide(harness.layer));
   });
 
   // The workflow-member case: those rows carry synthesized `:wf:` slot ids the
@@ -3676,6 +4026,80 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect(
+    "workflow retries reject stale snapshots and clear the old conversation identity",
+    () => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        const session = yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({
+          threadId: session.threadId,
+          input: "Run a workflow",
+          attachments: [],
+        });
+        const events = yield* adapter.streamEvents.pipe(
+          Stream.filter(
+            (event) => event.type === "task.progress" && event.payload.taskId === "retry:wf:0",
+          ),
+          Stream.takeUntil(
+            (event) =>
+              event.type === "task.progress" && event.payload.resultPreview === "Third answer",
+          ),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        const tick = (attempt: number, state: string, extra: Record<string, unknown> = {}) =>
+          harness.query.emit({
+            type: "system",
+            subtype: "task_progress",
+            task_id: "retry",
+            description: "Review",
+            workflow_progress: [
+              { type: "workflow_agent", index: 0, label: "Reviewer", attempt, state, ...extra },
+            ],
+            session_id: "sdk-session",
+            uuid: `retry-${attempt}-${state}`,
+          } as unknown as SDKMessage);
+        tick(1, "done", {
+          agentId: "first",
+          promptPreview: "First prompt",
+          resultPreview: "First answer",
+          tokens: 100,
+        });
+        tick(2, "start", {
+          agentId: "second",
+          promptPreview: "Second prompt",
+          startedAt: 1_700_000_000_000,
+        });
+        tick(1, "done", { agentId: "first", resultPreview: "Stale answer" });
+        tick(2, "queued", { resultPreview: "Stale queued answer" });
+        tick(2, "done", { resultPreview: "Second answer" });
+        tick(2, "start", { resultPreview: "Stale running answer" });
+        tick(3, "start");
+        tick(3, "done", { agentId: "third", resultPreview: "Third answer" });
+        const snapshots = Array.from(yield* Fiber.join(events))
+          .filter((event) => event.type === "task.progress")
+          .map((event) => event.payload);
+        assert.equal(snapshots.length, 5);
+        assert.deepEqual(
+          snapshots.map((payload) => payload.status),
+          ["completed", "running", "completed", "running", "completed"],
+        );
+        assert.equal(snapshots[2]?.workflowAgentId, "second");
+        assert.equal(snapshots[2]?.promptPreview, "Second prompt");
+        assert.equal(snapshots[3]?.workflowAgentId, undefined);
+        assert.equal(snapshots[3]?.promptPreview, undefined);
+        assert.equal(snapshots[3]?.resultPreview, undefined);
+        assert.equal(snapshots[3]?.typedUsage, undefined);
+      }).pipe(Effect.provide(harness.layer));
+    },
+  );
+
   it.effect("workflow member coalescing: identical snapshots suppress, changes emit", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -3764,7 +4188,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("task.started carries model/effort; subagent snapshots refine the model", () => {
+  it.effect("nested task inherits its owner effort while snapshots refine the model", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
@@ -3792,8 +4216,23 @@ describe("ClaudeAdapterLive", () => {
         attachments: [],
       });
 
-      // No explicit model/effort on the launch input: the task inherits the
-      // session's selection.
+      harness.query.emit({
+        type: "stream_event",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "toolu_agent_m",
+            name: "Agent",
+            input: { effort: "low" },
+          },
+        },
+        uuid: "agent-launch-effort-uuid",
+        session_id: "sdk-session",
+      } as unknown as SDKMessage);
+      // The child inherits its owner's explicit effort, rather than the session's max.
       harness.query.emit({
         type: "system",
         subtype: "task_started",
@@ -3833,7 +4272,7 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(started?.type, "task.started");
       if (started?.type === "task.started") {
         assert.equal(started.payload.model, SYNTHETIC_CLAUDE_CAPABLE_MODEL);
-        assert.equal(started.payload.effort, "max");
+        assert.equal(started.payload.effort, "low");
       }
       const refined = taskEvents[1];
       assert.equal(refined?.type, "task.updated");
@@ -3847,6 +4286,7 @@ describe("ClaudeAdapterLive", () => {
       if (nested?.type === "task.started") {
         assert.equal(nested.payload.agentId, "task-model");
         assert.equal(nested.payload.model, SYNTHETIC_SUBAGENT_MODEL);
+        assert.equal(nested.payload.effort, "low");
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
@@ -4578,72 +5018,83 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("emits Claude context window on result completion usage snapshots", () => {
-    const harness = makeHarness();
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
+  it.effect.each([
+    [{ ephemeral_1h_input_tokens: 100, ephemeral_5m_input_tokens: 50 }, 60 * 60_000],
+    [{ ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 50 }, 5 * 60_000],
+    [{ ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 0 }, undefined],
+  ] as const)(
+    "emits Claude context window and cache TTL from result usage: %j",
+    ([cache_creation, promptCacheTtlMs]) => {
+      const harness = makeHarness();
+      return Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
 
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
-        Stream.runCollect,
-        Effect.forkChild,
-      );
+        const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 7).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
 
-      yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-
-      yield* adapter.sendTurn({
-        threadId: THREAD_ID,
-        input: "hello",
-        attachments: [],
-      });
-
-      harness.query.emit({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        duration_ms: 1234,
-        duration_api_ms: 1200,
-        num_turns: 1,
-        result: "done",
-        stop_reason: "end_turn",
-        session_id: "sdk-session-result-usage",
-        usage: {
-          input_tokens: 4,
-          cache_creation_input_tokens: 2715,
-          cache_read_input_tokens: 21144,
-          output_tokens: 679,
-        },
-        modelUsage: {
-          [SYNTHETIC_CLAUDE_CAPABLE_MODEL]: {
-            contextWindow: 200000,
-            maxOutputTokens: 64000,
-          },
-        },
-      } as unknown as SDKMessage);
-      harness.query.finish();
-
-      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const usageEvent = runtimeEvents.find((event) => event.type === "thread.token-usage.updated");
-      assert.equal(usageEvent?.type, "thread.token-usage.updated");
-      if (usageEvent?.type === "thread.token-usage.updated") {
-        assert.deepEqual(usageEvent.payload, {
-          usage: {
-            usedTokens: 24542,
-            lastUsedTokens: 24542,
-            inputTokens: 23863,
-            outputTokens: 679,
-            maxTokens: 200000,
-          },
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          runtimeMode: "full-access",
         });
-      }
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
+
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "hello",
+          attachments: [],
+        });
+
+        harness.query.emit({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          duration_ms: 1234,
+          duration_api_ms: 1200,
+          num_turns: 1,
+          result: "done",
+          stop_reason: "end_turn",
+          session_id: "sdk-session-result-usage",
+          usage: {
+            input_tokens: 4,
+            cache_creation,
+            cache_creation_input_tokens: 2715,
+            cache_read_input_tokens: 21144,
+            output_tokens: 679,
+          },
+          modelUsage: {
+            [SYNTHETIC_CLAUDE_CAPABLE_MODEL]: {
+              contextWindow: 200000,
+              maxOutputTokens: 64000,
+            },
+          },
+        } as unknown as SDKMessage);
+        harness.query.finish();
+
+        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+        const usageEvent = runtimeEvents.find(
+          (event) => event.type === "thread.token-usage.updated",
+        );
+        assert.equal(usageEvent?.type, "thread.token-usage.updated");
+        if (usageEvent?.type === "thread.token-usage.updated") {
+          assert.deepEqual(usageEvent.payload, {
+            usage: {
+              usedTokens: 24542,
+              ...(promptCacheTtlMs === undefined ? {} : { promptCacheTtlMs }),
+              lastUsedTokens: 24542,
+              inputTokens: 23863,
+              outputTokens: 679,
+              maxTokens: 200000,
+            },
+          });
+        }
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(harness.layer),
+      );
+    },
+  );
 
   it.effect("clamps oversized Claude usage to the reported context window", () => {
     const harness = makeHarness();

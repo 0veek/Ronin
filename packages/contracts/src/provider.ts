@@ -71,6 +71,10 @@ export type ProviderSessionStartInput = typeof ProviderSessionStartInput.Type;
 
 export const ProviderSendTurnInput = Schema.Struct({
   threadId: ThreadId,
+  /** Latest untrusted notes from interactive MCP apps, supplied by the environment. */
+  appContext: Schema.optional(
+    Schema.Array(Schema.Struct({ key: Schema.String, text: Schema.String })),
+  ),
   /** Internal recovery signal. Allows an empty turn only for adapters that
       explicitly support promptless continuation. */
   continuation: Schema.optional(Schema.Boolean),

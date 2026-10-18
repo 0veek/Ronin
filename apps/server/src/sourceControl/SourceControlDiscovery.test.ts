@@ -1711,3 +1711,43 @@ it.effect.each([
     );
   },
 );
+
+it.effect("filters Forgejo branch status reads on the host instead of scanning unrelated PRs", () =>
+  Effect.gen(function* () {
+    const paths: string[] = [];
+    const provider = yield* ForgejoSourceControlProvider.make.pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.mock(ForgejoCli.ForgejoCli)({
+            resolveRepository: () =>
+              Effect.succeed({
+                login: "test",
+                repository: "maria/project",
+                baseUrl: "https://forgejo.test",
+              }),
+            api: (input) =>
+              Effect.sync(() => {
+                paths.push(input.path);
+                return processOutput("[]");
+              }),
+          }),
+          Layer.mock(VcsProcess.VcsProcess)({}),
+          NodeServices.layer,
+        ),
+      ),
+    );
+    assert.deepStrictEqual(
+      yield* provider.listChangeRequests({
+        cwd: "/repo",
+        headSelector: "feature/a&b",
+        state: "merged",
+      }),
+      [],
+    );
+    assert.equal(paths.length, 1);
+    const url = new URL(paths[0]!, "https://forgejo.test/");
+    assert.equal(url.searchParams.get("head"), "feature/a&b");
+    assert.equal(url.searchParams.get("state"), "closed");
+    assert.equal(url.searchParams.get("page"), "1");
+  }),
+);
