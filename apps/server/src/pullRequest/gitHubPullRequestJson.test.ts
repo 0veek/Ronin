@@ -964,7 +964,13 @@ describe("viewer permission decoding", () => {
           }),
         ),
       ),
-    ).toEqual({ canWrite: false, canTriage: false, canUpdate: true, didAuthor: true });
+    ).toEqual({
+      canWrite: false,
+      canDeleteBranch: false,
+      canTriage: false,
+      canUpdate: true,
+      didAuthor: true,
+    });
   });
 
   it("says no to a passer-by on a repository they can only read", () => {
@@ -977,7 +983,13 @@ describe("viewer permission decoding", () => {
           }),
         ),
       ),
-    ).toEqual({ canWrite: false, canTriage: false, canUpdate: false, didAuthor: false });
+    ).toEqual({
+      canWrite: false,
+      canDeleteBranch: false,
+      canTriage: false,
+      canUpdate: false,
+      didAuthor: false,
+    });
   });
 
   it("reads silence as permission, but not as authorship", () => {
@@ -989,6 +1001,7 @@ describe("viewer permission decoding", () => {
       canTriage: false,
       canUpdate: true,
       didAuthor: false,
+      canDeleteBranch: false,
     });
   });
 

@@ -65,6 +65,10 @@ interrupted during the update.
 A resumed thread shows a **Ronin restarted** notice in its activity with the continuation
 instruction, so you can see why work resumed.
 
+Automatic continuation skips archived, settled, and snoozed threads. It also waits when
+the restart interrupts an approval, question, or secret request that needs your response.
+After three consecutive automatic restarts, the turn waits for your next message.
+
 The update does not remove saved threads, settings, or project files.
 
 Messages waiting to reach a provider can be cancelled when the server restarts. Ronin

@@ -86,6 +86,9 @@ import {
   renderCodexFileCitationsAsMarkdown,
 } from "@t3tools/client-runtime/codex-markdown-directives";
 import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
+import { mathKind } from "@t3tools/shared/markdownMath";
+import remarkMath from "remark-math";
+import { MarkdownMath } from "./chat/MarkdownMath";
 import { type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { WorkspaceEntryTooltip } from "./chat/WorkspaceEntryIcon";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
@@ -950,7 +953,7 @@ function MarkdownMermaidCodeBlock({
               </div>
             }
           >
-            <MermaidDiagram source={code} theme={theme} onExpand={onExpand} />
+            <MermaidDiagram source={code} onExpand={onExpand} />
           </Suspense>
         </RenderErrorBoundary>
       ) : (
@@ -2188,6 +2191,7 @@ function ChatMarkdown({
   // synchronously whether to intercept its `_blank`, and a subscription is what
   // makes a persisted "app" apply once settings hydrate after launch.
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
+  const mathEnabled = useClientSettings((settings) => settings.mathRenderingEnabled);
   const resolveThreadPullRequest = useCallback(
     (href: string): (ThreadPullRequestKey & { readonly url: string }) | null => {
       if (
@@ -2686,6 +2690,9 @@ function ChatMarkdown({
         );
       },
       code({ node, children, className, ...props }) {
+        const math = mathEnabled ? mathKind(className) : null;
+        if (math)
+          return <MarkdownMath tex={nodeToPlainText(children)} display={math === "display"} />;
         if (node?.properties?.dataInlineCode != null) {
           const codeText = nodeToPlainText(children);
           const fileLinkMeta =
@@ -2737,6 +2744,14 @@ function ChatMarkdown({
         }
 
         const language = extractFenceLanguage(codeBlock.className);
+        if (
+          mathEnabled &&
+          language === "math" &&
+          (!isStreaming ||
+            mathKind(codeBlock.className) === "display" ||
+            isClosedCodeFence(node, text))
+        )
+          return <MarkdownMath tex={codeBlock.code} display />;
         const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
         const highlightedCode = (
           <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
@@ -2801,6 +2816,7 @@ function ChatMarkdown({
     inlineCodeFileLinkMetaByText,
     isStreaming,
     linkTargetPreference,
+    mathEnabled,
     linkedThreadPullRequestFor,
     markdownFileLinkMetaByHref,
     onImageExpand,
@@ -2827,14 +2843,15 @@ function ChatMarkdown({
 
   const incrementalParsing =
     isStreaming && extraRemarkPlugins.length === 0 && /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(text);
-  const remarkPlugins = useMemo(
-    () => [
+  const remarkPlugins = useMemo(() => {
+    const plugins: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [
       ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
       ...extraRemarkPlugins,
       ...(incrementalParsing ? [createIncrementalMarkdownPlugin()] : []),
-    ],
-    [extraRemarkPlugins, incrementalParsing, lineBreaks],
-  );
+    ];
+    if (mathEnabled) plugins.unshift([remarkMath, { singleDollarTextMath: true }]);
+    return plugins;
+  }, [extraRemarkPlugins, incrementalParsing, lineBreaks, mathEnabled]);
 
   // react-markdown converts unparsed HTML nodes to text when skipHtml is false.
   // Keep that behavior explicit because literal mode depends on escaping the

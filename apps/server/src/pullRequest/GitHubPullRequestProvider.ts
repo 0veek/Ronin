@@ -33,9 +33,11 @@ const CAPABILITIES: PullRequestCapabilities = {
     "enable-auto-merge",
     "disable-auto-merge",
     "revert",
+    "delete-branch",
     "approve-workflows",
   ],
   mergeMethods: ["merge", "squash", "rebase"],
+  deleteBranch: true,
   updateMethods: ["merge", "rebase"],
   search: true,
   reactions: true,
@@ -73,6 +75,7 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
   return {
     ...(access.canWrite ? { stackRebase: true } : {}),
     actions: [
+      ...(access.canDeleteBranch === true ? (["delete-branch"] as const) : []),
       // Arming a merge and taking the arming back are the merge, deferred: whoever may not
       // merge here may not leave an instruction to merge later either.
       ...(access.canWrite

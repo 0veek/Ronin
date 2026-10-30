@@ -35,6 +35,7 @@
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Terminal history](./user/terminal.md)
+- [Control threads from scripts](./user/thread-cli.md)
 - [Background service (Linux)](./user/background-service.md)
 - Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Cursor](./user/providers-cursor.md) · [Grok](./user/providers-grok.md) · [OpenCode](./user/providers-opencode.md) · [Antigravity](./user/providers-antigravity.md) · [Droid](./user/providers-droid.md) · [Kilo](./user/providers-kilo.md) · [Pi](./user/providers-pi.md)
 - [Muse Code](./user/providers-muse.md)

@@ -1,8 +1,8 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { ScaleIcon } from "lucide-react";
+import { PlusIcon, ScaleIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
-import type { EnvironmentOption } from "./BranchToolbar.logic";
+import { ADD_TO_MACHINE_LABEL_CLASS, type EnvironmentOption } from "./BranchToolbar.logic";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import {
   Select,
@@ -24,6 +24,7 @@ interface BranchToolbarEnvironmentSelectorProps {
   // Absent when there is only one environment to show: the indicator still
   // renders (as a static label) so remote projects are always identifiable.
   onEnvironmentChange?: (environmentId: EnvironmentId) => void;
+  onAddToMachine?: () => void;
 }
 
 export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvironmentSelector({
@@ -33,6 +34,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   environmentId,
   availableEnvironments,
   onEnvironmentChange,
+  onAddToMachine,
 }: BranchToolbarEnvironmentSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
   const activeEnvironment = useMemo(() => {
@@ -48,8 +50,9 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
         value: env.environmentId,
         label: env.label,
       })),
+      ...(onAddToMachine ? [{ value: "add-to-machine", label: "Add to another machine" }] : []),
     ],
-    [availableEnvironments, autoEnvironmentLabel, onAutoEnvironment],
+    [availableEnvironments, autoEnvironmentLabel, onAutoEnvironment, onAddToMachine],
   );
 
   // The static label carries the xs control's height (h-7 sm:h-6) as well as
@@ -57,7 +60,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   // the strip is exactly as tall as its tallest child. A shorter label would
   // pull the hairline dividing the strip from the input upward whenever this
   // label is the only thing in the strip.
-  if (envLocked || onEnvironmentChange === undefined) {
+  if (envLocked || (onEnvironmentChange === undefined && !onAddToMachine)) {
     return (
       <span
         className="inline-flex h-7 min-w-0 max-w-full items-center gap-1 border border-transparent px-[calc(--spacing(3)-1px)] text-sm font-medium text-muted-foreground/70 sm:h-6 sm:text-xs"
@@ -87,7 +90,11 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       modal={false}
       value={autoEnvironmentLabel ? "auto" : environmentId}
       onValueChange={(value) =>
-        value === "auto" ? onAutoEnvironment?.() : onEnvironmentChange(value as EnvironmentId)
+        value === "add-to-machine"
+          ? onAddToMachine?.()
+          : value === "auto"
+            ? onAutoEnvironment?.()
+            : onEnvironmentChange?.(value as EnvironmentId)
       }
       items={environmentItems}
     >
@@ -143,6 +150,14 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
               </span>
             </SelectItem>
           ))}
+          {onAddToMachine && (
+            <SelectItem value="add-to-machine">
+              <span className={ADD_TO_MACHINE_LABEL_CLASS}>
+                <PlusIcon className="size-3" />
+                Add to another machine
+              </span>
+            </SelectItem>
+          )}
         </SelectGroup>
       </SelectPopup>
     </Select>

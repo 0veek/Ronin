@@ -6,6 +6,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+const mathPreference = vi.hoisted(() => ({ enabled: false }));
+
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("../hooks/useTheme", () => ({ useTheme: () => ({ resolvedTheme: "dark" }) }));
 vi.mock("../hooks/useSettings", async (importOriginal) => {
@@ -13,8 +15,10 @@ vi.mock("../hooks/useSettings", async (importOriginal) => {
   const settings = actual.getClientSettings();
   return {
     ...actual,
-    useClientSettings: (select?: (value: typeof settings) => unknown) =>
-      select ? select(settings) : settings,
+    useClientSettings: (select?: (value: typeof settings) => unknown) => {
+      const value = { ...settings, mathRenderingEnabled: mathPreference.enabled };
+      return select ? select(value) : value;
+    },
   };
 });
 vi.mock("../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => vi.fn() }));
@@ -49,6 +53,26 @@ import ChatMarkdown, {
   orderedListGutterStyle,
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
+
+describe("ChatMarkdown opt-in math", () => {
+  it("keeps formulas literal while disabled and renders their TeX fallback when enabled", () => {
+    const text = "Area $x^2$ grows.\n\n\\[\ny = x^2\n\\]";
+    const render = () =>
+      new DOMParser().parseFromString(
+        renderToStaticMarkup(<ChatMarkdown cwd="/tmp/project" text={text} />),
+        "text/html",
+      );
+    expect(render().body.textContent).toContain("Area $x^2$ grows.");
+    try {
+      mathPreference.enabled = true;
+      const enabled = render();
+      expect(enabled.body.textContent).toContain("Area \\(x^2\\) grows.");
+      expect(enabled.body.textContent).toContain("\\[\ny = x^2\n\\]");
+    } finally {
+      mathPreference.enabled = false;
+    }
+  });
+});
 
 describe("ChatMarkdown bare anchor placeholders", () => {
   it.each(["<A>", "<a>", "<a >", "<a/>", "<A/>", "<a />"])(

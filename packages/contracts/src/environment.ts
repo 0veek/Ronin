@@ -171,6 +171,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   environmentIcon: Schema.optionalKey(Schema.Boolean),
   /** Server exposes progress snapshots for background repository clones. */
   projectCloneTracking: Schema.optionalKey(Schema.Boolean),
+  /** Server answers projects.listIgnoredFiles. */
+  ignoredFileListing: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

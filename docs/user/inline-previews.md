@@ -15,9 +15,10 @@ I've written the coverage report:
 The card shows the page in a frame, with a header carrying the filename, a reload button, and an
 action to open the file in the side panel. Collapse it with the chevron if it is in your way.
 
-Fenced code labeled `mermaid` renders as a diagram once the response finishes streaming. Switch
-between the diagram and its source, copy the source, or select the diagram to expand it. If the
-source cannot be rendered, Ronin shows the error and keeps the source visible.
+Fenced code labeled `mermaid` renders with Pele once the response finishes streaming. Diagrams follow
+the app's theme. Switch between the diagram and its source, copy the source, or select the diagram to
+expand it. Some Mermaid syntax may be unsupported; if rendering fails, Ronin shows the error and
+keeps the source visible.
 
 ## What qualifies
 

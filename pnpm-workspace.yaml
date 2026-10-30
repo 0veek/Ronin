@@ -49,6 +49,7 @@ catalog:
   ws: 8.22.0
 
 minimumReleaseAgeExclude:
+  - pele@1.8.0
   - "@distilled.cloud/aws@0.30.2"
   - "@distilled.cloud/axiom@0.30.2"
   - "@distilled.cloud/cloudflare@0.30.2"
@@ -67,6 +68,8 @@ minimumReleaseAgeExclude:
   - electron@44.4.5
 
 overrides:
+  "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
+  micromark-extension-gfm-table: 2.1.1
   # The dbus-next patch drops usocket from the package, but pnpm resolves from the
   # registry manifest, so the edge has to be cut here as well.
   "dbus-next>usocket": "-"
@@ -109,6 +112,9 @@ packageExtensions:
       vite: "catalog:"
 
 patchedDependencies:
+  mdast-util-math@3.0.0: patches/mdast-util-math@3.0.0.patch
+  micromark-extension-llm-math@3.1.0: patches/micromark-extension-llm-math@3.1.0.patch
+  micromark-extension-gfm-table@2.1.1: patches/micromark-extension-gfm-table@2.1.1.patch
   "@effect/platform-node-shared@4.0.0-beta.103": patches/@effect__platform-node-shared@4.0.0-beta.103.patch
   "@effect/vitest@4.0.0-beta.103": patches/@effect__vitest@4.0.0-beta.103.patch
   "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch

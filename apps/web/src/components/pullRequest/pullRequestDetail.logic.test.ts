@@ -8,10 +8,12 @@ import {
   type PullRequestCheck,
   type PullRequestComment,
   type PullRequestDetail,
+  type PullRequestState,
   type PullRequestDetailView,
   type PullRequestReviewThread,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+
 import { formatInlineContextReference } from "~/lib/composerContextReferences";
 import { buildMessageContext, reviewCommentContextReference } from "~/lib/composerContextRecords";
 
@@ -21,6 +23,7 @@ import {
   buildExplainPullRequestHandoff,
   buildPullRequestReferenceContext,
   buildFixFindingHandoff,
+  canDeletePullRequestBranch,
   buildFixFindingsHandoff,
   groupPullRequestTimelineConversations,
   handoffPrompt,
@@ -54,6 +57,21 @@ import {
   writePullRequestDetailSnapshot,
 } from "./pullRequestDetail.logic";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
+
+describe("when the source branch can be deleted", () => {
+  const detail = (state: PullRequestState, supported = true, allowed = true) => ({
+    state,
+    capabilities: { deleteBranch: supported, actions: ["delete-branch" as const] },
+    viewerPermissions: { actions: allowed ? ["delete-branch" as const] : [] },
+  });
+  it("requires a closed or merged PR, host support, and source-repository permission", () => {
+    expect(canDeletePullRequestBranch(detail("merged"))).toBe(true);
+    expect(canDeletePullRequestBranch(detail("closed"))).toBe(true);
+    expect(canDeletePullRequestBranch(detail("open"))).toBe(false);
+    expect(canDeletePullRequestBranch(detail("merged", false))).toBe(false);
+    expect(canDeletePullRequestBranch(detail("merged", true, false))).toBe(false);
+  });
+});
 
 describe("pull request checkout commands", () => {
   it.each([

@@ -21,6 +21,8 @@ it.effect("preserves installed status after probes and cleans failed agent activ
     const home = yield* fs.makeTempDirectoryScoped();
     const modes: string[] = [];
     const owners: string[] = [];
+    const tunnelArgs: string[][] = [];
+    const commandArgs: string[][] = [];
     let forwards = 0;
     let failForward = true;
     let rejectConfig = true;
@@ -28,6 +30,7 @@ it.effect("preserves installed status after probes and cleans failed agent activ
       Effect.gen(function* () {
         if (command._tag !== "StandardCommand") return yield* Effect.die("Unexpected command");
         const forwarding = command.args.includes("-N");
+        (forwarding ? tunnelArgs : commandArgs).push([...command.args]);
         let output = "";
         if (forwarding) {
           if (failForward) {
@@ -133,6 +136,19 @@ it.effect("preserves installed status after probes and cleans failed agent activ
     expect((yield* host.summary).agentDeviceInstalled).toBe(true);
     yield* host.stopAgent;
     expect(forwards).toBe(1);
+    const multiplexingOff = ["ControlMaster=no", "ControlPath=none", "ControlPersist=no"];
+    expect(tunnelArgs.length).toBeGreaterThan(0);
+    for (const args of tunnelArgs) {
+      for (const option of multiplexingOff) {
+        const index = args.indexOf(option);
+        expect(index).toBeGreaterThan(0);
+        expect(args[index - 1]).toBe("-o");
+      }
+    }
+    expect(commandArgs.length).toBeGreaterThan(0);
+    for (const args of commandArgs) {
+      for (const option of multiplexingOff) expect(args).not.toContain(option);
+    }
     yield* host.stop;
     expect(forwards).toBe(0);
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

@@ -19,6 +19,7 @@ import {
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import { OrchestrationEngineService } from "./Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import { waitForThreadMessage } from "./ThreadMessageWait.ts";
 
 export const orchestrationHttpApiLayer = HttpApiBuilder.group(
   EnvironmentHttpApi,
@@ -29,6 +30,23 @@ export const orchestrationHttpApiLayer = HttpApiBuilder.group(
     const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
 
     return handlers
+      .handle(
+        "waitForMessage",
+        Effect.fn("environment.orchestration.waitForMessage")(function* (args) {
+          yield* annotateEnvironmentRequest(args.endpoint.name);
+          yield* requireEnvironmentScope(AuthOrchestrationReadScope);
+          const result = yield* waitForThreadMessage(
+            args.params.threadId,
+            args.payload.messageId,
+          ).pipe(
+            Effect.catch((cause) =>
+              failEnvironmentInternal("orchestration_thread_snapshot_failed", cause),
+            ),
+          );
+          if (result === null) return yield* failEnvironmentNotFound("thread_not_found");
+          return result;
+        }),
+      )
       .handle(
         "snapshot",
         Effect.fn("environment.orchestration.snapshot")(function* (args) {

@@ -408,3 +408,24 @@
   background: var(--app-theme-search-match-active-background, #eea52b);
   color: var(--app-theme-search-match-active-foreground, #21180a);
 }
+
+.chat-markdown-math-display .katex-display {
+  margin: 0;
+}
+
+.chat-markdown .chat-markdown-table-container td:has([data-markdown-math]) {
+  max-width: none;
+  overflow: visible;
+}
+
+.pele {
+  --pele-bg: var(--background);
+  --pele-fg: var(--foreground);
+  --pele-muted: var(--muted-foreground);
+  --pele-line: var(--muted-foreground);
+  --pele-surface: var(--secondary);
+  --pele-surface-alt: var(--accent);
+  --pele-border: color-mix(in srgb, var(--foreground) 28%, transparent);
+  --pele-accent: var(--primary);
+  --pele-critical: var(--destructive);
+}

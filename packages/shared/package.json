@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./markdownMath": {
+      "types": "./src/markdownMath.ts",
+      "import": "./src/markdownMath.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"
@@ -412,6 +416,7 @@
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
     "mdast-util-directive": "^3.1.0",
+    "mdast-util-to-hast": "^13.2.1",
     "micromark-extension-directive": "^4.0.0",
     "micromark-util-character": "^2.1.1",
     "micromark-util-types": "^2.0.2",
@@ -419,6 +424,7 @@
     "rehype-sanitize": "^6.0.0",
     "remark-breaks": "^4.0.0",
     "remark-gfm": "^4.0.1",
+    "remark-math": "6.0.0",
     "remark-parse": "^11.0.0",
     "remark-rehype": "^11.1.2",
     "unified": "^11.0.5",
@@ -427,6 +433,7 @@
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
+    "@types/mdast": "^4.0.4",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   }

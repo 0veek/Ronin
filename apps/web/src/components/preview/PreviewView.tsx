@@ -8,7 +8,8 @@ import {
   type PreviewViewportSetting,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { normalizePreviewUrl, resolveAddressBarInput } from "@t3tools/shared/preview";
+import { resolveAddressBarInput, resolveSearchUrlTemplate } from "@t3tools/shared/preview";
+import { getClientSettings } from "~/hooks/useSettings";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -214,7 +215,10 @@ export function PreviewView({ threadRef, tabId: requestedTabId, configuredUrls, 
   const handleSubmitUrl = useCallback(
     async (next: string) => {
       try {
-        const normalized = resolveAddressBarInput(next);
+        const normalized = resolveAddressBarInput(
+          next,
+          resolveSearchUrlTemplate(getClientSettings()),
+        );
         if (await navigateToResolvedUrl(normalized)) {
           recordVisitForThread(threadRef, normalized);
         }

@@ -17,6 +17,14 @@ The native monitor owns bounded in-memory history. The server only merges and
 summarizes that history when diagnostics requests it. Telemetry history is not
 persisted to disk or continuously copied into Node.
 
+When an environment has OTLP metrics export configured, it requests a native
+process sample once per minute and exports memory, CPU, and process counts by
+fixed group: server, monitor, Electron, provider, terminal, browser, or other.
+The entire subtree of a provider belongs to that provider's group. An emptied
+group exports zero. With metrics export disabled, this layer does not sample.
+The existing event-loop monitor also records server memory, CPU utilization,
+and event-loop gauges from its 30-second samples.
+
 ## Why a standalone executable
 
 The monitor is intentionally not a Node native addon.

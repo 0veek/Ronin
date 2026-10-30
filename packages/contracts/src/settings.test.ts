@@ -21,6 +21,18 @@ const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const encodeServerSettings = Schema.encodeSync(ServerSettings);
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 
+describe("math rendering preference", () => {
+  it("is opt-in and persists through patches", () => {
+    expect(decodeClientSettings({}).mathRenderingEnabled).toBe(false);
+    for (const mathRenderingEnabled of [true, false]) {
+      const preference = { mathRenderingEnabled };
+      expect(decodeClientSettingsPatch(preference)).toEqual(preference);
+      expect(encodeClientSettings(decodeClientSettings(preference))).toMatchObject(preference);
+    }
+    expect(() => decodeClientSettingsPatch({ mathRenderingEnabled: "yes" })).toThrow();
+  });
+});
+
 describe("ServerSettings.removeAgentCreditsOnMerge", () => {
   it("keeps credits by default and accepts environment and checkout overrides", () => {
     expect(decodeServerSettings({}).removeAgentCreditsOnMerge).toBe(false);

@@ -255,6 +255,62 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
     );
   });
 
+  describe("listIgnoredFiles", () => {
+    it.effect("excludes symlinks and caps large listings", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ git: true });
+        yield* writeTextFile(cwd, ".gitignore", ".env*\n");
+        yield* writeTextFile(cwd, "public.txt", "not ignored");
+        if ((yield* HostProcessPlatform) !== "win32") {
+          const path = yield* Path.Path;
+          yield* Effect.promise(() => NodeFSP.symlink("public.txt", path.join(cwd, ".env-link")));
+        }
+        for (let index = 0; index < 201; index += 1) {
+          yield* writeTextFile(cwd, `.env.${String(index).padStart(3, "0")}`, "x");
+        }
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const result = yield* workspaceEntries.listIgnoredFiles({ cwd });
+        expect(result.truncated).toBe(true);
+        expect(result.files.length).toBeLessThanOrEqual(200);
+        expect(result.files.every((file) => file.byteLength === 1)).toBe(true);
+        expect(result.files.some((file) => file.path === ".env-link")).toBe(false);
+      }),
+    );
+
+    it.effect("lists ignored files with sizes and skips wholly ignored folders", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ git: true });
+        yield* writeTextFile(cwd, ".gitignore", "node_modules/\n.env*\n");
+        yield* writeTextFile(cwd, ".env", "A=1");
+        yield* writeTextFile(cwd, "apps/web/index.ts", "y");
+        yield* git(cwd, ["add", "apps/web/index.ts"]);
+        yield* writeTextFile(cwd, "apps/web/.env.local", "B=22");
+        yield* writeTextFile(cwd, "node_modules/pkg/index.js", "x");
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        expect(yield* workspaceEntries.listIgnoredFiles({ cwd })).toEqual({
+          files: [
+            { path: ".env", byteLength: 3 },
+            { path: "apps/web/.env.local", byteLength: 4 },
+          ],
+          truncated: false,
+        });
+      }),
+    );
+
+    it.effect("returns nothing outside a git repository", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, ".env", "A=1");
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        expect(yield* workspaceEntries.listIgnoredFiles({ cwd })).toEqual({
+          files: [],
+          truncated: false,
+        });
+      }),
+    );
+  });
+
   describe("search", () => {
     it.effect("returns files and directories relative to cwd", () =>
       Effect.gen(function* () {

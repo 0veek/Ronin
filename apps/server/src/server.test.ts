@@ -5,6 +5,7 @@ import { SecretRequests } from "./secrets/SecretRequests.ts";
 import { AutomationWebhooks } from "./automation/AutomationWebhooks.ts";
 import { ThreadManagementService } from "./orchestration-v2/ThreadManagementService.ts";
 import { EventSinkV2 } from "./orchestration-v2/EventSink.ts";
+import { ProjectionStoreV2 } from "./orchestration-v2/ProjectionStore.ts";
 import * as NodeSocket from "@effect/platform-node/NodeSocket";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
@@ -1008,6 +1009,7 @@ const buildAppUnderTest = (options?: {
             Layer.mock(AutomationWebhooks)({}),
             Layer.mock(ThreadManagementService)({}),
             Layer.mock(EventSinkV2)({}),
+            Layer.mock(ProjectionStoreV2)({}),
           ),
         ),
         Layer.provide(BuildSystemService.layerTest),

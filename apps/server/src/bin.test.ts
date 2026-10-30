@@ -33,6 +33,8 @@ import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSna
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import { orchestrationHttpApiLayer } from "./orchestration/http.ts";
+import { EventSinkV2 } from "./orchestration-v2/EventSink.ts";
+import { ProjectionStoreV2 } from "./orchestration-v2/ProjectionStore.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
@@ -353,6 +355,7 @@ const withLiveProjectCliServer = <A, E, R>(baseDir: string, run: () => Effect.Ef
       disableListenLog: true,
       disableLogger: true,
     }).pipe(
+      Layer.provide(Layer.mergeAll(Layer.mock(EventSinkV2)({}), Layer.mock(ProjectionStoreV2)({}))),
       Layer.provideMerge(
         EnvironmentAuth.layer.pipe(
           Layer.provideMerge(SqlitePersistenceLayerLive),

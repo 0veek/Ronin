@@ -1,4 +1,13 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Schema from "effect/Schema";
+import * as Redacted from "effect/Redacted";
+import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+import * as GitHubApi from "../sourceControl/GitHubApi.ts";
+import * as GitHubCredentials from "../sourceControl/GitHubCredentials.ts";
+import * as GitHubQuota from "../sourceControl/githubQuota.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as GitHubPullRequestCli from "./GitHubPullRequestCli.ts";
+import * as GitHubPullRequestProvider from "./GitHubPullRequestProvider.ts";
 import * as KeyValueStore from "effect/unstable/persistence/KeyValueStore";
 import { assert, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -32,6 +41,8 @@ import {
 import { PullRequestProviderRegistry, fromProviders } from "./PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./PullRequestService.ts";
 import * as PullRequestReadCache from "./PullRequestReadCache.ts";
+
+const encodeBranchTestJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 function project(input: {
   readonly id: string;
@@ -136,6 +147,196 @@ const FULL_REVIEW: PullRequestReviewCapabilities = {
 };
 
 const FULL_REVIEWERS: PullRequestReviewerCapabilities = { request: true, listCandidates: true };
+
+it.effect("runs branch deletion only when the host and viewer support it, never for a stack", () =>
+  Effect.gen(function* () {
+    let actions = 0;
+    let supported = false;
+    let allowed = true;
+    const base = fakeProvider("github");
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        {
+          ...base,
+          capabilities: {
+            ...base.capabilities,
+            actions: ["delete-branch"],
+            stackActions: true,
+            get deleteBranch() {
+              return supported;
+            },
+          },
+          getViewerPermissions: () =>
+            Effect.succeed({
+              actions: allowed ? ["delete-branch"] : [],
+              comment: true,
+              resolve: true,
+              verdicts: [],
+              requestReviewers: false,
+            }),
+          runAction: (input) =>
+            Effect.sync(() => {
+              assert.strictEqual(input.action, "delete-branch");
+              actions++;
+            }),
+        },
+      ],
+    });
+    const input = {
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+      action: "delete-branch" as const,
+    };
+    assert.strictEqual(
+      (yield* Effect.flip(service.runAction(input)))._tag,
+      "PullRequestOperationError",
+    );
+    assert.strictEqual(actions, 0);
+    supported = true;
+    assert.strictEqual(
+      (yield* Effect.flip(
+        service.runAction({
+          ...input,
+          stackNumber: 2,
+          expectedStackHeads: [{ number: 1, headSha: "abc123" }],
+        }),
+      ))._tag,
+      "PullRequestOperationError",
+    );
+    assert.strictEqual(actions, 0);
+    allowed = false;
+    assert.strictEqual(
+      (yield* Effect.flip(service.runAction(input)))._tag,
+      "PullRequestOperationError",
+    );
+    assert.strictEqual(actions, 0);
+    allowed = true;
+    yield* service.runAction(input);
+    assert.strictEqual(actions, 1);
+  }),
+);
+
+it.effect("keeps branch deletion on the credential that passed source repository permissions", () =>
+  Effect.gen(function* () {
+    let activeToken = "account-a";
+    const requests: Array<{ operation: string; authorization: string | undefined }> = [];
+    const credentials = Layer.succeed(
+      GitHubCredentials.GitHubCredentials,
+      GitHubCredentials.GitHubCredentials.of({
+        get: (host) =>
+          Effect.sync(() => ({
+            host,
+            token: Redacted.make(activeToken),
+            source: "gh" as const,
+            fingerprint: `${host}:${activeToken}`,
+          })),
+        invalidate: () => Effect.void,
+      }),
+    );
+    const http = Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make((request) =>
+        Effect.sync(() => {
+          const operation = request.url.endsWith("/user")
+            ? "user"
+            : request.body._tag === "Uint8Array"
+              ? new TextDecoder().decode(request.body.body)
+              : "";
+          requests.push({ operation, authorization: request.headers["authorization"] });
+          let body;
+          if (operation === "user") {
+            body = { id: activeToken === "account-a" ? 101 : 202, login: activeToken };
+          } else if (operation.includes("query PullRequestBranchToDelete")) {
+            body = {
+              data: {
+                repository: {
+                  pullRequest: {
+                    state: "MERGED",
+                    headRefName: "feature",
+                    baseRefName: "main",
+                    headRefOid: "abc123",
+                    headRepository: { id: "FORK_REPO" },
+                  },
+                },
+              },
+            };
+          } else if (operation.includes("query PullRequestSourceBranch")) {
+            body = {
+              data: {
+                node: {
+                  defaultBranchRef: { name: "main" },
+                  ref: { target: { oid: "abc123" } },
+                },
+              },
+            };
+          } else if (operation.includes("updateRefs(")) {
+            body = { data: { updateRefs: {} } };
+          } else {
+            activeToken = "account-b";
+            body = {
+              data: {
+                repository: {
+                  mergeCommitAllowed: true,
+                  squashMergeAllowed: true,
+                  rebaseMergeAllowed: true,
+                  viewerPermission: "READ",
+                  pullRequest: {
+                    viewerCanUpdate: false,
+                    viewerDidAuthor: false,
+                    headRepository: { viewerPermission: "WRITE" },
+                  },
+                },
+              },
+            };
+          }
+          return HttpClientResponse.fromWeb(request, new Response(encodeBranchTestJson(body)));
+        }),
+      ),
+    );
+    const provider = yield* GitHubPullRequestProvider.make.pipe(
+      Effect.provide(
+        GitHubPullRequestCli.layer.pipe(
+          Layer.provide(
+            GitHubApi.layer.pipe(
+              Layer.provide(Layer.mergeAll(credentials, http)),
+              Layer.provide(GitHubQuota.layer),
+              Layer.provide(SourceControlRateLimit.layer),
+            ),
+          ),
+          Layer.provide(VcsProcess.layer.pipe(Layer.provideMerge(NodeServices.layer))),
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
+    );
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [provider],
+    });
+    yield* service.runAction({
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+      action: "delete-branch",
+    });
+    assert.strictEqual(activeToken, "account-b");
+    assert.strictEqual(
+      requests.filter(({ operation }) => operation.includes("updateRefs(")).length,
+      1,
+    );
+    assert.deepStrictEqual(
+      requests.map(({ authorization }) => authorization),
+      [
+        "Bearer account-a",
+        "Bearer account-a",
+        "Bearer account-a",
+        "Bearer account-a",
+        "Bearer account-a",
+      ],
+    );
+  }),
+);
 
 /** A provider whose every call is supplied by the test; anything unset succeeds emptily. */
 function fakeProvider(

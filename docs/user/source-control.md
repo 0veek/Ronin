@@ -40,6 +40,12 @@ turned off in Settings remains disabled.
 - Use the **Publish Repository** action to create a new hosted repository (GitHub, GitLab, Forgejo, Gitea, Bitbucket, or Azure DevOps), add it as your origin remote, and push, in one flow
 - If the local repository has no commits yet, publishing creates the remote and wires it up but does not push. Make a commit, then push normally.
 
+**Add a project to another machine**
+
+Choose **Run on → Add to another machine** to clone a project onto a connected environment that does not have it yet. Choose the destination and SSH or HTTPS clone URL to match that machine's Git credentials.
+
+The dialog lists ignored files available to copy, with `.env`, `.env.*`, `.envrc`, and `.dev.vars` files selected by default. Review the selection before starting; these files may contain credentials. Files larger than 1 MB and wholly ignored folders such as `node_modules` are excluded. Ronin copies the selected files after the clone finishes, through the client connecting the two environments. Keep Ronin open until copying finishes. A failed clone can be retried or removed, and file-copy failures are reported separately.
+
 ### Manage Code Reviews Without Context Switching
 
 **Create pull requests while you work**
@@ -68,6 +74,12 @@ override its environment's default or return to it. This also applies to auto-me
 merge queues and native stack merges. Original commits retain their messages.
 
 - See if your current branch already has an open PR/MR
+- After a GitHub PR is merged or closed, choose **Delete branch** from its detail
+  panel's menu to remove the remote source branch. Ronin asks for confirmation
+  and checks that you can write to the source repository, including for forks.
+  Default and base branches, and branches with new commits since the PR's head,
+  cannot be deleted here. Local branches and worktrees stay in place. Deletion
+  applies to one PR at a time; stack-wide deletion and other Git hosts are unsupported.
 - When an agent finishes a turn on your thread's branch, Ronin checks for a newly opened
   PR/MR if background activity is enabled for that repository. Known reviews keep their normal
   refresh schedule.
