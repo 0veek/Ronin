@@ -24,6 +24,7 @@ import {
   browserApiCorsLayer,
   httpCompressionLayer,
   httpRequestBodyLimitLayer,
+  unloggedSignedRequestsLayer,
   untracedRequestsLayer,
 } from "./http.ts";
 import { guardHttpResponseWriteErrors } from "./httpResponseErrorGuard.ts";
@@ -573,6 +574,7 @@ export const makeRoutesLayer = Layer.mergeAll(
   Layer.provide(browserApiCorsLayer),
   Layer.provide(httpRequestBodyLimitLayer),
   Layer.provide(httpCompressionLayer),
+  Layer.provide(unloggedSignedRequestsLayer),
 );
 
 export const makeServerLayer = Layer.unwrap(

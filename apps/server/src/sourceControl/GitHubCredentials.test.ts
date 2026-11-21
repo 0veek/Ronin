@@ -16,13 +16,15 @@ const TOKEN_VARIABLES = [
   "GITHUB_ENTERPRISE_TOKEN",
 ] as const;
 
+const ENTERPRISE_TOKEN_VARIABLES = ["GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"] as const;
+
 function harness(
   hosts: Record<string, { readonly account?: string; readonly enabled?: boolean }> = {},
   signedOut: ReadonlyArray<string> = [],
   tokens: Record<string, string> = {},
 ) {
   const calls: Array<ReadonlyArray<string>> = [];
-  const process = Layer.mock(VcsProcess.VcsProcess)({
+  const processLayer = Layer.mock(VcsProcess.VcsProcess)({
     run: (input) =>
       Effect.sync(() => {
         calls.push(input.args);
@@ -31,6 +33,22 @@ function harness(
           return {
             exitCode: ChildProcessSpawner.ExitCode(0),
             stdout: "",
+            stderr: "",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          };
+        }
+        // gh hands the enterprise variables to every host but github.com.
+        const fromEnterpriseEnv = input.args.includes("github.com")
+          ? undefined
+          : ENTERPRISE_TOKEN_VARIABLES.map(
+              (name) =>
+                (input.env !== undefined && name in input.env ? input.env : process.env)[name],
+            ).find(Boolean);
+        if (fromEnterpriseEnv !== undefined) {
+          return {
+            exitCode: ChildProcessSpawner.ExitCode(0),
+            stdout: `${fromEnterpriseEnv}\n`,
             stderr: "",
             stdoutTruncated: false,
             stderrTruncated: false,
@@ -49,7 +67,7 @@ function harness(
     Layer.provideMerge(
       ServerSettings.ServerSettingsService.layerTest({ github: { hosts, tokens } }),
     ),
-    Layer.provide(process),
+    Layer.provide(processLayer),
     Layer.provide(NodeServices.layer),
   );
   return { layer, calls };
@@ -62,6 +80,22 @@ describe("GitHubCredentials", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
+
+  it.effect.each(ENTERPRISE_TOKEN_VARIABLES)(
+    "keeps %s away from a host other than GH_HOST",
+    (name) => {
+      vi.stubEnv("GH_HOST", "ghe.corp.example");
+      vi.stubEnv(name, "enterprise-secret");
+      const { layer } = harness();
+      return Effect.gen(function* () {
+        const credentials = yield* GitHubCredentials.GitHubCredentials;
+        const other = yield* credentials.get("git.other.example");
+        expect(Redacted.value(other.token)).toBe("active-token");
+        const own = yield* credentials.get("ghe.corp.example");
+        expect(Redacted.value(own.token)).toBe("enterprise-secret");
+      }).pipe(Effect.provide(layer));
+    },
+  );
 
   it.effect("asks gh for the active login when Settings pin nothing", () => {
     const { layer, calls } = harness();

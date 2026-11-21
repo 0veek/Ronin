@@ -2690,6 +2690,55 @@ it.layer(TestLayer)("GitVcsDriver core integration", (it) => {
   });
 
   describe("commit context", () => {
+    it.effect(
+      "prepares bounded context for over 1 MB of staged paths without changing the index",
+      () =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          const blob = yield* driver.execute({
+            operation: "test.largeCommit.blob",
+            cwd,
+            args: ["hash-object", "-w", "--stdin"],
+            stdin: "content\n",
+          });
+          const paths = Array.from(
+            { length: 6_000 },
+            (_, index) => `${String(index).padStart(5, "0")}-${"x".repeat(180)}.txt`,
+          );
+          assert.isAbove(Buffer.byteLength(paths.join("\n")), 1_000_000);
+          yield* driver.execute({
+            operation: "test.largeCommit.index",
+            cwd,
+            args: ["update-index", "--index-info"],
+            stdin: paths.map((name) => `100644 ${blob.stdout.trim()}\t${name}\n`).join(""),
+          });
+          yield* writeTextFile(cwd, "loose.txt", "must remain unstaged\n");
+          const before = yield* git(cwd, ["write-tree"]);
+          for (const includePatch of [false, true]) {
+            const context = yield* driver.prepareCommitContext(cwd, undefined, { includePatch });
+            assert.isNotNull(context);
+            assert.include(context!.stagedSummary, paths[0]!);
+            assert.include(context!.stagedSummary, "[truncated]");
+            assert.isBelow(Buffer.byteLength(context!.stagedSummary), 8_100);
+            if (includePatch) {
+              assert.include(context!.stagedPatch, "[truncated]");
+              assert.isBelow(Buffer.byteLength(context!.stagedPatch), 49_100);
+            } else {
+              assert.equal(context!.stagedPatch, "");
+            }
+            assert.equal(yield* git(cwd, ["write-tree"]), before);
+          }
+          // Git also prints each added path after committing. That output must not
+          // report a failure after the commit has already succeeded.
+          yield* driver.commit(cwd, "Commit a large file list", "", { stage: {} });
+          assert.equal(yield* git(cwd, ["rev-parse", "HEAD^{tree}"]), before);
+          assert.equal(yield* git(cwd, ["rev-list", "--count", "HEAD"]), "2");
+          assert.equal(yield* git(cwd, ["ls-files", "--", "loose.txt"]), "");
+        }),
+    );
+
     it.effect("can omit the patch while preserving change detection and the real index", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTmpDir();

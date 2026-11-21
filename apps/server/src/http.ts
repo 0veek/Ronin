@@ -29,6 +29,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import { OtlpTracer, OtlpSerialization } from "effect/unstable/observability";
 
 import * as ServerConfig from "./config.ts";
+import { WEBHOOK_ROUTE_PREFIX } from "./automation/AutomationStore.ts";
 import { ASSET_ROUTE_PREFIX, resolveAsset } from "./assets/AssetAccess.ts";
 import { statMediaFile, streamMediaFile, type OpenMediaFile } from "./assets/MediaFile.ts";
 import {
@@ -396,12 +397,33 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
 
 const UNTRACED_REQUEST_PATHS: ReadonlySet<string> = new Set([OTLP_TRACES_PROXY_PATH]);
 
-export const untracedRequestsLayer = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((request) => {
+const requestPath = (request: HttpServerRequest.HttpServerRequest) => {
   const queryIndex = request.url.indexOf("?");
-  const path = queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
-  // Webhook paths contain bearer tokens, including on failed requests.
-  return UNTRACED_REQUEST_PATHS.has(path) || path.startsWith("/api/hooks/");
-});
+  return queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
+};
+
+// Signed URLs carry bearer tokens in the path (webhooks, assets, attachment
+// uploads), including on failed requests, so spans and request logs skip them.
+const isSignedUrlRequest = (request: HttpServerRequest.HttpServerRequest) => {
+  const path = requestPath(request);
+  return (
+    path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`) ||
+    path.startsWith(`${ASSET_ROUTE_PREFIX}/`) ||
+    path.startsWith(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`)
+  );
+};
+
+export const untracedRequestsLayer = Layer.succeed(HttpMiddleware.TracerDisabledWhen)(
+  (request) => UNTRACED_REQUEST_PATHS.has(requestPath(request)) || isSignedUrlRequest(request),
+);
+
+export const unloggedSignedRequestsLayer = HttpRouter.middleware(
+  (httpEffect) =>
+    Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+      isSignedUrlRequest(request) ? HttpMiddleware.withLoggerDisabled(httpEffect) : httpEffect,
+    ),
+  { global: true },
+);
 
 export const assetRouteLayer = HttpRouter.add(
   "GET",

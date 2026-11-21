@@ -1,13 +1,26 @@
 import { expect, it } from "@effect/vitest";
 import { describe, vi } from "vite-plus/test";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
-import { HttpServerResponse } from "effect/unstable/http";
+import * as References from "effect/References";
+import * as Tracer from "effect/Tracer";
+import {
+  HttpClient,
+  HttpClientRequest,
+  HttpRouter,
+  HttpServerResponse,
+} from "effect/unstable/http";
+import { ASSET_ROUTE_PREFIX } from "./assets/AssetAccess.ts";
+import { ATTACHMENT_UPLOAD_ROUTE_PREFIX } from "./assets/AttachmentUpload.ts";
 import { openMediaFile } from "./assets/MediaFile.ts";
+import { WEBHOOK_ROUTE_PREFIX } from "./automation/AutomationStore.ts";
 
 import {
   assetFileResponse,
@@ -15,6 +28,8 @@ import {
   downloadContentDisposition,
   isLoopbackHostname,
   resolveDevRedirectUrl,
+  unloggedSignedRequestsLayer,
+  untracedRequestsLayer,
 } from "./http.ts";
 
 const fileResponseLayer = Layer.mergeAll(NodeHttpPlatform.layer, NodeServices.layer);
@@ -462,4 +477,70 @@ describe("downloadContentDisposition", () => {
       `attachment; filename="bad_name.pdf"; filename*=UTF-8''bad%EF%BF%BDname.pdf`,
     );
   });
+});
+
+describe("signed URL requests", () => {
+  it.effect("keeps signed URLs out of HTTP server spans and request logs", () =>
+    Effect.gen(function* () {
+      const serverSpans: Array<string> = [];
+      const loggedUrls: Array<unknown> = [];
+      const tracerLayer = Layer.succeed(
+        Tracer.Tracer,
+        Tracer.make({
+          span: (options) => {
+            if (options.kind === "server") serverSpans.push(options.name);
+            return new Tracer.NativeSpan(options);
+          },
+        }),
+      );
+      const loggerLayer = Logger.layer(
+        [
+          Logger.make(({ fiber }) => {
+            const url = fiber.getRef(References.CurrentLogAnnotations)["http.url"];
+            if (url !== undefined) loggedUrls.push(url);
+          }),
+        ],
+        { mergeWithExisting: false },
+      );
+      const routesLayer = Layer.effectDiscard(
+        Effect.gen(function* () {
+          const router = yield* HttpRouter.HttpRouter;
+          yield* router.add("GET", `${ASSET_ROUTE_PREFIX}/*`, HttpServerResponse.empty());
+          yield* router.add(
+            "POST",
+            `${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/*`,
+            HttpServerResponse.empty(),
+          );
+          yield* router.add("GET", `${WEBHOOK_ROUTE_PREFIX}/*`, HttpServerResponse.empty());
+          yield* router.add("GET", "/api/environment", HttpServerResponse.empty());
+        }),
+      ).pipe(Layer.provide(unloggedSignedRequestsLayer));
+      const services = yield* Layer.build(
+        HttpRouter.serve(routesLayer, { disableListenLog: true }).pipe(
+          Layer.provide(untracedRequestsLayer),
+          Layer.provideMerge(NodeHttpServer.layerTest),
+          Layer.provide(tracerLayer),
+          Layer.provide(loggerLayer),
+        ),
+      );
+      const client = Context.get(services, HttpClient.HttpClient);
+
+      // Each URL is a bearer credential: url.full, url.path and http.url would carry it.
+      for (const request of [
+        HttpClientRequest.get(`${ASSET_ROUTE_PREFIX}/payload.signature/image.png`),
+        HttpClientRequest.get(`${ASSET_ROUTE_PREFIX}/payload.signature/image.png?v=1`),
+        HttpClientRequest.post(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/payload.signature`),
+        HttpClientRequest.get(`${WEBHOOK_ROUTE_PREFIX}/hook-1/webhook-token`),
+        HttpClientRequest.head(`${ASSET_ROUTE_PREFIX}/payload.signature/image.png`),
+      ]) {
+        expect((yield* client.execute(request)).status).toBe(204);
+      }
+      expect(serverSpans).toEqual([]);
+      expect(loggedUrls).toEqual([]);
+
+      expect((yield* client.execute(HttpClientRequest.get("/api/environment"))).status).toBe(204);
+      expect(serverSpans).toEqual(["http.server GET"]);
+      expect(loggedUrls).toEqual(["/api/environment"]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });

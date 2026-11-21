@@ -59,6 +59,7 @@ const WORKTREE_ADD_TIMEOUT_MS = 300_000;
 const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
+const PREPARED_COMMIT_SUMMARY_MAX_OUTPUT_BYTES = 8_000;
 const PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES = 49_000;
 const RANGE_COMMIT_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
 const RANGE_DIFF_SUMMARY_MAX_OUTPUT_BYTES = 19_000;
@@ -2092,7 +2093,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "GitVcsDriver.prepareCommitContext.stagedCheck",
         cwd,
         [...config, "diff", "--cached", "--name-only"],
-        env ? { env } : {},
+        {
+          ...(env ? { env } : {}),
+          maxOutputBytes: PREPARED_COMMIT_SUMMARY_MAX_OUTPUT_BYTES,
+          appendTruncationMarker: true,
+        },
       );
       // Explicit staging is shared by the diff panel and terminal commits.
       if (alreadyStaged.trim().length === 0) {
@@ -2154,7 +2159,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             "GitVcsDriver.prepareCommitContext.stagedSummary",
             cwd,
             ["diff", "--cached", "--name-status"],
-            { env },
+            {
+              env,
+              maxOutputBytes: PREPARED_COMMIT_SUMMARY_MAX_OUTPUT_BYTES,
+              appendTruncationMarker: true,
+            },
           ).pipe(Effect.map((stdout) => stdout.trim()));
           if (stagedSummary.length === 0) {
             return null;
@@ -2218,6 +2227,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               options.progress?.onOutputLine?.({ stream: "stderr", text: line }) ?? Effect.void,
           };
     yield* executeGit("GitVcsDriver.commit.commit", cwd, args, {
+      appendTruncationMarker: true,
       ...(options?.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
       ...(progress ? { progress } : {}),
     }).pipe(Effect.asVoid);
