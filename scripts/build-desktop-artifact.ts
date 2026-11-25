@@ -849,6 +849,22 @@ export function createStagePatchedDependencies(
   );
 }
 
+// The stage installs without the workspace lockfile, so a range like
+// `^1.2.0-beta.15` can resolve past the version a patch targets and pnpm then
+// rejects the patch as unused. Pin each patched dependency to its patch version.
+export function pinStagePatchedDependencies<T>(
+  patchedDependencies: Record<string, string>,
+  dependencies: Record<string, T>,
+): Record<string, T | string> {
+  const pinned: Record<string, T | string> = { ...dependencies };
+  for (const patchKey of Object.keys(patchedDependencies)) {
+    const name = getPatchedDependencyPackageName(patchKey);
+    if (name === patchKey || !Object.hasOwn(pinned, name)) continue;
+    pinned[name] = patchKey.slice(name.length + 1);
+  }
+  return pinned;
+}
+
 function getPatchedDependencyPackageName(patchKey: string): string {
   const versionSeparator = patchKey.lastIndexOf("@");
   return versionSeparator > 0 ? patchKey.slice(0, versionSeparator) : patchKey;
@@ -1991,7 +2007,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
   // electron-builder is filtering out stageResourcesDir directory in the AppImage for production
   yield* fs.copy(stageResourcesDir, path.join(stageAppDir, "apps/desktop/prod-resources"));
 
-  const stageDependencies = {
+  const stageDependencies = pinStagePatchedDependencies(workspacePatchedDependencies, {
     ...resolvedServerDependencies,
     ...resolvedDesktopRuntimeDependencies,
     ...resolveFffNativeDependencies(
@@ -1999,7 +2015,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
       options.arch,
       serverPackageJson.dependencies["@ff-labs/fff-node"],
     ),
-  };
+  });
   const stagePatchedDependencies = createStagePatchedDependencies(
     workspacePatchedDependencies,
     stageDependencies,

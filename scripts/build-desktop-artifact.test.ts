@@ -23,6 +23,7 @@ import {
   preflightWindowsDesktopBuild,
   createStageWorkspaceConfig,
   createStagePatchedDependencies,
+  pinStagePatchedDependencies,
   createBuildConfig,
   DESKTOP_ELECTRON_LANGUAGES,
   DESKTOP_FILE_EXCLUSIONS,
@@ -209,6 +210,28 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         },
       ),
       {},
+    );
+  });
+
+  it("pins patched staged dependencies so a lockfile-free install still uses the patch", () => {
+    assert.deepStrictEqual(
+      pinStagePatchedDependencies(
+        {
+          "node-pty@1.2.0-beta.15": "patches/node-pty@1.2.0-beta.15.patch",
+          "@pierre/diffs@1.1.20": "patches/@pierre%2Fdiffs@1.1.20.patch",
+          "alchemy@2.0.0-beta.49": "patches/alchemy@2.0.0-beta.49.patch",
+        },
+        {
+          "node-pty": "^1.2.0-beta.15",
+          "@pierre/diffs": "^1.1.0",
+          effect: "4.0.0-beta.73",
+        },
+      ),
+      {
+        "node-pty": "1.2.0-beta.15",
+        "@pierre/diffs": "1.1.20",
+        effect: "4.0.0-beta.73",
+      },
     );
   });
 
