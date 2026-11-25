@@ -452,6 +452,20 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
       }),
     );
 
+    it.effect("matches square brackets in the query literally", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-brackets-" });
+        yield* writeTextFile(cwd, "src/app/game/[id]/index.tsx");
+
+        for (const query of ["game/[i", "game/[id]"]) {
+          const result = yield* searchWorkspaceEntries({ cwd, query, limit: 10 });
+          expect(result.entries.map((entry) => entry.path)).toContain(
+            "src/app/game/[id]/index.tsx",
+          );
+        }
+      }),
+    );
+
     it.effect("excludes gitignored paths for git repositories", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir({ prefix: "t3code-workspace-gitignore-", git: true });
@@ -540,6 +554,35 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
 
         yield* workspaceEntries.list({ cwd });
         expect(createSpy).toHaveBeenCalledTimes(2);
+      }),
+    );
+
+    it.effect("finds a path inside a gitignored nested git worktree only by its exact path", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-worktree-", git: true });
+        const env = {
+          ...process.env,
+          GIT_AUTHOR_NAME: "Test",
+          GIT_AUTHOR_EMAIL: "test@example.com",
+          GIT_COMMITTER_NAME: "Test",
+          GIT_COMMITTER_EMAIL: "test@example.com",
+        };
+        yield* writeTextFile(cwd, ".gitignore", ".worktrees/\n");
+        yield* git(cwd, ["add", ".gitignore"]);
+        yield* git(cwd, ["commit", "-m", "init"], env);
+        yield* git(cwd, ["worktree", "add", "-b", "x", ".worktrees/x"]);
+        yield* writeTextFile(cwd, ".worktrees/x/src/foo.py", "print(1)");
+
+        const exact = yield* searchWorkspaceEntries({
+          cwd,
+          query: "src/foo.py",
+          limit: 25,
+          kind: "file",
+        });
+        expect(exact.entries).toEqual([{ path: ".worktrees/x/src/foo.py", kind: "file" }]);
+
+        const partial = yield* searchWorkspaceEntries({ cwd, query: "src/fo", limit: 25 });
+        expect(partial.entries.map((entry) => entry.path)).not.toContain(".worktrees/x/src/foo.py");
       }),
     );
   });
@@ -799,6 +842,32 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
 
         expect(result.regexFallbackError).toBeDefined();
         expect(result.matches).toEqual([]);
+      }),
+    );
+
+    it.effect("searches an invalid regex literally without matching case", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-content-invalid-regex-" });
+        yield* writeTextFile(cwd, "src/calls.ts", "call(Foo(bar));\n");
+
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const result = yield* workspaceEntries.searchContents({
+          cwd,
+          query: "foo(",
+          limit: 100,
+          caseSensitive: false,
+          wholeWord: false,
+          useRegex: true,
+        });
+
+        expect(result.regexFallbackError).toBeDefined();
+        expect(result.matches).toEqual([
+          expect.objectContaining({
+            path: "src/calls.ts",
+            lineNumber: 1,
+            matchRanges: [{ start: 5, end: 9 }],
+          }),
+        ]);
       }),
     );
 

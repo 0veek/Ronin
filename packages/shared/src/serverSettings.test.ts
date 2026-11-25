@@ -238,6 +238,15 @@ describe("serverSettings helpers", () => {
       instanceId: "opencode",
       model: "openai/gpt-5",
     });
+    // The server still loads a file holding the retired token streaming mode.
+    expect(
+      parsePersistedServerObservabilitySettings(
+        JSON.stringify({
+          responseStreamingMode: "token",
+          observability: { otlpTracesUrl: "http://localhost:4318/v1/traces" },
+        }),
+      ).otlpTracesUrl,
+    ).toBe("http://localhost:4318/v1/traces");
   });
 
   it("clears source control writer selection with null", () => {

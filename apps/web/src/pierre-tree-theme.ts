@@ -10,6 +10,8 @@ export const PIERRE_TREE_UNSAFE_CSS = `
     --trees-font-family-override: var(--font-sans);
     --trees-font-size-override: 0.75rem;
   }
+  [data-truncate-content='visible'] { overflow: hidden; text-overflow: ellipsis; }
+  [data-truncate-marker] { display: none; }
   button[data-type='item'], button[data-type='item']::before { border-radius: var(--radius-md); }
   svg[data-icon-name='t3-tree-icon-loading'] { opacity: 0.6; }
 `;
@@ -19,5 +21,7 @@ export function pierreTreeStyle(colorScheme: "light" | "dark"): CSSProperties {
   return {
     colorScheme,
     ["--trees-fg-override" as string]: "var(--contrast-foreground)",
+    ["--trees-fg-muted-override" as string]: "var(--contrast-muted-foreground)",
+    ["--trees-status-ignored-override" as string]: "var(--contrast-muted-foreground)",
   };
 }

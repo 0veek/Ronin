@@ -48,6 +48,16 @@ describe("shouldShowResourceMonitorRetry", () => {
     expect(shouldShowResourceMonitorRetry({ nativeStatus: null, error: null })).toBe(false);
     expect(shouldShowResourceMonitorRetry({ nativeStatus: "healthy", error: null })).toBe(false);
   });
+
+  it("keeps a root row visible when its launcher is collapsed", () => {
+    const processes = [process(1, 10, 0), process(2, 1, 1), process(10, 0, 0), process(11, 10, 1)];
+
+    expect(visibleResourceTelemetryProcesses(processes, new Set(["10:10000"]))).toEqual([
+      processes[0],
+      processes[1],
+      processes[2],
+    ]);
+  });
 });
 
 describe("resourceHistoryBarHeight", () => {

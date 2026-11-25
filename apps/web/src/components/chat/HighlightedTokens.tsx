@@ -1,4 +1,4 @@
-import { use, useMemo, type CSSProperties } from "react";
+import { use, type CSSProperties } from "react";
 
 import { resolveDiffThemeName } from "../../lib/diffRendering";
 import type { EmbeddedScript } from "../../lib/embeddedScripts";
@@ -30,6 +30,20 @@ function syntaxTokenStyle(token: SyntaxToken): CSSProperties {
  * `wordClassName` goes on each whitespace-separated word. `embedded`
  * scripts are colored with their own grammar inside `code`.
  */
+function useHighlightedLines(
+  highlighter: Awaited<ReturnType<typeof getSyntaxHighlighterPromise>>,
+  code: string,
+  language: string,
+  embedded: ReadonlyArray<EmbeddedScript>,
+  theme: "light" | "dark",
+) {
+  "use memo";
+  const themeName = resolveDiffThemeName(theme);
+  const tokenize = (text: string, lang: string) =>
+    highlighter.codeToTokens(text, { lang, theme: themeName }).tokens;
+  return keyedLines(code, withEmbeddedScripts(code, tokenize(code, language), embedded, tokenize));
+}
+
 export function HighlightedTokens({
   code,
   language,
@@ -46,15 +60,7 @@ export function HighlightedTokens({
   const highlighter = use(getSyntaxHighlighterPromise(language));
   // Every grammar loads into the same shared highlighter.
   for (const script of embedded) use(getSyntaxHighlighterPromise(script.language));
-  const lines = useMemo(() => {
-    const themeName = resolveDiffThemeName(theme);
-    const tokenize = (text: string, lang: string) =>
-      highlighter.codeToTokens(text, { lang, theme: themeName }).tokens;
-    return keyedLines(
-      code,
-      withEmbeddedScripts(code, tokenize(code, language), embedded, tokenize),
-    );
-  }, [code, embedded, highlighter, language, theme]);
+  const lines = useHighlightedLines(highlighter, code, language, embedded, theme);
 
   return lines.map(({ key, tokens, ending }) => (
     <span key={key}>

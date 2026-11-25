@@ -156,4 +156,14 @@ describe("contextWindow", () => {
     expect(snapshot?.usedTokens).toBe(81_659);
     expect(snapshot?.totalProcessedTokens).toBe(748_126);
   });
+
+  it.each([
+    [999_499, "999k"],
+    [999_500, "1m"],
+    [999_999, "1m"],
+    [1_000_000, "1m"],
+    [1_100_000, "1.1m"],
+  ])("formats %d tokens as %s at the million boundary", (tokens, expected) => {
+    expect(formatContextWindowTokens(tokens)).toBe(expected);
+  });
 });

@@ -140,13 +140,19 @@ const make = Effect.gen(function* () {
               },
               identity,
             );
-      if (own === null || own.host !== key.host || own.repository !== key.repository) {
+      if (
+        identity == null ||
+        own === null ||
+        own.host !== key.host ||
+        own.repository !== key.repository
+      ) {
         return yield* new PullRequestOperationError({
           operation: "generateReviewGuide",
           detail:
             "Guides are written from this project's checkout, and this pull request is in another repository. Write it from a project that is a checkout of that repository.",
         });
       }
+      return identity.locator;
     },
   );
 
@@ -185,12 +191,40 @@ const make = Effect.gen(function* () {
    */
   const checkoutHead = Effect.fn("PullRequestReviewGuideService.checkoutHead")(function* (
     workspaceRoot: string,
+    locator: RepositoryIdentity["locator"],
     detail: PullRequestDetail,
     headSha: string,
     stack: PullRequestStack | null,
     runId: string,
   ) {
-    const remote = yield* git.resolvePrimaryRemoteName(workspaceRoot);
+    // Identity names can be stale; match effective fetch URLs, including insteadOf rewrites.
+    const names = yield* git
+      .execute({
+        operation: "PullRequestReviewGuideService.listRemotes",
+        cwd: workspaceRoot,
+        args: ["remote"],
+      })
+      .pipe(Effect.map((result) => result.stdout.split("\n").filter((name) => name.length > 0)));
+    const remote = yield* Effect.findFirst(
+      [locator.remoteName, ...names.filter((name) => name !== locator.remoteName)],
+      (name) =>
+        git
+          .execute({
+            operation: "PullRequestReviewGuideService.remoteUrl",
+            cwd: workspaceRoot,
+            args: ["remote", "get-url", "--", name],
+          })
+          .pipe(
+            Effect.map((result) => result.stdout.trim() === locator.remoteUrl),
+            Effect.orElseSucceed(() => false),
+          ),
+    ).pipe(Effect.map(Option.getOrUndefined));
+    if (remote === undefined) {
+      return yield* new PullRequestOperationError({
+        operation: "generateReviewGuide",
+        detail: "This project's checkout no longer has a remote for the pull request's repository.",
+      });
+    }
     const fetch = (args: ReadonlyArray<string>) =>
       git.execute({
         operation: "PullRequestReviewGuideService.fetch",
@@ -317,6 +351,7 @@ const make = Effect.gen(function* () {
     input: PullRequestRef,
     key: ThreadPullRequestKey,
     workspaceRoot: string,
+    locator: RepositoryIdentity["locator"],
     detail: PullRequestDetail,
     headSha: string,
     runId: string,
@@ -341,6 +376,7 @@ const make = Effect.gen(function* () {
     // from it too, so the guide can be held to the lines the change actually touched.
     const { generated, change } = yield* checkoutHead(
       workspaceRoot,
+      locator,
       detail,
       headSha,
       stack,
@@ -408,7 +444,7 @@ const make = Effect.gen(function* () {
       });
     }
     const { key, workspaceRoot, identity } = yield* keyFor(input);
-    yield* requireOwnRepository(key, identity);
+    const locator = yield* requireOwnRepository(key, identity);
     const runKey = keyString(key);
     // A press asks for the head as it is now, not a read shared from the last minute, so a guide
     // is never started for a commit the pull request has already moved past.
@@ -474,7 +510,7 @@ const make = Effect.gen(function* () {
         return updated;
       });
     const runId = `${runCounter++}`;
-    yield* write(input, key, workspaceRoot, detail, currentHeadSha, runId, owns).pipe(
+    yield* write(input, key, workspaceRoot, locator, detail, currentHeadSha, runId, owns).pipe(
       Effect.andThen(finish(null)),
       Effect.catchCause((cause) =>
         Cause.hasInterruptsOnly(cause)

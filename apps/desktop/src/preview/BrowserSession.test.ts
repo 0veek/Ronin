@@ -353,7 +353,7 @@ describe("BrowserSession", () => {
         assert.strictEqual(browserSession.clearStorageData.mock.calls.length, 1);
         assert.deepEqual(browserSession.clearStorageData.mock.calls[0], [
           {
-            storages: ["cookies", "localstorage", "indexdb", "serviceworkers"],
+            storages: ["cookies", "localstorage", "indexdb", "serviceworkers", "cachestorage"],
           },
         ]);
         assert.strictEqual(browserSession.clearCache.mock.calls.length, 1);
@@ -375,11 +375,16 @@ describe("BrowserSession", () => {
       assert.isUndefined(sessions.get(partition));
 
       yield* browserSessions.getSession("scope-untouched");
+      const other = yield* browserSessions.getSession("scope-other");
       yield* browserSessions.clearCookies([partition]);
 
       const created = sessions.get(partition);
       assert.isDefined(created);
       assert.strictEqual(created.clearStorageData.mock.calls.length, 1);
+      assert.deepStrictEqual(created.clearStorageData.mock.calls[0]?.[0], {
+        storages: ["cookies", "localstorage", "indexdb", "serviceworkers", "cachestorage"],
+      });
+      assert.strictEqual(vi.mocked(other.clearStorageData).mock.calls.length, 0);
     }).pipe(Effect.provide(layer)),
   );
 

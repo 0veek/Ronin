@@ -14,11 +14,11 @@ commit at or before it has already been judged, and the verdict is recorded here
 
 ## Watermark
 
-|                               |                                                                                                           |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Upstream reviewed through** | `cd41c4ada` — `fix(server): threads settle as soon as a client sees their PR merge (#16761)` (2026-10-07) |
-| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                           |
-| **Ported on**                 | 2026-10-08                                                                                                |
+|                               |                                                                                                                                        |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Upstream reviewed through** | `19a6e5b57` — `fix(web): clicking outside a citation comment keeps its dictation (#42856)` (2026-11-25); fixes-only pass, see Batch 46 |
+| **Fork merge base**           | `083fa4ab2` — `feat(web): use OKLCH for theme palettes (#6036)`                                                                        |
+| **Ported on**                 | 2026-11-25                                                                                                                             |
 
 > We cherry-pick rather than merge, so `git rev-list --count upstream/main...HEAD` will keep
 > reporting the fork as "behind" even for commits already taken. Trust the watermark, not the count.
@@ -7386,3 +7386,605 @@ push or PR were performed.
 - Existing nine provider adapters remain. Native child metadata, interruption cleanup and compaction follow-up are adapted at their current boundaries; unsupported provider-native capabilities are not invented. Terminal observation is reversible through a new pairing with operate access. Closed views reopen, settled actions can be disabled, and stale Claude sends retain a full-history override.
 - Current PR polling/settlement and project action services remain, with cross-thread permission checks, host/account isolation and shared budgets. Saved tokens use Ronin’s atomic secret-reference store; no secret value is logged or recovered into the UI. The auth and user guides document the new grants, re-pairing, actions and compaction behavior.
 - Tests use temporary state, local Git repositories and mocked provider/host transports. No live GitHub/SSH account, packaged Electron client, native provider compaction, browser or Linux host launch was exercised. The unrelated Git/script failures and existing React diagnostics are recorded above rather than hidden.
+
+## Batch 46 — fixes-only pass through `19a6e5b57` (8,840 commits)
+
+Reviewed fixed range `cd41c4ada0c70cc2eec95ecd7266f3dab010c58c..19a6e5b57be7b016e037f14ab05ec2c12f0d4853` on **2026-11-25**, from Ronin `HEAD` `ae4c276167`.
+
+**This was not a full review.** The range was about 130× a normal batch (Oct 7 → Nov 25; upstream also split providers and source control into `packages/provider-*` and `packages/source-control-*`). The maintainer chose a **fixes-only pass**: only `fix`/`perf` commits whose hunks apply to files Ronin still has were attempted. Everything else was bulk-classified by the rules below, not read commit by commit. The watermark moves to the snapshot tip by maintainer decision. The deferred rows below will **not** appear in the next sync's range, so rerun the rules here if you want to revisit them.
+
+### Classification rules
+
+Applied to `git log --reverse --no-renames --name-status cd41c4ada..19a6e5b57b` against the file list of Ronin `ae4c276167`. Cut paths are `apps/mobile`, `apps/marketing`, `infra/`, `.repos/` and `.github/`.
+
+| Bucket              | Count | Rule                                                                                                                | Verdict                                                                                                              |
+| ------------------- | ----- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Non-fix             | 1,447 | Conventional type is not `fix` or `perf` (feat, refactor, chore, test, docs, …).                                    | **Skipped, not reviewed** (fixes-only pass).                                                                         |
+| Mobile-only scope   | 766   | `fix`/`perf` whose scope names mobile and no web/desktop/server/shared/client/contracts.                            | Skipped: Ronin has no mobile app.                                                                                    |
+| No shared files     | 2,277 | `fix`/`perf` that modifies no file Ronin has outside the cut paths (mostly new upstream packages and native V2 UI). | Skipped: the affected code is not in Ronin.                                                                          |
+| Does not apply      | 3,828 | `fix`/`perf` whose hunks for Ronin-held files fail `git apply --check`, even with `-C1`, on Ronin `HEAD`.           | **Deferred, not reviewed.** These are mostly fixes to code that has diverged from Ronin; some may still be relevant. |
+| Already in the tree | 53    | Hunks for Ronin-held files reverse-apply on `HEAD`.                                                                 | Already in the tree (listed below).                                                                                  |
+| Attempted           | 469   | Hunks for Ronin-held files apply cleanly or with `-C1`.                                                             | 223 ported, 246 backed out (listed below).                                                                           |
+
+Each attempted patch was limited to files Ronin has, plus new files in directories Ronin has. Patches were applied cumulatively in upstream order. Commits were then excluded, in order, for: (1) leaving non-test source files unported (114 partial commits), (2) lockfile-only hunks for absent packages (2), (3) touching files with new type errors (117), (4) cumulative conflicts (7) and (5) failing focused tests (6). After each exclusion step the tree was rebuilt from `HEAD`.
+
+### Ported (223)
+
+Hunks for absent files (upstream-only packages, mobile, CI) were dropped; the noted commits needed a small Ronin-specific adaptation. "fuzzy" means the patch applied with reduced context (`-C1`).
+
+| SHA         | Exact upstream title                                                                                           | Notes                                                                                                                                       |
+| ----------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `8569ce962` | perf(web): avoid quadratic markdown link scans (#18387)                                                        | clean                                                                                                                                       |
+| `821a6d7e0` | fix(web): keybinding settings label Focus URL with a capitalized acronym (#18279)                              | fuzzy context                                                                                                                               |
+| `58d253231` | fix(web): context meter no longer reads 1000k just under a million tokens (#17539)                             | fuzzy context                                                                                                                               |
+| `aef0e9ca4` | fix(git): preserve whitespace in file paths (#12464) (#12465)                                                  | fuzzy context                                                                                                                               |
+| `7fd2ba752` | fix(server): failed Claude text generation shows the CLI's own error (#19394)                                  | fuzzy context                                                                                                                               |
+| `737192594` | perf(server): unchanged node updates no longer write to SQLite (#19429)                                        | fuzzy context                                                                                                                               |
+| `7897a695e` | fix(web): review summary only says optional when it is (#18451)                                                | fuzzy context                                                                                                                               |
+| `4036e1859` | fix(web): keep wrapped split diffs from jumping while scrolling (#20022)                                       | fuzzy context                                                                                                                               |
+| `f1dccf2d1` | perf(web): the pull request label and reviewer pickers compile without manual memoization (#20719)             | fuzzy context                                                                                                                               |
+| `4e8b5eeb0` | perf(web): discovered local servers compile without manual memoization (#20708)                                | clean                                                                                                                                       |
+| `19a760c3e` | perf(web): file entry icons compile without manual memoization (#20703)                                        | clean                                                                                                                                       |
+| `b413396fe` | perf(web): toasts compile without manual memoization (#20702)                                                  | clean                                                                                                                                       |
+| `26a7df089` | perf(web): the file save coordinator compiles without manual memoization (#20697)                              | clean                                                                                                                                       |
+| `b103346ba` | perf(web): the combobox compiles without manual memoization (#20696)                                           | clean                                                                                                                                       |
+| `49c51bb11` | perf(web): main app navigation compiles without manual memoization (#20690)                                    | clean                                                                                                                                       |
+| `3c6df713d` | perf(web): the terminal session hooks compile without manual memoization (#20686)                              | clean                                                                                                                                       |
+| `6ad62b8ab` | perf(web): the project file picker compiles without manual memoization (#20685)                                | clean                                                                                                                                       |
+| `2ff8e7413` | perf(web): the snapshot shortcut recorder compiles without manual memoization (#20682)                         | clean                                                                                                                                       |
+| `2a337fea9` | perf(web): the pull request linking hook compiles without manual memoization (#20681)                          | clean                                                                                                                                       |
+| `d85944552` | perf(web): the CSV table preview compiles without manual memoization (#20680)                                  | clean                                                                                                                                       |
+| `cba00ae19` | perf(web): highlighted code tokens compile without manual memoization (#20678)                                 | fuzzy context                                                                                                                               |
+| `3ba121e9e` | perf(web): the chat route layout compiles without manual memoization (#20667)                                  | fuzzy context                                                                                                                               |
+| `e3a578f2d` | perf(web): the environment hooks compile without manual memoization (#20665)                                   | fuzzy context                                                                                                                               |
+| `37db94e52` | perf(web): the editor preference hooks compile without manual memoization (#20660)                             | fuzzy context                                                                                                                               |
+| `99fac2687` | perf(web): the code view file reveal hook compiles without manual memoization (#20659)                         | fuzzy context                                                                                                                               |
+| `65d352eb6` | perf(web): the annotatable diff view compiles without manual memoization (#20657)                              | clean                                                                                                                                       |
+| `d42681d06` | perf(web): useResizableWidth compiles without manual memoization (#20653)                                      | fuzzy context                                                                                                                               |
+| `c7fe6d37b` | perf(web): device controls compile without manual memoization (#20652)                                         | clean                                                                                                                                       |
+| `db2d0eb9f` | perf(web): the provider update dismissal hook compiles without manual memoization (#20649)                     | fuzzy context                                                                                                                               |
+| `9578a59ab` | perf(web): usePreviewBridge compiles with the React Compiler (#20644)                                          | fuzzy context                                                                                                                               |
+| `452d032a2` | perf(web): the project file scripts hook compiles without manual memoization (#20632)                          | fuzzy context                                                                                                                               |
+| `e544a4a1f` | perf(web): useMediaQuery compiles without manual memoization (#20629)                                          | clean                                                                                                                                       |
+| `e36d0b2d1` | perf(web): the archived threads hook compiles without manual memoization (#20624)                              | clean                                                                                                                                       |
+| `99544c9c1` | perf(web): redacted sensitive text compiles without manual memoization (#20621)                                | clean                                                                                                                                       |
+| `f241e7988` | perf(web): the resource telemetry hook compiles without manual memoization (#20619)                            | fuzzy context                                                                                                                               |
+| `54d090062` | perf(web): the device state hooks compile without manual memoization (#20613)                                  | clean                                                                                                                                       |
+| `97a9ca11d` | perf(web): the session scope hooks compile without manual memoization (#20610)                                 | fuzzy context                                                                                                                               |
+| `89a24e8d9` | perf(web): the open-source notices panel compiles with the React Compiler (#20608)                             | clean                                                                                                                                       |
+| `7591b64ec` | perf(web): the font previews compile with the React Compiler (#20601)                                          | clean                                                                                                                                       |
+| `0b110ce0d` | perf(web): the thread find bar compiles with the React Compiler (#20600)                                       | Applied; dropped the `exhaustive-effect-dependencies` disable directive, which Ronin's lint config reports as unused.                       |
+| `e64831806` | perf(web): the model picker sidebar compiles with the React Compiler (#20596)                                  | clean                                                                                                                                       |
+| `789f60566` | perf(web): the provider update pill compiles with the React Compiler (#20590)                                  | clean                                                                                                                                       |
+| `567bc559a` | perf(web): useActiveThreadRef compiles without manual memoization (#20588)                                     | fuzzy context                                                                                                                               |
+| `54bffb912` | perf(web): the custom model editor compiles without manual memoization (#20586)                                | clean                                                                                                                                       |
+| `f0e060a38` | perf(web): the CLI command settings row compiles without manual memoization (#20583)                           | clean                                                                                                                                       |
+| `6b563bb75` | perf(web): the composer banner stack compiles with the React Compiler (#20582)                                 | clean                                                                                                                                       |
+| `6d22719b0` | perf(web): the command palette results compile without manual memoization (#20579)                             | clean                                                                                                                                       |
+| `242ec0ea2` | perf(web): highlighted search lines compile without manual memoization (#20571)                                | clean                                                                                                                                       |
+| `3ff9a7345` | perf(web): useAtomCommand compiles without manual memoization (#20568)                                         | clean                                                                                                                                       |
+| `1e42057c9` | perf(web): the guide stop compiles without manual memoization (#20560)                                         | fuzzy context                                                                                                                               |
+| `687f1e948` | perf(web): the zoomable image compiles without manual memoization (#20549)                                     | clean                                                                                                                                       |
+| `4576827f4` | perf(web): the browser favicon store compiles without manual memoization (#20546)                              | clean                                                                                                                                       |
+| `7a08cdf5f` | perf(web): the browser surface slot compiles with the React Compiler (#20542)                                  | clean                                                                                                                                       |
+| `02d48aec5` | perf(web): the guide file diff compiles without manual memoization (#20544)                                    | clean                                                                                                                                       |
+| `9c161462c` | perf(web): pull request chains parse each link's URL once (#21147)                                             | fuzzy context                                                                                                                               |
+| `b5b6c8cf4` | fix(web): the model picker offers every saved custom model, not just the first 32 (#14961)                     | fuzzy context                                                                                                                               |
+| `8fffe6a29` | fix(desktop): remove oversized bars from Hyprland SnapShot animations (#10646)                                 | clean                                                                                                                                       |
+| `fc0c36f96` | fix(web): stop offering a provider update that cannot clear a limited-support warning (#17676)                 | clean                                                                                                                                       |
+| `fb331610a` | fix(desktop): accept existing Hyprland SnapShot shortcuts (#10658)                                             | fuzzy context                                                                                                                               |
+| `f15aa815f` | fix(web): sidebar update pill shows updates on non-default provider instances (#14745)                         | clean                                                                                                                                       |
+| `b656dd7da` | fix(shared): preserve escaped quotes in launch arguments (#19525)                                              | clean                                                                                                                                       |
+| `ddca63654` | fix(web): keep collapsed diff file headers reachable (#20333)                                                  | clean                                                                                                                                       |
+| `145fba7ff` | fix(client-runtime): a dropped session no longer reads as a failed connection (#18469)                         | fuzzy context                                                                                                                               |
+| `2df5dbe45` | fix(web): let keyboard users reach why reviewer/label changes are unavailable (#14785)                         | clean                                                                                                                                       |
+| `972e39266` | fix(scripts): leave type-only packages out of third-party notices (#14627)                                     | clean                                                                                                                                       |
+| `a440198eb` | fix(web): handle Backspace when Android omits the key code (#18063)                                            | clean                                                                                                                                       |
+| `d33aa7fd0` | fix(web): keep font picker keyboard selection in sync (#9814)                                                  | clean                                                                                                                                       |
+| `1b5c2d1d3` | fix(server): t3 run from a T3 terminal no longer trips on the service's launcher context (#14263)              | fuzzy context                                                                                                                               |
+| `d9eb2b61c` | fix(server): agent-driven threads keep their recent rows when checkpoint data is large (#21187)                | clean                                                                                                                                       |
+| `d4004c5e8` | fix(server): forks no longer inherit pull request watches (#16623)                                             | clean                                                                                                                                       |
+| `1114c3815` | fix(web): scrolling a huge thread's history no longer loops the message list (#21269)                          | clean                                                                                                                                       |
+| `3c09cda7e` | fix(web): show an empty result when file search finds no matches (#17132)                                      | clean                                                                                                                                       |
+| `01d2aa87f` | fix(web): restore palette focus when no composer is mounted (#18850)                                           | fuzzy context                                                                                                                               |
+| `6fca698c5` | fix(pull-requests): distinguish skipped checks with a slash icon (#21498)                                      | clean                                                                                                                                       |
+| `413050774` | fix(server): device-host SSH tunnels exit when the server dies (#17448)                                        | clean                                                                                                                                       |
+| `b6295dd80` | fix(server): auto-delivered messages queue between provider turns (#15691)                                     | clean                                                                                                                                       |
+| `dfc093ab9` | fix(web): ignore right-clicks in the flat Device viewport (#17020)                                             | clean                                                                                                                                       |
+| `9f52dc28a` | fix(web): paste terminal text once and clear the shortcut on release (#19366)                                  | fuzzy context                                                                                                                               |
+| `5a264a8b3` | fix(web): keep expanded tool actions usable from the keyboard (#18831)                                         | fuzzy context                                                                                                                               |
+| `10b86829e` | fix(web): clicking a logged request route no longer opens it in the editor (#15838)                            | clean                                                                                                                                       |
+| `729924af2` | fix(web): keep pasted decorators as text (#8415)                                                               | fuzzy context                                                                                                                               |
+| `3982f20ce` | fix(web): render powerline separators at cell edges (#5607)                                                    | clean                                                                                                                                       |
+| `ddbc52498` | fix(server): review guides in a fork checkout cover only the pull request's change (#18312)                    | fuzzy context                                                                                                                               |
+| `38d50e3e5` | fix(web): keep review comments inside the pull request's hunks (#12583)                                        | clean                                                                                                                                       |
+| `cd8c2c593` | fix(web): the Cite button comes back once the timeline stops scrolling (#15818)                                | fuzzy context                                                                                                                               |
+| `8f6c3b209` | fix(web): loading no longer shifts the Files tree (#13904)                                                     | clean                                                                                                                                       |
+| `0d9668c62` | fix(web): empty diff panel no longer flashes a loading skeleton on every refresh (#17886)                      | clean                                                                                                                                       |
+| `79b14831c` | fix(web): thread switches show only selected thread messages (#21560)                                          | clean                                                                                                                                       |
+| `b05ff173a` | fix(desktop): stop dev cleanup from terminating other worktrees (#18397)                                       | fuzzy context                                                                                                                               |
+| `26338ea54` | fix(web): paint synchronized terminal updates atomically (#9867)                                               | fuzzy context                                                                                                                               |
+| `b4cebe8b1` | fix(desktop): skip auxiliary macOS snapshot windows (#12978)                                                   | fuzzy context                                                                                                                               |
+| `098eb55cc` | fix(web): ask before Close with comment closes a pull request (#18175)                                         | clean                                                                                                                                       |
+| `e859e318a` | fix(codex): end the session when an incoming message is too long (#19733)                                      | clean                                                                                                                                       |
+| `105ee2e2b` | fix(resource-monitor): avoid retaining unrelated macOS process details (#19745)                                | clean                                                                                                                                       |
+| `def1c3b1b` | fix(shared): keep native stack order when some saved layer lists are stale (#20388)                            | fuzzy context                                                                                                                               |
+| `b21fcb6ff` | fix(web): long file names in the file tree truncate cleanly (#18984)                                           | fuzzy context                                                                                                                               |
+| `6fe97fed8` | fix(web): new-thread shortcuts work while the command palette lists them (#19055)                              | clean                                                                                                                                       |
+| `8b26d5c98` | fix(web): pasting into the device screen types into the device (#21197)                                        | fuzzy context                                                                                                                               |
+| `9ac1355e0` | fix(web): terminal links keep Unicode file paths intact (#20264)                                               | clean                                                                                                                                       |
+| `6aa83dbbe` | fix(server): iOS device viewer no longer times out on a still simulator screen (#20999)                        | fuzzy context                                                                                                                               |
+| `069e63b11` | fix(web): VCS status refresh no longer trips the slow-request toast (#22159)                                   | clean                                                                                                                                       |
+| `72bdf1e65` | perf(web): pre-bundle startup chunks when a shared dev server starts (#22210)                                  | Applied; dropped the Clerk `BrowserManagedAuthShell.tsx` and absent `lucideIconByName.ts` warmup entries.                                   |
+| `b14ae647a` | fix(ci): recover from transient download and stale report failures (#22232)                                    | Applied the `ensure-electron-runtime.mjs` retry only; the CI workflow hunk is excluded.                                                     |
+| `2229efcbe` | fix(web): normalize disabled terminal button opacity (#22389)                                                  | clean                                                                                                                                       |
+| `a5d66e223` | fix(desktop): new worktrees install Electron from the local download cache (#22712)                            | Applied the local Electron cache install and `allowBuilds.electron: false` (Ronin is on Electron 44.4.5); the CI workflow hunk is excluded. |
+| `2a27e1535` | fix(server): server tests resolve the macOS temp dir symlink (#21442)                                          | clean                                                                                                                                       |
+| `159f2b8cc` | fix(web): quote comment box stays on screen for long code lines (#22149)                                       | clean                                                                                                                                       |
+| `6de7da548` | fix(shared): recognize relative folder links with trailing slash (#22188)                                      | clean                                                                                                                                       |
+| `9828cad49` | perf(web): reuse a collator when sorting changed-file trees (#23776)                                           | fuzzy context                                                                                                                               |
+| `30fd973de` | fix(server): publish committed events before writer cancellation (#24836)                                      | clean                                                                                                                                       |
+| `dac58fa7a` | fix(web): use neutral indicators for inactive source control providers (#22778)                                | clean                                                                                                                                       |
+| `b4da8962f` | fix(desktop): clear Cache Storage when deleting browser profile data (#22002)                                  | Applied; also updated Ronin's extra all-sessions assertion in `BrowserSession.test.ts` to expect `cachestorage`.                            |
+| `456892da7` | fix(web): show rounded diff counts as 1m instead of 1000k (#23723)                                             | clean                                                                                                                                       |
+| `80dfe47ea` | fix(server): Authorized clients names Edge, Firefox and Opera on phones correctly (#23340)                     | clean                                                                                                                                       |
+| `8084e00bc` | fix(shared): stop parsing CLI flags after -- (#25204)                                                          | fuzzy context                                                                                                                               |
+| `d15233544` | fix(web): keep wide characters in terminal links (#24013)                                                      | fuzzy context                                                                                                                               |
+| `8cb918202` | perf(client): find unread terminal chunks from the tail (#23779)                                               | clean                                                                                                                                       |
+| `dcf051e86` | fix(composer): copied context with an apostrophe survives the HTML clipboard (#21537)                          | fuzzy context                                                                                                                               |
+| `0ce257b88` | fix(ssh): detect lost connections during remote commands (#23025)                                              | fuzzy context                                                                                                                               |
+| `13c7de296` | fix(codex): approvals still appear after many stopped Codex turns (#23234)                                     | clean                                                                                                                                       |
+| `3a537d2c9` | fix(diagnostics): include browser trace failures (#23438)                                                      | clean                                                                                                                                       |
+| `3fa79a5c8` | fix(scripts): copy web brand icons to an absolute target directory (#23491)                                    | clean                                                                                                                                       |
+| `d18690dad` | fix(observability): trace attributes keep objects that appear twice (#23677)                                   | fuzzy context                                                                                                                               |
+| `f5bc64b7b` | fix(web): deleting a thread no longer offers to remove a shared worktree (#24489)                              | clean                                                                                                                                       |
+| `17580724f` | fix(web): byte sizes just under the next unit no longer read "1024 KB" (#26067)                                | clean                                                                                                                                       |
+| `9ad6c7ef8` | fix(web,mobile): long links in secret requests wrap and can be copied (#26145)                                 | clean                                                                                                                                       |
+| `0d51b1463` | fix(server): read the smallest iOS simulator text size as small (#22114)                                       | clean                                                                                                                                       |
+| `083c90395` | fix(web): right panel's tab bar no longer slides under the title bar controls (#26233)                         | clean                                                                                                                                       |
+| `5e0d0fd74` | fix(server): truncated file previews no longer end in a replacement character (#24255)                         | fuzzy context                                                                                                                               |
+| `43b56b179` | fix(device): forward numeric keypad keys to iOS simulators (#23339)                                            | clean                                                                                                                                       |
+| `e20b1d96e` | fix(desktop): keep Hyprland SnapShot metadata when a CLI title spinner ticks (#22116)                          | clean                                                                                                                                       |
+| `651e390ad` | perf(desktop): speed up Hyprland and KDE SnapShots (#23137)                                                    | clean                                                                                                                                       |
+| `d3315d26e` | fix(web): keep project name edits open during IME composition (#23231)                                         | clean                                                                                                                                       |
+| `2a4d1288c` | fix(web): line up the Date and Time fields in custom snooze (#23360)                                           | fuzzy context                                                                                                                               |
+| `e5a2031a7` | fix(server): review guide stops no longer show the same lines twice (#23725)                                   | fuzzy context                                                                                                                               |
+| `d64888fbc` | fix(web): Escape while recording a shortcut no longer closes Settings (#27151)                                 | fuzzy context                                                                                                                               |
+| `6977721d0` | fix(shared): preserve escaped trailing whitespace in CLI arguments (#27485)                                    | clean                                                                                                                                       |
+| `aa8dbbe54` | fix(web): skill labels show the skill's own name (#27741)                                                      | clean                                                                                                                                       |
+| `17948307c` | fix(client): the folder browser shows folders added or removed while T3 runs (#28064)                          | clean                                                                                                                                       |
+| `123e5ba06` | fix(server): force-stop timed out login shell probes (#7295)                                                   | Applied; also updated Ronin's `readPathFromLoginShell` options assertion in `shell.test.ts` to expect `killSignal: "SIGKILL"`.              |
+| `e4d1edaab` | perf(web): compact changed-file directories once (#27073)                                                      | clean                                                                                                                                       |
+| `16f35ce29` | fix(shared): truncate keeps emoji whole (#27841)                                                               | clean                                                                                                                                       |
+| `d7171d30a` | fix(shared): inverted terminal ranges emit no fake lines (#27843)                                              | fuzzy context                                                                                                                               |
+| `6879da849` | perf(shared): strip plan prefixes in linear time (#28537)                                                      | clean                                                                                                                                       |
+| `435cda96a` | fix(web): keep theme color alpha when a hex value is typed (#23136)                                            | fuzzy context                                                                                                                               |
+| `d83318411` | perf(server): bound runtime recovery reads by thread ownership (#29429)                                        | fuzzy context                                                                                                                               |
+| `8648aea3d` | perf(server): seek live nodes for the subagent recovery probe (#29644)                                         | clean                                                                                                                                       |
+| `5fa0d0be7` | fix(clients): cancel oversized project icon responses (#29006)                                                 | fuzzy context                                                                                                                               |
+| `d1e5044c6` | fix(shared): context chip labels no longer split an emoji at the 200-character cap (#29158)                    | fuzzy context                                                                                                                               |
+| `476a99c1b` | fix(server): title regeneration works after a thread's worktree is cleaned up (#29606)                         | clean                                                                                                                                       |
+| `5bdc2afc2` | fix(server): preview snapshots no longer cut an emoji in half (#29600)                                         | fuzzy context                                                                                                                               |
+| `0a86e157a` | perf(shared): avoid redundant visibility work on status updates (#28965)                                       | clean                                                                                                                                       |
+| `1b6336d23` | fix(shared): preserve omitted components in zero-major caret ranges (#29335)                                   | fuzzy context                                                                                                                               |
+| `ee265cc53` | fix(client-runtime): terminals fit their pane again after a reconnect (#29696)                                 | clean                                                                                                                                       |
+| `cedcc3109` | fix(server): OTLP export settings survive a saved token streaming mode (#29786)                                | fuzzy context                                                                                                                               |
+| `31564dece` | fix(shared): find in thread matches a word typed with a curly apostrophe (#29759)                              | fuzzy context                                                                                                                               |
+| `77b948e3e` | fix(web): big terminal selections no longer break sending (#29804)                                             | fuzzy context                                                                                                                               |
+| `870496686` | fix(shared): preview_open reports about: and mailto: as unsupported instead of misreading them (#29614)        | fuzzy context                                                                                                                               |
+| `e1cd7f0e1` | fix(shared): accept whitespace after engine range operators (#29730)                                           | clean                                                                                                                                       |
+| `37f9134be` | fix(server): a publish whose first push fails still shows the new remote (#29688)                              | clean                                                                                                                                       |
+| `66a2f3571` | fix(shared): long assistant quote chips no longer end in a broken character (#30367)                           | clean                                                                                                                                       |
+| `f63e23e94` | perf(resource-monitor): Linux terminal process checks use a third of the CPU (#30381)                          | fuzzy context                                                                                                                               |
+| `e5193ac0a` | fix(web): preview annotation chip labels no longer end in a broken character (#30345)                          | clean                                                                                                                                       |
+| `d1667e833` | fix(server): an invalid regex in project search still finds its text when Match case is off (#30569)           | fuzzy context                                                                                                                               |
+| `00d1a828a` | fix(client-runtime): sanitized error stacks keep line and column for URLs with a query (#30726)                | clean                                                                                                                                       |
+| `47a89f2ee` | fix(shared): shortened agent paths like /tmp/... no longer become broken file chips (#30762)                   | fuzzy context                                                                                                                               |
+| `48bb784e3` | fix(shared): inline code like `allocator.cc:217` becomes a file chip (#32403)                                  | clean                                                                                                                                       |
+| `ce9b80671` | fix(server): theme files saved with a UTF-8 BOM are published instead of rejected (#32405)                     | clean                                                                                                                                       |
+| `ecf7f1ab9` | fix(web): mobile sidebar keeps its width when shelves expand (#27541)                                          | fuzzy context                                                                                                                               |
+| `2b1db482d` | fix(web): open citation comments with the caret at the end (#28667)                                            | clean                                                                                                                                       |
+| `0e65e6332` | fix(desktop): page redirects during loading no longer show a navigation error (#28814)                         | clean                                                                                                                                       |
+| `ad989057b` | fix(web): dropdown items over the desktop title bar respond to clicks (#32643)                                 | clean                                                                                                                                       |
+| `9e12eca12` | fix(shared): relative Windows file links open the file (#33643)                                                | clean                                                                                                                                       |
+| `580503ed3` | fix(web): custom snooze footer stays inside the dialog (#33759)                                                | clean                                                                                                                                       |
+| `fa2f4ff2a` | fix(web): panel resize handles follow touch drags (#33066)                                                     | fuzzy context                                                                                                                               |
+| `803006747` | fix(web): snooze times read naturally in context menus (#24945)                                                | fuzzy context                                                                                                                               |
+| `3ed5fb29b` | fix(shared): Claude plugin skills no longer show their name twice (#26311)                                     | clean                                                                                                                                       |
+| `b703fdbfd` | fix(server): a git action that fails partway refreshes the Git panel (#29651)                                  | clean                                                                                                                                       |
+| `84265950e` | fix(server): large tool summaries no longer split an emoji at the cap (#33832)                                 | clean                                                                                                                                       |
+| `5a3e368c1` | fix(server): detach errored provider sessions when deleting threads (#34199)                                   | clean                                                                                                                                       |
+| `860fa7c7b` | fix(shared): keep HTML bootstrap outside quoted attributes (#34344)                                            | clean                                                                                                                                       |
+| `ea6af468a` | fix(server): @ file search matches paths containing square brackets (#34479)                                   | clean                                                                                                                                       |
+| `7fc9aa6ed` | fix(shared): typing after a skill chip no longer reparses the prompt as math (#34816)                          | clean                                                                                                                                       |
+| `3c6864235` | fix(server): file links relative to a gitignored git worktree open the file (#34831)                           | fuzzy context                                                                                                                               |
+| `68f1bc58d` | fix(desktop): SnapShot shortcut rebinds after the desktop portal restarts (#35048)                             | clean                                                                                                                                       |
+| `a30cb3283` | fix(web): Esc in the keybindings search clears it without closing Settings (#35161)                            | fuzzy context                                                                                                                               |
+| `1113e4b51` | fix(scripts): `vp run dev --share` removes its tailnet mapping when the terminal closes (#35534)               | clean                                                                                                                                       |
+| `fbd77b9b3` | fix(web): diff colors follow appearance contrast (#28947)                                                      | clean                                                                                                                                       |
+| `3595b9e03` | fix(server): access list keeps changes made while its stream opens (#35640)                                    | clean                                                                                                                                       |
+| `8a227eba4` | fix(terminal): show recovery guidance when a project folder is missing (#35849)                                | clean                                                                                                                                       |
+| `0b127678b` | fix(server): ACP threads accept a model change after their session detaches (#35951)                           | clean                                                                                                                                       |
+| `4b316fd54` | fix(web): clear deleted checkout labels from the sidebar (#25063)                                              | clean                                                                                                                                       |
+| `93aaad5b4` | fix(web): PR conversation headers wrap instead of overflowing (#36211)                                         | fuzzy context                                                                                                                               |
+| `fa6326bf1` | fix(web): closing a composer menu on a touch tablet no longer opens the keyboard (#36325)                      | clean                                                                                                                                       |
+| `9d8998b43` | fix(native): KDE SnapShot no longer loses the first reply from KWin (#36218)                                   | clean                                                                                                                                       |
+| `000d82dc6` | fix(web): Esc closes the theme editor, not Settings (#25130)                                                   | clean                                                                                                                                       |
+| `f161a4d2b` | fix(shared): preserve literal ampersands in citation Markdown paths (#28103)                                   | clean                                                                                                                                       |
+| `154c5014a` | fix(web): long preview annotation comments are no longer dropped from the message (#29834)                     | fuzzy context                                                                                                                               |
+| `2137f360e` | fix(web): open editors when saving their preference fails (#34308)                                             | fuzzy context                                                                                                                               |
+| `26bf047d5` | fix(client-runtime): a disconnected machine's scratch folder no longer lists as a second "No project" (#30597) | fuzzy context                                                                                                                               |
+| `2e0353daa` | fix(shared): compare prerelease versions without locale or precision loss (#32169)                             | clean                                                                                                                                       |
+| `cc4160c81` | fix(web): stashed prompt previews no longer end in a broken character (#32404)                                 | clean                                                                                                                                       |
+| `528c77fe8` | fix(shared): .localdomain hosts no longer leak to the favicon service (#32657)                                 | clean                                                                                                                                       |
+| `7f575e632` | fix(web): collapsing Electron main no longer hides the backend server (#32619)                                 | fuzzy context                                                                                                                               |
+| `4ab3b9841` | fix(shared): MCP apps that fall back to a blob: frame no longer render blank (#32129)                          | clean                                                                                                                                       |
+| `dfeaf7b13` | fix(web): Tab from a citation comment reaches Save, not Cancel (#37579)                                        | clean                                                                                                                                       |
+| `cd42e1a49` | fix(web): the PR author filter says "1 merge loaded", not "1 merges loaded" (#37651)                           | fuzzy context                                                                                                                               |
+| `6f5861fa2` | fix(shared): inline code paths with spaces become file chips (#37750)                                          | fuzzy context                                                                                                                               |
+| `6dd092315` | fix(web): file tree icons and ignored rows follow the theme's muted text (#31785)                              | clean                                                                                                                                       |
+| `8ca0c88cf` | fix(web): screen readers see one Notifications landmark, not two (#31724)                                      | clean                                                                                                                                       |
+| `f5f8c8d18` | fix(web): opening a file in the preview browser shows its current contents (#38470)                            | fuzzy context                                                                                                                               |
+| `9758cf9e1` | fix(web): typing into a simulator no longer answers a waiting question (#38476)                                | fuzzy context                                                                                                                               |
+| `9bb92a46d` | fix(shared): count each pending subagent thread once (#39501)                                                  | fuzzy context                                                                                                                               |
+| `65b2e6dae` | fix(web): stop telemetry refresh spinning after data arrives (#41122)                                          | fuzzy context                                                                                                                               |
+| `887e3a569` | fix(web): file picker highlights stay on the typed letters after İ (#41216)                                    | clean                                                                                                                                       |
+| `3c84f4b1c` | fix(ssh): accept Node versions with build metadata (#41171)                                                    | clean                                                                                                                                       |
+| `df93cabbc` | fix(contracts): ForwardCompatibleOptional drops the key for values it cannot read (#41236)                     | fuzzy context                                                                                                                               |
+| `6f8282c2c` | fix(web): an IME Escape no longer blurs the file editor (#41837)                                               | clean                                                                                                                                       |
+| `f8d095151` | fix(desktop): SnapShot setup edits Hyprland Lua bindings with a return inside a function (#42145)              | clean                                                                                                                                       |
+| `e62e5122a` | fix(web): a held Esc in a nested panel control no longer closes the right panel sheet (#42262)                 | clean                                                                                                                                       |
+| `622d65faa` | fix(server): detect new repos in folders named like ..cache right away (#42507)                                | fuzzy context                                                                                                                               |
+| `283de2e4d` | fix(web): citation comment box stays open when its cited row scrolls out (#42603)                              | fuzzy context                                                                                                                               |
+| `fbd939eb4` | fix(web,mobile): author avatars keep emoji initials whole (#42598)                                             | clean                                                                                                                                       |
+
+### Already in the tree (53)
+
+Every hunk for a Ronin-held file already reverse-applies on `HEAD`. Hunks for absent upstream files were not compared.
+
+| SHA         | Exact upstream title                                                                               | Notes                     |
+| ----------- | -------------------------------------------------------------------------------------------------- | ------------------------- |
+| `ba0ea3d15` | fix(web): iPhone Duo folds animate, center on the hinge, and keep the phone's orientation (#16885) | reverse-applies on `HEAD` |
+| `46dd09490` | fix(web): center project monograms in settled rows (#16841)                                        | reverse-applies on `HEAD` |
+| `0bfd9dd19` | fix(server): held queued wakes no longer keep delegated tasks running (#17028)                     | reverse-applies on `HEAD` |
+| `647d8affa` | fix(web): command palette scrollbar no longer clipped at the top (#17035)                          | reverse-applies on `HEAD` |
+| `4daec109c` | fix(server): pairing tokens work on Node versions that cannot bind booleans (#16730)               | reverse-applies on `HEAD` |
+| `eb1cf7bd0` | fix(web): stack merge dialog closes as soon as you confirm (#17116)                                | reverse-applies on `HEAD` |
+| `a947f7c09` | fix(web): settled and snoozed lines line up with the messages above them (#17191)                  | reverse-applies on `HEAD` |
+| `aa8c6662e` | fix(web): pr merge actions stay visible while the stack refreshes (#17559)                         | reverse-applies on `HEAD` |
+| `cc62349c3` | fix(web): keep branch restore action inline in narrow composers (#14811)                           | reverse-applies on `HEAD` |
+| `42e1a0fba` | fix(web): terminal drawer keeps its height after the window shrinks (#17658)                       | reverse-applies on `HEAD` |
+| `2def3de4b` | fix(web): keep incremental highlighter return type portable (#17259)                               | reverse-applies on `HEAD` |
+| `699da9568` | fix(tests): use POSIX paths for the simulated macOS device host (#17241)                           | reverse-applies on `HEAD` |
+| `97009b049` | fix(server): print pairing credential expiry as ISO timestamp (#14128)                             | reverse-applies on `HEAD` |
+| `f55c66b32` | fix(web): show the correct new thread shortcut in command palette (#8513)                          | reverse-applies on `HEAD` |
+| `c899a0c06` | fix(azure-devops): list pull requests with token sign-in and check out into worktrees (#17725)     | reverse-applies on `HEAD` |
+| `a5b482452` | fix(server): say why a thread can't be settled (#17258)                                            | reverse-applies on `HEAD` |
+| `03b210528` | fix(server): prevent busy terminals from starving history persistence (#17181)                     | reverse-applies on `HEAD` |
+| `f7664fdf4` | perf(web): Open Source Licenses downloads its manifest once per session (#17119)                   | reverse-applies on `HEAD` |
+| `b4542c541` | fix(web): the Usage page sends a signed-out browser to pairing (#17938)                            | reverse-applies on `HEAD` |
+| `55fc13ff6` | fix(web): Cite button stays anchored to the selected text (#17650)                                 | reverse-applies on `HEAD` |
+| `9e8c7206c` | fix(web): terminal selection drags scroll at the window edge (#17653)                              | reverse-applies on `HEAD` |
+| `63eaa7924` | fix(web): context menus no longer scroll when they fit the window (#16776)                         | reverse-applies on `HEAD` |
+| `37e2acda5` | fix(web): terminal colors no longer look washed out (#17168)                                       | reverse-applies on `HEAD` |
+| `df26ef998` | fix(web): a numeric q in the pull requests URL no longer crashes the page (#18666)                 | reverse-applies on `HEAD` |
+| `80664d526` | fix(web): compact merge buttons show when they need a second click (#18878)                        | reverse-applies on `HEAD` |
+| `8855a6dd0` | perf(server): reuse stored turn item positions (#19230)                                            | reverse-applies on `HEAD` |
+| `bac35a2ff` | perf(server): avoid quadratic resource history replay (#18825)                                     | reverse-applies on `HEAD` |
+| `4f909be2c` | fix(web): settings save again after a stored value fails decode (#19312)                           | reverse-applies on `HEAD` |
+| `2cde3f770` | fix(web): terminal tells the shell its new width as soon as you release a resize drag (#19395)     | reverse-applies on `HEAD` |
+| `ede3f2d6b` | fix(web): model picker search lists newest models first (#18494)                                   | reverse-applies on `HEAD` |
+| `33aa46147` | fix(web): every reconnect gets its own grace period before the unavailable banner (#20441)         | reverse-applies on `HEAD` |
+| `60775b89c` | fix(web): center default badges in the reasoning selector (#21252)                                 | reverse-applies on `HEAD` |
+| `7138e6ef2` | fix(devices): keep long diagnostics from hiding device controls (#19973)                           | reverse-applies on `HEAD` |
+| `06ce02f19` | fix(web): maximized right panel no longer doubles the sidebar border (#18939)                      | reverse-applies on `HEAD` |
+| `390b4c439` | fix(server): another worktree's install no longer restarts the dev server (#21065)                 | reverse-applies on `HEAD` |
+| `0bdb5a8c6` | fix(web): show native caret and selection in file comments (#17554)                                | reverse-applies on `HEAD` |
+| `c6dfda8e5` | perf(server): colored terminal output no longer copies history one character at a time (#21209)    | reverse-applies on `HEAD` |
+| `bafadf324` | fix(server): report spawn ENOTDIR as a spawn error instead of a defect (#14345)                    | reverse-applies on `HEAD` |
+| `8832d5c32` | fix(desktop): local network pairing links skip idle bridges and tunnels (#18085)                   | reverse-applies on `HEAD` |
+| `cd6b8b711` | fix(server): backend children no longer count as desktop resources (#19645)                        | reverse-applies on `HEAD` |
+| `19f3f6d9f` | fix(server): stop grouping unrelated repos that only have a local git remote (#13129)              | reverse-applies on `HEAD` |
+| `93d0e1a8e` | fix(shared): detect *.ghe.com remotes as GitHub (#19362)                                           | reverse-applies on `HEAD` |
+| `0a712f0cd` | fix(shared): match Windows home paths case-insensitively in file links (#19627)                    | reverse-applies on `HEAD` |
+| `cdb761d79` | fix(server): SSH device-host tunnels no longer inherit ControlMaster (#17440)                      | reverse-applies on `HEAD` |
+| `bd9383055` | fix(shared): choose duration unit after rounding seconds (#20299)                                  | reverse-applies on `HEAD` |
+| `d8125a5d8` | fix(server): usage-limit sweep stops scanning every run each tick (#21191)                         | reverse-applies on `HEAD` |
+| `3e9de4672` | fix(server): find existing PR worktrees beyond the first branch page (#18407)                      | reverse-applies on `HEAD` |
+| `3cc98ba56` | fix(server): preserve unrelated branch upstreams when opening fork PRs (#18413)                    | reverse-applies on `HEAD` |
+| `3017eca6c` | fix(shared): terminal labels after non-BMP letters stay plain text (#19968)                        | reverse-applies on `HEAD` |
+| `7f63b1027` | fix(shell): avoid interactive job control in environment probes (#11275)                           | reverse-applies on `HEAD` |
+| `46aa37b10` | fix(ssh): host discovery follows quoted Include paths (#21396)                                     | reverse-applies on `HEAD` |
+| `22b89ef06` | fix(server): Forgejo and GitCafe pull requests link to their threads again (#22937)                | reverse-applies on `HEAD` |
+| `b8ca826bf` | fix(server): preview status and snapshot never echo a data: page's contents (#22302)               | reverse-applies on `HEAD` |
+
+### Not ported after attempt (246)
+
+These applied textually but were backed out. They are relevant candidates for a future targeted port.
+
+#### Failed focused tests (6)
+
+| SHA         | Exact upstream title                                                                             | Reason                                                                                                                                                              |
+| ----------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `40d43a196` | fix(client-runtime): a new WSL backend no longer shows Limited permissions until reload (#19361) | New bearer-rotation regression test fails against Ronin's `EnvironmentRegistry` (expected `old-bearer`, got `null`).                                                |
+| `191cd7e78` | fix(web): match HTML render backgrounds to the dark chat theme (#25948)                          | Changes the stock dark surface to `#000000`; breaks Ronin's charcoal palette test in `themePalette.test.ts`.                                                        |
+| `4494faa27` | fix(client-runtime): checking out a pull request refreshes cached branch lists (#29161)          | `state/vcs.test.ts` ref-invalidation case fails against Ronin's VCS cache.                                                                                          |
+| `002dc9b64` | fix(web): file names with a backslash no longer split into folders in the Changes card (#35075)  | Conflicts with Ronin's Windows-separator normalization in `turnDiffTree` (existing test "normalizes file paths with windows separators"). Needs a product decision. |
+| `a8e60d460` | fix(release): require complete updater manifests (#23700)                                        | Imports `effect/cli` from stable Effect; Ronin keeps Effect 4.0.0-beta.103.                                                                                         |
+| `4b758f49e` | fix(web): citation jumps move focus to the cited response (#37813)                               | `AssistantCitationSource.test.ts` fails (11 tests): its focus handling needs a ResizeObserver/DOM shape Ronin's citation source lacks.                              |
+
+#### Conflicted after earlier ports (7)
+
+| SHA         | Exact upstream title                                                                   | Reason                                                                  |
+| ----------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `352972300` | fix(desktop): skip auxiliary macOS snapshot windows (#22624)                           | Applied alone on `HEAD` but conflicted once earlier ports were stacked. |
+| `2101c6f61` | fix: paste-as-text shortcut on non-Latin layouts (#28470)                              | Applied alone on `HEAD` but conflicted once earlier ports were stacked. |
+| `3430a77b1` | fix(server): Linux startup no longer waits up to a minute on hostnamectl (#33068)      | Applied alone on `HEAD` but conflicted once earlier ports were stacked. |
+| `7ae21bf16` | fix(web): don't label Windows paths outside the workspace as relative (#28469)         | Applied alone on `HEAD` but conflicted once earlier ports were stacked. |
+| `5d1352d48` | fix(server): each websocket RPC starts its own trace so Tempo keeps its spans (#36863) | Applied alone on `HEAD` but conflicted once earlier ports were stacked. |
+| `d405bd94a` | fix(web): sidebar width recovers when the window widens after a narrow start (#29520)  | Applied alone on `HEAD` but conflicted once earlier ports were stacked. |
+| `ba947e37e` | fix(desktop): show ampersands in native context menu labels (#41097)                   | Applied alone on `HEAD` but conflicted once earlier ports were stacked. |
+
+#### Lockfile-only hunks (2)
+
+| SHA         | Exact upstream title                                              | Reason                                                                                                                                            |
+| ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `80b962045` | fix(gitlab): Create MR works with snap-installed glab (#31763)    | Only `pnpm-lock.yaml`/`scripts/package.json` hunks reached Ronin; they reference absent `provider-testing`/GitLab packages and stable Effect 4.1. |
+| `39a8d1f33` | fix(scenarios): editor and no-model shims run on Windows (#42533) | Only `pnpm-lock.yaml`/`scripts/package.json` hunks reached Ronin; they reference absent `provider-testing`/GitLab packages and stable Effect 4.1. |
+
+#### New type errors (117)
+
+Each touched a file that had new `tsgo` errors once applied (baseline `HEAD` is clean). Most depend on upstream APIs, services or contract members Ronin does not have.
+
+| SHA         | Exact upstream title                                                                                   | Reason                    |
+| ----------- | ------------------------------------------------------------------------------------------------------ | ------------------------- |
+| `87c366b12` | fix(server): a refused Claude turn no longer throws away its session (#16287)                          | type errors against Ronin |
+| `5ce5a8f65` | fix(ssh): qualify runner script builders in tunnel test (#18078)                                       | type errors against Ronin |
+| `494660278` | fix(server): refresh linked PRs without a checkout (#17167)                                            | type errors against Ronin |
+| `5cbe82a87` | fix(devices): refresh backlogged iOS video and require input admission (#18326)                        | type errors against Ronin |
+| `a5331e4c2` | fix(server): checkpoint restore keeps a nested workspace on Windows (#14874)                           | type errors against Ronin |
+| `6edd44f40` | fix(web): settle shortcut moves to the next thread like the sidebar (#19328)                           | type errors against Ronin |
+| `9688e7411` | fix(ssh): SSH launch no longer picks a port another server answers on (#19372)                         | type errors against Ronin |
+| `36f91c456` | fix(ssh): reconnecting keeps the remote server and its agents running (#19432)                         | type errors against Ronin |
+| `ce6f8ce36` | fix(pr): keep known state in sync across controls (#18408)                                             | type errors against Ronin |
+| `cb395ee13` | fix(web,mobile): pull request filters no longer offer the Scratch folder (#19179)                      | type errors against Ronin |
+| `22af947e0` | fix(server): restarts no longer stall on old subagent result deliveries (#19631)                       | type errors against Ronin |
+| `40a7908df` | fix(server): Reveal in File Explorer and browser launches work on Windows again (#19656)               | type errors against Ronin |
+| `c814e51af` | fix(server): a cancelled delegated task no longer shows its child's question (#18459)                  | type errors against Ronin |
+| `cde9caecb` | perf(server): replace Windows PowerShell port polling with netstat (#18524)                            | type errors against Ronin |
+| `66eee62db` | perf(web): the port discovery hooks compile without manual memoization (#20636)                        | type errors against Ronin |
+| `ede009e76` | perf(web): the diff worker pool provider compiles without manual memoization (#20584)                  | type errors against Ronin |
+| `16e6a6ab5` | perf(web): AnimatedHeight compiles with the React Compiler (#20562)                                    | type errors against Ronin |
+| `9ba614301` | perf(web): switching threads no longer re-renders the chat view for an unchanged preview list (#21130) | type errors against Ronin |
+| `529d8063c` | fix(server): queued messages land after a resume that ran before them (#17773)                         | type errors against Ronin |
+| `d218d5b39` | fix(server): preserve repository display casing (#19202)                                               | type errors against Ronin |
+| `073734c1e` | fix(web): failed attachment uploads no longer block sending (#20737)                                   | type errors against Ronin |
+| `bbf19f97d` | fix(web): prevent provider wizard footer overlap while loading (#18609)                                | type errors against Ronin |
+| `76f57f9b8` | fix(server): preserve explicit effort for unknown Claude models (#20849)                               | type errors against Ronin |
+| `23dae7b3a` | fix(server): allow restarts when a stale runtime record matches the server pid (#20336)                | type errors against Ronin |
+| `d60870918` | fix(desktop): ignore snapshot shortcut repeats during flight (#11037)                                  | type errors against Ronin |
+| `21baef5c8` | fix(server): stop retrying saved checkpoints after refresh failures (#20195)                           | type errors against Ronin |
+| `adaaae60c` | fix(server): publishing explains why the first push failed (#19219)                                    | type errors against Ronin |
+| `189f0f87a` | fix(server): cancel preparing runs when archiving threads (#20073)                                     | type errors against Ronin |
+| `af134abf7` | fix(desktop): unregistering a WSL backend now stops its supervisor (#18575)                            | type errors against Ronin |
+| `7c367e88d` | fix(web,mobile): keep reporting client activity after an interrupted report (#15738)                   | type errors against Ronin |
+| `88d104a35` | fix(server): terminals no longer inherit the launching tmux session (#13359)                           | type errors against Ronin |
+| `10f7db7e3` | fix(server): a message promoted into a stopping run stays queued (#16926)                              | type errors against Ronin |
+| `9e9fa1044` | fix(server): clear snooze when settling threads (#17547)                                               | type errors against Ronin |
+| `6b43524f0` | fix(desktop): include Chrome app text in macOS SnapShots (#11325)                                      | type errors against Ronin |
+| `3b744af49` | fix(desktop): preserve signals in backend exit logs (#15406)                                           | type errors against Ronin |
+| `d5e6f6981` | fix(server): cloning into a new folder directly under a drive root no longer fails (#18265)            | type errors against Ronin |
+| `232e930cd` | fix(web): implementation menu opens while preserving composer focus (#17111)                           | type errors against Ronin |
+| `a3de2ae05` | fix(server): select linked files when revealing on Linux (#14044)                                      | type errors against Ronin |
+| `462810f0b` | fix(server): stop reporting a separate git dir as a branch's worktree (#14157)                         | type errors against Ronin |
+| `5bed8e4df` | fix(desktop): an AppImage launch drops earlier launches' mount dirs from the server PATH (#18808)      | type errors against Ronin |
+| `d1cac663a` | fix(server): an idle terminal no longer scans the process table every second (#21242)                  | type errors against Ronin |
+| `b9c1293c0` | fix(web): PR Code tab keeps its files after a refresh with an unchanged diff (#22917)                  | type errors against Ronin |
+| `38d993f38` | fix(web): finished provider updates no longer leave a hidden spinner in the sidebar (#22912)           | type errors against Ronin |
+| `9a6380263` | perf(server): skip unused Git output line parsing (#23953)                                             | type errors against Ronin |
+| `9f660d384` | perf(server): speed up large terminal clipboard sequences (#23819)                                     | type errors against Ronin |
+| `cd69df475` | fix(server): find the resource monitor when the server runs from its build output (#23965)             | type errors against Ronin |
+| `7ee8a5b12` | fix(server): resume fallback keeps the latest turn when an older handoff is pending (#22902)           | type errors against Ronin |
+| `9d6a2e57f` | fix(web): new thread shortcut focuses palette search, not the Back button (#25315)                     | type errors against Ronin |
+| `70b0abced` | fix(web): short branch names no longer get clipped in thread details (#25328)                          | type errors against Ronin |
+| `d033768ec` | fix(server): preserve completed runs when accepting child deliveries (#25666)                          | type errors against Ronin |
+| `c839797b6` | fix(server): keep terminal history after cancelled sequences (#25193)                                  | type errors against Ronin |
+| `3bd64cf2c` | fix(server): mark unread works after an automatic compaction (#25286)                                  | type errors against Ronin |
+| `8f6c9b714` | fix(web): preserve typed dimensions with the aspect ratio locked (#23338)                              | type errors against Ronin |
+| `0804c60a9` | fix(server): reject busy merge-back targets before blocking their queue (#23554)                       | type errors against Ronin |
+| `3bd744fc1` | fix(web): show clipboard errors in anchored copy notifications (#23679)                                | type errors against Ronin |
+| `645df4541` | fix(web): keep add-project inputs open during IME composition (#24016)                                 | type errors against Ronin |
+| `64f30421d` | fix(web): closing an invalid When editor no longer leaves Save disabled (#24488)                       | type errors against Ronin |
+| `286bc5eb1` | fix(server): editing or removing a hand-written shortcut in Settings works again (#25556)              | type errors against Ronin |
+| `da94a13e5` | fix(web): tab to equations only when they overflow (#23954)                                            | type errors against Ronin |
+| `e2a6267d3` | fix(server): release drained terminal output while queue stays busy (#23664)                           | type errors against Ronin |
+| `82503ccf2` | fix(acp): fail requests when stdout closes before the agent exits (#21323)                             | type errors against Ronin |
+| `61b535e91` | fix(desktop): handle macOS back and forward gestures (#25188)                                          | type errors against Ronin |
+| `ec1fa9abe` | fix(cli): t3 uninstall on Windows removes the downloaded runtime (#24874)                              | type errors against Ronin |
+| `0346d644a` | fix(server): every commit hook reports finishing with its real exit code (#22939)                      | type errors against Ronin |
+| `0b75a852d` | fix(desktop): keep noisy shell probes from blocking PATH capture (#21913)                              | type errors against Ronin |
+| `01eb33937` | fix(desktop): allow slow backends to start before showing recovery (#26247)                            | type errors against Ronin |
+| `665351fc3` | fix(web): show readable errors when a stack action fails (#24118)                                      | type errors against Ronin |
+| `0743ba552` | fix(shared): branch names keep accented letters as plain letters (#27274)                              | type errors against Ronin |
+| `77c885e82` | fix(desktop): SnapShots keep working on Hyprland after an app update (#28240)                          | type errors against Ronin |
+| `6d25fa10b` | perf(server): skip unused parent data when forking threads (#28265)                                    | type errors against Ronin |
+| `6a241eaee` | perf(server): sort the working-tree file list once per status read (#22499)                            | type errors against Ronin |
+| `cb79cfb00` | fix(server): report a created PR as created when its lookup fails (#23242)                             | type errors against Ronin |
+| `6014358bc` | fix(desktop): a settings relaunch no longer replays the link that launched the app (#28464)            | type errors against Ronin |
+| `abf8998b6` | fix(server): changing a task's wake policy no longer reverts a checkpointed parent run (#25662)        | type errors against Ronin |
+| `7a03a7418` | fix(server): messages cut by a restart no longer stay marked as streaming (#28646)                     | type errors against Ronin |
+| `300101f7e` | fix(web): open files from Claude and ACP tool-call diffs (#29309)                                      | type errors against Ronin |
+| `30f7600ec` | fix(server): pinning a settled thread stamps its return to the active list (#29602)                    | type errors against Ronin |
+| `99ccd4785` | fix(server): t3 service uninstall leaves another T3 home's service alone (#29872)                      | type errors against Ronin |
+| `53f1d0947` | fix(web): refresh resource timeline while diagnostics is open (#30528)                                 | type errors against Ronin |
+| `f92daf1fc` | fix(server): macOS Bash terminals now start as login shells (#22295)                                   | type errors against Ronin |
+| `a4c2684a0` | fix(web): project content search no longer opens a result on an IME Enter (#30448)                     | type errors against Ronin |
+| `d756fed7a` | fix(server): provider switches hand off started cancelled runs (#34016)                                | type errors against Ronin |
+| `d80625118` | fix(server): runs cancelled by a server restart say why in the thread (#27192)                         | type errors against Ronin |
+| `fe5b51e20` | fix(server): an interrupted provider update ends failed instead of running forever (#33975)            | type errors against Ronin |
+| `31a108c19` | fix(contracts): Space shortcuts reach clients instead of reverting to defaults (#34799)                | type errors against Ronin |
+| `dcad1942a` | fix(client-runtime): provider toggles no longer wait for another provider's update (#34858)            | type errors against Ronin |
+| `c9211b6ab` | fix(server): favicon lookups for a missing project folder are cached (#34905)                          | type errors against Ronin |
+| `312680674` | fix(server): project identity follows gh repo set-default (#35005)                                     | type errors against Ronin |
+| `37e0fd378` | fix(server): a run whose recovery state can't be read fails instead of staying starting (#35013)       | type errors against Ronin |
+| `a5bd0ba52` | fix(ssh): SSH setup on a host without gzip says gzip is missing (#35389)                               | type errors against Ronin |
+| `8b9f8cac5` | fix(server): Commit finishes a merge resolved to the current branch's tree (#35778)                    | type errors against Ronin |
+| `2a21f411a` | fix(server): parent turns no longer duplicate delegated task thread items (#36473)                     | type errors against Ronin |
+| `3fe0fbb69` | fix(web): keep file uploads when returning a draft to its environment (#36572)                         | type errors against Ronin |
+| `a61291e3e` | fix(shared): one-letter link schemes no longer become file links on Windows (#24006)                   | type errors against Ronin |
+| `a67894848` | fix(web): pending-question digit shortcuts ignore dialogs, menus and selects (#28388)                  | type errors against Ronin |
+| `4d6ebbdba` | fix(wsl): label WSL environments with their Windows host on every client (#22629)                      | type errors against Ronin |
+| `5bd2d0cb8` | fix(client-runtime): derive MCP download names before URI suffixes (#30712)                            | type errors against Ronin |
+| `f6fd89b6f` | fix(server): terminals start a $SHELL whose path contains a space (#30969)                             | type errors against Ronin |
+| `2c5013d15` | fix(server): threads show the new branch's pull request after a branch switch (#32042)                 | type errors against Ronin |
+| `8be0e6c8e` | fix(server): preserve run start time when steering restarts a turn (#31640)                            | type errors against Ronin |
+| `2a66bf26e` | fix(server): read_pull_request_guide reads no-checkout hosts through the caller's project (#35913)     | type errors against Ronin |
+| `3209fa953` | fix(server): resuming a queue no longer bypasses failed worktree setup (#36616)                        | type errors against Ronin |
+| `6fd14f46d` | fix(server): servers on one machine no longer update a shared provider CLI at once (#38849)            | type errors against Ronin |
+| `e25a337e5` | fix(web): keep long-named VS Code themes separate on import (#39493)                                   | type errors against Ronin |
+| `024dba275` | perf(server): a run's provider turn lookup is linear, not quadratic (#38791)                           | type errors against Ronin |
+| `6cfc3bf0d` | fix(shared): reject keybindings with a dangling or extra '+' (#41231)                                  | type errors against Ronin |
+| `7182abeea` | fix(client-runtime): command failures show the server's text for string defects (#41550)               | type errors against Ronin |
+| `221bc8a60` | fix(server): long worktree setup details no longer end in half an emoji (#41629)                       | type errors against Ronin |
+| `4ce9f8c1b` | fix(web): Esc in the license search closes it without closing Settings (#41647)                        | type errors against Ronin |
+| `9f11faf7a` | fix(server): clone banner text no longer ends in half an emoji (#41669)                                | type errors against Ronin |
+| `3b3b662f3` | fix(server): a closed preview tab no longer stays the agent's current tab (#41818)                     | type errors against Ronin |
+| `3dd4f1428` | fix(web): IME keys no longer cancel or send a pull request review reply (#41932)                       | type errors against Ronin |
+| `9d3195b49` | fix(web): IME keys no longer cancel or send a diff comment (#42000)                                    | type errors against Ronin |
+| `9bce8843d` | fix(desktop): SnapShot shortcut setup says why it couldn't prepare or save the changes (#42154)        | type errors against Ronin |
+| `93a7cfe74` | fix(cli): trace summary prints all rows for large --limit values (#42234)                              | type errors against Ronin |
+| `5e3bc1758` | fix(server): Claude instances that share a home through a symlink keep the session on switch (#42509)  | type errors against Ronin |
+| `4e6b1fa77` | fix(web): element context preview no longer ends in a split surrogate (#42585)                         | type errors against Ronin |
+
+#### Partial: core source absent (114)
+
+Upstream also changed non-test source files Ronin does not have (usually under `packages/provider-*`, `packages/source-control-*`, or native V2 UI), so only incidental hunks would have landed.
+
+| SHA         | Exact upstream title                                                                                     | Reason                                       |
+| ----------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `85489611b` | fix(server): missing project folders no longer log favicon warnings (#16757)                             | core change lives in files absent from Ronin |
+| `57f96e69d` | fix(lineage): keep agent effort and speed after completion (#16925)                                      | core change lives in files absent from Ronin |
+| `10e29a26c` | perf(server): ACP tool updates no longer persist a snapshot per streamed chunk (#16682)                  | core change lives in files absent from Ronin |
+| `37eaf5d29` | fix(server): an agent can settle its own thread when its turn ends (#17145)                              | core change lives in files absent from Ronin |
+| `c572cb71d` | fix(server): track resumed subagent follow-ups as separate tasks (#17696)                                | core change lives in files absent from Ronin |
+| `6266af3f1` | fix(server): t3_thread_launch refuses a new worktree whose base ref has no commit (#17791)               | core change lives in files absent from Ronin |
+| `e1ad595e0` | fix(opencode): name OpenCode 2 sessions after their thread (#17414)                                      | core change lives in files absent from Ronin |
+| `ae5fd1842` | fix(server): OpenCode 2 continuations replay only their own background reply (#14752)                    | core change lives in files absent from Ronin |
+| `9c9ae43d8` | fix(web): auto-merge button fits its label and animates width changes (#19111)                           | core change lives in files absent from Ronin |
+| `30d101044` | fix(server): Claude subagent progress no longer re-stores the unchanged prompt (#18375)                  | core change lives in files absent from Ronin |
+| `614b432a7` | fix(server): make SQLite checkpoints durable on macOS (#19304)                                           | core change lives in files absent from Ronin |
+| `19a67ef52` | fix(acp): custom models now reach the agent instead of failing to open (#19313)                          | core change lives in files absent from Ronin |
+| `26c48bbc0` | fix(web): action shortcuts recorded in the browser now save (#19365)                                     | core change lives in files absent from Ronin |
+| `df8df0d53` | fix(server): bound Bitbucket API requests with 30s timeout (#14140)                                      | core change lives in files absent from Ronin |
+| `00cdceb19` | fix(web): middle-click opens pull requests in the browser, like cmd+click (#19854)                       | core change lives in files absent from Ronin |
+| `0b68a4a9c` | fix(server): steering no longer ends running subagents (#19210)                                          | core change lives in files absent from Ronin |
+| `e9712d261` | perf(web): toggle groups compile with the React Compiler (#20453)                                        | core change lives in files absent from Ronin |
+| `998bcc226` | perf(web): the project icon picker compiles with the React Compiler (#20457)                             | core change lives in files absent from Ronin |
+| `a17781f63` | perf(web): panel presence keeps its retained value in state (#20459)                                     | core change lives in files absent from Ronin |
+| `6293119f8` | perf(web): useCopyToClipboard reads its options through useStableCallback (#20460)                       | core change lives in files absent from Ronin |
+| `635396ca3` | perf(web): browser viewport resize checks its source through a stable callback (#20465)                  | core change lives in files absent from Ronin |
+| `1544a9457` | perf(web): snapshot coordinator keeps the last route target in state (#20466)                            | core change lives in files absent from Ronin |
+| `70c73d96e` | perf(web): useLocalStorage compiles with the React Compiler (#20472)                                     | core change lives in files absent from Ronin |
+| `7157b7669` | perf(web): device setup compiles with the React Compiler (#20488)                                        | core change lives in files absent from Ronin |
+| `488af8d28` | perf(web): the device panel compiles with the React Compiler (#20489)                                    | core change lives in files absent from Ronin |
+| `079a34970` | perf(web): the SSH password prompt compiles with the React Compiler (#20490)                             | core change lives in files absent from Ronin |
+| `ba3e228d9` | perf(web): pull request thread links compile with the React Compiler (#20494)                            | core change lives in files absent from Ronin |
+| `d1c2346ee` | perf(web): SnapShot setup dialog compile with the React Compiler (#20503)                                | core change lives in files absent from Ronin |
+| `350127040` | perf(web): capture shortcut config compile with the React Compiler (#20511)                              | core change lives in files absent from Ronin |
+| `95e6d928a` | perf(web): the composer state hooks compile without manual memoization (#20566)                          | core change lives in files absent from Ronin |
+| `f8665a1c2` | fix(web): a prompt link opened from a thread no longer lands in that thread (#19326)                     | core change lives in files absent from Ronin |
+| `96d354ae8` | fix(server): tell users how to update an install T3 cannot update (#18110)                               | core change lives in files absent from Ronin |
+| `0c609ab87` | fix(web): the device screen keeps focus when typing or returning to the window (#14534)                  | core change lives in files absent from Ronin |
+| `2c1b4e5e4` | fix(web): custom shortcuts work when Local environment is off (#15825)                                   | core change lives in files absent from Ronin |
+| `b177a16b6` | fix(web): keep a typed question answer when you open a new thread (#13865)                               | core change lives in files absent from Ronin |
+| `2b4a806fe` | fix(server): skip native sessions during bulk import (#15634)                                            | core change lives in files absent from Ronin |
+| `53ef45fea` | fix(clients): subagent bar stops guessing the subagent's effort (#15710)                                 | core change lives in files absent from Ronin |
+| `ff9f41b65` | fix(server): Codex turns without a saved effort run at the model's default (#20991)                      | core change lives in files absent from Ronin |
+| `05d32e55d` | fix(chat): open thread links across connected environments (#21505)                                      | core change lives in files absent from Ronin |
+| `488332094` | fix(composer): only chip skills offered by the current provider (#14834)                                 | core change lives in files absent from Ronin |
+| `1327e7bdf` | fix(server): preserve Claude question option previews (#21932)                                           | core change lives in files absent from Ronin |
+| `4bf8b476f` | fix(provider-muse): relaunch a host that died between turns (#19195)                                     | core change lives in files absent from Ronin |
+| `0c3943049` | fix(server): rolling back a Claude fork's first run keeps its inherited history (#21188)                 | core change lives in files absent from Ronin |
+| `6b2188aac` | fix(server): re-inject T3 instructions into ACP sessions after compaction (#21053)                       | core change lives in files absent from Ronin |
+| `d1066d2f4` | fix(server): GitHub only offers auto-merge when it can wait (#19947)                                     | core change lives in files absent from Ronin |
+| `b7b53d404` | fix(server): preview downloads no longer echo data: URL contents (#22156)                                | core change lives in files absent from Ronin |
+| `ee11fbd97` | fix(server): t3_thread_read clamps oversized page sizes instead of failing (#22901)                      | core change lives in files absent from Ronin |
+| `5c3721e20` | fix(composer): mentions of files like `posts.$postId.tsx` or `[id].tsx` stay chips (#22922)              | core change lives in files absent from Ronin |
+| `a46f80ee2` | fix(web): screen readers hear which background thread finished, even with the sidebar collapsed (#23839) | core change lives in files absent from Ronin |
+| `909e4c948` | fix(server): align delegated review follow-up guidance (#24560)                                          | core change lives in files absent from Ronin |
+| `0840bb209` | fix(provider-acp): Grok monitors show as monitors in background work (#24609)                            | core change lives in files absent from Ronin |
+| `056b4457c` | fix(usage): Gemini 4 Argon usage from Antigravity now has a price (#24834)                               | core change lives in files absent from Ronin |
+| `b88da9139` | fix(server): Codex works again after its app-server is killed (#26188)                                   | core change lives in files absent from Ronin |
+| `99ff58abe` | fix(server): Antigravity stops retrying session startup while signed out (#24939)                        | core change lives in files absent from Ronin |
+| `cb5fac907` | fix(server): mark unread no longer brings back a dismissed wake (#24080)                                 | core change lives in files absent from Ronin |
+| `87b36c77f` | fix(codex): preserve partial answer messages and thread histories (#23388)                               | core change lives in files absent from Ronin |
+| `4306e7794` | fix(server): device list warnings keep the hub's error detail (#25248)                                   | core change lives in files absent from Ronin |
+| `dd6c05ec3` | fix(preview): agent browser use no longer steals composer focus (#28613)                                 | core change lives in files absent from Ronin |
+| `42ca7c001` | fix(server): reject oversized goal objectives before dispatch (#23033)                                   | core change lives in files absent from Ronin |
+| `a9468dab7` | fix(server): guests of a forked thread can open files on the messages it inherited (#29794)              | core change lives in files absent from Ronin |
+| `67861fd9f` | fix(server): delegated threads no longer share one provider event log (#29770)                           | core change lives in files absent from Ronin |
+| `37481f044` | fix(web): dragging a sidebar thread no longer scrolls the list out from under the pointer (#30346)       | core change lives in files absent from Ronin |
+| `bfb388415` | fix(ui): snooze menu times match the menu's typography (#30596)                                          | core change lives in files absent from Ronin |
+| `b1f1731ca` | fix(server): explain fake-IP DNS failures in HTML previews (#30318)                                      | core change lives in files absent from Ronin |
+| `08a390940` | fix: show latest reply age in active thread rows (#31825)                                                | core change lives in files absent from Ronin |
+| `25868edf9` | fix(github): hidden GitHub comments and reviews no longer show in T3 Code (#33134)                       | core change lives in files absent from Ronin |
+| `c45cbd742` | fix(server): delegated Claude tasks report the model that ran (#27753)                                   | core change lives in files absent from Ronin |
+| `16a6c1c41` | fix(web): show details for background commands (#33647)                                                  | core change lives in files absent from Ronin |
+| `27188274e` | fix(web): pull request search keeps partial-word matches after GitHub answers (#26992)                   | core change lives in files absent from Ronin |
+| `20081ef95` | fix(server): subagent threads settle with their parent instead of sweeping on their own (#19665)         | core change lives in files absent from Ronin |
+| `335d8b560` | fix(server): Claude --settings and prompt-file launch args expand ~ (#26649)                             | core change lives in files absent from Ronin |
+| `c092c6eb1` | fix(server): generated thread titles leave out the project name (#33418)                                 | core change lives in files absent from Ronin |
+| `7315c60b9` | fix(server): a failed Claude wake dispatch no longer drops every later wake (#28173)                     | core change lives in files absent from Ronin |
+| `6a03ef656` | fix(web): app keybindings on Mod+B, Mod+I and Mod+E win over composer formatting (#34493)                | core change lives in files absent from Ronin |
+| `9f1e97de6` | fix(server): context handoff names omitted items instead of a read from the thread's start (#34847)      | core change lives in files absent from Ronin |
+| `13034bfad` | fix(server): stale provider update results clear once the provider is up to date (#24338)                | core change lives in files absent from Ronin |
+| `254e985e4` | fix(web): find scheduled tasks in Settings search (#35715)                                               | core change lives in files absent from Ronin |
+| `b23f94e4a` | fix(server): preview resize and status report the real size of desktop tabs (#32854)                     | core change lives in files absent from Ronin |
+| `3376c8da9` | fix(desktop): AppImage t3 shim no longer grows the CLI compile cache on every call (#33885)              | core change lives in files absent from Ronin |
+| `ed7e5010b` | fix(web): terminal "Add to chat" now adds to a queued message being edited (#36117)                      | core change lives in files absent from Ronin |
+| `cf382b0c4` | fix(web,mobile): explain missing file access for host videos (#24637)                                    | core change lives in files absent from Ronin |
+| `2fa77fbf5` | fix(web): horizontal table scrolling preserves timeline follow (#24045)                                  | core change lives in files absent from Ronin |
+| `f84ad6f30` | fix(web): discarded drafts stay discarded after image compression (#36732)                               | core change lives in files absent from Ronin |
+| `43a71d9b1` | fix(web): a terminal reopened while its open is pending no longer closes itself (#29654)                 | core change lives in files absent from Ronin |
+| `60e4be49c` | fix(shared): open relative Codex citations with filename punctuation (#36758)                            | core change lives in files absent from Ronin |
+| `5583b2646` | fix(server,client): preserve literal JSON command output (#36793)                                        | core change lives in files absent from Ronin |
+| `0cf9423d8` | fix(web): keep thread find working with many matches in one row (#34402)                                 | core change lives in files absent from Ronin |
+| `37c266d25` | fix(web): showing a composer banner no longer makes the page restyle everything until reload (#34537)    | core change lives in files absent from Ronin |
+| `bbda0c107` | fix(acp): replace and remove identified plans across turns (#36978)                                      | core change lives in files absent from Ronin |
+| `bf8fd416a` | fix(server): Claude append launch text may start with two hyphens (#35598)                               | core change lives in files absent from Ronin |
+| `d8c7855a8` | fix(web): terminal mouse reports hit the drawn cell (#37148)                                             | core change lives in files absent from Ronin |
+| `2182097b1` | fix(server): theme set help names which clients apply the theme (#37259)                                 | core change lives in files absent from Ronin |
+| `26f70e72f` | fix(web): a failed reaction toggle no longer clears a newer reaction choice (#37853)                     | core change lives in files absent from Ronin |
+| `ea6d3fc30` | fix(server): a Codex speed change sent during a running turn reaches Codex (#38130)                      | core change lives in files absent from Ronin |
+| `983654b3b` | fix(web): an invalid host filter in an Issues link no longer crashes the page (#38190)                   | core change lives in files absent from Ronin |
+| `2ebe7f8e2` | fix(pi): fork historical turns from their original session (#38315)                                      | core change lives in files absent from Ronin |
+| `c3ece584f` | fix(server): adb-attached Android devices stay listed when avdmanager fails (#38954)                     | core change lives in files absent from Ronin |
+| `aced664ed` | fix(client-runtime): prefer newer completed compaction over stale liveUsage (#39024)                     | core change lives in files absent from Ronin |
+| `22f006c8d` | fix(web): zoom shortcuts zoom the app from the PR, Diff and Files panes (#39207)                         | core change lives in files absent from Ronin |
+| `0240eac9d` | fix(server): images that ACP agents read show a preview (#37468)                                         | core change lives in files absent from Ronin |
+| `b5481adcd` | fix(web,mobile): scheduled tasks from Settings start from the project's default branch (#32841)          | core change lives in files absent from Ronin |
+| `3cd98dcba` | fix(server): a secret card closes after the steering restart that supersedes it (#34634)                 | core change lives in files absent from Ronin |
+| `e668e6141` | fix(web): scrolling a PR description no longer moves focus to the condensed header (#39840)              | core change lives in files absent from Ronin |
+| `670092dcf` | fix(web): screen readers can tell removed lines from added ones in diffs (#40152)                        | core change lives in files absent from Ronin |
+| `404dd5bad` | fix(server): Conventional Commits style uses a Conventional Commit PR title (#40571)                     | core change lives in files absent from Ronin |
+| `122d3bf85` | fix(server): provider refresh finds CLIs installed after launch on macOS and Linux (#40693)              | core change lives in files absent from Ronin |
+| `86349553c` | fix(server): app links no longer leave the preview stuck loading (#41168)                                | core change lives in files absent from Ronin |
+| `f9f34aab7` | fix(web): start without WebAssembly by initialising Words in a guard (#41361)                            | core change lives in files absent from Ronin |
+| `990412468` | fix(web): EPUBs with a percent-encoded package path open in the file preview (#41540)                    | core change lives in files absent from Ronin |
+| `8032cbb66` | fix(web): Cmd+F searches a side chat, and Escape closes it (#28919)                                      | core change lives in files absent from Ronin |
+| `2ced06ef4` | fix(web): model picker search finds a model by its ID (#42041)                                           | core change lives in files absent from Ronin |
+| `51a721da4` | fix(web): a held Esc in file or content search stops on the Command Palette (#42279)                     | core change lives in files absent from Ronin |
+| `dfa73216c` | fix(web): search results show the matched lines (#42429)                                                 | core change lives in files absent from Ronin |
+| `3336504f3` | fix(preview): agent recordings keep refining the frame while the page is idle (#42445)                   | core change lives in files absent from Ronin |
+
+### Verification
+
+All commands used explicit files or changed-package scopes. No repo-wide checks, dev server, browser, live userdata writes, commit, push or PR were performed.
+
+- Per-package `tsgo --noEmit` in `packages/contracts`, `packages/shared`, `packages/client-runtime`, `apps/server`, `apps/web`, `apps/desktop`, `packages/ssh`, `packages/effect-acp` and `packages/effect-codex-app-server`: **0 errors** in each. Baseline `HEAD` was also 0 in each.
+- `vp test run` on all **111** changed or sibling unit-test files outside the ghostty suites passed **1,961 tests**, with **4 failures**. All 4 are in `apps/web/src/components/chat/AssistantCitationChip.test.tsx` ("citation comment source disappearance") and fail the same way on unmodified `HEAD` (verified via a temporary stash).
+- From `apps/web`, `vp test run src/terminal/ghostty/core.test.ts src/terminal/ghostty/surface.test.ts` passed **109 tests**. From the repo root these suites fail to load `ghostty-vt.wasm?inline`, on unmodified `HEAD` as well.
+- `cargo test` passed in `native/hyprland-snap-shot` (**14**), `native/kde-snap-shot` (**12**) and `native/resource-monitor` (**20**).
+- `vp lint --report-unused-disable-directives` on the **265** changed TS/JS files exited 0, with existing advisory warnings. `vp fmt --check` passed on **267** changed files. `git diff --check` passed.
+- Browser tests (`*.browser.test.tsx`), packaged desktop builds, native provider CLIs and remote/Tailscale clients were not exercised.
+- Ledger audit: **8,840** commits = 1,447 non-fix + 766 mobile-only + 2,277 no shared files + 3,828 deferred non-applying + 53 already in the tree + 223 ported + 246 backed out. Merge base remains `083fa4ab2`. Changes are uncommitted.

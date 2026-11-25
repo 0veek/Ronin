@@ -9,6 +9,7 @@ import * as BaseSchemas from "./baseSchemas.ts";
 import {
   TrimmedNonEmptyString,
   ForwardCompatibleArray,
+  ForwardCompatibleOptional,
   ForwardCompatibleUnion,
   ForwardCompatibleUnionArray,
   isUnknownUnionMember,
@@ -86,6 +87,15 @@ describe("ForwardCompatibleArray", () => {
     expect(Schema.is(Named)(sparse)).toBe(false);
     expect(() => Named.make(sparse)).toThrow();
     expect(Schema.is(Named)([{ name: "a" }])).toBe(true);
+  });
+});
+
+describe("ForwardCompatibleOptional", () => {
+  const Settings = Schema.Struct({ mode: ForwardCompatibleOptional(Schema.Literals(["a", "b"])) });
+  const encodeSettings = Schema.encodeUnknownSync(Schema.toCodecJson(Settings));
+
+  it("encodes back to JSON after dropping a value it cannot read", () => {
+    expect(encodeSettings(fromWire(Settings)({ mode: "future" }))).toEqual({});
   });
 });
 

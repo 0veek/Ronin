@@ -122,6 +122,10 @@ const SEMU_MAGIC = 0x53454d55;
 const SEMU_HEADER_BYTES = 16;
 const SEMU_FLAG_KEY = 1;
 const SOFT_DECODE_QUEUE = 8;
+// expo-device-hub 0.15.3 serve-emu input.js MAX_TEXT_BYTES limits packets to 300 UTF-8 bytes.
+const ANDROID_MAX_TEXT_BYTES = 300;
+// The pinned hub queue depth is 128; the client does not read queue rejections.
+const ANDROID_MAX_TEXT_CHUNKS = 64;
 
 // serve-sim binary WS message tags (browser -> helper).
 const IOS_MSG_TOUCH = 0x03;
@@ -140,6 +144,13 @@ const isWebCodecsSupported = (): boolean =>
   typeof globalThis !== "undefined" &&
   "VideoDecoder" in globalThis &&
   "EncodedVideoChunk" in globalThis;
+
+function utf8ByteLength(codePoint: number): number {
+  if (codePoint <= 0x7f) return 1;
+  if (codePoint <= 0x7ff) return 2;
+  if (codePoint <= 0xffff) return 3;
+  return 4;
+}
 
 function taggedJson(tag: number, payload: unknown): Uint8Array<ArrayBuffer> {
   const json = encoder.encode(JSON.stringify(payload));
@@ -275,6 +286,8 @@ export interface DeviceStreamClient {
   /** Normalized 0..1 coordinates in the displayed frame. */
   readonly sendTouch: (phase: "begin" | "move" | "end", x: number, y: number) => void;
   readonly sendKey: (event: KeyboardEvent, phase: "down" | "up") => void;
+  /** Android only: iOS input is HID key codes, which cannot carry arbitrary text. */
+  readonly sendText: (text: string) => void;
   readonly pressButton: (button: DeviceHardwareButton) => void;
   readonly rotate: () => void;
   readonly setOrientation: (orientation: DeviceScreenSize["orientation"]) => void;
@@ -307,6 +320,23 @@ const HID_USAGE_BY_CODE: Readonly<Record<string, number>> = {
   ArrowLeft: 0x50,
   ArrowDown: 0x51,
   ArrowUp: 0x52,
+  NumpadDivide: 0x54,
+  NumpadMultiply: 0x55,
+  NumpadSubtract: 0x56,
+  NumpadAdd: 0x57,
+  NumpadEnter: 0x58,
+  Numpad1: 0x59,
+  Numpad2: 0x5a,
+  Numpad3: 0x5b,
+  Numpad4: 0x5c,
+  Numpad5: 0x5d,
+  Numpad6: 0x5e,
+  Numpad7: 0x5f,
+  Numpad8: 0x60,
+  Numpad9: 0x61,
+  Numpad0: 0x62,
+  NumpadDecimal: 0x63,
+  NumpadEqual: 0x67,
   ControlLeft: 0xe0,
   ShiftLeft: 0xe1,
   AltLeft: 0xe2,
@@ -1090,6 +1120,24 @@ export function createDeviceStreamClient(
       if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
         send(JSON.stringify({ type: "text", text: event.key }));
       }
+    },
+    sendText: (text) => {
+      if (platform !== "android") return;
+      let chunk = "";
+      let chunkBytes = 0;
+      let sentChunks = 0;
+      for (const character of text) {
+        const characterBytes = utf8ByteLength(character.codePointAt(0)!);
+        if (chunkBytes + characterBytes > ANDROID_MAX_TEXT_BYTES) {
+          send(JSON.stringify({ type: "text", text: chunk }));
+          if (++sentChunks >= ANDROID_MAX_TEXT_CHUNKS) return;
+          chunk = "";
+          chunkBytes = 0;
+        }
+        chunk += character;
+        chunkBytes += characterBytes;
+      }
+      if (chunk.length > 0) send(JSON.stringify({ type: "text", text: chunk }));
     },
     pressButton: (button) => {
       if (platform === "ios") {

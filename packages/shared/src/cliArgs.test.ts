@@ -3,12 +3,46 @@ import { describe, expect, it } from "vite-plus/test";
 import { parseCliArgs, tokenizeCliArgs } from "./cliArgs.ts";
 
 describe("tokenizeCliArgs", () => {
+  it("preserves escaped double quotes outside quoted values", () => {
+    expect(tokenizeCliArgs(String.raw`--config model=\"gpt-6.1-sol\" --strict-config`)).toEqual([
+      "--config",
+      'model="gpt-6.1-sol"',
+      "--strict-config",
+    ]);
+  });
+
+  it("preserves escaped single quotes outside quoted values", () => {
+    expect(tokenizeCliArgs(String.raw`--append-system-prompt don\'t --verbose`)).toEqual([
+      "--append-system-prompt",
+      "don't",
+      "--verbose",
+    ]);
+  });
+
   it("preserves quoted values and escaped spaces", () => {
     expect(
       tokenizeCliArgs(
         String.raw`--config model="gpt 5" --enable foo\ bar --config=profile='work profile'`,
       ),
     ).toEqual(["--config", "model=gpt 5", "--enable", "foo bar", "--config=profile=work profile"]);
+
+    for (const whitespace of [" ", "\t"]) {
+      const args = `--add-dir /tmp/project\\${whitespace}`;
+      expect(tokenizeCliArgs(args)).toEqual(["--add-dir", `/tmp/project${whitespace}`]);
+      expect(tokenizeCliArgs(`${args} --verbose`)).toEqual([
+        "--add-dir",
+        `/tmp/project${whitespace}`,
+        "--verbose",
+      ]);
+    }
+  });
+
+  it("ignores unescaped surrounding whitespace", () => {
+    expect(tokenizeCliArgs(" \t\n")).toEqual([]);
+    expect(tokenizeCliArgs(" \t--add-dir /tmp/project \t\n")).toEqual([
+      "--add-dir",
+      "/tmp/project",
+    ]);
   });
 
   it("preserves literal backslashes in path values", () => {
@@ -24,6 +58,13 @@ describe("tokenizeCliArgs", () => {
 });
 
 describe("parseCliArgs", () => {
+  it("keeps escaped apostrophes in flag values without consuming the next flag", () => {
+    expect(parseCliArgs(String.raw`--append-system-prompt don\'t --verbose`)).toEqual({
+      flags: { "append-system-prompt": "don't", verbose: null },
+      positionals: [],
+    });
+  });
+
   it("returns empty result for empty string", () => {
     expect(parseCliArgs("")).toEqual({ flags: {}, positionals: [] });
   });
@@ -127,8 +168,39 @@ describe("parseCliArgs", () => {
     });
   });
 
-  it("ignores bare -- with no flag name", () => {
+  it("accepts a trailing -- without operands", () => {
     expect(parseCliArgs("--")).toEqual({ flags: {}, positionals: [] });
+  });
+
+  it.each([
+    { args: "--effort low -- --effort high --chrome" },
+    { args: ["--effort", "low", "--", "--effort", "high", "--chrome"] },
+  ])("ends option parsing at -- for $args", ({ args }) => {
+    expect(parseCliArgs(args)).toEqual({
+      flags: { effort: "low" },
+      positionals: ["--effort", "high", "--chrome"],
+    });
+  });
+
+  it("preserves all operands after --, including empty strings and another --", () => {
+    expect(parseCliArgs(["--", "", "--", "--model=example", "-x"])).toEqual({
+      flags: {},
+      positionals: ["", "--", "--model=example", "-x"],
+    });
+  });
+
+  it("ends option parsing with explicit boolean flags too", () => {
+    expect(parseCliArgs(["--chrome", "--", "--verbose"], { booleanFlags: ["chrome"] })).toEqual({
+      flags: { chrome: null },
+      positionals: ["--verbose"],
+    });
+  });
+
+  it("keeps -- inside an equals-form option value", () => {
+    expect(parseCliArgs("--append-system-prompt=-- --chrome")).toEqual({
+      flags: { "append-system-prompt": "--", chrome: null },
+      positionals: [],
+    });
   });
 
   it("boolean flag does not consume next token as value", () => {

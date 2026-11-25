@@ -80,13 +80,9 @@ export function AssistantCitationChip({
     if (dismissal.kind === "commit") return commentEditor?.onSave(dismissal.comment) ?? true;
     return dismissal.kind !== "keep-open";
   };
+  // The timeline virtualizes rows, so a vanished source is routine; the user may still be typing.
   const onSourceUnavailable = useEffectEvent(() => {
-    if (!sourceAnchor) return;
-    if (settleDraftOnClose("none")) {
-      commentEditor?.onOpenChange(false);
-    } else {
-      setUnavailableSourceAnchor(sourceAnchor);
-    }
+    if (sourceAnchor) setUnavailableSourceAnchor(sourceAnchor);
   });
   useEffect(() => {
     if (!commentOpen || sourceAnchor === unavailableSourceAnchor) return;
@@ -105,7 +101,15 @@ export function AssistantCitationChip({
         contextElement: activeSourceAnchor.source,
         getBoundingClientRect: () => {
           const rects = activeSourceAnchor.range.getClientRects();
-          return rects.item(rects.length - 1) ?? activeSourceAnchor.range.getBoundingClientRect();
+          const rect =
+            rects.item(rects.length - 1) ?? activeSourceAnchor.range.getBoundingClientRect();
+          // Code blocks and tables scroll sideways inside the message, so the cited
+          // text can end in their hidden overflow. Base UI only shifts the popup while
+          // it still touches the anchor, so clamp the anchor to the message's width.
+          const bounds = activeSourceAnchor.source.getBoundingClientRect();
+          const left = Math.min(Math.max(rect.left, bounds.left), bounds.right);
+          const right = Math.max(Math.min(rect.right, bounds.right), left);
+          return new DOMRect(left, rect.top, right - left, rect.height);
         },
       }
     : undefined;
@@ -207,7 +211,13 @@ export function AssistantCitationChip({
               align="end"
               anchor={popupAnchor}
               initialFocus={() => {
-                commentInputRef.current?.focus({ preventScroll: true });
+                const input = commentInputRef.current;
+                if (input) {
+                  input.focus({ preventScroll: true });
+                  input.setSelectionRange(input.value.length, input.value.length);
+                  // Moving the caret doesn't scroll a long comment to it.
+                  input.scrollTop = input.scrollHeight;
+                }
                 return false;
               }}
               finalFocus={

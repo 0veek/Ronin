@@ -2,7 +2,6 @@ import { AuthDiagnosticsReadScope } from "@t3tools/contracts";
 import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 import type { ResourceTelemetryHistoryInput, ResourceTelemetrySnapshot } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { useCallback } from "react";
 
 import { usePrimaryEnvironment } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
@@ -30,7 +29,7 @@ export function useResourceTelemetry(): ResourceTelemetryState {
   const retryCommand = useAtomCommand(serverEnvironment.retryResourceTelemetry, {
     reportFailure: false,
   });
-  const retry = useCallback(async () => {
+  const retry = async () => {
     if (environmentId === null) {
       throw new Error("No environment is selected.");
     }
@@ -45,9 +44,11 @@ export function useResourceTelemetry(): ResourceTelemetryState {
       throw Cause.squash(result.cause);
     }
     return result.value.snapshot;
-  }, [environmentId, retryCommand]);
+  };
 
-  return { ...query, retry };
+  // The live subscription keeps waiting for updates after its first snapshot.
+  const isPending = query.isPending && query.data === null && query.error === null;
+  return { ...query, isPending, retry };
 }
 
 export function useResourceTelemetryHistory(input: ResourceTelemetryHistoryInput) {

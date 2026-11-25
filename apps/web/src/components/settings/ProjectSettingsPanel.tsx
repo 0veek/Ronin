@@ -908,6 +908,7 @@ function ProjectDetail({ group }: { group: SidebarProjectSnapshot }) {
                   void renameGroup(event.currentTarget.value, wasEdited);
                 }}
                 onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                 }}
               />

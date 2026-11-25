@@ -242,7 +242,7 @@ export class TerminalCwdNotFoundError extends Schema.TaggedErrorClass<TerminalCw
   },
 ) {
   override get message() {
-    return `Terminal cwd does not exist: ${this.cwd}`;
+    return `Terminal folder does not exist: ${this.cwd}. Restore the folder at this path before retrying.`;
   }
 }
 

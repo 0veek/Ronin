@@ -84,9 +84,10 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
     };
   }, []);
 
-  useEffect(() => {
-    if (items.length < 2) setStackExpanded(false);
-  }, [items.length]);
+  // A stack that shrinks to one banner collapses, so the next stack starts collapsed.
+  if (items.length < 2 && stackExpanded) {
+    setStackExpanded(false);
+  }
 
   useLayoutEffect(() => {
     if (stackExpanded && pendingFocusRef.current === "notice") {

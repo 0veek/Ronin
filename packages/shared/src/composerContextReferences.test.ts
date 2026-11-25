@@ -50,6 +50,10 @@ describe("labels and reference links", () => {
       collectComposerContextReferences(`[${"x".repeat(300)}](t3-context://v1/file/ctx_1)`)[0]
         ?.label,
     ).toHaveLength(200);
+    expect(
+      collectComposerContextReferences(`[${"x".repeat(199)}😀tail](t3-context://v1/file/ctx_1)`)[0]
+        ?.label,
+    ).toBe("x".repeat(199));
   });
   it("sanitizes labels without touching identity", () => {
     expect(sanitizeComposerContextLabel("a ] b\nc  [d", "file")).toBe("a b c d");
@@ -204,6 +208,16 @@ describe("provider projection", () => {
     expect(formatComposerContextProviderMarker("review-comment", "File.ts L4", ctx("ctx_9"))).toBe(
       "[Review comment: File.ts L4; ref=ctx_9]",
     );
+  });
+
+  it("emits no terminal lines when the captured range is inverted", () => {
+    const projected = projectComposerContextForProvider({
+      text: "[log](t3-context://v1/terminal/ctx_t)",
+      records: [{ ...terminal, lineStart: 10, lineEnd: 5, text: "a\nb\nc\nd\ne\nf" }],
+    });
+    expect(projected).toContain('<context kind="terminal" id="ctx_t">');
+    expect(projected).toContain("terminal: Terminal 1\n</context>");
+    expect(projected).not.toContain(" | ");
   });
 
   it("emits every marker in place and each payload once, escaped, in first-reference order", () => {

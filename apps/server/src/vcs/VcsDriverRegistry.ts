@@ -123,7 +123,9 @@ export const make = Effect.gen(function* () {
   // when the root is not above it, such as a cwd reached through a symlink.
   const foldersBelowRoot = (cwd: string, rootPath: string) => {
     const relative = path.relative(path.resolve(rootPath), path.resolve(cwd));
-    if (relative.startsWith("..") || path.isAbsolute(relative)) return [cwd];
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      return [cwd];
+    }
     return Array.from({ length: relative.split(path.sep).length }, (_, levelsUp) =>
       path.resolve(cwd, ...Array<string>(levelsUp).fill("..")),
     );

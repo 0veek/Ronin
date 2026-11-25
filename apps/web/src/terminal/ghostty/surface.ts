@@ -3,7 +3,9 @@ import { isMacPlatform } from "../../lib/utils";
 import { SELECTION_MULTI_CLICK_INTERVAL_MS } from "../../lib/selectionActions";
 import { collectWrappedTerminalLinkLine, extractTerminalLinks } from "../../terminal-links";
 import {
+  GHOSTTY_CELL_WIDE,
   GhosttyTerminalCore,
+  type GhosttyCell,
   type GhosttyScrollbar,
   type GhosttySnapshot,
   type GhosttyTheme,
@@ -38,6 +40,8 @@ const CONTENT_PADDING = 4;
 const MIN_SCROLLBAR_THUMB_HEIGHT = 18;
 /** Half a blink cycle: the visible and hidden phases are equally long. */
 const CURSOR_BLINK_INTERVAL_MS = 500;
+/** End an unterminated synchronized update instead of freezing the last frame. */
+const SYNCHRONIZED_OUTPUT_RENDER_TIMEOUT_MS = 500;
 const TERMINAL_FONT_LOAD_TEXT = "iMW0@# .";
 const TERMINAL_FONT_LOAD_VARIANTS = [
   "normal 400",
@@ -232,15 +236,23 @@ export function terminalGridCellAt(options: {
   };
 }
 
+function terminalCellText(cell: GhosttyCell): string {
+  if (cell.wide === GHOSTTY_CELL_WIDE.spacerTail || cell.wide === GHOSTTY_CELL_WIDE.spacerHead) {
+    return "";
+  }
+  return cell.text || " ";
+}
+
 function terminalRowText(row: GhosttySnapshot["rowData"][number], trimRight: boolean): string {
-  const text = row.cells.map((cell) => cell.text || " ").join("");
+  const text = row.cells.map(terminalCellText).join("");
   return trimRight ? text.trimEnd() : text;
 }
 
 function terminalColumnOffset(row: GhosttySnapshot["rowData"][number], column: number): number {
   let offset = 0;
   for (let cellIndex = 0; cellIndex < column; cellIndex += 1) {
-    offset += row.cells[cellIndex]?.text.length || 1;
+    const cell = row.cells[cellIndex];
+    offset += cell ? terminalCellText(cell).length : 1;
   }
   return offset;
 }
@@ -299,7 +311,8 @@ export function terminalLinkAtPositionWithRange(
   // Ghostty's soft-wrap flag is authoritative: when the last collected row
   // still wraps onward, its continuation is outside the viewport.
   const continuesBelowViewport = lastRow !== undefined && lastRow.wrapsToNext;
-  const offset = segment.startIndex + terminalColumnOffset(row, column);
+  const hitColumn = row.cells[column]?.wide === GHOSTTY_CELL_WIDE.spacerTail ? column - 1 : column;
+  const offset = segment.startIndex + terminalColumnOffset(row, hitColumn);
   for (const match of extractTerminalLinks(wrappedLine.text)) {
     if (offset >= match.start && offset < match.end) {
       // A truncated tail must not activate as a complete link.
@@ -313,6 +326,7 @@ export function terminalLinkAtPositionWithRange(
       const startRow = startSegment ? rows[startSegment.bufferLineNumber - 1] : undefined;
       const endRow = endSegment ? rows[endSegment.bufferLineNumber - 1] : undefined;
       if (!startSegment || !endSegment || !startRow || !endRow) return null;
+      const endColumn = terminalColumnAtOffset(endRow, match.end - 1 - endSegment.startIndex);
       return {
         text: match.text,
         range: {
@@ -321,7 +335,10 @@ export function terminalLinkAtPositionWithRange(
             y: startSegment.bufferLineNumber - 1,
           },
           end: {
-            x: terminalColumnAtOffset(endRow, match.end - 1 - endSegment.startIndex),
+            x:
+              endRow.cells[endColumn + 1]?.wide === GHOSTTY_CELL_WIDE.spacerTail
+                ? endColumn + 1
+                : endColumn,
             y: endSegment.bufferLineNumber - 1,
           },
         },
@@ -580,6 +597,7 @@ export class GhosttyTerminalSurface {
   private readonly scrollbarThumb: HTMLDivElement;
   private snapshot: GhosttySnapshot | null = null;
   private frame = 0;
+  private synchronizedRenderTimer: number | null = null;
   private cursorTimer: number | null = null;
   private compositionInputToSuppress: string | null = null;
   private compositionSuppressionTimer: number | null = null;
@@ -624,9 +642,18 @@ export class GhosttyTerminalSurface {
   private focused = false;
   private resizeNotified = false;
   private canvasConfigured = false;
+  private canvasDevicePixelRatio = 0;
+  private pendingCanvasConfiguration: {
+    readonly width: number;
+    readonly height: number;
+    readonly ratio: number;
+  } | null = null;
   private theme: GhosttyTheme;
   private readonly suppressedKeyCodes = new Set<string>();
   private pasteShortcutToken = 0;
+  // Chromium can deliver native paste after the clipboard read resolves.
+  // Suppress its duplicate only for the current shortcut gesture.
+  private pasteShortcutGesture: { code: string; readText: string } | null = null;
   private copyShortcutToken = 0;
   private clearSelectionAfterCopy = false;
   private primedCopySelection = "";
@@ -763,7 +790,12 @@ export class GhosttyTerminalSurface {
 
   write(data: string): void {
     if (this.disposed) return;
-    this.core.write(data);
+    this.core.write(
+      data,
+      this.synchronizedRenderTimer === null
+        ? undefined
+        : () => this.cancelSynchronizedRenderTimer(),
+    );
     this.synchronizeMouseTrackingState();
     // Restart the blink cycle from the visible phase so the cursor never sits
     // invisible through a stream of output or a burst of typing echo.
@@ -774,6 +806,7 @@ export class GhosttyTerminalSurface {
 
   resetAndWrite(data: string): void {
     if (this.disposed) return;
+    this.cancelSynchronizedRenderTimer();
     this.lastMouseMotionData = "";
     this.core.resetAndWrite(data);
     this.synchronizeMouseTrackingState();
@@ -888,15 +921,18 @@ export class GhosttyTerminalSurface {
     if (
       this.canvas.width !== pixelWidth ||
       this.canvas.height !== pixelHeight ||
-      !this.canvasConfigured
+      !this.canvasConfigured ||
+      this.canvasDevicePixelRatio !== ratio
     ) {
-      this.canvas.width = pixelWidth;
-      this.canvas.height = pixelHeight;
-      this.context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      this.canvasConfigured = true;
+      // A backing-size change clears the canvas. Apply it with the gated paint
+      // so a DPR change cannot erase a frame while synchronized output is open.
+      this.pendingCanvasConfiguration = { width: pixelWidth, height: pixelHeight, ratio };
       this.forceFullRender = true;
       this.scrollbarDirty = true;
       shouldRender = true;
+    } else {
+      // A resize can return to the painted size before its queued frame runs.
+      this.pendingCanvasConfiguration = null;
     }
     const grid = terminalGridSize(width, height, this.metrics, CONTENT_PADDING);
     this.mountHeight = height;
@@ -1218,19 +1254,20 @@ export class GhosttyTerminalSurface {
     }
     if (isTerminalPasteShortcut(event)) {
       this.suppressedKeyCodes.add(event.code);
+      const gesture = { code: event.code, readText: "" };
+      this.pasteShortcutGesture = gesture;
       const clipboard = navigator.clipboard;
       if (typeof clipboard?.readText === "function") {
-        // Race the async clipboard read against the browser's own paste event:
-        // the native event (dispatched synchronously with the default action)
-        // always claims the token first when it fires, and the read covers
-        // browsers whose paste shortcut produces no paste event. Not preventing
-        // the default keeps the native path alive when the read is denied.
+        // Keep native paste available if the read is denied. The token drops
+        // a late read; the gesture drops a native duplicate when the read wins.
         const token = ++this.pasteShortcutToken;
         void clipboard.readText().then(
           (text) => {
             if (this.disposed || this.pasteShortcutToken !== token) return;
             this.pasteShortcutToken += 1;
-            if (text.length > 0) this.options.onData(this.core.encodePaste(text));
+            if (text.length === 0) return;
+            if (this.pasteShortcutGesture === gesture) gesture.readText = text;
+            this.options.onData(this.core.encodePaste(text));
           },
           () => {
             // Clipboard read denied; the native paste event remains the path.
@@ -1249,6 +1286,15 @@ export class GhosttyTerminalSurface {
   };
 
   private readonly onKeyUp = (event: KeyboardEvent) => {
+    // macOS can omit V keyup while Command is held.
+    if (
+      event.code === this.pasteShortcutGesture?.code ||
+      event.key === "Meta" ||
+      event.key === "Control" ||
+      event.key === "Shift"
+    ) {
+      this.pasteShortcutGesture = null;
+    }
     if (this.suppressedKeyCodes.delete(event.code)) return;
     if (isTerminalCompositionKey(event, this.composing)) {
       return;
@@ -1270,6 +1316,7 @@ export class GhosttyTerminalSurface {
 
   private readonly onBlur = () => {
     this.focused = false;
+    this.pasteShortcutGesture = null;
     this.refreshHoveredLink();
     // Suppressions survive blur deliberately: a shortcut that moves focus (for
     // example terminal-toggle) must still swallow its own keyup if focus comes
@@ -1329,6 +1376,11 @@ export class GhosttyTerminalSurface {
     event.preventDefault();
     const data = event.clipboardData?.getData("text/plain") ?? "";
     if (data.length === 0) return;
+    if (data === this.pasteShortcutGesture?.readText) {
+      // The shortcut's clipboard read already sent this paste.
+      this.pasteShortcutGesture = null;
+      return;
+    }
     // The native paste won the race with actual text; a pending clipboard read
     // must not double. An empty native paste leaves the read as the only path.
     this.pasteShortcutToken += 1;
@@ -1879,7 +1931,8 @@ export class GhosttyTerminalSurface {
   }
 
   private requestRender(): void {
-    if (this.disposed || !this.visible || !this.hasSize || this.frame !== 0) return;
+    if (this.disposed || !this.visible || !this.hasSize) return;
+    if (this.deferSynchronizedRender() || this.frame !== 0) return;
     this.frame = window.requestAnimationFrame(() => {
       this.frame = 0;
       this.renderFrame();
@@ -1887,6 +1940,7 @@ export class GhosttyTerminalSurface {
   }
 
   private cancelRender(): void {
+    this.cancelSynchronizedRenderTimer();
     if (this.frame !== 0) {
       window.cancelAnimationFrame(this.frame);
       this.frame = 0;
@@ -1895,6 +1949,36 @@ export class GhosttyTerminalSurface {
       window.clearTimeout(this.cursorTimer);
       this.cursorTimer = null;
     }
+  }
+
+  private cancelSynchronizedRenderTimer(): void {
+    if (this.synchronizedRenderTimer === null) return;
+    window.clearTimeout(this.synchronizedRenderTimer);
+    this.synchronizedRenderTimer = null;
+  }
+
+  private deferSynchronizedRender(): boolean {
+    if (!this.core.isSynchronizedOutput()) {
+      this.cancelSynchronizedRenderTimer();
+      return false;
+    }
+    // A frame queued before the opening marker would now consume partial rows.
+    if (this.frame !== 0) {
+      window.cancelAnimationFrame(this.frame);
+      this.frame = 0;
+    }
+    if (this.cursorTimer !== null) {
+      window.clearTimeout(this.cursorTimer);
+      this.cursorTimer = null;
+    }
+    if (this.synchronizedRenderTimer === null) {
+      this.synchronizedRenderTimer = window.setTimeout(() => {
+        this.synchronizedRenderTimer = null;
+        this.core.endSynchronizedOutput();
+        this.renderFrame();
+      }, SYNCHRONIZED_OUTPUT_RENDER_TIMEOUT_MS);
+    }
+    return true;
   }
 
   private renderFrame(): void {
@@ -1911,6 +1995,16 @@ export class GhosttyTerminalSurface {
       this.forceFullRender = true;
       this.cancelRender();
       return;
+    }
+    if (this.deferSynchronizedRender()) return;
+    const canvasConfiguration = this.pendingCanvasConfiguration;
+    if (canvasConfiguration !== null) {
+      this.pendingCanvasConfiguration = null;
+      this.canvas.width = canvasConfiguration.width;
+      this.canvas.height = canvasConfiguration.height;
+      this.context.setTransform(canvasConfiguration.ratio, 0, 0, canvasConfiguration.ratio, 0, 0);
+      this.canvasConfigured = true;
+      this.canvasDevicePixelRatio = canvasConfiguration.ratio;
     }
     this.snapshot = this.core.snapshot();
     // A cursor that is not blinking right now must be drawn, never caught in an

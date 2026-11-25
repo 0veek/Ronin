@@ -1,5 +1,5 @@
 import type { CodeViewScrollTarget } from "@pierre/diffs";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface FileRevealHandle {
   getInstance(): object | undefined;
@@ -24,5 +24,5 @@ export function useCodeViewFileReveal<TScope>(viewer: FileRevealHandle | null, s
     handledRequest.current = request;
   }, [request, scope, viewer]);
 
-  return useCallback((fileKey: string) => setRequest({ fileKey, scope }), [scope]);
+  return (fileKey: string) => setRequest({ fileKey, scope });
 }

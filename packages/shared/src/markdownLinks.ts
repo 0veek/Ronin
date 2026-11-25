@@ -9,8 +9,10 @@ import {
 
 const RELATIVE_PATH_PREFIX_PATTERN = /^(~\/|\.{1,2}\/)/;
 
+// The final segment is optional so an explicit folder link may end in `/`
+// (`patches/`, `docs/My Folder/`). A bare name with no slash still fails.
 const RELATIVE_FILE_PATH_PATTERN =
-  /^(?:[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*\/)+[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*(?::\d+){0,2}$/;
+  /^(?:[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*\/)+(?:[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*(?::\d+){0,2})?$/;
 
 const RELATIVE_FILE_NAME_PATTERN =
   /^[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*\.[A-Za-z0-9_-]+(?::\d+){0,2}$/;
@@ -21,9 +23,34 @@ const POSITION_SUFFIX_PATTERN = /:\d+(?::\d+)?$/;
 
 const POSITION_ONLY_PATTERN = /^\d+(?::\d+)?$/;
 
-const INLINE_CODE_DISQUALIFIER_PATTERN = /[\s`]/;
+const INLINE_CODE_WHITESPACE_PATTERN = /\s/;
+
+// Inline code with spaces is a file only when it is absolute and every word is a plain name:
+// `/Users/me/Mobile Documents/a - b.md` is, `/usr/bin/python3 -m venv .venv` (a flag) is not.
+// A space only in the last segment reads as a command (`/usr/local/bin/node server.js`), so it
+// must sit under a user root, and nothing after a bin folder counts.
+const SPACED_ABSOLUTE_PATH_ROOT_PATTERN = /^(?:\/|~\/|[A-Za-z]:[\\/])/;
+const SPACED_PATH_BODY_PATTERN =
+  /^(?:[\p{L}\p{M}\p{N}._$+@()[\]-]+(?: (?!-+\p{L})[\p{L}\p{M}\p{N}._$+@()[\]-]+)*(?:[\\/]|$))+$/u;
+
+function isSpacedAbsoluteFilePath(text: string): boolean {
+  const root = SPACED_ABSOLUTE_PATH_ROOT_PATTERN.exec(text)?.[0];
+  if (root === undefined) return false;
+  const body = text.slice(root.length).replace(POSITION_SUFFIX_PATTERN, "");
+  if (!SPACED_PATH_BODY_PATTERN.test(body)) return false;
+  const firstSpace = body.indexOf(" ");
+  const foldersBeforeSpace = body.slice(0, firstSpace).split(PATH_SEPARATOR_PATTERN).slice(0, -1);
+  if (foldersBeforeSpace.some((folder) => folder === "bin" || folder === "sbin")) return false;
+  const spaceInFolder = PATH_SEPARATOR_PATTERN.test(body.slice(firstSpace));
+  if (!spaceInFolder && root === "/" && !/^(?:Users|home)[\\/]/.test(body)) return false;
+  if (PATH_SEPARATOR_PATTERN.test(body.at(-1) ?? "")) return true;
+  const basename = body.split(PATH_SEPARATOR_PATTERN).at(-1) ?? "";
+  return FILE_EXTENSION_PATTERN.test(basename) || EXTENSIONLESS_FILE_NAMES.has(basename);
+}
 
 const PATH_SEPARATOR_PATTERN = /[\\/]/;
+// Agents shorten long paths with a `...` or `…` segment, which no file chip can open.
+const ELIDED_PATH_SEGMENT_PATTERN = /(?:^|[\\/])(?:\.{3,}|…)(?:[\\/]|$)/;
 
 const FILE_EXTENSION_PATTERN = /\.[A-Za-z0-9_-]+$/;
 // A final dot between digits marks a version or model id (`glm-5.3`,
@@ -112,7 +139,6 @@ const GENERIC_HOSTNAME_TLDS = new Set([
   "xyz",
   "me",
   "tv",
-  "cc",
   "gg",
   "chat",
   "cloud",
@@ -157,6 +183,8 @@ const COUNTRY_HOSTNAME_TLDS = new Set([
   "tr",
   "sg",
   "hk",
+  // C++ sources end in `.cc`, so `allocator.cc:217` names a file, not a host and port.
+  "cc",
 ]);
 
 function looksLikeHostname(segment: string, hasPosition: boolean): boolean {
@@ -177,11 +205,15 @@ function looksLikeHostname(segment: string, hasPosition: boolean): boolean {
  */
 export function inlineCodeFilePathCandidate(codeText: string): string | null {
   const trimmed = codeText.trim();
-  if (trimmed.length === 0 || INLINE_CODE_DISQUALIFIER_PATTERN.test(trimmed)) return null;
+  if (trimmed.length === 0 || trimmed.includes("`")) return null;
+  if (INLINE_CODE_WHITESPACE_PATTERN.test(trimmed) && !isSpacedAbsoluteFilePath(trimmed)) {
+    return null;
+  }
 
   const candidate = isWindowsAbsolutePath(trimmed) ? trimmed : trimmed.replaceAll("\\", "/");
   const hasPosition = POSITION_SUFFIX_PATTERN.test(candidate);
   if (!hasPosition && !PATH_SEPARATOR_PATTERN.test(candidate)) return null;
+  if (ELIDED_PATH_SEGMENT_PATTERN.test(candidate.replace(POSITION_SUFFIX_PATTERN, ""))) return null;
 
   const hasExplicitPathShape =
     RELATIVE_PATH_PREFIX_PATTERN.test(candidate) ||
@@ -189,6 +221,9 @@ export function inlineCodeFilePathCandidate(codeText: string): string | null {
     isWindowsAbsolutePath(candidate);
   if (!hasExplicitPathShape) {
     const withoutPosition = candidate.replace(POSITION_SUFFIX_PATTERN, "");
+    // Markdown destinations accept `patches/`. Inline code still needs a
+    // file-shaped final segment, so a trailing slash stays plain code.
+    if (withoutPosition.endsWith("/")) return null;
     const firstSegment = withoutPosition.split("/")[0] ?? withoutPosition;
     if (looksLikeHostname(firstSegment, hasPosition)) return null;
     const basename =
@@ -302,6 +337,14 @@ export function parseMarkdownFileLink(href: string): FilePathPosition | null {
   const hash = safeDecodeURIComponent(source.hash.trim());
   if (path.length === 0 || hasExternalScheme(path)) return null;
 
+  const position = parseFilePathLink(path, hash);
+  // `src\a.ts` is Windows-relative. A link that already parses keeps its spelling, since POSIX
+  // names may contain `\`; a rooted `\\host` or `\foo` would change root if rewritten.
+  if (position || /^[\\/]/.test(path) || isWindowsAbsolutePath(path)) return position;
+  return path.includes("\\") ? parseFilePathLink(path.replaceAll("\\", "/"), hash) : null;
+}
+
+function parseFilePathLink(path: string, hash: string): FilePathPosition | null {
   const position = splitFilePathPosition(path, hash);
   return looksLikeFilePath(position.path, path) ? position : null;
 }
@@ -322,13 +365,76 @@ export function extractInlineCodeSpans(text: string): string[] {
   return spans;
 }
 
-const MARKDOWN_LINK_HREF_PATTERN =
-  /\[[^\]]*]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
+/** Reuses delimiter searches when successive candidates fall in the same run. */
+function markdownRunEndFinder(markdown: string, delimiter: RegExp) {
+  let runStart = -1;
+  let runEnd = -1;
+  return (start: number) => {
+    if (start >= runStart && start <= runEnd) return runEnd;
+    delimiter.lastIndex = start;
+    runStart = start;
+    runEnd = delimiter.exec(markdown)?.index ?? markdown.length;
+    return runEnd;
+  };
+}
+
+function markdownLinkTailScanner(markdown: string) {
+  const whitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
+  const titleEnd = markdownRunEndFinder(markdown, /["']/g);
+  const titleWhitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
+  return (start: number) => {
+    const end = whitespaceEnd(start);
+    if (markdown[end] === ")") return end + 1;
+    if (end === start || (markdown[end] !== '"' && markdown[end] !== "'")) return null;
+    const quoteEnd = titleEnd(end + 1);
+    if (quoteEnd === markdown.length) return null;
+    const close = titleWhitespaceEnd(quoteEnd + 1);
+    return markdown[close] === ")" ? close + 1 : null;
+  };
+}
+
+function markdownLinkDestinationScanner(markdown: string) {
+  const whitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
+  const angleEnd = markdownRunEndFinder(markdown, /[>\n]/g);
+  const bareEnd = markdownRunEndFinder(markdown, /[\s)]/g);
+  // Separate caches keep each branch's searches moving forward even when an
+  // angle destination fails and falls back to an ordinary destination.
+  const angleTail = markdownLinkTailScanner(markdown);
+  const bareTail = markdownLinkTailScanner(markdown);
+  return (start: number) => {
+    if (markdown[start] !== "(") return null;
+    const hrefStart = whitespaceEnd(start + 1);
+    if (markdown[hrefStart] === "<") {
+      const hrefEnd = angleEnd(hrefStart + 1);
+      if (hrefEnd > hrefStart + 1 && markdown[hrefEnd] === ">") {
+        const end = angleTail(hrefEnd + 1);
+        if (end !== null) return { hrefStart: hrefStart + 1, hrefEnd, end };
+      }
+    }
+    const hrefEnd = bareEnd(hrefStart);
+    if (hrefEnd === hrefStart) return null;
+    const end = bareTail(hrefEnd);
+    return end === null ? null : { hrefStart, hrefEnd, end };
+  };
+}
 
 export function extractMarkdownLinkHrefs(markdown: string): string[] {
   const hrefs: string[] = [];
-  for (const match of markdown.matchAll(MARKDOWN_LINK_HREF_PATTERN)) {
-    const href = (match[1] ?? match[2])?.trim();
+  const scanDestination = markdownLinkDestinationScanner(markdown);
+  let cursor = 0;
+  while (cursor < markdown.length) {
+    const labelStart = markdown.indexOf("[", cursor);
+    if (labelStart === -1) break;
+    const labelEnd = markdown.indexOf("]", labelStart + 1);
+    if (labelEnd === -1) break;
+
+    // Nested opening brackets share this closing bracket. On failure, skip the
+    // whole label instead of rescanning its suffix from each opening bracket.
+    cursor = labelEnd + 1;
+    const destination = scanDestination(cursor);
+    if (!destination) continue;
+    cursor = destination.end;
+    const href = markdown.slice(destination.hrefStart, destination.hrefEnd).trim();
     if (href) hrefs.push(href);
   }
   return hrefs;
